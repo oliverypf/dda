@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "datasetKind": "HOLDOUT",
+  "datasetVersion": "1.0.0",
+  "cases": [
+    {
+      "caseId": "holdout-inspect-1",
+      "baseline": { "status": "FAILED", "cost": 1, "latencyMs": 100 },
+      "candidate": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 110 }
+    },
+    {
+      "caseId": "holdout-inspect-2",
+      "baseline": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 100 },
+      "candidate": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 90 }
+    },
+    {
+      "caseId": "holdout-recover-1",
+      "baseline": { "status": "FAILED", "cost": 2, "latencyMs": 200 },
+      "candidate": { "status": "SUCCEEDED", "cost": 2, "latencyMs": 180 }
+    }
+  ]
+}

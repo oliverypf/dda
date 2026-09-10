@@ -1,0 +1,55 @@
+# ---- HarmonyOS / DevEco Studio ----
+/oh_modules
+**/oh_modules
+**/build
+/.hvigor
+/.appanalyzer
+/.bitfun
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+# DevEco writes machine-local SDK paths here; the file's own header says do not commit.
+/local.properties
+
+# ---- Node ----
+node_modules/
+
+# ---- Rust / Cargo build output ----
+# Real target dir plus the target-x64 / target-reliable / target-unlimited
+# variants produced by the build scripts.
+target/
+target-x64/
+target-reliable/
+target-unlimited/
+
+# ---- Tauri ----
+# Sidecar binaries are produced by desktop/scripts/build-openviking-sidecar.mjs
+# and bundled at build time; they are not sources.
+/desktop/src-tauri/binaries/
+# Generated ACL/capability schemas.
+/desktop/src-tauri/gen/schemas/
+/desktop/dist/
+
+# ---- Path-accident guards ----
+# Unexpanded environment variables and UNC roots have been written into the repo
+# as literal directories before. These entries stop it recurring silently.
+# See docs/WINDOWS_TESTING_WORKFLOW.md for the drive-mapping requirement.
+/%SystemDrive%/
+/%LOCALAPPDATA%/
+/%APPDATA%/
+/%USERPROFILE%/
+/hwfs/
+# Reserved Windows device names accidentally created as files by shell redirection.
+/nul
+/con
+/prn
+/aux
+
+# ---- Transient artifacts ----
+.tmp-release-check.json
+*.tmp
+
+# ---- Agent harness session state ----
+/.pi/

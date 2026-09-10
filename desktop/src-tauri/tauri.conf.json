@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "hmCodex",
+  "mainBinaryName": "hmcodex-desktop",
+  "version": "0.1.0",
+  "identifier": "com.hmcodex.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "node scripts/build-openviking-sidecar.mjs && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "hmCodex",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 720,
+        "minHeight": 540,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    },
+    "resources": {
+      "../../runtime/src": "runtime/src",
+      "../../runtime/node_modules": "runtime/node_modules",
+      "../../runtime/package.json": "runtime/package.json",
+      "../../runtime/package-lock.json": "runtime/package-lock.json",
+      "../../runtime/model-config.example.json": "runtime/model-config.example.json"
+      ,"../../runtime/openviking/config.json": "runtime/openviking/config.json"
+      ,"binaries/openviking-server.exe": "sidecar/openviking-server.exe"
+    },
+    "icon": ["icons/app-icon.png", "icons/icon.ico"],
+    "shortDescription": "Local read-only hmCodex workbench",
+    "longDescription": "A Windows-first local workbench for read-only project inspection and task timelines."
+  }
+}

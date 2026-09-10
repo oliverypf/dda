@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/dream-run.schema.json",
+  "title": "hmCodex Dream Run",
+  "description": "Persisted, bounded memory-maintenance run; it never grants execution permissions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "projectId", "state", "startedAtMs", "recordDigest"],
+  "properties": {
+    "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "state": { "enum": ["WAITING_GATE", "RUNNING", "COMPLETED", "CANCELLED", "FAILED"] },
+    "phase": { "enum": ["ORIENT", "GATHER", "CONSOLIDATE", "VERIFY", "REVIEW", "PRUNE"] },
+    "startedAtMs": { "type": "integer", "minimum": 0 },
+    "ownerPid": { "type": "integer", "minimum": 1 },
+    "runtimeInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "finishedAtMs": { "type": "integer", "minimum": 0 },
+    "phaseUpdatedAtMs": { "type": "integer", "minimum": 0 },
+    "phaseDigest": { "$ref": "#/$defs/digest" },
+    "candidateDigest": { "$ref": "#/$defs/digest" },
+    "candidateCount": { "type": "integer", "minimum": 0 },
+    "gateReasons": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+    "errorCode": { "type": "string", "maxLength": 120 },
+    "checkpoint": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+    "recordDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+}

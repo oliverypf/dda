@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "datasetKind": "REGRESSION",
+  "datasetVersion": "1.0.0",
+  "cases": [
+    {
+      "caseId": "regression-inspect-1",
+      "baseline": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 100 },
+      "candidate": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 100 }
+    },
+    {
+      "caseId": "regression-recover-1",
+      "baseline": { "status": "SUCCEEDED", "cost": 2, "latencyMs": 200 },
+      "candidate": { "status": "SUCCEEDED", "cost": 2, "latencyMs": 190 }
+    },
+    {
+      "caseId": "regression-classify-1",
+      "baseline": { "status": "FAILED", "cost": 1, "latencyMs": 100 },
+      "candidate": { "status": "SUCCEEDED", "cost": 1, "latencyMs": 105 }
+    }
+  ]
+}

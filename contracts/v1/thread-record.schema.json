@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/thread-record.schema.json",
+  "title": "hmCodex Persisted Thread",
+  "description": "Thread history and redacted checkpoint used to resume a task without replaying side effects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "cwd", "turns", "state", "createdAtMs", "updatedAtMs"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "cwd": { "type": "string", "maxLength": 2000 },
+    "turns": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/turn" } },
+    "state": { "enum": ["IDLE", "RUNNING", "PAUSED", "FAILED", "COMPLETED"] },
+    "activeRunId": { "type": "string", "maxLength": 240 },
+    "stateReason": { "type": "string", "maxLength": 500 },
+    "checkpoint": { "$ref": "#/$defs/checkpoint" },
+    "forkedFrom": { "type": "string", "maxLength": 160 },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "turn": {
+      "type": "object", "additionalProperties": true,
+      "required": ["id", "summary", "state", "atMs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "runId": { "type": "string", "maxLength": 160 },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "state": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "atMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "checkpoint": {
+      "type": "object", "additionalProperties": true, "maxProperties": 64,
+      "required": ["runId", "phase", "updatedAtMs", "checkpointDigest"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "phase": { "enum": ["CLASSIFYING", "PRECHECKING", "ROUTING", "ALLOCATING_CONTEXTS", "PLANNING", "EXECUTING", "VERIFYING", "DIAGNOSING", "RECOVERING"] },
+        "state": { "enum": ["IDLE", "RUNNING", "PAUSED", "FAILED", "COMPLETED"] },
+        "updatedAtMs": { "type": "integer", "minimum": 0 },
+        "checkpointDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "plan": { "type": ["object", "array"] }
+      }
+    }
+  }
+}

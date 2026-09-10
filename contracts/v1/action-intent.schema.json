@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/action-intent.schema.json",
+  "title": "hmCodex ActionIntent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordId",
+    "recordType",
+    "intentId",
+    "runId",
+    "capability",
+    "requestDigest",
+    "operationId",
+    "policyVersion",
+    "state",
+    "createdAtMs",
+    "updatedAtMs",
+    "transitionHistory",
+    "recordDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "recordId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "recordType": { "const": "intent" },
+    "intentId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "capability": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "requestDigest": { "$ref": "#/$defs/digest" },
+    "snapshotDigest": { "$ref": "#/$defs/digest" },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "scopeDigest": { "$ref": "#/$defs/digest" },
+    "bindingSnapshotDigest": { "$ref": "#/$defs/digest" },
+    "executorIdentity": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "ownerPid": { "type": "integer", "minimum": 1 },
+    "runtimeInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "requestSummary": { "type": "object", "maxProperties": 16 },
+    "state": {
+      "enum": ["PROPOSED", "SAFETY_EVALUATING", "WAITING_APPROVAL", "APPROVED", "EXECUTING", "COMPLETED", "FAILED", "REJECTED"]
+    },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 },
+    "transition": { "$ref": "#/$defs/transition" },
+    "transitionHistory": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/transition" }
+    },
+    "recordDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+    ,"transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "metadata", "atMs"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "to": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "metadata": { "$ref": "#/$defs/requestSummary" },
+        "atMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "requestSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 16,
+      "properties": {
+        "command": { "type": "string", "maxLength": 4096 },
+        "argsDigest": { "$ref": "#/$defs/digest" },
+        "argCount": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "maxLength": 2000 },
+        "cwd": { "type": "string", "maxLength": 2000 },
+        "host": { "type": "string", "maxLength": 253 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "scheme": { "type": "string", "enum": ["https", "http"] },
+        "method": { "type": "string", "maxLength": 10 },
+        "contentDigest": { "$ref": "#/$defs/digest" },
+        "contentBytes": { "type": "integer", "minimum": 0 },
+        "envDigest": { "$ref": "#/$defs/digest" },
+        "envKeyCount": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "hmcodex-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node \"%npm_config_local_prefix%/scripts/ensure-runtime.mjs\" && node \"%npm_config_local_prefix%/scripts/build.mjs\" && node \"%npm_config_local_prefix%/scripts/serve-dist.mjs\"",
+    "runtime:install": "node \"%npm_config_local_prefix%/scripts/install-runtime.mjs\"",
+    "dev:vite": "node \"%npm_config_local_prefix%/node_modules/vite/bin/vite.js\" --config \"%npm_config_local_prefix%/vite.config.ts\" --configLoader native --host 127.0.0.1 --port 1420",
+    "build": "node \"%npm_config_local_prefix%/scripts/build.mjs\"",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1",
+    "test": "node \"%npm_config_local_prefix%/scripts/test.mjs\"",
+    "test:all:parallel": "node \"%npm_config_local_prefix%/scripts/test-all-parallel.mjs\"",
+    "test:ui": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\"",
+    "test:ui:security": "node \"%npm_config_local_prefix%/scripts/ui-security-test.mjs\"",
+    "test:ui:task": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\" --task",
+    "test:ui:disconnect": "node \"%npm_config_local_prefix%/scripts/ui-disconnect-test.mjs\"",
+    "test:ui:streaming": "node \"%npm_config_local_prefix%/scripts/ui-streaming-test.mjs\"",
+    "test:watch": "node \"%npm_config_local_prefix%/scripts/test-watch.mjs\"",
+    "path:test": "node \"%npm_config_local_prefix%/scripts/run-path-test.mjs\"",
+    "tauri": "tauri",
+      "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+      "build:windows:phase1": "node \"%npm_config_local_prefix%/scripts/build-phase1.mjs\"",
+      "build:windows:phase1:fast": "node \"%npm_config_local_prefix%/scripts/build-phase1-fast.mjs\"",
+      "build:windows:phase15": "node \"%npm_config_local_prefix%/scripts/build-controlled.mjs\"",
+      "build:windows:phase15:fast": "node \"%npm_config_local_prefix%/scripts/build-controlled.mjs\" --fast",
+      "build:windows:full-local": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\"",
+      "build:windows:full-local:fast": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\" --fast",
+      "build:windows:x64": "npm run build:windows"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "lucide": "^1.38.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "ajv": "^8.17.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

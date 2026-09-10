@@ -1,0 +1,7 @@
+{
+  "version": "0.1.0",
+  "maxBodyBytes": 1048576,
+  "maxResponseBytes": 262144,
+  "maxStoreBytes": 16777216,
+  "maxMemories": 2048
+}

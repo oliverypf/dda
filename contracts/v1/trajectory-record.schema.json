@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/trajectory-record.schema.json",
+  "title": "hmCodex Internal Trajectory Record",
+  "description": "The redacted append-only record currently written by the local trajectory store. It is adapted to runtime-event before crossing the desktop boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "eventId", "runId", "sequence", "aggregateType", "aggregateId", "kind",
+    "actorType", "actorId", "payload", "payloadDigest", "sensitivity", "redactionState",
+    "protocolVersion", "appVersion", "storageSchemaVersion", "policyVersion", "producerVersion",
+    "emittedAtMs", "observedAtMs", "recordDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "aggregateType": { "const": "TaskRun" },
+    "aggregateId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "kind": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{1,120}$" },
+    "actorType": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "actorId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "causationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "payload": { "type": "object", "maxProperties": 64 },
+    "payloadDigest": { "$ref": "#/$defs/digest" },
+    "sensitivity": { "enum": ["PUBLIC", "INTERNAL", "SOURCE", "SENSITIVE", "SECURITY_AUDIT"] },
+    "redactionState": { "const": "REDACTED" },
+    "protocolVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "appVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "storageSchemaVersion": { "type": "integer", "minimum": 0 },
+    "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "producerVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "emittedAtMs": { "type": "integer", "minimum": 0 },
+    "observedAtMs": { "type": "integer", "minimum": 0 },
+    "recordDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

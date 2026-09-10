@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/harness-event.schema.json",
+  "title": "hmCodex Canonical Harness Event",
+  "description": "Cross-platform durable event envelope. Provider wire messages and the local trajectory record are adapted into this shape before durable replication.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId", "schemaVersion", "kind", "runId", "aggregateType", "aggregateId", "sequence",
+    "aggregateVersion", "correlationId", "actorType", "actorId", "emittedAtMs", "observedAtMs",
+    "payload", "payloadDigest", "sensitivity", "protocolVersion", "appVersion",
+    "storageSchemaVersion", "policyVersion", "producerVersion"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "schemaVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "kind": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{1,120}$" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "aggregateType": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "aggregateId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "aggregateVersion": { "type": "integer", "minimum": 0 },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "causationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "actorType": { "enum": ["USER", "CORE", "MODEL", "ADAPTER", "PLUGIN", "SYSTEM"] },
+    "actorId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "emittedAtMs": { "type": "integer", "minimum": 0 },
+    "observedAtMs": { "type": "integer", "minimum": 0 },
+    "payload": { "type": "object", "maxProperties": 64 },
+    "payloadDigest": { "$ref": "#/$defs/digest" },
+    "sensitivity": { "enum": ["PUBLIC", "INTERNAL", "SOURCE", "SENSITIVE", "SECRET_REF", "SECURITY_AUDIT"] },
+    "protocolVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "appVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "storageSchemaVersion": { "type": "integer", "minimum": 0 },
+    "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "producerVersion": { "type": "string", "minLength": 1, "maxLength": 120 }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

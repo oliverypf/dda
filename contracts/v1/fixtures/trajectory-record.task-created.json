@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "event-fixture",
+  "runId": "run-fixture",
+  "sequence": 1,
+  "aggregateType": "TaskRun",
+  "aggregateId": "run-fixture",
+  "kind": "TaskRunCreated",
+  "actorType": "runtime",
+  "actorId": "hmcodex-runtime",
+  "payload": { "promptDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "requestedMode": "READ_ONLY" },
+  "payloadDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sensitivity": "SENSITIVE",
+  "redactionState": "REDACTED",
+  "protocolVersion": "1.0",
+  "appVersion": "0.1.0",
+  "storageSchemaVersion": 1,
+  "policyVersion": "runtime-safety-1",
+  "producerVersion": "hmcodex-runtime@0.1.0",
+  "emittedAtMs": 1788230400000,
+  "observedAtMs": 1788230400000,
+  "recordDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

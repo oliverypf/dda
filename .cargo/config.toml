@@ -1,0 +1,8 @@
+# hmCodex Windows x64 build toolchain.
+# Keep this explicit because the Visual Studio 18 Build Tools installation is
+# not always present on PATH when Cargo is launched from the desktop scripts.
+[build]
+target = 'x86_64-pc-windows-msvc'
+
+[target.x86_64-pc-windows-msvc]
+linker = 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\HostX64\x64\link.exe'

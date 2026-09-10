@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/agent-decision.schema.json",
+  "title": "hmCodex AgentDecisionRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decisionId", "schemaVersion", "runId", "stepId", "parentDecisionIds",
+    "agentInstanceId", "role", "roleContextId", "bindingSnapshotId",
+    "decisionType", "objectiveRef", "constraintSnapshotId", "featureSnapshotId",
+    "evidenceRefs", "assumptions", "options", "decisionSummary",
+    "selectionCriteria", "reasonCodes", "uncertaintyCodes", "expectedOutcome",
+    "outputRefs", "sensitivity", "createdAtMs", "status", "recordDigest"
+  ],
+  "properties": {
+    "decisionId": { "$ref": "#/$defs/id" },
+    "schemaVersion": { "const": "1.0" },
+    "runId": { "$ref": "#/$defs/id" },
+    "stepId": { "$ref": "#/$defs/id" },
+    "operationId": { "$ref": "#/$defs/id" },
+    "parentDecisionIds": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "supersedesDecisionId": { "$ref": "#/$defs/id" },
+    "agentInstanceId": { "$ref": "#/$defs/id" },
+    "role": { "$ref": "#/$defs/id" },
+    "roleContextId": { "$ref": "#/$defs/id" },
+    "bindingSnapshotId": { "$ref": "#/$defs/id" },
+    "modelInvocationId": { "$ref": "#/$defs/id" },
+    "promptTemplateVersion": { "$ref": "#/$defs/id" },
+    "decisionType": { "$ref": "#/$defs/id" },
+    "status": { "enum": ["PROPOSED", "COMMITTED", "REJECTED", "ABSTAINED", "INVALIDATED"] },
+    "objectiveRef": { "$ref": "#/$defs/id" },
+    "constraintSnapshotId": { "$ref": "#/$defs/id" },
+    "featureSnapshotId": { "$ref": "#/$defs/id" },
+    "evidenceRefs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/evidence" } },
+    "assumptions": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/assumption" } },
+    "options": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/option" } },
+    "selectedOptionId": { "$ref": "#/$defs/id" },
+    "decisionSummary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "selectionCriteria": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/id" } },
+    "reasonCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+    "uncertaintyCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+    "claimedConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "expectedOutcome": { "$ref": "#/$defs/expectation" },
+    "outputRefs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+    "sensitivity": { "enum": ["PUBLIC", "INTERNAL", "SOURCE", "SENSITIVE", "SECURITY_AUDIT"] },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 },
+    "committedAtMs": { "type": "integer", "minimum": 0 },
+    "lifecycleReasonCode": { "$ref": "#/$defs/code" },
+    "recordDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "code": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9_.:-]+$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidenceId", "evidenceType", "stance", "freshnessAtMs"],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/id" },
+        "eventId": { "$ref": "#/$defs/id" },
+        "artifactDigest": { "$ref": "#/$defs/digest" },
+        "scopeRef": { "$ref": "#/$defs/id" },
+        "evidenceType": { "$ref": "#/$defs/id" },
+        "stance": { "enum": ["SUPPORTS", "CONTRADICTS", "CONTEXT", "UNKNOWN"] },
+        "freshnessAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "assumption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assumptionId", "statement", "source", "testable"],
+      "properties": {
+        "assumptionId": { "$ref": "#/$defs/id" },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "source": { "enum": ["USER", "POLICY", "WORKSPACE", "MODEL_INFERENCE"] },
+        "testable": { "type": "boolean" },
+        "verificationRef": { "$ref": "#/$defs/id" }
+      }
+    },
+    "option": {
+      "type": "object", "additionalProperties": false,
+      "required": ["optionId", "actionKind", "summary", "requiredCapabilityIds", "evidenceRefs", "riskCodes", "rejectionReasonCodes"],
+      "properties": {
+        "optionId": { "$ref": "#/$defs/id" },
+        "actionKind": { "$ref": "#/$defs/id" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "requiredCapabilityIds": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+        "evidenceRefs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+        "expectedInformationGain": { "type": "number", "minimum": 0, "maximum": 1 },
+        "expectedQuality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "expectedCost": { "type": "number", "minimum": 0 },
+        "expectedLatencyMs": { "type": "number", "minimum": 0 },
+        "riskCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+        "rejectionReasonCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+        "outputDraftDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "expectation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["successCriteriaRefs", "predictedOutcomeCode", "predictedRiskCodes"],
+      "properties": {
+        "successCriteriaRefs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+        "predictedOutcomeCode": { "$ref": "#/$defs/id" },
+        "predictedProgress": { "type": "number", "minimum": 0, "maximum": 1 },
+        "predictedCost": { "type": "number", "minimum": 0 },
+        "predictedRiskCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } }
+      }
+    }
+  }
+}

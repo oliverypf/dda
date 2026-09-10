@@ -1,0 +1,20 @@
+✔ passes Responses function definitions and assembles argument deltas (74.805312ms)
+✔ passes Chat Completions function definitions and assembles tool-call deltas (25.252344ms)
+✔ keeps a valid tool-call id and name when later deltas send null fields (14.756406ms)
+✔ serializes Responses assistant tool calls and function outputs for a follow-up turn (17.905469ms)
+✔ serializes Chat Completions assistant tool calls and tool messages for a follow-up turn (17.270625ms)
+✔ uses OpenCode Go Chat Completions as the default provider instead of DeepSeek (10.680469ms)
+✔ sends configured extra headers and a generated OpenCode Go session header (17435.369531ms)
+✔ calls an OpenAI Responses endpoint and normalizes output_text deltas (17629.30375ms)
+✔ calls an OpenAI-compatible Chat Completions endpoint (17416.614375ms)
+✔ loads the OpenAI Responses route from a JSON config file (17563.9675ms)
+✔ restores a bounded prior-run context on the next task (35475.216875ms)
+✔ records a redacted failure event when model credentials are missing (17790.65125ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 124491.432187

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/execution-state.schema.json",
+  "title": "hmCodex Persisted Execution State",
+  "description": "The durable collection containing ActionIntent, Approval and PolicyLease records.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "records"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "records": {
+      "type": "array", "maxItems": 4096,
+      "items": {
+        "oneOf": [
+          { "$ref": "execution-approval.schema.json" },
+          { "$ref": "execution-lease.schema.json" },
+          { "$ref": "action-intent.schema.json" }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/plugin-governance-record.schema.json",
+  "title": "hmCodex Plugin Governance Record",
+  "description": "Governed plugin manifest and lifecycle state. Manifest contents remain extensible, but lifecycle and package digest are fixed fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pluginId", "version", "manifest", "source", "packageDigest", "state", "createdAtMs", "updatedAtMs", "recordDigest"],
+  "properties": {
+    "pluginId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "version": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "manifest": { "type": "object", "maxProperties": 128 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "packageDigest": { "$ref": "#/$defs/digest" },
+    "state": { "enum": ["DISCOVERED", "VALIDATING", "INSTALLED", "DISABLED", "ENABLED", "ACTIVE", "DEGRADED", "QUARANTINED", "REJECTED", "REMOVED"] },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 },
+    "transition": { "type": "object", "additionalProperties": true, "maxProperties": 8 },
+    "history": { "type": "array", "maxItems": 64, "items": { "type": "object", "additionalProperties": true, "maxProperties": 16 } },
+    "recordDigest": { "$ref": "#/$defs/digest" },
+    "lifecycleDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+}

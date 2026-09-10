@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/route-resolution.schema.json",
+  "title": "hmCodex Rule Route Resolution",
+  "description": "Provider-neutral result of classification and static role routing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["taskClass", "status", "reason", "roles"],
+  "properties": {
+    "taskClass": { "enum": ["inspect", "modify", "test", "unknown"] },
+    "status": { "enum": ["SELECTED", "BLOCKED"] },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "roles": { "type": "object", "maxProperties": 16, "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 160 } }
+  }
+}

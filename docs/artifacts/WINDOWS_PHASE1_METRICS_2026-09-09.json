@@ -1,0 +1,20 @@
+{
+  "generatedAtMs": 1788933946983,
+  "eventCount": 4119,
+  "receiptCount": 4119,
+  "commitAttempts": 1128,
+  "commitSuccesses": 1128,
+  "commitFailures": 0,
+  "commitSuccessRate": 1,
+  "commitBasis": "METERED_COMMITS",
+  "nonTerminalRuns": 1,
+  "nonTerminalMaintenanceRuns": 97,
+  "taskRunCount": 84,
+  "replayDurationMs": 540,
+  "storageBytes": 18704624,
+  "decisionCount": 137,
+  "outcomeCount": 133,
+  "unlinkedOutcomeCount": 4,
+  "runCount": 181,
+  "timelineCount": 4119
+}

@@ -1,0 +1,36 @@
+{
+  "status": "STALLED",
+  "summary": "Repeated action detected; new evidence is required.",
+  "promptDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "progress": 0.5,
+  "quality": 0.5,
+  "safety": 1,
+  "uncertainty": 0.1,
+  "evidence": [
+    "output:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "actions:duplicate:0-1"
+  ],
+  "failureCodes": ["REPEATED_ACTION", "NO_NEW_EVIDENCE"],
+  "nextAction": "DIAGNOSE_OR_REQUEST_NEW_EVIDENCE",
+  "verifierVersion": "rule-1.1",
+  "checks": [
+    {
+      "id": "output.non_empty",
+      "status": "PASS",
+      "message": "The model returned a non-empty result.",
+      "evidence": ["output:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+    },
+    {
+      "id": "actions.duplicates",
+      "status": "FAIL",
+      "message": "A repeated action fingerprint was detected.",
+      "evidence": ["actions:duplicate:0-1"]
+    },
+    {
+      "id": "paths.scope",
+      "status": "PASS",
+      "message": "All observed paths are inside the workspace.",
+      "evidence": ["sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"]
+    }
+  ]
+}

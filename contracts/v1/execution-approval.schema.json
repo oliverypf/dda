@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/execution-approval.schema.json",
+  "title": "hmCodex Persisted Approval",
+  "description": "One user approval record in the ActionIntent -> Approval -> Lease state machine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "recordId", "recordType", "state", "runId", "intentId",
+    "capability", "requestDigest", "displayedDigest", "operationId", "ownerPid",
+    "runtimeInstanceId", "policyVersion", "createdAtMs", "updatedAtMs",
+    "transitionHistory", "recordDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "recordId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "recordType": { "const": "approval" },
+    "state": { "enum": ["REQUESTED", "PRESENTED", "APPROVED", "DECLINED", "EXPIRED", "CANCELLED", "SUPERSEDED"] },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "intentId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "capability": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "requestDigest": { "$ref": "#/$defs/digest" },
+    "displayedDigest": { "$ref": "#/$defs/digest" },
+    "snapshotDigest": { "$ref": "#/$defs/digest" },
+    "expiresAt": { "type": "number", "minimum": 0 },
+    "bindingSnapshotDigest": { "$ref": "#/$defs/digest" },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "ownerPid": { "type": "integer", "minimum": 1 },
+    "runtimeInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 },
+    "transition": { "$ref": "#/$defs/transition" },
+    "transitionHistory": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/transition" } },
+    "recordDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "metadata", "atMs"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "to": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "metadata": { "$ref": "#/$defs/requestSummary" },
+        "atMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "requestSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 16,
+      "properties": {
+        "command": { "type": "string", "maxLength": 4096 },
+        "argsDigest": { "$ref": "#/$defs/digest" },
+        "argCount": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "maxLength": 2000 },
+        "cwd": { "type": "string", "maxLength": 2000 },
+        "contentDigest": { "$ref": "#/$defs/digest" },
+        "contentBytes": { "type": "integer", "minimum": 0 },
+        "envDigest": { "$ref": "#/$defs/digest" },
+        "envKeyCount": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,460 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/harness-read-model.schema.json",
+  "title": "hmCodex HarnessReadModel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectionVersion",
+    "connection",
+    "runtime",
+    "threads",
+    "subAgents",
+    "approvals",
+    "timeline",
+    "workspace",
+    "composer"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "projectionVersion": { "type": "integer", "minimum": 0 },
+    "connection": { "$ref": "#/$defs/connection" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "activeRun": { "$ref": "#/$defs/run" },
+    "activeThreadId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "resumeThreadId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "threads": {
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/thread" }
+    },
+    "subAgents": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/subAgent" }
+    },
+    "approvals": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/approval" }
+    },
+    "decisions": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "feedback": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/feedbackSummary" }
+    },
+    "evolutionControl": { "$ref": "#/$defs/evolutionControl" },
+    "memories": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/memory" }
+    },
+    "dreamRuns": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/dreamRun" }
+    },
+    "plugins": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/plugin" }
+    },
+    "evolutionProposals": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/evolutionProposal" }
+    },
+    "evolutionReports": {
+      "type": "array",
+      "maxItems": 2048,
+      "items": { "$ref": "#/$defs/evolutionReport" }
+    },
+    "timeline": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/timelineItem" }
+    },
+    "workspace": { "$ref": "#/$defs/workspace" },
+    "composer": { "$ref": "#/$defs/composer" }
+  },
+  "$defs": {
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "mode", "label"],
+      "properties": {
+        "state": {
+          "enum": ["DISCONNECTED", "CONNECTING", "READY", "ERROR"]
+        },
+        "mode": { "enum": ["MOCK", "LOCAL_RUNTIME"] },
+        "label": { "type": "string", "maxLength": 160 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "version",
+        "readOnly",
+        "workspaceRead",
+        "commandExecution",
+        "networkSideEffects"
+      ],
+      "properties": {
+        "platform": { "enum": ["WINDOWS", "WEB_PREVIEW"] },
+        "version": { "type": "string", "minLength": 1 },
+        "readOnly": { "const": true },
+        "workspaceRead": { "type": "boolean" },
+        "commandExecution": { "type": "boolean" },
+        "networkSideEffects": { "const": false },
+        "runtimeReady": { "type": "boolean" },
+        "nodeVersion": { "type": ["string", "null"], "maxLength": 80 },
+        "configLoaded": { "type": "boolean" },
+        "model": {
+          "type": ["object", "null"],
+          "required": ["provider", "protocol", "model"],
+          "properties": {
+            "provider": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "protocol": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "model": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "cwd", "turnCount", "createdAtMs", "updatedAtMs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "cwd": { "type": "string", "maxLength": 2000 },
+        "turnCount": { "type": "integer", "minimum": 0 },
+        "createdAtMs": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 },
+        "forkedFrom": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "state": { "enum": ["IDLE", "RUNNING", "PAUSED", "FAILED", "COMPLETED"] },
+        "checkpoint": { "type": "object", "additionalProperties": true, "maxProperties": 64 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "title", "state", "startedAtMs"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "state": {
+          "enum": [
+            "CREATED",
+            "CLASSIFYING",
+            "PRECHECKING",
+            "ROUTING",
+            "ALLOCATING_CONTEXTS",
+            "PLANNING",
+            "EXECUTING_READ",
+            "SAFETY_EVALUATING",
+            "WAITING_APPROVAL",
+            "EXECUTING",
+            "VERIFYING",
+            "DIAGNOSING",
+            "RECOVERING",
+            "PAUSING",
+            "PAUSED",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "PAUSED_UNSUPPORTED"
+          ]
+        },
+        "startedAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "subAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentId", "name", "task", "state", "startedAtMs", "updatedAtMs"],
+      "properties": {
+        "agentId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "task": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "state": { "enum": ["STARTING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"] },
+        "startedAtMs": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "capability", "requestDigest", "state", "createdAtMs"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "capability": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "requestDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "intentId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "approvalId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "approvalExpiresAt": { "type": "number", "minimum": 0 },
+        "leaseId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "leaseExpiresAt": { "type": "number", "minimum": 0 },
+        "risk": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "maxProperties": 8,
+          "properties": {
+            "capability": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "snapshotDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "command": { "type": "string", "maxLength": 4096 },
+        "path": { "type": "string", "maxLength": 1000 },
+        "cwd": { "type": "string", "maxLength": 1000 },
+        "state": { "enum": ["REQUESTED", "APPROVED", "DECLINED", "EXPIRED", "CANCELLED"] },
+        "createdAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["memoryId", "statement", "scope", "confidence", "status", "createdAtMs", "updatedAtMs"],
+      "properties": {
+        "memoryId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "runId": { "type": "string", "maxLength": 240 },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sourceEventIds": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "status": { "enum": ["PROPOSED", "VERIFIED", "REJECTED", "ACTIVE", "RETRACTED", "EXPIRED", "PRUNED"] },
+        "validFromMs": { "type": "integer", "minimum": 0 },
+        "expiresAtMs": { "type": "integer", "minimum": 0 },
+        "createdAtMs": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 },
+        "verifiedAtMs": { "type": "integer", "minimum": 0 },
+        "activatedAtMs": { "type": "integer", "minimum": 0 },
+        "verification": { "type": "string", "maxLength": 500 },
+        "useCount": { "type": "integer", "minimum": 0 },
+        "lastUsedAtMs": { "type": "integer", "minimum": 0 },
+        "lastUsedRunDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "untrainable": { "type": "boolean" },
+        "untrainableAtMs": { "type": "integer", "minimum": 0 },
+        "history": { "type": "array", "maxItems": 64, "items": { "type": "object", "additionalProperties": true, "maxProperties": 8 } },
+        "recordDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "lifecycleDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "dreamRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "projectId", "state", "startedAtMs"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "state": { "enum": ["WAITING_GATE", "RUNNING", "COMPLETED", "CANCELLED", "FAILED"] },
+        "phase": { "enum": ["ORIENT", "GATHER", "CONSOLIDATE", "VERIFY", "REVIEW", "PRUNE"] },
+        "startedAtMs": { "type": "integer", "minimum": 0 },
+        "finishedAtMs": { "type": "integer", "minimum": 0 },
+        "phaseUpdatedAtMs": { "type": "integer", "minimum": 0 },
+        "phaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "candidateDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "candidateCount": { "type": "integer", "minimum": 0 },
+        "gateReasons": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "errorCode": { "type": "string", "maxLength": 120 },
+        "checkpoint": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "recordDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "status", "optionCount"],
+      "properties": {
+        "decisionId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "decisionType": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "stepId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "agentInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "parentDecisionIds": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
+        "supersedesDecisionId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "optionCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "options": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/decisionOption" } },
+        "selectedOptionId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "reasonCodes": { "type": "array", "maxItems": 16, "items": { "type": "string", "minLength": 1, "maxLength": 80 } },
+        "selectionCriteria": { "type": "array", "maxItems": 16, "items": { "type": "string", "minLength": 1, "maxLength": 80 } },
+        "outcomeStatus": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "eventSequence": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "decisionOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optionId", "rejectionReasonCodes"],
+      "properties": {
+        "optionId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "actionKind": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "expectedQuality": { "type": "number", "minimum": 0, "maximum": 1 },
+        "expectedCost": { "type": "number", "minimum": 0 },
+        "expectedLatencyMs": { "type": "number", "minimum": 0 },
+        "rejectionReasonCodes": { "type": "array", "maxItems": 16, "items": { "type": "string", "minLength": 1, "maxLength": 80 } }
+      }
+    },
+    "feedbackSummary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["feedbackId"],
+      "properties": {
+        "feedbackId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "outcomeStatus": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "eventSequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evolutionControl": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "changedAtMs"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "actor": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "changedAtMs": { "type": "integer", "minimum": 0 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pluginId", "version", "manifest", "source", "packageDigest", "state", "createdAtMs", "updatedAtMs"],
+      "properties": {
+        "pluginId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "manifest": { "type": "object", "maxProperties": 128 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "packageDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "state": { "enum": ["DISCOVERED", "VALIDATING", "INSTALLED", "DISABLED", "ENABLED", "ACTIVE", "DEGRADED", "QUARANTINED", "REJECTED", "REMOVED"] },
+        "createdAtMs": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 },
+        "transition": { "type": "object", "additionalProperties": true, "maxProperties": 8 },
+        "history": { "type": "array", "maxItems": 64, "items": { "type": "object", "additionalProperties": true, "maxProperties": 16 } },
+        "recordDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "lifecycleDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "evolutionProposal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["proposalId", "candidateId", "status", "proposalDigest", "createdAtMs", "updatedAtMs"],
+      "properties": {
+        "proposalId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "candidateId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "status": { "enum": ["PROPOSED", "VALIDATING", "SHADOW", "CANARY", "ACTIVE", "REJECTED", "QUARANTINED", "ROLLED_BACK"] },
+        "proposalDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "createdAtMs": { "type": "integer", "minimum": 0 },
+        "updatedAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evolutionReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reportId", "proposalId", "stage", "evaluatedAtMs", "reportDigest"],
+      "properties": {
+        "reportId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "proposalId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "stage": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "datasetDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "baseline": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "candidate": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "decision": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "creditBlame": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "evaluatedAtMs": { "type": "integer", "minimum": 0 },
+        "reportDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "timelineItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "kind", "title", "body", "status", "createdAtMs"],
+      "properties": {
+        "itemId": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["USER", "AGENT", "STATUS", "WORKSPACE", "ERROR"]
+        },
+        "title": { "type": "string", "maxLength": 120 },
+        "body": { "type": "string", "maxLength": 100000 },
+        "status": { "enum": ["PENDING", "STREAMING", "COMPLETE", "ERROR"] },
+        "createdAtMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workspaceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "relativePath", "kind", "sizeBytes"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "relativePath": { "type": "string" },
+        "kind": { "enum": ["DIRECTORY", "FILE"] },
+        "sizeBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["granted", "rootLabel", "currentPath", "entries", "stale"],
+      "properties": {
+        "granted": { "type": "boolean" },
+        "rootLabel": { "type": "string", "maxLength": 500 },
+        "currentPath": { "type": "string", "maxLength": 1000 },
+        "entries": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/workspaceEntry" }
+        },
+        "stale": { "type": "boolean" },
+        "selectedFile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "relativePath",
+            "content",
+            "contentDigest",
+            "totalBytes",
+            "truncated",
+            "binary"
+          ],
+          "properties": {
+            "relativePath": { "type": "string" },
+            "content": { "type": "string" },
+            "contentDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+            "totalBytes": { "type": "integer", "minimum": 0 },
+            "truncated": { "type": "boolean" },
+            "binary": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "composer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "enabled", "placeholder"],
+      "properties": {
+        "mode": { "enum": ["READ_ONLY", "CONTROLLED"] },
+        "enabled": { "type": "boolean" },
+        "placeholder": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/runtime-event.schema.json",
+  "title": "hmCodex Runtime Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "schemaVersion", "runId", "sequence", "kind", "payload", "emittedAtMs"],
+  "properties": {
+    "type": { "const": "runtime_event" },
+    "schemaVersion": { "const": "1.0" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{1,120}$" },
+    "payload": { "type": "object", "maxProperties": 32 },
+    "emittedAtMs": { "type": "integer", "minimum": 0 }
+  }
+}

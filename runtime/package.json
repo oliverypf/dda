@@ -1,0 +1,19 @@
+{
+  "name": "@hmcodex/windows-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=24.0.0" },
+  "type": "module",
+  "description": "Windows Cordis runtime for the hmCodex read-only MVP",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test --test-concurrency=6",
+    "test:parallel": "node --test --test-concurrency=6",
+    "test:serial": "node --test --test-concurrency=1"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm-deepseek": "^0.1.1-rc.2"
+  }
+}

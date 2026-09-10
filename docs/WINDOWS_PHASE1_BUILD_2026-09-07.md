@@ -1,0 +1,13 @@
+# Phase 1 Windows 构建记录（2026-09-07）
+
+设置 `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` 后，在 `desktop` 执行 `npm run build:windows`。构建 session 22321 已以 exit code 0 结束，MSI 与 NSIS 均成功生成。此前构建因运行中的 EXE 占用失败；用户关闭应用后本次重新构建成功。
+
+产物位于 `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/`。以下为本次构建完成后读取的 SHA-512，不适用于其他构建。
+
+| 产物 | 字节数 | SHA-512 |
+| --- | ---: | --- |
+| `hmcodex-desktop.exe` | 9556480 | `CB6890C1387A70C7442F048F168F35F116E04CEFA18A5FFC402ECA57807A11AAD53216D25F8DF0F1895DD679ADB317F463406A5BE2FD368BF1CF38C804520699` |
+| `bundle/msi/hmCodex_0.1.0_x64_en-US.msi` | 3809800 | `C583836E378FEA2AC6CD84E9F17AEBF665AC52454D0DB02F593EB08307EF15B360CD1A997666CDA45149B2165113502CB44A881EDB119C82AE25D5B89D6A6F8D` |
+| `bundle/nsis/hmCodex_0.1.0_x64-setup.exe` | 2427439 | `B9D427906EAA95F5EB34368B6C067C30D351A7BCEE58E50ECEBD21933991F1847903C751D9890C2678E16CC26770C63640855B1126026CEA731A9AA5B7A021E1` |
+
+验证边界：本记录证明固定渠道构建命令及打包完成，不证明安装、启动后渠道展示、实际界面操作、迁移或完整 M7 验收。此次未启动或安装产物；不复用旧版本的启动检查。M1–M7 的剩余实现与验收仍需继续。

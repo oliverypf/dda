@@ -1,0 +1,178 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Context } from '@deepseek-ai/cordis';
+import { cordisPlugin } from '../src/plugins/cordis-plugin.mjs';
+import { taskRunnerPlugin } from '../src/plugins/task-runner.mjs';
+import { ToolRegistry, toolRegistryPlugin } from '../src/tool-registry.mjs';
+import { createRuleVerifier } from '../src/rule-verifier.mjs';
+
+const workspace = {
+  granted: true,
+  rootLabel: 'fixture',
+  snapshotDigest: 'sha256:snapshot',
+  entries: [],
+  sections: []
+};
+
+test('runs a model-requested tool and sends its result into the next round', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'fixture.echo',
+    description: 'Echo fixture input.',
+    inputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string', minLength: 1, maxLength: 20 } },
+      required: ['text'],
+      additionalProperties: false
+    },
+    handler: ({ text }) => ({ text: text.toUpperCase() })
+  });
+  const requests = [];
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture',
+      protocol: 'fixture',
+      model: 'fixture-model',
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: 'tool-call', id: 'call_fixture', name: 'fixture.echo', arguments: '{"text":"hello"}' };
+          yield { type: 'finish', reason: { kind: 'tool-calls' } };
+          return;
+        }
+        yield { type: 'text-delta', text: '工具结果已处理' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      }
+    });
+  }, 'fixture-model');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    const result = await root.taskRunner.run({ prompt: 'run fixture', workspace });
+    assert.equal(result.text, '工具结果已处理');
+    assert.equal(result.toolRounds, 1);
+    assert.equal(result.toolCallCount, 1);
+    assert.equal(requests.length, 2);
+    const assistant = requests[1].messages.find((message) => message.role === 'assistant');
+    assert.equal(assistant.content.some((block) => block.type === 'tool-call' && block.id === 'call_fixture'), true);
+    const toolResult = requests[1].messages.find((message) => message.source?.kind === 'tool');
+    assert.equal(toolResult.content[0].toolCallId, 'call_fixture');
+    assert.match(toolResult.content[0].content[0].text, /HELLO/);
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
+test('stops at the configured tool-round cap instead of allowing an unbounded loop', async () => {
+  // 生产默认不限轮数；此用例显式设置上限来验证熔断行为本身。
+  process.env.HMCODEX_MAX_TOOL_ROUNDS = '4';
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'fixture.noop',
+    description: 'No-op fixture.',
+    inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    handler: () => ({ ok: true })
+  });
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+      async *stream() {
+        yield { type: 'tool-call', id: `call_${Date.now()}_${Math.random()}`, name: 'fixture.noop', arguments: '{}' };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      }
+    });
+  }, 'fixture-loop');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    await assert.rejects(root.taskRunner.run({ prompt: 'loop', workspace }), /TOOL_LOOP_LIMIT/);
+  } finally {
+    delete process.env.HMCODEX_MAX_TOOL_ROUNDS;
+    await root.fiber.dispose();
+  }
+});
+
+test('preserves recoverable tool error codes and lets the model switch paths', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'fixture.read',
+    description: 'Read a fixture path.',
+    inputSchema: {
+      type: 'object',
+      properties: { path: { type: 'string', minLength: 1 } },
+      required: ['path'],
+      additionalProperties: false
+    },
+    handler: ({ path }) => {
+      if (path === 'unsupported.txt') {
+        const error = new Error('WORKSPACE_UNSUPPORTED_FILE');
+        error.code = 'WORKSPACE_UNSUPPORTED_FILE';
+        throw error;
+      }
+      return { path, text: 'fixture content' };
+    }
+  });
+  const events = [];
+  const requests = [];
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture',
+      protocol: 'fixture',
+      model: 'fixture-model',
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: 'tool-call', id: 'call_bad', name: 'fixture.read', arguments: '{"path":"unsupported.txt"}' };
+          yield { type: 'finish', reason: { kind: 'tool-calls' } };
+          return;
+        }
+        if (requests.length === 2) {
+          yield { type: 'tool-call', id: 'call_good', name: 'fixture.read', arguments: '{"path":"README.md"}' };
+          yield { type: 'finish', reason: { kind: 'tool-calls' } };
+          return;
+        }
+        yield { type: 'text-delta', text: '已换用可读文件' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      }
+    });
+  }, 'fixture-recoverable');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    const result = await root.taskRunner.run({
+      prompt: 'recover from an unsupported file',
+      workspace,
+      onEvent: (event) => events.push(event)
+    });
+    assert.equal(result.text, '已换用可读文件');
+    assert.equal(result.toolRounds, 2);
+    const failedResult = events.find((event) => event.kind === 'tool.result' && event.id === 'call_bad');
+    assert.equal(failedResult.ok, false);
+    assert.equal(failedResult.errorCode, 'WORKSPACE_UNSUPPORTED_FILE');
+    const goodResult = events.find((event) => event.kind === 'tool.result' && event.id === 'call_good');
+    assert.equal(goodResult.ok, true);
+    const actions = [
+      { id: 'call_bad', name: 'fixture.read', state: 'FAILED', errorCode: failedResult.errorCode, argumentsDigest: `sha256:${'1'.repeat(64)}` },
+      { id: 'call_good', name: 'fixture.read', state: 'SUCCEEDED', outputDigest: goodResult.outputDigest, argumentsDigest: `sha256:${'2'.repeat(64)}` }
+    ];
+    const verification = createRuleVerifier().verify({
+      prompt: 'recover from an unsupported file',
+      output: result.text,
+      workspace,
+      toolRounds: result.toolRounds,
+      toolCallCount: result.toolCallCount,
+      executionMode: 'READ_ONLY',
+      actions
+    });
+    assert.equal(verification.status, 'CONTINUE');
+    assert.equal(verification.failureCodes.includes('ACTION_FAILED'), false);
+  } finally {
+    await root.fiber.dispose();
+  }
+});

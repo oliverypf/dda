@@ -1,0 +1,14 @@
+{
+  "type": "runtime_event",
+  "schemaVersion": "1.0",
+  "runId": "run-fixture",
+  "sequence": 7,
+  "kind": "approval.requested",
+  "payload": {
+    "requestId": "approval-fixture",
+    "capability": "shell.execute",
+    "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "cwd": "workspace"
+  },
+  "emittedAtMs": 1788230400000
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/role-context.schema.json",
+  "title": "hmCodex Role Context",
+  "description": "Persisted RoleSessionManager context binding used during Thread recovery.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contextId", "runId", "role", "isolation", "state", "ownerPid", "runtimeInstanceId", "metadata", "createdAtMs", "updatedAtMs"],
+  "properties": {
+    "contextId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "role": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "model": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "isolation": { "enum": ["DEDICATED", "EXPLICIT_SHARED"] },
+    "state": { "enum": ["ALLOCATING", "READY", "BUSY", "INTERRUPTING", "CLOSING", "CLOSED", "FAILED"] },
+    "ownerPid": { "type": "integer", "minimum": 1 },
+    "runtimeInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "metadata": { "type": "object", "maxProperties": 64 },
+    "adapterIdentity": { "type": ["string", "object"], "maxProperties": 64 },
+    "adapterIdentityDigest": { "$ref": "#/$defs/digest" },
+    "threadId": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "bindingSnapshot": { "type": ["string", "object", "array"], "maxProperties": 128 },
+    "bindingSnapshotDigest": { "$ref": "#/$defs/digest" },
+    "reason": { "type": "string", "maxLength": 500 },
+    "replacedByContextId": { "type": "string", "maxLength": 240 },
+    "createdAtMs": { "type": "integer", "minimum": 0 },
+    "updatedAtMs": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+}

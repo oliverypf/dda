@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/verifier-report.schema.json",
+  "title": "hmCodex VerifierReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "checks"],
+  "properties": {
+    "status": { "enum": ["PASS", "FAIL", "UNKNOWN", "CONTINUE", "STALLED", "UNCERTAIN"] },
+    "summary": { "type": "string", "maxLength": 500 },
+    "promptDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "quality": { "type": "number", "minimum": 0, "maximum": 1 },
+    "safety": { "type": "number", "minimum": 0, "maximum": 1 },
+    "uncertainty": { "type": "number", "minimum": 0, "maximum": 1 },
+    "evidence": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "failureCodes": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[A-Z0-9_.-]+$" }
+    },
+    "nextAction": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "verifierVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "checks": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "message"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "status": { "enum": ["PASS", "FAIL", "UNKNOWN", "SKIPPED"] },
+          "message": { "type": "string", "maxLength": 500 },
+          "evidence": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 200 } }
+        }
+      }
+    }
+  }
+}

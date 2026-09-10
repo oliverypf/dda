@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "recordId": "intent-fixture",
+  "recordType": "intent",
+  "intentId": "intent-fixture",
+  "runId": "run-fixture",
+  "capability": "shell.execute",
+  "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "operationId": "operation-fixture",
+  "scopeDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "bindingSnapshotDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "executorIdentity": "restricted-windows-executor@0.1.0",
+  "ownerPid": 1234,
+  "runtimeInstanceId": "runtime-fixture",
+  "policyVersion": "runtime-safety-1",
+  "requestSummary": { "command": "node", "argCount": 1 },
+  "state": "WAITING_APPROVAL",
+  "createdAtMs": 1,
+  "updatedAtMs": 2,
+  "transitionHistory": [],
+  "recordDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

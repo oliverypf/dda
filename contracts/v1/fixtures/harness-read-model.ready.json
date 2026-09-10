@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.0",
+  "projectionVersion": 1,
+  "connection": {
+    "state": "READY",
+    "mode": "MOCK",
+    "label": "本地演示运行时已就绪"
+  },
+  "runtime": {
+    "platform": "WEB_PREVIEW",
+    "version": "0.1.0",
+    "readOnly": true,
+    "workspaceRead": true,
+    "commandExecution": false,
+    "networkSideEffects": false
+  },
+  "threads": [],
+  "subAgents": [],
+  "approvals": [],
+  "timeline": [
+    {
+      "itemId": "welcome",
+      "kind": "AGENT",
+      "title": "hmCodex",
+      "body": "Windows 只读工作台已就绪。可以检查项目、阅读文件并整理下一步。",
+      "status": "COMPLETE",
+      "createdAtMs": 1788230400000
+    }
+  ],
+  "workspace": {
+    "granted": false,
+    "rootLabel": "尚未授权工作区",
+    "currentPath": "",
+    "entries": [],
+    "stale": false
+  },
+  "composer": {
+    "mode": "READ_ONLY",
+    "enabled": true,
+    "placeholder": "描述需要检查或分析的任务"
+  }
+}

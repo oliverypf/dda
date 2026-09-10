@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hmcodex.local/contracts/v1/decision-outcome.schema.json",
+  "title": "hmCodex DecisionOutcome",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "outcomeId", "schemaVersion", "decisionId", "runId", "status", "sourceType",
+    "sourceId", "executionEventIds", "verifierReportIds", "userFeedbackEventIds",
+    "observedEffects", "safetyOutcomeCodes", "creditAssignments", "blameAssignments",
+    "evaluatorVersion", "linkedAtMs", "outcomeDigest"
+  ],
+  "properties": {
+    "outcomeId": { "$ref": "#/$defs/id" },
+    "schemaVersion": { "const": "1.0" },
+    "decisionId": { "$ref": "#/$defs/id" },
+    "runId": { "$ref": "#/$defs/id" },
+    "status": { "enum": ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED", "NOT_EXECUTED", "UNKNOWN"] },
+    "sourceType": { "enum": ["coordinator", "verifier", "system", "user"] },
+    "sourceId": { "$ref": "#/$defs/id" },
+    "executionEventIds": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/id" } },
+    "verifierReportIds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+    "userFeedbackEventIds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+    "observedEffects": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+    "progressDelta": { "type": "number", "minimum": -1, "maximum": 1 },
+    "qualityScore": { "type": "number", "minimum": 0, "maximum": 1 },
+    "safetyOutcomeCodes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/code" } },
+    "actualCost": { "type": "number", "minimum": 0 },
+    "actualLatencyMs": { "type": "number", "minimum": 0 },
+    "creditAssignments": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/assignment" } },
+    "blameAssignments": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/assignment" } },
+    "linkedAtMs": { "type": "integer", "minimum": 0 },
+    "evaluatorVersion": { "$ref": "#/$defs/id" },
+    "outcomeDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "code": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9_.:-]+$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "assignment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["subjectId"],
+      "properties": {
+        "subjectId": { "$ref": "#/$defs/id" },
+        "role": { "$ref": "#/$defs/id" },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "weight": { "type": "number", "minimum": -1, "maximum": 1 }
+      }
+    }
+  }
+}

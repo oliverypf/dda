@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "recordId": "approval-fixture",
+  "recordType": "approval",
+  "state": "PRESENTED",
+  "runId": "run-fixture",
+  "intentId": "intent-fixture",
+  "capability": "shell.execute",
+  "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "displayedDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "expiresAt": 1788230405000,
+  "bindingSnapshotDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "operationId": "operation-fixture",
+  "ownerPid": 1234,
+  "runtimeInstanceId": "runtime-fixture",
+  "policyVersion": "runtime-safety-1",
+  "createdAtMs": 1,
+  "updatedAtMs": 2,
+  "transitionHistory": [],
+  "recordDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

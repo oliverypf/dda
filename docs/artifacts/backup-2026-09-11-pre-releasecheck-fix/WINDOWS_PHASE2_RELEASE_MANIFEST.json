@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "HMCODEX_VERSION_MANIFEST",
+  "generatedAtMs": 1789049530009,
+  "releaseChannel": "WINDOWS_PHASE1_5_CONTROLLED",
+  "versions": {
+    "appVersion": "0.1.0",
+    "producerVersion": "hmcodex-runtime@0.1.0",
+    "policyVersion": "runtime-safety-1",
+    "protocolVersion": "1.0",
+    "storageSchemaVersion": 1
+  },
+  "sbomDigest": "sha256:2319998a5812788cb8b3080a9ebc9cbfd192cc68d68293b9ad2e771945849a1a",
+  "pluginLockDigest": "sha256:83f83454409bb88ec1182a8e9124713b441bda169ee638538de509402e5f5909",
+  "modelLockDigest": "sha256:bde939fc43e18657b8303417c1ae6a3b6ad6fdd39511a8166c0ff6f12ae9244c",
+  "releaseDecisionDigest": "sha256:fe72aef93d51d2da2f468405c471edb98812246463545c68dd0a129a95d1bf0f",
+  "artifacts": [],
+  "evidence": [
+    {
+      "name": "releaseCheck",
+      "path": "..\\docs\\artifacts\\WINDOWS_PHASE2_RELEASE_CHECK_2026-09-10.json",
+      "digest": "sha256:c2aad7e69d4029ea4cf5d0b25fa5867902d51ebea03affdecbcde1b762fbaf1f",
+      "ok": true
+    },
+    {
+      "name": "w10Evidence",
+      "path": "..\\docs\\artifacts\\WINDOWS_PHASE2_W10_EVIDENCE.json",
+      "digest": "sha256:354d05da8d004d04e2ce5fd27e28c6858ada9b1f251f51546b25d972123d69f4",
+      "ok": false,
+      "code": "W10_NOT_READY",
+      "blockingReasons": [
+        "LONG_RUN_WINDOW_INCOMPLETE",
+        "RETENTION_PARTIAL",
+        "RELEASE_DECISION_REPORT_MISSING",
+        "REAL_WORKSPACE_OBSERVATION_MISSING"
+      ]
+    },
+    {
+      "name": "retentionObservation",
+      "path": "..\\docs\\artifacts\\WINDOWS_PHASE2_RETENTION_OBSERVATION.json",
+      "digest": "sha256:33a1eb6f961c74a0da9e9d6f50055a1619e299cffbbbb1be3932543661db365c",
+      "ok": true
+    }
+  ]
+}

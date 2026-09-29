@@ -1,0 +1,4 @@
+hmCodex_0.1.0_x64-setup.exe /S (fresh per-machine install) exit=0
+installed desktop exe sha256=1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154
+installed runtime index sha256=86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035
+registry={"hive":"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall","key":"hmCodex","displayName":"hmCodex","version":"0.1.0","installLocation":"\"C:\\Program Files\\hmCodex\"","uninstallString":"\"C:\\Program Files\\hmCodex\\uninstall.exe\""}

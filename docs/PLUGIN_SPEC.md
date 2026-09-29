@@ -5,7 +5,7 @@
 
 ## 1. 目标与边界
 
-Plugin 用于扩展 Agent、Skill、Verifier、Model Provider、Executor、Workspace 和 UI contribution，但不能改变 Harness Core 状态机、安全优先级或事件事实。插件化的目标是可替换和可治理，不是任意代码执行。
+Plugin 用于扩展 Agent、Skill、确定性 Rule Verifier、Model Provider、Executor、Workspace 和 UI contribution，但不能改变 Harness Core 状态机、安全优先级或事件事实。语义决策统一通过 Jev Decision Plane，不注册独立语义 Verifier 或 Candidate Judge 插件。插件化的目标是可替换和可治理，不是任意代码执行。
 
 HarmonyOS 客户端生产版默认只运行随应用签名发布、编译期注册的 ArkTS/HAR/HSP 插件。在线发现的第三方能力作为远端 Adapter/Executor 接入；除非目标 HarmonyOS 版本、签名和商店政策明确支持，否则禁止下载并在应用进程中执行新 ArkTS/Native 代码。
 
@@ -15,7 +15,7 @@ HarmonyOS 客户端生产版默认只运行随应用签名发布、编译期注�
 | --- | --- | --- |
 | `agent` | 角色策略、提示和计划转换 | 只读，无 I/O |
 | `skill` | 领域说明、模板、资源和受控工作流 | 只读，调用声明 Port |
-| `verifier` | 确定性或语义验证 | 只读证据 |
+| `verifier` | 确定性规则验证 | 只读证据 |
 | `model-provider` | 实现 ModelInvocationPort | 外部模型连接 |
 | `executor` | 实现 ExecutorPort | 仅租约范围内副作用 |
 | `workspace` | 实现 WorkspacePort | scope 内读取/snapshot |
@@ -150,7 +150,7 @@ Plugin 不得自行请求不存在于 manifest 的权限；运行时发现需要
 
 ## 8. 隔离与资源
 
-- Agent/Skill/Verifier 默认无系统 API 访问，只接收最小输入。
+- Agent/Skill/Rule Verifier 默认无系统 API 访问，只接收最小输入；Jev 只接收经过裁剪的证据和有限候选。
 - CPU 密集型可信插件可使用 TaskPool；常驻隔离逻辑可使用 Worker，并遵守 Sendable/消息复制限制。
 - 远端插件使用独立认证连接、请求大小、并发、deadline 和速率限制。
 - Executor 按 workspace/run 隔离进程、容器或沙箱；禁止多个不可信租户共享可写目录。

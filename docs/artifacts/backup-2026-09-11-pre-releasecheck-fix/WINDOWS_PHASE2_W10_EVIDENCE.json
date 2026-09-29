@@ -1,0 +1,376 @@
+{
+  "schemaVersion": "1.1",
+  "artifact": "WINDOWS_PHASE2_W10_EVIDENCE",
+  "startedAt": "2026-09-11T01:28:56.803Z",
+  "execution": {
+    "hostPlatform": "win32",
+    "node": "v24.19.0",
+    "installedPackage": true,
+    "packageEvidence": [
+      {
+        "kind": "INSTALLED_BINARY",
+        "path": "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+        "bytes": 9765376,
+        "modifiedAtMs": 1789089126000,
+        "digest": "sha256:74696f99feacb69a12038402a81a8d43e75140e0527f81abaddfeb65bbfce6ff"
+      },
+      {
+        "kind": "INSTALLED_RUNTIME",
+        "path": "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+        "bytes": 288405,
+        "modifiedAtMs": 1789052268000,
+        "digest": "sha256:27583f27a4a6f2e9a259d10f21c4b52d9d2602ccd65a0422a936d58a58de2393"
+      },
+      {
+        "kind": "UNINSTALLER",
+        "path": "C:\\Program Files\\hmCodex\\uninstall.exe",
+        "bytes": 82364,
+        "modifiedAtMs": 1789089720168.0383,
+        "digest": "sha256:739d2380303c31ebd7ef8eb27e7c9bd5d593c9198da58671603f042189a829b1"
+      }
+    ],
+    "evidenceStore": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "drillsExecuted": true
+  },
+  "install": {
+    "status": "OBSERVED",
+    "evidenceClass": "REAL_EXECUTION",
+    "observed": [
+      {
+        "kind": "INSTALLED_BINARY",
+        "path": "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+        "bytes": 9765376,
+        "modifiedAtMs": 1789089126000,
+        "digest": "sha256:74696f99feacb69a12038402a81a8d43e75140e0527f81abaddfeb65bbfce6ff"
+      },
+      {
+        "kind": "INSTALLED_RUNTIME",
+        "path": "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+        "bytes": 288405,
+        "modifiedAtMs": 1789052268000,
+        "digest": "sha256:27583f27a4a6f2e9a259d10f21c4b52d9d2602ccd65a0422a936d58a58de2393"
+      },
+      {
+        "kind": "UNINSTALLER",
+        "path": "C:\\Program Files\\hmCodex\\uninstall.exe",
+        "bytes": 82364,
+        "modifiedAtMs": 1789089720168.0383,
+        "digest": "sha256:739d2380303c31ebd7ef8eb27e7c9bd5d593c9198da58671603f042189a829b1"
+      }
+    ],
+    "lifecycle": {
+      "evidenceClass": "REAL_EXECUTION",
+      "status": "VERIFIED",
+      "code": null,
+      "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\nsis-lifecycle-result.json",
+      "installer": "NSIS_PER_MACHINE",
+      "elevated": true,
+      "finishedAtMs": 1789089985313,
+      "expectedRuntimeSha256": "27583f27a4a6f2e9a259d10f21c4b52d9d2602ccd65a0422a936d58a58de2393",
+      "requiredSteps": [
+        "install",
+        "upgrade",
+        "migration",
+        "rollback",
+        "uninstall"
+      ],
+      "missingSteps": [],
+      "failedSteps": [],
+      "steps": {
+        "install": {
+          "status": "VERIFIED",
+          "evidenceClass": "REAL_EXECUTION",
+          "elevated": true,
+          "exitCode": 0,
+          "command": "hmCodex_0.1.0_x64-setup.exe /S (fresh per-machine install after uninstall)",
+          "log": {
+            "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-install.log",
+            "bytes": 518,
+            "sha256": "6e752f2c7abe7676a26ada605413257a9260c5f6bde89c06da88e5977935818a"
+          },
+          "stepFile": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\steps-nsis\\install.json",
+          "stepFileDigestVerified": true,
+          "assertions": [
+            {
+              "name": "exitCodeZero",
+              "ok": true
+            },
+            {
+              "name": "cleanStateBeforeInstall",
+              "ok": true
+            },
+            {
+              "name": "installedRuntimeMatchesBuiltRuntime",
+              "ok": true
+            },
+            {
+              "name": "installedBinaryByteIdenticalToUpgradeInstall",
+              "ok": true
+            },
+            {
+              "name": "uninstallerRegistered",
+              "ok": true
+            }
+          ]
+        },
+        "upgrade": {
+          "status": "VERIFIED",
+          "evidenceClass": "REAL_EXECUTION",
+          "elevated": true,
+          "exitCode": 0,
+          "command": "hmCodex_0.1.0_x64-setup.exe /S (full-local over existing per-machine install)",
+          "log": {
+            "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-upgrade.log",
+            "bytes": 306,
+            "sha256": "be805867bb8e92e6ed0f4bea88d00a6cc9bb1c808dd86b788df2a0ab6c521fc2"
+          },
+          "stepFile": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\steps-nsis\\upgrade.json",
+          "stepFileDigestVerified": true,
+          "assertions": [
+            {
+              "name": "exitCodeZero",
+              "ok": true
+            },
+            {
+              "name": "installedRuntimeMatchesBuiltRuntime",
+              "ok": true
+            },
+            {
+              "name": "installedBinarySizeMatchesBuiltBinary",
+              "ok": true
+            },
+            {
+              "name": "uninstallerRegistered",
+              "ok": true
+            }
+          ]
+        },
+        "migration": {
+          "status": "VERIFIED",
+          "evidenceClass": "REAL_EXECUTION",
+          "elevated": true,
+          "exitCode": 0,
+          "command": "installed runtime harness-events import|verify|summary + PRAGMA user_version probe (legacy trajectory.jsonl into SQLite)",
+          "log": {
+            "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-migration.log",
+            "bytes": 8231,
+            "sha256": "b1ad20ddd0347643242173957e2cb12d32fe0421c5319fd69d488aab038dad79"
+          },
+          "stepFile": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\steps-nsis\\migration.json",
+          "stepFileDigestVerified": true,
+          "assertions": [
+            {
+              "name": "exitCodeZero",
+              "ok": true
+            },
+            {
+              "name": "installedRuntimeMatchesBuiltRuntime",
+              "ok": true
+            },
+            {
+              "name": "legacyImportProducedEvents",
+              "ok": true
+            },
+            {
+              "name": "migratedStoreVerifyPassed",
+              "ok": true
+            },
+            {
+              "name": "storeSchemaVersionIsCurrent",
+              "ok": true
+            },
+            {
+              "name": "channelReportedWindowsFullLocal",
+              "ok": true
+            }
+          ]
+        },
+        "rollback": {
+          "status": "VERIFIED",
+          "evidenceClass": "REAL_EXECUTION",
+          "elevated": true,
+          "exitCode": 0,
+          "command": "previous release setup /S then full-local setup /S",
+          "log": {
+            "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-rollback.log",
+            "bytes": 356,
+            "sha256": "fa274fd4301aecbef54193ce4f96ece950f9d6605da2477f2e631e80bbeac0eb"
+          },
+          "stepFile": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\steps-nsis\\rollback.json",
+          "stepFileDigestVerified": true,
+          "assertions": [
+            {
+              "name": "previousReleaseInstalled",
+              "ok": true
+            },
+            {
+              "name": "previousReleaseDiffersFromFullLocalArtifact",
+              "ok": true
+            },
+            {
+              "name": "fullLocalRestoredByteIdentical",
+              "ok": true
+            }
+          ]
+        },
+        "uninstall": {
+          "status": "VERIFIED",
+          "evidenceClass": "REAL_EXECUTION",
+          "elevated": true,
+          "exitCode": 0,
+          "command": "C:\\Program Files\\hmCodex\\uninstall.exe /S (NSIS per-machine)",
+          "log": {
+            "path": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-uninstall.log",
+            "bytes": 112,
+            "sha256": "b2f8643d581a83cbc4583e43f04790f65d84bc08ab7c05540a9c6ae9cb489bdc"
+          },
+          "stepFile": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\steps-nsis\\uninstall.json",
+          "stepFileDigestVerified": true,
+          "assertions": [
+            {
+              "name": "installDirectoryRemoved",
+              "ok": true
+            },
+            {
+              "name": "binaryRemoved",
+              "ok": true
+            },
+            {
+              "name": "uninstallRegistryEntryRemoved",
+              "ok": true
+            }
+          ]
+        }
+      }
+    },
+    "missing": []
+  },
+  "lifecycle": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "activatedFirst": true,
+    "upgradeActivated": true,
+    "failedActivationDegraded": true,
+    "rollbackVersion": "1.0.0",
+    "reloadActiveVersion": "1.0.0",
+    "versions": [
+      {
+        "pluginId": "w10-evidence",
+        "version": "1.0.0",
+        "state": "ACTIVE"
+      },
+      {
+        "pluginId": "w10-evidence",
+        "version": "2.0.0",
+        "state": "ROLLED_BACK"
+      },
+      {
+        "pluginId": "w10-degraded",
+        "version": "1.0.0",
+        "state": "DEGRADED"
+      }
+    ]
+  },
+  "longRun": {
+    "status": "PENDING_OBSERVATION",
+    "requiredMinutes": 1440,
+    "observedMinutes": 1,
+    "sessions": 2,
+    "samples": 3,
+    "gapToleranceMs": 120000
+  },
+  "concurrency": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "workers": 4,
+    "expectedEvents": 100,
+    "durableEvents": 100,
+    "elapsedMs": 2635,
+    "failures": []
+  },
+  "recoverySlo": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "storePath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "eventCount": 16017,
+    "projectionVersion": 9,
+    "loadElapsedMs": 6789,
+    "rebuildElapsedMs": 2429,
+    "elapsedMs": 9219,
+    "budgetMs": 30000
+  },
+  "backupRestore": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "sourceBytes": 53796864,
+    "originalEvents": 16017,
+    "restoredEvents": 16017,
+    "originalTombstones": 0,
+    "restoredTombstones": 0
+  },
+  "privacyDeletion": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "deletedRunIds": [
+      "w10-deletion-run"
+    ],
+    "remainingEvents": 0,
+    "rawResidueDetected": false
+  },
+  "killSwitch": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "blockedWhenKilled": true,
+    "restoredEnabled": true
+  },
+  "storageCapacity": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "PASS",
+    "level": "OK",
+    "totalBytes": 53802267,
+    "maxBytes": 536870912,
+    "ratio": 0.100215,
+    "fileCount": 2,
+    "paths": [
+      "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+      "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_W10_EVIDENCE.json"
+    ]
+  },
+  "cost": {
+    "evidenceClass": "REAL_EXECUTION",
+    "status": "REPORTED",
+    "recordCount": 0,
+    "calls": 0,
+    "failures": 0,
+    "expectedCost": null,
+    "expectedCostKnown": 0,
+    "actualCost": null,
+    "actualCostKnown": 0
+  },
+  "retention": {
+    "status": "PARTIAL",
+    "reason": "THIRTY_DAY_WINDOW_INCOMPLETE",
+    "elapsedMs": 206955011,
+    "requiredMs": 2592000000,
+    "completed": 0,
+    "failures": 0,
+    "observationSource": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_RETENTION_OBSERVATION.json"
+  },
+  "releaseEvidence": {
+    "decisionReport": {
+      "ok": false,
+      "code": "RELEASE_DECISION_REPORT_MISSING"
+    },
+    "workspaceObservation": {
+      "ok": false,
+      "code": "REAL_WORKSPACE_OBSERVATION_MISSING"
+    }
+  },
+  "releaseDecision": "NOT_READY",
+  "blockingReasons": [
+    "LONG_RUN_WINDOW_INCOMPLETE",
+    "RETENTION_PARTIAL",
+    "RELEASE_DECISION_REPORT_MISSING",
+    "REAL_WORKSPACE_OBSERVATION_MISSING"
+  ]
+}

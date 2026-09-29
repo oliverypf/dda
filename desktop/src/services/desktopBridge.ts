@@ -20,6 +20,7 @@ import type {
   RuntimeDreamRun,
   RuntimeDreamMaintenanceStatus,
   RuntimePluginGovernanceRecord,
+  RuntimePluginVersionLifecycleSnapshot,
   RuntimeEvolutionProposal,
   RuntimeEvolutionReport,
   RuntimeTimelinePage
@@ -52,6 +53,15 @@ const normalizeThread = (thread: ThreadReadModel & { turns?: unknown[] }): Threa
     ? thread.turnCount
     : Array.isArray(thread.turns) ? thread.turns.length : 0
 });
+
+export interface ThreadEventPage {
+  threadId: string;
+  thread?: ThreadReadModel;
+  events: RuntimeEvent[];
+  limit: number;
+  hasMore: boolean;
+  nextCursor?: string;
+}
 
 export const desktopBridge = {
   isNative: isTauriRuntime,
@@ -87,6 +97,11 @@ export const desktopBridge = {
     return invoke<RuntimeProcessStatus>('runtime_process_status');
   },
 
+  async exportData(scope: string): Promise<{ ok: boolean; output?: string; error?: string }> {
+    if (!isTauriRuntime()) return { ok: false, error: 'Web 预览不支持导出数据' };
+    return invoke<{ ok: boolean; output?: string; error?: string }>('export_data', { scope });
+  },
+
   async reconcileRuntimeState(): Promise<RuntimeRecoveryResponse> {
     if (!isTauriRuntime()) return {
       ok: true,
@@ -98,8 +113,16 @@ export const desktopBridge = {
   },
 
   async chooseWorkspace(): Promise<WorkspaceGrant> {
-    if (!isTauriRuntime()) return { rootLabel: 'hmCodex 演示工作区' };
+    if (!isTauriRuntime()) return { rootLabel: 'hmCodex 演示工作区', rootPath: '/demo/hmCodex' };
     return invoke<WorkspaceGrant>('choose_workspace');
+  },
+
+  async setWorkspace(path: string): Promise<WorkspaceGrant> {
+    if (!isTauriRuntime()) {
+      const normalized = path.trim();
+      return { rootLabel: normalized.split(/[\\/]/).filter(Boolean).pop() ?? normalized, rootPath: normalized };
+    }
+    return invoke<WorkspaceGrant>('set_workspace', { path });
   },
 
   async defaultWorkspace(): Promise<WorkspaceGrant | undefined> {
@@ -152,10 +175,12 @@ export const desktopBridge = {
       : undefined;
   },
 
-  async listThreadEvents(threadId: string): Promise<RuntimeEvent[]> {
-    if (!isTauriRuntime()) return [];
-    const response = await invoke<{ events?: RuntimeEvent[] }>('list_thread_events', { threadId });
-    return Array.isArray(response.events) ? response.events : [];
+  async listThreadEvents(threadId: string, { limit = 100, before }: { limit?: number; before?: string } = {}): Promise<ThreadEventPage> {
+    if (!isTauriRuntime()) return { threadId, events: [], limit, hasMore: false };
+    const response = await invoke<ThreadEventPage>('list_thread_events', { threadId, limit, before });
+    if (response.threadId !== threadId || !Array.isArray(response.events) || response.events.length > limit
+      || (response.hasMore && !response.nextCursor)) throw new Error('THREAD_HISTORY_PAGE_INVALID');
+    return { ...response, thread: response.thread ? normalizeThread(response.thread) : undefined };
   },
 
   async forkThread(threadId: string, title?: string): Promise<ThreadReadModel | undefined> {
@@ -170,9 +195,9 @@ export const desktopBridge = {
     return Array.isArray(response.records) ? response.records : [];
   },
 
-  async runtimeDashboard(): Promise<RuntimeDashboardResponse | undefined> {
+  async runtimeDashboard({ details = false }: { details?: boolean } = {}): Promise<RuntimeDashboardResponse | undefined> {
     if (!isTauriRuntime()) return undefined;
-    const response = await invoke<RuntimeDashboardResponse>('runtime_dashboard');
+    const response = await invoke<RuntimeDashboardResponse>('runtime_dashboard', { details });
     return {
       ...response,
       threads: Array.isArray(response.threads) ? response.threads.map(normalizeThread) : [],
@@ -209,18 +234,32 @@ export const desktopBridge = {
     return invoke<{ reconciled: number }>('reconcile_execution_state');
   },
 
+  async cancelExecutionApproval(recordId: string, expectedDigest?: string): Promise<RuntimeExecutionRecord | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    const response = await invoke<{ record?: RuntimeExecutionRecord }>('cancel_execution_approval', { recordId, expectedDigest });
+    return response.record;
+  },
+
+  async revokeExecutionLease(recordId: string, expectedDigest?: string): Promise<RuntimeExecutionRecord | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    const response = await invoke<{ record?: RuntimeExecutionRecord }>('revoke_execution_lease', { recordId, expectedDigest });
+    return response.record;
+  },
+
   async listMemories(status?: string): Promise<RuntimeMemoryRecord[]> {
     if (!isTauriRuntime()) return [];
     const response = await invoke<{ memories?: RuntimeMemoryRecord[] }>('list_memories', { status });
     return Array.isArray(response.memories) ? response.memories : [];
   },
 
-  async memoryAction(operation: 'propose' | 'verify' | 'activate' | 'retract' | 'delete', options: {
+  async memoryAction(operation: 'propose' | 'edit' | 'resolve-conflict' | 'verify' | 'activate' | 'retract' | 'delete', options: {
     memoryId?: string;
     statement?: string;
     scope?: string;
     confidence?: number;
     sourceEventIds?: string[];
+    sensitivity?: string;
+    conflictsWithMemoryIds?: string[];
     accepted?: boolean;
     reason?: string;
   } = {}): Promise<RuntimeMemoryRecord | undefined> {
@@ -232,6 +271,8 @@ export const desktopBridge = {
       scope: options.scope,
       confidence: options.confidence,
       sourceEventIds: options.sourceEventIds,
+      sensitivity: options.sensitivity,
+      conflictsWithMemoryIds: options.conflictsWithMemoryIds,
       accepted: options.accepted,
       reason: options.reason
     });
@@ -264,10 +305,13 @@ export const desktopBridge = {
     return invoke<RuntimeDreamMaintenanceStatus>('stop_dream_maintenance');
   },
 
-  async listPluginGovernance(): Promise<RuntimePluginGovernanceRecord[]> {
-    if (!isTauriRuntime()) return [];
-    const response = await invoke<{ plugins?: RuntimePluginGovernanceRecord[] }>('list_plugin_governance');
-    return Array.isArray(response.plugins) ? response.plugins : [];
+  async listPluginGovernance(): Promise<{ plugins: RuntimePluginGovernanceRecord[]; versionLifecycle?: RuntimePluginVersionLifecycleSnapshot }> {
+    if (!isTauriRuntime()) return { plugins: [] };
+    const response = await invoke<{ plugins?: RuntimePluginGovernanceRecord[]; versionLifecycle?: RuntimePluginVersionLifecycleSnapshot }>('list_plugin_governance');
+    return {
+      plugins: Array.isArray(response.plugins) ? response.plugins : [],
+      ...(response.versionLifecycle ? { versionLifecycle: response.versionLifecycle } : {})
+    };
   },
 
   async pluginAction(pluginId: string, operation: 'validate' | 'transition', state?: string): Promise<RuntimePluginGovernanceRecord | undefined> {

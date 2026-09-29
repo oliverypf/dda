@@ -53,3 +53,12 @@ target-unlimited/
 
 # ---- Agent harness session state ----
 /.pi/
+
+# ---- Decision-Driven Agent runtime evidence ----
+/.decision/
+jev.config.json
+
+# ---- Local decision/debug scratch ----
+/.codex-tmp/
+**/__pycache__/
+/desktop/phase2-*.log

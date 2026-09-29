@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "WINDOWS_PHASE2_W10_LONGRUN_STATE",
+  "updatedAtMs": 1789190912348,
+  "sessions": [
+    {
+      "startedAtMs": 1789049334884,
+      "lastAtMs": 1789049399379
+    },
+    {
+      "startedAtMs": 1789090154977,
+      "lastAtMs": 1789090154977
+    },
+    {
+      "startedAtMs": 1789093414863,
+      "lastAtMs": 1789093414863
+    },
+    {
+      "startedAtMs": 1789096425825,
+      "lastAtMs": 1789096535685
+    },
+    {
+      "startedAtMs": 1789097301681,
+      "lastAtMs": 1789099014095
+    },
+    {
+      "startedAtMs": 1789098999574,
+      "lastAtMs": 1789100436552
+    },
+    {
+      "startedAtMs": 1789100647046,
+      "lastAtMs": 1789100739418
+    },
+    {
+      "startedAtMs": 1789100878726,
+      "lastAtMs": 1789100878726
+    },
+    {
+      "startedAtMs": 1789101037499,
+      "lastAtMs": 1789101337195
+    },
+    {
+      "startedAtMs": 1789101514331,
+      "lastAtMs": 1789101689607
+    },
+    {
+      "startedAtMs": 1789101821279,
+      "lastAtMs": 1789120231944
+    },
+    {
+      "startedAtMs": 1789129884032,
+      "lastAtMs": 1789132532594
+    },
+    {
+      "startedAtMs": 1789132652629,
+      "lastAtMs": 1789134151749
+    },
+    {
+      "startedAtMs": 1789134272272,
+      "lastAtMs": 1789177653701
+    },
+    {
+      "startedAtMs": 1789178848554,
+      "lastAtMs": 1789186592150
+    },
+    {
+      "startedAtMs": 1789189560490,
+      "lastAtMs": 1789190912348
+    }
+  ],
+  "samples": 1338,
+  "observedMinutes": 1315,
+  "lastSample": {
+    "storePath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "requestedPath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "resolvedPath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "exists": true,
+    "sizeBytes": 27738112,
+    "modifiedAtMs": 1789189599712,
+    "ino": "6192449488359134",
+    "dev": "3202637077",
+    "canonicalPath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "packageLocalCacheCopies": [],
+    "storeKind": "PERSISTED",
+    "eventCount": 8570,
+    "receiptCount": 8570,
+    "tombstoneCount": 0
+  }
+}

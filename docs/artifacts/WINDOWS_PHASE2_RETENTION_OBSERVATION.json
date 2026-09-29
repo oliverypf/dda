@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "WINDOWS_PHASE2_RETENTION_OBSERVATION",
+  "ok": true,
+  "observationStartedAtMs": 1788883200000,
+  "observationStartedLocal": "2026-09-09T00:00:00+08:00",
+  "precision": "DATE",
+  "windowDays": 30,
+  "windowEndsLocal": "2026-10-09T00:00:00+08:00",
+  "source": "Windows Task Scheduler task 'hmCodex Retention Worker' Start Date 2026/9/9 and docs/WINDOWS_PHASE1_ACCEPTANCE_MATRIX.md M6 row",
+  "scheduledTask": {
+    "name": "\\hmCodex Retention Worker",
+    "status": "Ready",
+    "enabled": true,
+    "startDate": "2026-09-09",
+    "endDate": "2026-10-09",
+    "schedule": "Daily 12:00",
+    "lastRunTimeLocal": "2026-09-10T12:00:01",
+    "lastResult": 0,
+    "nextRunTimeLocal": "2026-09-11T12:00:00",
+    "runAsUser": "User",
+    "taskToRun": "cmd.exe /c set HMCODEX_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY && node \"C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs\" harness-events retention-worker --trajectory-store \"%LOCALAPPDATA%\\hmCodex\\trajectory.jsonl\""
+  },
+  "progressStore": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db.retention-progress.json",
+  "claim": "The 30-day retention calendar observation is running as a real scheduled task. It is not complete; the Phase 1 acceptance matrix M6 row stays PARTIAL until the window closes."
+}

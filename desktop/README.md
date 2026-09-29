@@ -2,9 +2,13 @@
 
 Windows/Linux 桌面客户端预留目录，目标运行时为 Tauri 2 + TypeScript 前端 + 本地运行时。
 
-桌面客户端是独立安装、独立启动的本地产品。首期范围是本地 Thread/Turn、流式输出、审批、只读 workspace、本地 Trajectory 和统一 `ContextSummary`；Codex/App Server 与 OpenViking 由客户端启动或管理的本地运行时承载。
+桌面客户端是独立安装、独立启动的本地产品。首期范围是本地 Thread/Turn、流式输出、审批、只读 workspace、本地 Trajectory 和统一 `ContextSummary`；任务、工具、审批、验证、恢复和本地 Memory Journal 由自研 Node/Cordis runtime 承载。Jev Decision Plane 负责候选选择、工具门禁和行为判断。
 
-本地 shell、任意路径访问和网络调用不会因为是桌面应用就默认开放，必须经过 Tauri capability、工作区 scope、PolicyLease、审批和审计。远程 App Server/Gateway 可以作为设置中的可选连接模式，但不应成为桌面端启动前提。
+设置使用左侧分类、右侧内容的布局，提供“模型配置”“个性化”“连续验证”和设置搜索。进入“设置 → 个性化 → 自定义指令”，可以填写“每次回复都使用中文”等长期偏好，支持多行、最多 8000 字符。保存后从下一次任务开始作为系统级提示发送到模型（包括多轮工具调用和各模型角色）；已有会话的后续任务也会采用新配置。清空并保存可停用。切换分类不会丢失未保存的编辑。
+
+自定义指令保存在模型配置的 `customInstructions` 字段，保留既有高级模型和角色绑定。回归：`npm run build` 后执行 `npm run test:ui:settings`（需 Playwright，可用 `NODE_PATH` 指定安装位置）。运行时测试为 `node --test runtime/test/custom-instructions.test.mjs`（从仓库根目录执行）。
+
+本地 shell、任意路径访问和网络调用不会因为是桌面应用就默认开放，必须经过 Tauri capability、工作区 scope、PolicyLease、审批和审计。Windows 不接入 App Server，直接通过自研 runtime 调用模型 provider；远程 Gateway 不在当前开发范围。
 
 当前已落地：
 
@@ -19,6 +23,14 @@ Windows/Linux 桌面客户端预留目录，目标运行时为 Tauri 2 + TypeScr
 - Thread 重新打开时会按已保存 Turn 回放脱敏运行事件；受控审批会展示风险、快照 scope、策略版本和过期时间；子 Agent 面板消费 runtime 的真实角色和 checkpoint 事件。
 
 ## Cordis runtime
+
+### 会话与工作区切换
+
+会话绑定创建时的工作区根目录。任务完成或取消后，“更换项目”切换到不同根目录时会清除当前会话及 checkpoint 绑定，下一次发送创建新会话；原会话仍保留在历史列表中。重复选择同一目录或浏览其子目录不会重置会话。任务运行和目录切换期间不允许再次更换项目；目录选择期间暂时禁止发送，取消选择不改变当前会话。
+
+历史列表可以跨工作区查看；若当前授权目录与历史会话目录不同，发送时会在当前目录创建新会话，不复用旧目录的 checkpoint。要续接原会话，请先打开其原目录，再从历史列表选择该会话。runtime 继续保留 `THREAD_WORKSPACE_MISMATCH` 校验，防止跨目录复用执行上下文。
+
+回归验证：先执行 `npm run build`，再执行 `node scripts/ui-workspace-test.mjs`。UI 测试使用 Playwright 和模拟 native bridge，不调用真实模型或访问真实项目目录；可通过 `NODE_PATH` 指定 Playwright 安装位置，通过 `HMCODEX_BROWSER_CHANNEL=msedge` 使用本机 Edge。
 
 Windows 原生任务由 `runtime/` 中的独立 Cordis 进程执行。
 桌面侧栏的“设置”可编辑默认模型的 Provider、协议、模型名称、Base URL、完整 Endpoint、API Key 环境变量名称与会话 Header。保存后下一次任务使用新配置；运行中的任务不变。已有的高级模型列表和角色绑定会保留，独立角色绑定仍优先于默认模型。Web 预览仅展示表单，不保存本地配置。
@@ -69,25 +81,26 @@ Dream 后台维护默认关闭。在治理面板点击“启动后台”后，�
 异常时按繁忙处理。它只生成 `PROPOSED` memory，不会自动激活记忆、修改安全策略或晋级
 Evolution proposal。应用退出时会清理 daemon 进程树。
 
-完整产品后续仍需：
+Windows 后续工作统一见 [阶段四实施计划](../docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)和[阶段四验收矩阵](../docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。当前重点：
 
-1. 完成 `contracts/` 的跨平台协议抽取；
-2. 完善本地运行时长期驻留机制（当前已具备启动 health 预检、JSONL 心跳 watchdog、启动 recovery 和退出清理，runtime 仍按任务短命启动）；
-3. 为 Windows 和 Linux 分别定义 Tauri capability、路径和凭据适配器；
-4. 实现 OpenViking 本地 sidecar 的打包/监督与 loopback 连接；
-5. 在协议 fixture 稳定后接入完整本地运行时和真实 App Server adapter。
+1. 完成 Windows 命令契约、durable facade 与剩余事实源入口收敛；
+2. 补齐任务运行时长期驻留、随包 Node、Windows capability/路径/凭据适配；
+3. 补齐候选/角色、审批与 Diff、运行记录、反馈归因、治理诊断和恢复交互；
+4. 完成 Git 互验、Bayesian F4/F5、性能、无障碍及真实 Windows 发布观察。
+
+阶段四继续验收本地 runtime、Jev 决策证据、长期运行和最终安装包集成。Linux、HarmonyOS、跨平台协议抽取和远程 Gateway 暂不纳入阶段四。
 
 ## Windows MVP 构建
 
-如果项目位于 Windows 映射盘（例如 `Z:`），请从映射盘路径进入项目后执行命令，
-不要在同一次操作中混用 `Z:\...` 和 `\\server\share\...` 两种拼写。桌面端的
+本地 Windows 开发副本位于 `C:\Users\User\hmCodex-local`，请从本机目录进入项目后执行命令。
+不要把本地路径与原始映射盘或 UNC 路径混用。桌面端的
 Vite、Vitest、runtime 安装、静态预览和构建脚本都通过 `desktop/scripts/windows-path.mjs`
 解析项目根，会优先使用 `HMCODEX_DESKTOP_ROOT`、npm 的 `INIT_CWD` 和当前映射盘目录，
 因此不会再分别推导出不一致的 `desktop`、`runtime` 或 `dist` 路径。需要从 IDE 或快捷方式
 启动时，可显式设置：
 
 ```powershell
-$env:HMCODEX_DESKTOP_ROOT = 'Z:\DevEcoStudioProjects\hmCodex\desktop'
+$env:HMCODEX_DESKTOP_ROOT = 'C:\Users\User\hmCodex-local\desktop'
 ```
 
 若只能通过 UNC 路径访问，仍然可以运行；只需保持该终端内所有命令都使用 UNC 路径。

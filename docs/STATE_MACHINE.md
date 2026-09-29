@@ -122,7 +122,7 @@ CREATED
 
 ### 3.1 决策提交与恢复
 
-- Classifier、Router、PlanningRole、ExecutionRole、VerificationRole、Diagnostician、Critic/Judge/Council 和 MemoryConsolidator 的语义决策都使用 [Agent Decision Trace 规范](./DECISION_TRACE_SPEC.md)。
+- Classifier、Router、PlanningRole、ExecutionRole、Diagnostician、Critic/Council 和 MemoryConsolidator 的语义决策统一交给 Jev Decision Plane，并使用 [Agent Decision Trace 规范](./DECISION_TRACE_SPEC.md) 记录；Rule Verifier 只提供确定性事实。
 - `AgentDecisionCommitted` 与其结构化记录在同一事务提交；提交完成后，Coordinator 才能发布对应的 route、intent、verdict、probe 或 memory proposal。
 - 决策修订不会自动回滚 run，也不会撤销已经发生的外部效果；必须创建补偿决策并重新进入合法迁移路径。
 - 恢复时，没有 commit 的 `PROPOSED` 决策标记为 `INVALIDATED`，reason code 为 `INVALIDATED_BY_RECOVERY`；已 commit 但尚无 outcome 的决策保持待对账，禁止仅凭模型重放生成同一副作用。

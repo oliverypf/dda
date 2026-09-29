@@ -1,0 +1,26 @@
+{
+  "checkedAtMs": 1789747332049,
+  "total": 19,
+  "missing": [],
+  "checks": {
+    "S3-01-six-pages": true,
+    "S3-01-nav-state": true,
+    "S3-01-status-shell": true,
+    "S3-02-receipt": true,
+    "S3-02-next-step": true,
+    "S3-04-quarantine-terminal": true,
+    "S3-03-route-panel": true,
+    "S3-04-approval-workbench": true,
+    "S3-05-timeline-evidence": true,
+    "S3-05-terminal-panel": true,
+    "S3-05-verifier-unknown-not-success": true,
+    "S3-06-runs-page": true,
+    "S3-06-run-focus-persist": true,
+    "S3-06-decision-dag-workbench": true,
+    "S3-07-workspace-page": true,
+    "S3-07-memory-page": true,
+    "S3-07-safety-page": true,
+    "S3-07-diagnostics-page": true,
+    "S3-09-a11y": true
+  }
+}

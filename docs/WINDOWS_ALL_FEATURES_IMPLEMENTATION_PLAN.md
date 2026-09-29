@@ -6,6 +6,10 @@
 适用范围：Windows 本地客户端、Tauri bridge、Node/Cordis runtime  
 前置状态：`Windows MVP / Phase 1 前置版本`
 
+## 2026-09-15 执行补充
+
+Windows 阶段二、三及 durable/反馈/Git 专项的剩余工作统一见 [阶段四实施计划](WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md) 和 [阶段四验收矩阵](WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。阶段四仅覆盖 Windows，保留本文件的 W0–W10 完成定义与既有发布门；下文初始阶段描述不作为当前逐项完成状态。2026-09-15 按用户要求取消 Windows App Server 接入，Windows 继续使用自研 Node/Cordis runtime；旧文档中的 App Server 设想不再构成本阶段开发或发布前置条件。
+
 ## 1. 总原则
 
 本文件是当前执行总计划；`WINDOWS_PHASE_1_IMPLEMENTATION_PLAN.md` 是 W0–W7 的细化说明。发生范围或依赖冲突时以本文件为准。当前从 W0 开始，现有功能保留为开发基线，不视为已通过相应发布阶段。W1–W3 完成前暂停扩展自动 Dream、Memory 激活、Router 和 Plugin 放权，优先补齐事件、提交顺序和回放基础。
@@ -43,10 +47,10 @@ Phase 1 构建必须禁用 `CONTROLLED`。受控执行代码可以继续保留�
 5. Planner、Council、Verifier、诊断/停止、Memory Proposal、ActionIntent 和安全决策均保存真实候选、证据、快照、选择和结果事件。
 6. `decisionCoverage=100%`，并达到 `optionCoverage`、`evidenceLinkRate`、`decisionOutcomeLinkRate` 发布阈值。
 7. retention、删除、导出、Support Bundle、容量阈值、本地指标、迁移和恢复能力上线。
-8. Windows runtime、Tauri bridge、桌面 ReadModel、模型适配、OpenViking、Thread、Plugin、Memory、Dream、Evolution 和 Controlled Executor 集成完成。
+8. Windows runtime、Tauri bridge、桌面 ReadModel、模型适配、本地 Memory Journal、Jev Decision Plane、Thread、Plugin、Memory、Dream、Evolution 和 Controlled Executor 集成完成。
 9. Phase 1.5 的 P0/P1 安全测试、PolicyLease 一次性消费、Executor 权威复核、恢复幂等和未授权副作用率为零全部通过。
 10. Windows 版本通过自动化回归、故障注入、构建、安装升级、长运行和实际使用观察期。
-11. 同角色多候选能力可用：`ModelSelector` 的 `CANDIDATE_SET` 扇出、扇出预算、确定性硬淘汰和独立 judge 排序落地，评分与选择不改变安全语义、不产生额外权限。
+11. 同角色多候选能力可用：候选扇出、扇出预算、确定性硬淘汰和 Jev Decision Plane 选择落地，选择与 fallback 不改变安全语义、不产生额外权限。
 
 ## 4. 实施阶段
 
@@ -183,14 +187,14 @@ Decision Trace 必须覆盖：
 将所有 Windows 计划内功能接入同一套 Event Store、ReadModel、权限和运维链路：
 
 - OpenAI Responses、Chat Completions、兼容网关和 DeepSeek Harness；
-- 同角色多候选扇出与选择：`CANDIDATE_SET` 绑定、扇出预算、硬淘汰、独立 judge 排序和 `SELECT_CANDIDATE` 决策记录；
+- 同角色多候选扇出与选择：候选扇出、扇出预算、硬淘汰、Jev 选择和 `SELECT_CANDIDATE` 决策记录；
 - Thread 创建、恢复、fork、checkpoint、取消、超时和 watchdog；
-- workspace snapshot、只读工具、Controlled Executor、Verifier 和 recovery；
+- workspace snapshot、只读工具、Controlled Executor、Rule Verifier、Jev 和 recovery；
 - Plugin manifest、权限、治理、quarantine、加载和升级；
-- Memory Journal、Memory Verifier、Dream maintenance、retention 和撤回；
+- Memory Journal、Jev 证据判断、Dream maintenance、retention 和撤回；
 - Evolution proposal、replay、shadow、canary、promotion、monitor 和 rollback；
 - Tauri dashboard、trajectory、decision、approval、memory、dream、plugin、evolution、recovery 和 Support Bundle UI；
-- Windows OpenViking sidecar、健康检查、重启和故障降级。
+- 本地 Memory Journal、Jev 超时/不可用降级和 Decision Trace。
 
 验收：每个模块没有绕过 Event Store 的第二事实源；每个自动能力都有 feature gate、版本、回滚点和安全失败路径。
 

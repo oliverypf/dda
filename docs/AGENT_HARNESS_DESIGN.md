@@ -1,7 +1,9 @@
 # hmCodex 多平台 Agent Harness 设计
 
-版本：v0.6（Agent Decision Trace 基线）  
-状态：本文件与长期专项规范是权威设计契约；各平台落地进度不同，规范先行于实现。
+版本：v0.7（Jev Decision Plane 基线）
+状态：本文件与 [Jev Decision Plane 设计](JEV_DECISION_PLANE_DESIGN.md) 是当前权威设计契约；各平台落地进度不同，规范先行于实现。
+
+> **当前架构基线（必须遵守）**：所有需要在运行时作出的语义决策，都先收集有界证据，再交给 Jev Decision Plane 输出有限结果，最后经过不可覆盖的安全硬边界才允许执行。旧的 `LLM as a Verifier`、独立 `Candidate Judge`、独立语义 Verifier 角色和 OpenViking 不再是当前架构；相关历史文档仅保留为迁移/验收记录。
 
 - Windows 桌面线已按阶段落地：Phase 1 只读闭环（channel `WINDOWS_PHASE1_READ_ONLY`）已发布，Phase 1.5 受控链路（`WINDOWS_PHASE1_5_CONTROLLED`）已过 G2 发布门，当前处于阶段二 W9 进行中。进度证据见 [Windows 阶段二进度记录](WINDOWS_PHASE2_PROGRESS.md)。
 - HarmonyOS 线仍是早期原型：`entry/src/main/ets` 下只有 `pages/Index.ets` 直接持有 `services/CodexSession.ets`，经 WebSocket JSON-RPC 直连 App Server，尚未落地本文描述的 Facade / read model 分层。
@@ -14,10 +16,10 @@
 hmCodex 的下一阶段目标，是建设一套面向 HarmonyOS、Windows 和 Linux 的多平台 Agent Harness。客户端可以使用 ArkUI 或桌面 Web/Rust 技术，但核心契约、会话、上下文、安全和执行边界保持一致。它借鉴三类思路：
 
 - Pi Agent 的轻量 Agent Core：用少量稳定的核心抽象组织任务、上下文、工具调用和循环，而不是把所有能力写死在 UI 中。
-- DSH 的插件化机制：Agent、Skill、Executor、Verifier 都可以按 manifest 注册、启停、升级和隔离。
+- DSH 的插件化机制：Agent、Skill、Executor 和确定性 Verifier 都可以按 manifest 注册、启停、升级和隔离；语义决策统一由 Jev Decision Plane 承担。
 - Codex 的 Coding Agent：围绕代码工作区执行多步任务，持续展示流式进展、命令、文件变更、审批和验证结果。
 
-本项目的首版定位是“多平台独立客户端 + 可解释的 Agent Harness”。客户端内的本地运行时负责模型连接、命令、沙箱、工作区、上下文和轨迹；Codex App Server、OpenViking 和 Executor 通过本地 Adapter 接入。远程执行主机或 Gateway 只是可选连接模式，用于跨设备接续、企业策略或高算力，不是客户端的前置依赖。这样既能复用当前的 App Server 连接，也不会把客户端变成无约束的命令执行器。
+本项目的首版定位是“多平台独立客户端 + 可解释的 Agent Harness”。客户端内的本地运行时负责模型连接、命令、沙箱、工作区、本地 Memory Journal 和轨迹；Codex App Server 与 Executor 通过本地 Adapter 接入，Jev Decision Plane 负责基于证据作出候选、工具和行为判断。远程执行主机或 Gateway 只是可选连接模式，用于跨设备接续、企业策略或高算力，不是客户端的前置依赖。这样既能复用当前的 App Server 连接，也不会把客户端变成无约束的命令执行器。
 
 首版不追求直接在鸿蒙设备内移植完整 Codex Rust runtime，也不在没有真实轨迹数据时引入在线策略学习。所有自动化决策必须经过安全硬约束，并能在界面上解释“为什么选中、为什么拒绝、验证了什么”。
 
@@ -25,16 +27,16 @@ hmCodex 的下一阶段目标，是建设一套面向 HarmonyOS、Windows 和 Li
 
 ### 1.1 架构审阅结论
 
-总体方案合理：ArkUI/Tauri 负责客户端交互，本地运行时负责真实 I/O，配合持续安全监控、证据驱动 Verifier、Trajectory 和画像闭环，能够渐进落地，也能复用现有 Codex App Server 客户端。本轮复核在前次四项结构性修正的基础上，又补齐了模型调用边界、权限表达、治理阶段与实时控制的区分、结构化 Agent 决策轨迹，以及同角色多候选选择：
+总体方案合理：ArkUI/Tauri 负责客户端交互，本地运行时负责真实 I/O，配合 Runtime Safety、Jev Decision Plane、Trajectory 和画像闭环，能够渐进落地，也能复用现有 Codex App Server 客户端。本轮复核在前次结构性修正的基础上，又补齐了模型调用边界、权限表达、治理阶段与实时控制的区分、结构化 Agent 决策轨迹，以及同角色多候选选择：
 
-1. **角色与模型解耦。** 不再把 Luna、Sol 当作核心协议角色；统一使用可配置的 `PlanningRole`、`ExecutionRole`、`VerificationRole`，Luna/Sol 仅保留为可选预设名称。
+1. **角色与模型解耦。** 不再把 Luna、Sol 当作核心协议角色；统一使用可配置的 `PlanningRole`、`ExecutionRole` 和确定性 `RuleVerifier`，Luna/Sol 仅保留为可选预设名称。语义判断不再绑定一个独立 Verifier 模型，而由 Jev Decision Plane 统一完成。
 2. **安全检查分三段。** 任务预检负责提前拒绝明显越界任务，候选过滤负责检查具体角色/模型/Skill/Executor 组合，Runtime Safety Monitor 负责逐动作重检。
 3. **路由单位升级。** Router 不再选择单个 `Model × Agent × Skill`，而是选择“执行拓扑 + 一组角色绑定 + 验证策略”，从而支持规划模型和执行模型分别配置、分别回退和分别归因。
-4. **首版收敛范围。** v1 只实现静态角色配置、规则路由、单规划者、单执行者和确定性验证；Council、Dreaming 与策略学习继续作为有指标门槛的后续能力。
+4. **首版收敛范围。** v1 只实现静态角色配置、规则路由、单规划者、单执行者、Jev 有界决策和确定性验证；Council、Dreaming 与策略学习继续作为有指标门槛的后续能力。
 5. **迁移采用兼容分层。** 现有 UI、Mock、WebSocket 和审批交互继续保留；Codex 协议与会话代码收敛到 Adapter 层，UI 经 Facade/read model 接入，通用角色上下文由独立 `RoleSessionManager` 管理。
-6. **安全随可写能力同时落地。** 只读垂直切片可以使用最小规则策略；一旦开放文件写入、命令或网络，Runtime Safety Monitor、PolicyLease、审批和 Verifier 必须同批启用，禁止先上线可写 Executor 再补安全层。
+6. **安全随可写能力同时落地。** 只读垂直切片可以使用最小规则策略；一旦开放文件写入、命令或网络，Runtime Safety Monitor、PolicyLease、审批、Rule Verifier 和 Jev Action Gate 必须同批启用，禁止先上线可写 Executor 再补安全层。
 7. **Agent 决策成为一等轨迹。** 所有关键 Agent 选择先保存结构化候选、证据、约束与预期，执行或验证后再挂接独立结果，为回放、归因和后续学习提供可靠样本；不保存隐藏思维链。
-8. **候选选择成为独立机制。** 同角色多候选不通过角色分工实现，而是由 `ModelInvocationGateway` 扇出、`CandidateSelectionPolicy` 评分后选择；扇出规模、评分和选择都必须可解释、可回放，且不改变安全语义。
+8. **候选选择统一进入 Jev。** 同角色多候选不通过独立 judge 或角色分工实现；由 `ModelInvocationGateway` 扇出、证据标准化后交给 Jev 选择。扇出规模、淘汰、选择和降级都必须可解释、可回放，且不改变安全语义。
 
 ## 2. 设计原则
 
@@ -65,11 +67,11 @@ HarnessFacade / HarnessReadModel
     │
     ▼
 HarnessCoordinator（只管理 TaskRun 状态机）
-    ├── Classifier / Safety Precheck / Candidate Filter / Router
+    ├── Classifier / Safety Precheck / Candidate Filter / Jev Decision Plane
     ├── Deliberation Gate（按需）
     └── AgentCore（角色循环）
             │
-            ├── PlanningRole / VerificationRole
+            ├── PlanningRole / RuleVerifier
             │       └── ModelInvocationPort
             └── ActionIntent
                     ▼
@@ -80,7 +82,7 @@ HarnessCoordinator（只管理 TaskRun 状态机）
                ExecutorPort
 
 横切能力：TrajectoryStore / ProfileStore / PluginRegistry / BudgetManager
-角色上下文：RoleSessionManager → Planner / Executor / Verifier / Council Context
+角色上下文：RoleSessionManager → Planner / Executor / Council Context
 
 Adapters
     ├── CodexAppServerAdapter
@@ -135,8 +137,8 @@ Candidate Enumerator
 Candidate Safety Filter ─── unsafe candidate removed
   │  安全候选集合
   ▼
-Adaptive Router
-  │  选中拓扑，并解析 Planner / Executor / Verifier 绑定
+  Jev Decision Plane
+  │  基于候选、证据和约束选择拓扑/绑定
   ▼
 Deliberation Gate
   │  DIRECT or selective Agent Council
@@ -156,7 +158,7 @@ Runtime Safety Monitor ───── 每次工具调用前重检
 ExecutionRole → ExecutorPort → ExecutionEvent
           │
           ├── Trajectory Append ── 记录输入、动作、证据和决策
-          └── Verifier ─────────── 检查进展、质量、安全和不确定性
+          └── Rule Verifier + Jev ─ 检查事实并判断进展、质量和不确定性
           │
           ├── PASS ─────── 继续下一步或完成
           ├── CONTINUE ─── ExecutionRole 执行下一步
@@ -171,7 +173,7 @@ ExecutionRole → ExecutorPort → ExecutionEvent
 Capability Profile / Safety Profile
 ```
 
-上述顺序是强制依赖，不是绘图上的建议：任何 `ExecutionRole`、Executor Adapter 或插件都不能绕过 `ActionIntent → RuntimeSafetyMonitor → PolicyLease` 直接产生真实 I/O。Verifier 报告是 AgentCore/Coordinator 状态迁移的输入，不是任务结束后的旁路日志。
+上述顺序是强制依赖，不是绘图上的建议：任何 `ExecutionRole`、Executor Adapter 或插件都不能绕过 `ActionIntent → RuntimeSafetyMonitor → PolicyLease` 直接产生真实 I/O。Jev 的输出只能在有限候选和证据范围内作出选择，不能覆盖硬规则。Rule Verifier 事实与 Jev 判断共同作为 AgentCore/Coordinator 状态迁移的输入，不是任务结束后的旁路日志。
 
 一次运行的内部状态为：
 
@@ -224,7 +226,7 @@ Safety Gate 是同一策略引擎的两次前置判定，而不是一个顺序�
 - `TaskSafetyPrecheck` 在候选枚举前输入任务描述、当前 `SafetyProfile`、用户策略、工作区范围和环境状态，提前拒绝明显越界、非法或必须隔离的任务。
 - `CandidateSafetyFilter` 在候选枚举后逐项检查角色绑定、模型来源、Agent、Skill、Executor、Verifier 和执行拓扑，只把安全候选交给 Router 排序。
 
-二者使用相同的策略级别并输出。这里的级别既包含最终决策，也包含必须叠加的控制措施；`MONITOR`、`CONFIRM` 和 `SANDBOX` 不应被实现为互斥的单一整数：
+二者使用相同的策略级别并输出；需要语义判断时，把任务、候选、动作、工具和上下文证据交给 Jev，但 Jev 不能放宽硬规则。这里的级别既包含最终决策，也包含必须叠加的控制措施；`MONITOR`、`CONFIRM` 和 `SANDBOX` 不应被实现为互斥的单一整数：
 
 - `ALLOW`：可在当前限制内自动执行；
 - `MONITOR`：允许执行，但所有动作必须实时记录和监控；
@@ -247,13 +249,13 @@ RouteCandidate = ExecutionTopology + RoleBindingSet + VerificationPolicy
 RoleBinding = Role × ModelSelector × AgentProfile × Skill[] × ExecutorBinding
 ```
 
-`ExecutionTopology` 描述角色之间如何协作，例如 `DIRECT_EXECUTE`、`PLAN_THEN_EXECUTE`、`DELIBERATE_THEN_EXECUTE`、`DIAGNOSE_PROBE_RECOVER`。`RoleBindingSet` 必须包含 `executor`，可以按拓扑加入 `planner`、`semanticVerifier`、`critic` 和 `coordinator`。确定性 Verifier 不依赖模型，单独属于 `VerificationPolicy`。
+`ExecutionTopology` 描述角色之间如何协作，例如 `DIRECT_EXECUTE`、`PLAN_THEN_EXECUTE`、`DELIBERATE_THEN_EXECUTE`、`DIAGNOSE_PROBE_RECOVER`。`RoleBindingSet` 必须包含 `executor`，可以按拓扑加入 `planner`、`critic` 和 `coordinator`。确定性 Rule Verifier 单独属于 `VerificationPolicy`；语义选择、工具门禁和行为判断不再配置为角色，而统一调用 Jev Decision Plane。
 
 例如：
 
-- `DIRECT_EXECUTE + executor=(fast-coder, coding-agent, repo-inspect, CodexAppServer) + verification=(rules=[RuleVerifier], semantic=none)`
-- `PLAN_THEN_EXECUTE + planner=(strong-reasoner, planning-agent, architecture) + executor=(fast-coder, coding-agent, arkts-edit, CodexAppServer) + verification=(rules=[BuildVerifier], semantic=review-model)`
-- `DIAGNOSE_PROBE_RECOVER + planner=(diagnostic-model, planning-agent:diagnose, failure-analysis) + executor=(low-cost-coder, probe-agent, LocalSandboxExecutor) + verification=(rules=[EvidenceVerifier], semantic=independent-judge)`
+- `DIRECT_EXECUTE + executor=(fast-coder, coding-agent, repo-inspect, CodexAppServer) + verification=(rules=[RuleVerifier], decisionPlane=Jev)`
+- `PLAN_THEN_EXECUTE + planner=(strong-reasoner, planning-agent, architecture) + executor=(fast-coder, coding-agent, arkts-edit, CodexAppServer) + verification=(rules=[BuildVerifier], decisionPlane=Jev)`
+- `DIAGNOSE_PROBE_RECOVER + planner=(diagnostic-model, planning-agent:diagnose, failure-analysis) + executor=(low-cost-coder, probe-agent, LocalSandboxExecutor) + verification=(rules=[EvidenceVerifier], decisionPlane=Jev)`
 
 每个 `ModelSelector` 支持三种配置模式：
 
@@ -284,14 +286,14 @@ score(routeCandidate) =
 
 - `ModelRegistry` 保存已批准的 provider/model、能力声明、上下文上限、成本/延迟估计、部署位置、版本和健康状态；
 - `RoleBindingResolver` 根据注册表解析角色绑定，生成不可变的 `ResolvedRoleBinding` 快照；
-- `ModelInvocationGateway` 负责 Planner、语义 Verifier、Critic、Coordinator 和 MemoryConsolidator 的模型调用，并把 provider 错误、超时和限流转为统一事件；
+- `ModelInvocationGateway` 负责 Planner、Critic、Coordinator 和 MemoryConsolidator 的模型调用，并把 provider 错误、超时和限流转为统一事件；Jev Decision Engine 是独立的决策端口，不作为角色注册；
 - `RoleSessionManager` 为每个解析后的角色分配 `RoleContextHandle`，管理独立 Thread、ephemeral fork、上下文生命周期、取消和资源回收；
 - `CodexAppServerAdapter` 只有在目标 App Server 明确支持按 Thread/Turn 选择模型时，才能承载对应的模型绑定；不支持时该候选必须标记为不可用，不能静默使用服务端默认模型；
 - provider 凭据、API key 和 bearer token 不进入任一客户端普通配置文件或 Trajectory，只由受控的远端网关/Executor Adapter 使用。
 
 模型注册表的健康状态只能影响候选可用性和成本排序，不能直接改变角色权限。模型回退必须重新解析、重新经过 CandidateSafetyFilter，并生成新的绑定快照。
 
-Planner、Executor 和语义 Verifier 默认使用独立 `RoleContextHandle`。如果低风险配置显式允许共享 Thread，每次 Turn 仍必须传入解析后的模型和角色参数，不能依赖上一个 Turn 留下的默认值；高风险验证、Council 和故障诊断不得共享可写执行上下文。`RoleSessionManager` 是通用领域服务，不能由 `CodexSession` 直接替代；后者只管理某一个 Codex App Server 会话。
+Planner 和 Executor 默认使用独立 `RoleContextHandle`。Jev 只接收经裁剪的状态、候选和证据，不共享可写执行上下文，也不拥有工具权限。如果低风险配置显式允许共享 Thread，每次 Turn 仍必须传入解析后的模型和角色参数，不能依赖上一个 Turn 留下的默认值；高风险决策、Council 和故障诊断不得共享可写执行上下文。`RoleSessionManager` 是通用领域服务，不能由 `CodexSession` 直接替代；后者只管理某一个 Codex App Server 会话。
 
 ### 5.3.2 多候选扇出与选择（LLM as a Service）
 
@@ -311,12 +313,12 @@ ModelSelector = { mode: CANDIDATE_SET, candidateBindings[], fanout, selectionPol
 - 高风险、任务类别无历史、Gate 判定 `UNCERTAIN`，或同类任务近期失败率上升：扇出到 `N > 1`；
 - `fanoutBudget` 限制单次扇出的并发、token 和成本上限；超限时按确定性顺序截断候选集并记录截断原因。
 
-`CandidateSelectionPolicy` 分两级执行：
+`CandidateSelectionPolicy` 分两级执行，最终选择由 Jev Decision Plane 完成：
 
 1. **硬淘汰**：确定性检查失败的候选直接出局，例如编译失败、测试失败、越界路径、超出预算、超时或违反 diff 约束；
-2. **排序选择**：对幸存候选按质量、证据强度、成本和延迟加权评分，并选择最优项。
+2. **Jev 选择**：把幸存候选、证据、约束、成本和延迟交给 Jev，在有限选项中选择、拒绝或请求补充证据。
 
-语义评分必须使用独立上下文，且不得由产生该候选的同一模型绑定执行，禁止自评。无法获得独立 judge 时，选择退化为确定性检查加成本/延迟排序，并记录降级原因；不允许用候选自报置信度决定胜出者。
+Jev 判断必须使用独立的决策输入快照，候选生成模型的自报置信度只能作为不可信证据，不能作为唯一依据。Jev 不可用时，选择退化为确定性检查加成本/延迟排序，并记录降级原因；不得重新启用旧的独立 judge 或 LLM Verifier。
 
 选择结果进入 Decision Trace：每次扇出产生一个 `SELECT_CANDIDATE` 决策，每个候选是一个 `DecisionOption`（候选草稿摘要放入 `outputDraftDigest`），选中项随后关联 `DecisionOutcome`，未选中项标记为 `NOT_EXECUTED` 并只用于反事实分析。
 
@@ -371,17 +373,17 @@ Executor 的服务端审批请求转换为 `SafetyRequest`，在用户响应前�
 
 现有 `CodexTransport` 暂时作为兼容接口保留，由 `CodexAppServerAdapter` 包装；不要直接把它扩张为通用 Harness 端口，因为它当前同时混合 Thread、Turn、文件读取和审批职责。待 Facade 接管 UI 后，再逐步把调用迁移到四个领域端口。
 
-### 5.6 Verifier
+### 5.6 Rule Verifier 与 Jev 行为判断
 
-Verifier 不是单一的“模型打分器”，而是多层证据聚合器：
+验证链由确定性事实检查和 Jev 语义判断组成，不再存在独立的模型 Verifier 或 Candidate Judge 角色：
 
-1. 确定性检查：编译、单元测试、静态检查、格式检查、文件存在性和 diff 约束。
-2. 过程检查：是否产生了预期 Item、是否有进展、是否重复同一动作、是否接近预算上限。
-3. 质量检查：任务目标覆盖、修改范围、回归风险和证据完整性。
-4. 安全检查：路径、网络、权限、敏感数据、策略租约和输出泄露。
-5. 语义检查：必要时由配置的 `VerificationRole` 对结果进行独立判断；高风险任务优先要求与 ExecutionRole 不同的模型或独立上下文。
+1. 确定性检查：编译、单元测试、静态检查、格式检查、文件存在性和 diff 约束，由 Rule Verifier 产生不可覆盖的事实。
+2. 过程证据：是否产生了预期 Item、是否有进展、是否重复同一动作、是否接近预算上限。
+3. 质量与目标证据：任务目标覆盖、修改范围、回归风险和证据完整性。
+4. 安全证据：路径、网络、权限、敏感数据、策略租约和输出泄露。
+5. 语义判断：将以上有界证据交给 Jev，输出继续、停滞、不确定、失败或完成方向。
 
-Verifier 输出：
+Jev 的输出必须是有限枚举：
 
 ```text
 VerifierReport {
@@ -393,11 +395,12 @@ VerifierReport {
   evidence[]
   failureCodes[]
   nextAction
-  verifierVersion
+  decisionSource: JEV | RULE | FALLBACK
+  reasonCodes[]
 }
 ```
 
-触发升级的条件包括：连续若干步没有新证据、动作指纹重复、测试在相同位置振荡、结果与目标冲突、质量/安全置信度低、外部副作用前缺少证据，或达到预算阈值。阈值必须可配置并记录在 Trajectory。
+触发升级的条件包括：连续若干步没有新证据、动作指纹重复、测试在相同位置振荡、结果与目标冲突、质量/安全证据不足、外部副作用前缺少证据，或达到预算阈值。阈值必须可配置并记录在 Trajectory。Jev 可以判断证据不足或方向不对，但不能把 Rule Verifier 的硬失败改成成功。
 
 ### 5.7 可配置的 Planning / Execution / Verification 角色
 
@@ -405,10 +408,10 @@ VerifierReport {
 
 - **PlanningRole**：负责理解目标、任务分解、计划、架构推理，以及在停滞时以 `DIAGNOSE` 模式生成互斥或互补假设；默认只读，不能直接修改工作区。
 - **ExecutionRole**：负责读取、修改、测试和最小 Probe；只有该角色可以为实际 I/O 申请 `PolicyLease`，但权限仍由 Executor 与 Safety Monitor 共同限制。
-- **VerificationRole**：聚合确定性证据和可选的语义判断，独立输出通过、继续、停滞、不确定或失败；不能自行授予执行权限。
+- **RuleVerifier**：执行确定性检查并输出事实；不能自行授予执行权限。
 - **CriticRole / CoordinatorRole**：仅在 Deliberation 拓扑中启用，分别负责反例审查和短生命周期协调，均默认只读。
 
-每个角色都由 `RoleBinding` 绑定到可配置的模型选择器、Agent Profile、Skill、Executor、预算、上下文策略和回退链。规划模型与执行模型可以相同，也可以不同；默认 `balanced` 配置使用较强规划模型与较低成本执行模型，高保障配置还会使用独立的语义验证模型。
+每个角色都由 `RoleBinding` 绑定到可配置的模型选择器、Agent Profile、Skill、Executor、预算、上下文策略和回退链。规划模型与执行模型可以相同，也可以不同；Jev 的模型、超时、证据预算和 fallback 属于 `DecisionEngine` 配置，不是一个可执行角色，也不拥有独立工具权限。
 
 为兼容早期设计，可提供两个**可选预设**：`luna-default` 映射到低成本 ExecutionRole，`sol-diagnostic` 映射到 PlanningRole 的 `DIAGNOSE` 模式。它们不得出现在核心状态机、数据库主键或协议必填字段中，用户可以删除、替换或重命名。
 
@@ -431,15 +434,15 @@ VerifierReport {
       "executor": "codex-app-server",
       "permissionCeiling": { "capabilityIds": ["policy.lease"], "maxRiskClass": "CODE_CHANGE" }
     },
-    "semanticVerifier": {
-      "model": { "mode": "PINNED", "providerIds": ["provider-b"], "modelIds": ["review-model"] },
-      "agentProfile": "independent-reviewer",
-      "permissionCeiling": { "capabilityIds": ["workspace.read"], "maxRiskClass": "INSPECT" }
-    }
   },
   "verification": {
     "deterministic": ["scope-verifier", "build-verifier", "test-verifier"],
-    "requireIndependentSemanticVerifierFor": ["HIGH", "VERY_HIGH"]
+    "decisionPlane": "jev",
+    "jev": {
+      "model": "jev-latest",
+      "evidenceBudget": 32,
+      "fallback": "CONSERVATIVE"
+    }
   }
 }
 ```
@@ -448,11 +451,11 @@ VerifierReport {
 
 诊断流程：
 
-1. Verifier 检测 `STALLED` 或 `UNCERTAIN`，冻结当前高风险动作。
+1. Rule Verifier 或 Jev 检测 `STALLED` 或 `UNCERTAIN`，冻结当前高风险动作。
 2. 配置的 PlanningRole 读取精简的失败上下文和轨迹，以 `DIAGNOSE` 模式生成带证据需求的多个 `Hypothesis`。
-3. Verifier 根据解释力、风险、预期信息增益和验证成本排序。
+3. Jev 根据解释力、风险、预期信息增益和验证成本，从有限 Probe 候选中选择下一步。
 4. ExecutionRole 按排序执行最小成本 `Probe`，每个 Probe 仍经过 Safety Monitor。
-5. 新证据支持某一假设后，恢复主任务；没有支持时停止、请求用户或收紧策略。
+5. 新证据支持某一假设后，再由 Jev 判断是否恢复主任务；没有支持时停止、请求用户或收紧策略。
 
 禁止 PlanningRole 直接执行大范围修复；它只生成计划、诊断和 Probe 建议。禁止 ExecutionRole 在没有 Verifier 新证据的情况下无限重试。角色绑定发生回退、模型切换或预算升级时必须生成 Trajectory 事件并重新经过候选安全检查。
 
@@ -522,9 +525,9 @@ Capability Profile 的正向 Credit 不能由单次成功直接触发权限放�
 
 ### 6.3 Agent Decision Trace
 
-Trajectory 不仅记录“发生了什么”，还要记录每个 Agent 在语义分支点“基于哪些当时可见事实，在什么约束下比较了哪些候选，选择了什么，以及预期什么结果”。Classifier、Router、PlanningRole、ExecutionRole、VerificationRole、Diagnostician、Critic/Judge/Council 和 MemoryConsolidator 的关键决策都先形成结构化 `AgentDecisionRecord`；Coordinator 提交后才能产生 route、ActionIntent、Verifier verdict、Probe 或 Memory Proposal。
+Trajectory 不仅记录“发生了什么”，还要记录每个 Agent 在语义分支点“基于哪些当时可见事实，在什么约束下比较了哪些候选，选择了什么，以及预期什么结果”。Classifier、Router、PlanningRole、ExecutionRole、Diagnostician、Critic/Council 和 MemoryConsolidator 的关键决策都先形成结构化 `AgentDecisionRecord`，并由 Jev Decision Plane 作出有限选择；Coordinator 提交后才能产生 route、ActionIntent、行为判断、Probe 或 Memory Proposal。
 
-执行、Verifier 和用户反馈随后通过 `DecisionOutcomeLinked` 追加，Credit/Blame 只使用独立结果，不反向修改决策时特征。Decision DAG 支持 `DEPENDS_ON`、`SUPERSEDES`、`CRITIQUES`、`SELECTS` 和 `OUTCOME_OF` 等关系，使后续离线回放、错误模式分析、Profile 更新和受约束策略学习都可以从真实过程而非最终文本取样。
+执行、Rule Verifier、Jev 判断和用户反馈随后通过 `DecisionOutcomeLinked` 追加，Credit/Blame 只使用独立结果，不反向修改决策时特征。Decision DAG 支持 `DEPENDS_ON`、`SUPERSEDES`、`CRITIQUES`、`SELECTS` 和 `OUTCOME_OF` 等关系，使后续离线回放、错误模式分析、Profile 更新和受约束策略学习都可以从真实过程而非最终文本取样。
 
 同角色多候选扇出产生 `SELECT_CANDIDATE` 决策：逐候选记录来源绑定、评分分量和淘汰原因，选中项写出选择理由，未选中候选随决策一起保留但只用于反事实分析。
 
@@ -1100,7 +1103,7 @@ Router 可以依据历史数据决定是否开启 Council，但安全层不使�
 ### Phase 3：Verifier 闭环与可配置规划/执行角色
 
 - 多维 Verifier 报告和停滞检测；
-- 实现同角色多候选扇出与 `CandidateSelectionPolicy`：并发生成、确定性硬淘汰、独立 judge 排序、选择闭环和扇出预算；
+- 实现同角色多候选扇出与 `CandidateSelectionPolicy`：并发生成、确定性硬淘汰、Jev 选择、选择闭环和扇出预算；
 - PlanningRole 多假设诊断、Verifier 排序、ExecutionRole 最小 Probe；
 - 支持角色级模型回退、预算升级和能力/成本画像，并保留 Luna/Sol 作为可选迁移预设；
 - Probe 预算、最大升级次数和失败收敛；
@@ -1152,9 +1155,9 @@ Router 可以依据历史数据决定是否开启 Council，但安全层不使�
 
 1. 总结、解释、搜索和静态检查任务被分类为 `EXPLAIN/INSPECT`，只在安全候选集合内选择角色与模型。
 2. UI 只通过 `HarnessFacade` 提交命令并订阅 `HarnessReadModel`；页面不直接调用 `CodexSession`、Transport 或 Executor。
-3. `HarnessCoordinator` 只维护 `TaskRun` 状态机，Agent Core 只依赖领域端口；Core、Router、Safety、Agent 和 Verifier 不导入 Codex JSON-RPC/WebSocket 类型。
-4. Planner、Executor 和语义 Verifier 的解析结果及 `RoleContextHandle` 可回放；共享上下文必须显式配置，角色切换不会继承未声明的模型默认值。
-5. 每次运行都记录分类、任务预检、候选过滤、路由、角色绑定、只读动作、Verifier 证据和最终结果；每个由 Agent 产生的关键决策在下游效果前有 committed Decision，包含候选、证据、选择和预期，结算后关联独立 Outcome。确定性 RuleRouter/Safety 继续使用各自权威事件。
+3. `HarnessCoordinator` 只维护 `TaskRun` 状态机，Agent Core 只依赖领域端口；Core、Router、Safety、Agent 和 Rule Verifier 不导入 Codex JSON-RPC/WebSocket 类型。
+4. Planner、Executor 的解析结果及 `RoleContextHandle` 可回放；Jev 使用独立的有界决策输入，不能继承可写执行上下文；共享上下文必须显式配置，角色切换不会继承未声明的模型默认值。
+5. 每次运行都记录分类、任务预检、候选过滤、路由、角色绑定、只读动作、Rule Verifier 证据、Jev 判断和最终结果；每个由 Agent 产生的关键决策在下游效果前有 committed Decision，包含候选、证据、选择和预期，结算后关联独立 Outcome。确定性 RuleRouter/Safety 继续使用各自权威事件。
 6. Phase 1 不开放写文件、命令、测试执行或外部网络副作用；此类 `ActionIntent` 必须被拒绝或提示该能力尚未启用，并且不产生实际副作用。
 7. 决策轨迹可以重建可观察选择序列，常规数据库、日志、UI 和导出不包含系统提示、reasoning token 或隐藏思维链；学习导出不存在 outcome leakage。
 
@@ -1162,18 +1165,18 @@ Router 可以依据历史数据决定是否开启 Council，但安全层不使�
 
 1. 文件修改、测试、命令和网络动作先形成 `ActionIntent`，经运行时 Safety Monitor 判定为 `CONFIRM`、`SANDBOX` 或更严格状态后，才可能获得一次性 `PolicyLease`。
 2. `ExecutorPort` 在执行前校验租约的主体、动作、路径/网络 scope、工作区版本、过期时间和使用次数；不匹配、过期或重复使用均拒绝。
-3. 用户拒绝、审批超时、连接断开、服务端错误、未知插件、数据库关键写入失败和 Verifier 不确定性不会导致后续副作用；系统暂停、回滚可回滚步骤或 fail-closed。
-4. PlanningRole、ExecutionRole、VerificationRole 和 Council 默认使用隔离上下文；只有一个持有效租约的 ExecutionRole 可以修改目标工作区。
-5. 每个副作用动作都能从 UI/Trajectory 追溯到候选过滤、路由决定、`ActionIntent`、SafetyDecision、审批、PolicyLease、执行事件和 Verifier 结论。
+3. 用户拒绝、审批超时、连接断开、服务端错误、未知插件、数据库关键写入失败和 Jev 不确定性不会导致后续副作用；系统暂停、回滚可回滚步骤或 fail-closed。
+4. PlanningRole、ExecutionRole、Jev Decision Plane 和 Council 默认使用隔离上下文；只有一个持有效租约的 ExecutionRole 可以修改目标工作区。
+5. 每个副作用动作都能从 UI/Trajectory 追溯到候选过滤、Jev 决定、`ActionIntent`、SafetyDecision、审批、PolicyLease、执行事件和 Rule Verifier/Jev 结论。
 6. 删除、越权路径、凭据外泄和未授权外部副作用会被任务预检、候选过滤或运行时监控阻断；Router 不能重新选择已被安全层排除的候选。
 
 ### 14.4 后续阶段
 
-1. Verifier 发现重复动作或无新证据时标记停滞；PlanningRole 生成多个假设，Verifier 排序，ExecutionRole 只执行有预算的最小 Probe。
+1. Rule Verifier 发现事实异常或 Jev 判断重复动作/无新证据时标记停滞；PlanningRole 生成多个假设，Jev 从有界 Probe 候选中选择，ExecutionRole 只执行有预算的最小 Probe。
 2. 发生安全事件时，Safety Profile 立即收紧，后续动作被阻断；恢复必须经过隔离、观察和逐级放开。
 3. Dreaming 只读取脱敏历史并生成带来源的 MemoryProposal；未经审核不能改变安全权限、执行代码或覆盖原始 Trajectory。
-4. 复杂跨文件任务可以触发 Agent Council；提案、质疑、Judge 决定和最终 Probe 都能在 UI/Trajectory 中回放。
-5. Council 达成错误共识、意见无法收敛或达到预算上限时，系统能 `ABSTAIN`、回到单 Agent + Verifier 或请求用户，而不是无限讨论。
+4. 复杂跨文件任务可以触发 Agent Council；提案、质疑、Jev 决定和最终 Probe 都能在 UI/Trajectory 中回放。
+5. Council 达成错误共识、意见无法收敛或达到预算上限时，系统能 `ABSTAIN`、回到单 Agent + Rule Verifier + Jev 或请求用户，而不是无限讨论。
 6. 多 Agent 方案只有在固定评估窗口内相对单 Agent 基线改善质量/成功率且成本增幅可接受时，才允许提高自动触发比例。
 
 ## 15. 主要风险与验证门

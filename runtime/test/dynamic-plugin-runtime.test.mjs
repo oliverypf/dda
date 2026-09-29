@@ -11,6 +11,7 @@ import { PluginGovernance } from '../src/plugin-governance.mjs';
 import { DynamicPluginLoader } from '../src/plugin-loader.mjs';
 import { EvolutionRegistry } from '../src/plugins/evolution-registry.mjs';
 import { EvolutionEvaluator } from '../src/evolution-evaluator.mjs';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env = {}) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -108,8 +109,7 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const taskArgs = [
@@ -151,7 +151,8 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
   assert.deepEqual(payload.dynamicPlugins[0].contextGrant, {
     pluginId: active.pluginId,
     services: [],
-    permissions: []
+    permissions: [],
+    ceiling: 'CONTROLLED'
   });
   assert.equal(payload.dynamicPlugins.some(({ pluginId }) => pluginId === inactive.pluginId), false);
   assert.equal(await readFile(importedMarker, 'utf8'), 'imported');

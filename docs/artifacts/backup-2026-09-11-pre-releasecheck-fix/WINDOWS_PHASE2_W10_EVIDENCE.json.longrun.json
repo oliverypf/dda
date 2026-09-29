@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "WINDOWS_PHASE2_W10_LONGRUN_STATE",
+  "updatedAtMs": 1789090154977,
+  "sessions": [
+    {
+      "startedAtMs": 1789049334884,
+      "lastAtMs": 1789049399379
+    },
+    {
+      "startedAtMs": 1789090154977,
+      "lastAtMs": 1789090154977
+    }
+  ],
+  "samples": 3,
+  "observedMinutes": 1,
+  "lastSample": {
+    "storePath": "C:\\Users\\User\\AppData\\Local\\hmCodex\\hmcodex.db",
+    "eventCount": 16017
+  }
+}

@@ -1,0 +1,5 @@
+previous release setup /S exit=0
+installed desktop exe sha256=9a5ece3f2bf1039b093748c5e4497d475cb794114bf7487a190cf4b34a39536d
+installed runtime index sha256=a48fd0dfae6da5da9c79d35574c625531c8abb38e6983553c874abeb180005dd
+restore full-local setup /S exit=0
+restored desktop exe sha256=1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154

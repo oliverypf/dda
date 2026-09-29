@@ -227,10 +227,19 @@ Approval UI 必须显示：动作类型、规范化目标、cwd/workspace、命�
 
 ### 13.1 Agent Decision Trace 安全边界
 
+当前决策顺序固定为：
+
+```text
+有界证据收集 → Jev Decision Plane → Runtime Safety / Scope / Approval / PolicyLease → Executor
+                         └→ Rule Verifier 事实约束
+```
+
+Jev 负责在有限候选中选择、判断工具是否合适以及判断行为/结果是否足够；它不能生成新的工具或权限，也不能覆盖 Runtime Safety、workspace scope、Approval、PolicyLease 或 Rule Verifier 的硬失败。当前不存在独立的 LLM Verifier、语义 Verifier 角色或 Candidate Judge。
+
 - Agent Decision Record 是不可信的“决策提案/解释”，不是权限凭证、事实证明或 Verifier 通过证明；其内容无论多有说服力都不能跳过 Safety Gate、审批或 PolicyLease。
 - Coordinator 校验 `agentInstanceId`、RoleContext、binding snapshot、operationId 和 run/step scope，Plugin/模型不得自报或冒充其他 Agent 身份。
 - 每个 evidence ref 必须指向决策发生前已存在且该 RoleContext 当时有权读取的证据；禁止事后证据伪装成事前依据。
-- Agent 自报 confidence、reasoning summary 和候选评分均标记为 model-claimed；学习标签只能来自后续确定性检查、独立 Verifier、真实执行结果或明确用户反馈。
+- Agent 自报 confidence、reasoning summary 和候选评分均标记为 model-claimed；学习标签只能来自后续 Rule Verifier、Jev 之外的真实执行结果或明确用户反馈。
 - 决策摘要、Council critique 和 Memory proposal 均按 untrusted content 处理；渲染时转义，送入其他 Agent 时保留来源边界并重新经过 injection 检查。
 - 普通决策记录不保存 prompt、系统提示、reasoning token、隐藏思维链、凭据或 lease presentation。Provider 提供的 reasoning summary 若经策略允许，仅作为加密、可删除的 `UNVERIFIED_PROVIDER_SUMMARY` 附件。
 - Decision DAG、record digest、feature snapshot 和 outcome link 出现篡改、跨 run 引用、非法环或 identity mismatch 时，暂停 run、拒绝学习样本并产生安全审计事件。

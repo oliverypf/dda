@@ -1,4 +1,5 @@
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
+import { applyTextPatch, textDigest, unifiedTextDiff } from './text-patch.mjs';
 
 const MAX_COMMAND_LENGTH = 4096;
 const MAX_ARGUMENTS = 128;
@@ -63,6 +64,72 @@ const writeOutputSchema = {
     lease: { type: ['string', 'null'] }
   },
   required: ['ok', 'action', 'path', 'bytesWritten', 'contentDigest'],
+  additionalProperties: false
+};
+
+const patchInputSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', minLength: 1, maxLength: MAX_PATH_LENGTH },
+    expectedDigest: { type: 'string', maxLength: 128 },
+    replacements: {
+      type: 'array', minItems: 1, maxItems: 32,
+      items: {
+        type: 'object',
+        properties: {
+          oldText: { type: 'string', minLength: 1, maxLength: MAX_FILE_CHARS },
+          newText: { type: 'string', maxLength: MAX_FILE_CHARS },
+          expectedCount: { type: 'integer', minimum: 1, maximum: 32 }
+        },
+        required: ['oldText', 'newText'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['path', 'replacements'],
+  additionalProperties: false
+};
+
+const diffInputSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', minLength: 1, maxLength: MAX_PATH_LENGTH },
+    baseContent: { type: 'string', maxLength: MAX_FILE_CHARS },
+    maxChars: { type: 'integer', minimum: 1, maximum: MAX_FILE_CHARS }
+  },
+  required: ['path', 'baseContent'],
+  additionalProperties: false
+};
+
+const patchOutputSchema = {
+  type: 'object',
+  properties: {
+    ok: { const: true },
+    action: { const: 'patch_file' },
+    path: { type: 'string' },
+    beforeDigest: { type: 'string' },
+    afterDigest: { type: 'string' },
+    diff: { type: 'string' },
+    bytesWritten: { type: 'integer', minimum: 0 },
+    contentDigest: { type: 'string' },
+    lease: { type: ['string', 'null'] }
+  },
+  required: ['ok', 'action', 'path', 'beforeDigest', 'afterDigest', 'diff', 'bytesWritten', 'contentDigest'],
+  additionalProperties: false
+};
+
+const diffOutputSchema = {
+  type: 'object',
+  properties: {
+    ok: { const: true },
+    action: { const: 'diff_file' },
+    path: { type: 'string' },
+    beforeDigest: { type: 'string' },
+    afterDigest: { type: 'string' },
+    changed: { type: 'boolean' },
+    diff: { type: 'string' }
+  },
+  required: ['ok', 'action', 'path', 'beforeDigest', 'afterDigest', 'changed', 'diff'],
   additionalProperties: false
 };
 
@@ -151,7 +218,9 @@ export const registerExecutorTools = (registry, executor, {
   onLeaseStarted,
   onLeaseConsumed,
   onLeaseFailed,
-  networkAdapter
+  networkAdapter,
+  workspace,
+  includeReadOnlyPatchTools = true
 } = {}) => {
   requireMethod(executor, 'shell');
   requireMethod(executor, 'writeFile');
@@ -198,6 +267,51 @@ export const registerExecutorTools = (registry, executor, {
     metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.WRITE_FILE },
     handler: async (input) => executeWithLease(CAPABILITIES.WRITE_FILE, input, (lease) => executor.writeFile(input, { lease }))
   });
+  if (workspace && typeof workspace.read === 'function') {
+    if (includeReadOnlyPatchTools) {
+      registry.register({
+        name: 'file.diff',
+        description: 'Compare one authorized workspace file with supplied base text and return a bounded unified diff.',
+        inputSchema: diffInputSchema,
+        outputSchema: diffOutputSchema,
+        readOnly: true,
+        metadata: { actionClass: 'READ_ONLY' },
+        handler: async ({ path, baseContent, maxChars = MAX_FILE_CHARS }) => {
+          const current = await workspace.read(path, maxChars);
+          const diff = unifiedTextDiff(baseContent, current.content, current.path);
+          return {
+            ok: true,
+            action: 'diff_file',
+            path: current.path,
+            beforeDigest: textDigest(baseContent),
+            afterDigest: current.digest,
+            changed: diff.length > 0,
+            diff
+          };
+        }
+      });
+    }
+    registry.register({
+      name: 'file.patch',
+      description: 'Apply bounded exact replacements to one authorized workspace file with an optional stale-content digest check.',
+      inputSchema: patchInputSchema,
+      outputSchema: patchOutputSchema,
+      readOnly: false,
+      metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.WRITE_FILE },
+      handler: async ({ path, expectedDigest, replacements }) => {
+        const current = await workspace.read(path, MAX_FILE_CHARS);
+        const content = applyTextPatch(current.content, replacements, expectedDigest);
+        const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, (lease) => executor.writeFile({ path: current.path, content }, { lease }));
+        return {
+          ...writeResult,
+          action: 'patch_file',
+          beforeDigest: current.digest,
+          afterDigest: textDigest(content),
+          diff: unifiedTextDiff(current.content, content, current.path)
+        };
+      }
+    });
+  }
   registry.register({
     name: 'test.execute',
     description: 'Run one explicitly approved test command in the authorized workspace.',

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "HMCODEX_VERSION_MANIFEST",
+  "generatedAtMs": 1789107106673,
+  "releaseChannel": "WINDOWS_FULL_LOCAL",
+  "versions": {
+    "appVersion": "0.1.0",
+    "producerVersion": "hmcodex-runtime@0.1.0",
+    "policyVersion": "runtime-safety-1",
+    "protocolVersion": "1.0",
+    "storageSchemaVersion": 1
+  },
+  "sbomDigest": "sha256:4e6cd9971488ad7ba82396115e451962f88df5b7ccd1b53146e1e3acbad9cb3d",
+  "pluginLockDigest": "sha256:238ba62dc0251972d89937774b2621bc44702abce790b89f1aa6c2fdbf6e824b",
+  "modelLockDigest": "sha256:d5cedb8a2f0fc72703c4fded8354bccd3e96a7a3bb4dfa857b9a226e8ac212a9",
+  "releaseDecisionDigest": "sha256:d96e7ae6bcefd41b15703e23fbfa39236f71a8b0b203b84b4ba5cebfa06becda",
+  "artifacts": [
+    {
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\bundle\\nsis\\hmCodex_0.1.0_x64-setup.exe",
+      "digest": "sha256:5f6c80faf5a1e0aa3abd888390f4777179fe00304579308a8e9d47b3b1abb90b"
+    },
+    {
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\bundle\\msi\\hmCodex_0.1.0_x64_en-US.msi",
+      "digest": "sha256:b8be107a69b5cc1ecbc9c0d518b9ea40c96c2673106b5827c2e820d860497252"
+    },
+    {
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\hmcodex-desktop.exe",
+      "digest": "sha256:ada6b2254735d5137903285bd84e1ffefe11630c3f7d99ac62193261e5bc8be4"
+    }
+  ],
+  "evidence": [
+    {
+      "name": "releaseCheck",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_RELEASE_CHECK_FULL_LOCAL_2026-09-11.json",
+      "digest": "sha256:74d37b76eb4de782e5c98f25c7e1cb1a5bf704bbceb935c827bb7ef7f460ae6d",
+      "ok": true
+    },
+    {
+      "name": "w10Evidence",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_W10_EVIDENCE.json",
+      "digest": "sha256:a8f9918cc379c76b8868f17b945d57dc2dbb970392ad6cd601fc7d21cb6cab6b",
+      "ok": false,
+      "code": "W10_NOT_READY",
+      "blockingReasons": [
+        "LONG_RUN_WINDOW_INCOMPLETE",
+        "RETENTION_PARTIAL",
+        "RELEASE_DECISION_REPORT_MISSING",
+        "REAL_WORKSPACE_OBSERVATION_MISSING"
+      ]
+    },
+    {
+      "name": "retentionObservation",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_RETENTION_OBSERVATION.json",
+      "digest": "sha256:33a1eb6f961c74a0da9e9d6f50055a1619e299cffbbbb1be3932543661db365c",
+      "ok": true
+    }
+  ]
+}

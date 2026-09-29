@@ -245,7 +245,7 @@ rankScore =
 
 1. RuntimeSafetyMonitor、Approval、PolicyLease、Executor 和 Security Audit；
 2. RuleVerifier 的确定性检查、scope、diff、artifact 和测试结果；
-3. 独立 SemanticVerifier 的结构化结果；
+3. Jev Decision Plane 的结构化判断与 Rule Verifier 的确定性结果；
 4. 明确的用户接受、拒绝或修正反馈。
 
 以下内容不能作为独立成功证据：

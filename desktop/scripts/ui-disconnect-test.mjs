@@ -10,9 +10,11 @@
 // 5. Delete the temporary config.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
 const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
 const argv = process.argv.slice(2);
@@ -23,13 +25,8 @@ const option = (name, fallback) => {
 const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
 const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9334'));
 const keepApp = !argv.includes('--close');
-
-const modelConfigPath = process.env.HMCODEX_MODEL_CONFIG
-  ?? join(process.env.LOCALAPPDATA ?? '', 'hmCodex', 'model-config.json');
-if (!existsSync(modelConfigPath)) {
-  console.error(`MODEL_CONFIG_NOT_FOUND: ${modelConfigPath}`);
-  process.exit(1);
-}
+const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 const results = [];
 const record = (name, status, detail = '') => {
@@ -99,7 +96,7 @@ const waitForTarget = async (timeoutMs = 30000) => {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(5000) });
       const targets = await response.json();
-      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost/i.test(target.url));
+      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost|127\.0\.0\.1/i.test(target.url));
       if (page) return page;
     } catch (error) {
       lastError = error;
@@ -119,7 +116,7 @@ const connect = async () => {
   return new CdpClient(ws);
 };
 
-const launch = (envOverrides = {}) => {
+const launch = (fixtureEnv, envOverrides = {}) => {
   spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const child = spawn(exe, [], {
     detached: true,
@@ -127,13 +124,19 @@ const launch = (envOverrides = {}) => {
     windowsHide: true,
     env: {
       ...process.env,
+      ...fixtureEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
       HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      HMCODEX_WORKSPACE_ROOT: fixtureEnv?.HMCODEX_WORKSPACE_ROOT ?? workspaceRoot,
       ...envOverrides
     }
   });
   child.unref();
   return child.pid;
+};
+const stop = (pid) => {
+  if (!pid) return;
+  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
 };
 
 const waitFor = async (client, expression, { timeout = 30000, interval = 300, label = expression } = {}) => {
@@ -175,7 +178,7 @@ const submitComposer = (client) =>
 
 const waitForReady = async (client) => {
   await waitFor(client, `!document.querySelector('.connection-status')?.innerText.includes('正在启动')`, { timeout: 45000, label: 'runtime ready' });
-  await waitFor(client, `document.querySelector('.mode-pill')?.disabled === true`, { timeout: 45000, label: 'phase1 gate' });
+  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('READ ONLY') === true`, { timeout: 45000, label: 'read-only execution mode' });
 };
 
 const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
@@ -187,17 +190,26 @@ const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
     interval: 500,
     label: 'terminal state'
   });
-  return await text(client, '.run-status');
+  return await text(client, '.run-status > span');
 };
 
 const main = async () => {
-  const realConfig = JSON.parse(readFileSync(modelConfigPath, 'utf8'));
-  const patchedConfigPath = join(process.env.TEMP ?? '.', `hmcodex-ui-disconnect-${Date.now()}.json`);
-  writeFileSync(patchedConfigPath, `${JSON.stringify({ ...realConfig, baseURL: 'http://127.0.0.1:1/v1' }, null, 2)}\n`, 'utf8');
-  console.log(`hmCodex UI disconnect tests · exe=${exe} · port=${port} · patchedConfig=${patchedConfigPath}`);
+  const fixture = await startUiModelFixture({ delayMs: 40 });
+  const badEndpoint = 'http://127.0.0.1:1/hmCodex/disconnected';
+  const fixtureConfig = JSON.parse(await (await import('node:fs/promises')).readFile(fixture.modelConfigPath, 'utf8'));
+  const patchedConfigPath = join(fixture.workspaceRoot, 'model-config-disconnected.json');
+  const badRegistryPath = join(fixture.workspaceRoot, 'model-registry-disconnected.json');
+  const goodRegistryPath = join(fixture.workspaceRoot, 'model-registry-recovered.json');
+  writeFileSync(patchedConfigPath, `${JSON.stringify({
+    ...fixtureConfig,
+    endpoint: badEndpoint,
+    models: fixtureConfig.models.map((model) => ({ ...model, endpoint: badEndpoint }))
+  }, null, 2)}\n`, 'utf8');
+  console.log(`hmCodex UI disconnect tests · exe=${exe} · port=${port} · fixture=${fixture.endpoint}`);
   let client;
+  let recoveredPid;
   try {
-    const disconnectedPid = launch({ HMCODEX_MODEL_CONFIG: patchedConfigPath });
+    const disconnectedPid = launch(fixture.env, { HMCODEX_MODEL_CONFIG: patchedConfigPath, HMCODEX_MODEL_REGISTRY: badRegistryPath });
     console.log(`disconnectedAppPid=${disconnectedPid}`);
     client = await connect();
     await waitForReady(client);
@@ -205,7 +217,7 @@ const main = async () => {
       const status = await submitAndWaitTerminal(client, 'hello', 120000);
       assert(status === '任务未完成', `expected 任务未完成, got ${status}`);
       const hasError = await client.evaluate(`[...document.querySelectorAll('.timeline-item')]
-        .some((item) => /fetch failed|run\\.failed|错误|失败/u.test(item.innerText))`);
+        .some((item) => /fetch failed|ECONNREFUSED|连接.*失败|模型.*失败|run\\.failed/u.test(item.innerText))`);
       assert(hasError, 'UI shows a transport failure');
       return status;
     });
@@ -213,10 +225,10 @@ const main = async () => {
     client = undefined;
     // Let the disconnected app's runtime children release their JSON-store
     // locks before the recovered app starts a new task.
-    spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+    stop(disconnectedPid);
     await delay(5000);
 
-    const recoveredPid = launch({ HMCODEX_MODEL_CONFIG: modelConfigPath });
+    recoveredPid = launch(fixture.env, { HMCODEX_MODEL_REGISTRY: goodRegistryPath });
     console.log(`recoveredAppPid=${recoveredPid}`);
     client = await connect();
     await waitForReady(client);
@@ -234,8 +246,10 @@ const main = async () => {
     });
   } finally {
     client?.close();
+    stop(recoveredPid);
     if (existsSync(patchedConfigPath)) unlinkSync(patchedConfigPath);
     if (!keepApp) spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+    await fixture.close();
   }
   const passed = results.filter((item) => item.status === 'PASS').length;
   const failed = results.filter((item) => item.status === 'FAIL').length;

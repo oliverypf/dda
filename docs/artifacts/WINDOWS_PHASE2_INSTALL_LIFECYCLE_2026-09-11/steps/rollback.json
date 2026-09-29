@@ -1,0 +1,106 @@
+{
+    "schemaVersion":  "1.0",
+    "artifact":  "WINDOWS_PHASE2_INSTALL_LIFECYCLE_STEP",
+    "step":  "rollback",
+    "installer":  "NSIS_PER_MACHINE",
+    "evidenceClass":  "REAL_EXECUTION",
+    "hostName":  "USER-SNTTJQ3HLT",
+    "elevated":  true,
+    "finishedAtMs":  1789096306947,
+    "command":  "previous release setup /S then full-local setup /S",
+    "exitCode":  0,
+    "log":  {
+                "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-rollback.log",
+                "bytes":  356,
+                "sha256":  "57fa32e1f180e1e3b84b78d417b130bad839908d80d135afce1c54377c1eb48b",
+                "modifiedAtUtc":  "2026-09-11T03:11:46"
+            },
+    "logs":  [
+                 {
+                     "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911\\logs\\nsis-rollback.log",
+                     "bytes":  356,
+                     "sha256":  "57fa32e1f180e1e3b84b78d417b130bad839908d80d135afce1c54377c1eb48b",
+                     "modifiedAtUtc":  "2026-09-11T03:11:46"
+                 }
+             ],
+    "before":  {
+                   "sampledAtMs":  1789096293254,
+                   "installDir":  true,
+                   "desktopExe":  {
+                                      "path":  "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+                                      "bytes":  9765376,
+                                      "sha256":  "2ab3adc2f4433f29c698b6421662dd475837f70404979372a39eb961730a0d7e",
+                                      "modifiedAtUtc":  "2026-09-11T01:55:04"
+                                  },
+                   "runtimeIndex":  {
+                                        "path":  "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+                                        "bytes":  288830,
+                                        "sha256":  "ff06de17eb10d33d5b08d3bb399737655783278e25e9fc4f5ee0814a7606c9c4",
+                                        "modifiedAtUtc":  "2026-09-11T01:47:18"
+                                    },
+                   "uninstaller":  {
+                                       "path":  "C:\\Program Files\\hmCodex\\uninstall.exe",
+                                       "bytes":  82364,
+                                       "sha256":  "739d2380303c31ebd7ef8eb27e7c9bd5d593c9198da58671603f042189a829b1",
+                                       "modifiedAtUtc":  "2026-09-11T03:11:27"
+                                   },
+                   "registry":  {
+                                    "hive":  "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                                    "key":  "hmCodex",
+                                    "displayName":  "hmCodex",
+                                    "version":  "0.1.0",
+                                    "installLocation":  "\"C:\\Program Files\\hmCodex\"",
+                                    "uninstallString":  "\"C:\\Program Files\\hmCodex\\uninstall.exe\""
+                                }
+               },
+    "after":  {
+                  "sampledAtMs":  1789096306947,
+                  "installDir":  true,
+                  "desktopExe":  {
+                                     "path":  "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+                                     "bytes":  9765376,
+                                     "sha256":  "2ab3adc2f4433f29c698b6421662dd475837f70404979372a39eb961730a0d7e",
+                                     "modifiedAtUtc":  "2026-09-11T01:55:04"
+                                 },
+                  "runtimeIndex":  {
+                                       "path":  "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+                                       "bytes":  288830,
+                                       "sha256":  "ff06de17eb10d33d5b08d3bb399737655783278e25e9fc4f5ee0814a7606c9c4",
+                                       "modifiedAtUtc":  "2026-09-11T01:47:18"
+                                   },
+                  "uninstaller":  {
+                                      "path":  "C:\\Program Files\\hmCodex\\uninstall.exe",
+                                      "bytes":  82364,
+                                      "sha256":  "739d2380303c31ebd7ef8eb27e7c9bd5d593c9198da58671603f042189a829b1",
+                                      "modifiedAtUtc":  "2026-09-11T03:11:42"
+                                  },
+                  "registry":  {
+                                   "hive":  "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                                   "key":  "hmCodex",
+                                   "displayName":  "hmCodex",
+                                   "version":  "0.1.0",
+                                   "installLocation":  "\"C:\\Program Files\\hmCodex\"",
+                                   "uninstallString":  "\"C:\\Program Files\\hmCodex\\uninstall.exe\""
+                               }
+              },
+    "assertions":  [
+                       {
+                           "name":  "previousReleaseInstalled",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "previousReleaseDiffersFromFullLocalArtifact",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "fullLocalRestoredByteIdentical",
+                           "ok":  true
+                       }
+                   ],
+    "previousReleaseExeSha256":  "9a5ece3f2bf1039b093748c5e4497d475cb794114bf7487a190cf4b34a39536d",
+    "previousReleaseRuntimeSha256":  "a48fd0dfae6da5da9c79d35574c625531c8abb38e6983553c874abeb180005dd",
+    "previousReleaseExitCode":  0,
+    "restoreExitCode":  0,
+    "restoredBinarySha256":  "2ab3adc2f4433f29c698b6421662dd475837f70404979372a39eb961730a0d7e",
+    "ok":  true
+}

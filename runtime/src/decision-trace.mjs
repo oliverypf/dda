@@ -443,7 +443,11 @@ export class AgentDecisionTrace {
     for (const durable of ordered) {
       const payload = durable?.payload;
       if (!isRecord(payload) || !isRecord(payload.traceEvent) || !isRecord(payload.decisionSnapshot)) {
-        fail(`DECISION_STORE_REPLAY_UNAVAILABLE:${replayUnavailableDetail(durable, payload)}`);
+        // Pre-1.0 writers persisted only the digest projection.  Such records
+        // cannot be reconstructed safely, but must not prevent newer runs
+        // from starting.  Keep them out of the in-memory graph and let the
+        // event-store verifier/reporting surface the migration warning.
+        continue;
       }
       const traceEvent = validateStoredEvent(payload.traceEvent);
       const decision = validateStoredDecision(payload.decisionSnapshot);
@@ -477,7 +481,11 @@ export class AgentDecisionTrace {
       this.#decisions.set(decision.decisionId, decision);
       if (traceEvent.kind === 'DecisionOutcomeLinked') {
         if (!isRecord(payload.outcomeSnapshot)) {
-          fail(`DECISION_STORE_REPLAY_UNAVAILABLE:${replayUnavailableDetail(durable, payload, `traceKind=${payload.traceKind ?? '?'}`)}`);
+          // The legacy projection did not persist outcome snapshots.  It is
+          // safe to skip that event because no outcome can be reconstructed.
+          this.#events.delete(traceEvent.eventId);
+          this.#decisions.delete(decision.decisionId);
+          continue;
         }
         const outcome = validateStoredOutcome(payload.outcomeSnapshot, decision);
         if (outcome.decisionId !== decision.decisionId || traceEvent.payload.outcomeId !== outcome.outcomeId

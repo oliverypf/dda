@@ -14,14 +14,9 @@ use std::process::{ChildStdin, Command, Stdio};
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
-mod openviking_sidecar;
-use openviking_sidecar::{
-    ensure_sidecar as ensure_openviking_sidecar, sidecar_status as openviking_sidecar_status_impl,
-    stop_sidecar as stop_openviking_sidecar, OpenVikingSidecarState, OpenVikingSidecarStatus,
-};
 mod dream_maintenance;
 use dream_maintenance::{
     start as start_dream_maintenance_impl, status as dream_maintenance_status_impl,
@@ -32,6 +27,12 @@ const DEFAULT_PREVIEW_BYTES: u64 = 256 * 1024;
 const MAX_PREVIEW_BYTES: u64 = 256 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 200;
 const RUNTIME_HEARTBEAT_TIMEOUT_MS: u64 = 30_000;
+// A terminal state is emitted before the runtime flushes durable stores and
+// disposes provider fibers. Keep a bounded grace period for that final
+// shutdown so slow workspace/database writes are not reported as a live-run
+// heartbeat failure.
+const RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS: u64 = 120_000;
+const RUNTIME_STARTUP_GRACE_MS: u64 = 120_000;
 const RUNTIME_WATCHDOG_POLL_MS: u64 = 250;
 
 #[derive(Clone, Default)]
@@ -41,11 +42,44 @@ struct AppState {
     active_runtime_stdin: Arc<Mutex<Option<ChildStdin>>>,
     active_runtime_started_at_ms: Arc<Mutex<Option<u64>>>,
     active_runtime_last_heartbeat_at_ms: Arc<Mutex<Option<u64>>>,
+    // A runtime can spend time in synchronous database validation before its
+    // JavaScript heartbeat timer gets a chance to run. Keep startup grace
+    // separate from the steady-state heartbeat timeout.
+    active_runtime_heartbeat_seen: Arc<Mutex<bool>>,
     active_runtime_launching: Arc<Mutex<bool>>,
     active_runtime_cancel_requested: Arc<Mutex<bool>>,
     runtime_state_lock: Arc<Mutex<()>>,
-    openviking_sidecar: OpenVikingSidecarState,
+    // Serialize short-lived runtime queries with the long-lived task child.
+    // Both processes open the same Harness SQLite database; allowing them to
+    // start concurrently can leave the task blocked before its first role event.
+    runtime_command_lock: Arc<Mutex<()>>,
     dream_maintenance: DreamMaintenanceState,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalContextStatus {
+    enabled: bool,
+    state: &'static str,
+    managed: bool,
+    running: bool,
+    ready: bool,
+    pid: Option<u32>,
+    started_at_ms: Option<u64>,
+    error_code: Option<String>,
+}
+
+fn local_context_status() -> LocalContextStatus {
+    LocalContextStatus {
+        enabled: true,
+        state: "LOCAL",
+        managed: false,
+        running: true,
+        ready: true,
+        pid: None,
+        started_at_ms: None,
+        error_code: None,
+    }
 }
 
 #[derive(Serialize)]
@@ -62,7 +96,7 @@ struct RuntimeSnapshot {
     node_version: Option<String>,
     model: Option<RuntimeModelSummary>,
     config_loaded: bool,
-    context_sidecar: OpenVikingSidecarStatus,
+    context_sidecar: LocalContextStatus,
     dream_maintenance: DreamMaintenanceStatus,
 }
 
@@ -88,6 +122,12 @@ struct ModelConfig {
     api_key_env: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_header: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_instructions: Option<String>,
+    /// 连续验证配置（runtime model-config.mjs 的 verifier 段）。保持原样双向透传，
+    /// 具体取值由 runtime 侧 normalizeContinuousVerifierConfig 校验。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verifier: Option<Value>,
 }
 
 impl Default for ModelConfig {
@@ -239,6 +279,8 @@ fn default_model_config() -> ModelConfig {
         endpoint: None,
         api_key_env: "OPENCODE_GO_API_KEY".to_string(),
         session_header: Some("x-opencode-session".to_string()),
+        custom_instructions: None,
+        verifier: None,
     }
 }
 
@@ -312,6 +354,18 @@ fn validate_model_config(mut config: ModelConfig) -> Result<ModelConfig, String>
     config.endpoint = validate_model_config_url(config.endpoint, "endpoint")?;
     config.session_header =
         optional_model_config_text(config.session_header, "sessionHeader", 120)?;
+    config.custom_instructions = match config.custom_instructions {
+        Some(value) => {
+            let text = value.trim();
+            if text.encode_utf16().count() > 8_000
+                || text.chars().any(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t'))
+            {
+                return Err("自定义指令无效：最多 8000 字符，不支持控制字符".to_string());
+            }
+            if text.is_empty() { None } else { Some(text.to_string()) }
+        }
+        None => None,
+    };
     if let Some(header) = &config.session_header {
         if !header
             .bytes()
@@ -331,6 +385,26 @@ fn validate_model_config(mut config: ModelConfig) -> Result<ModelConfig, String>
     Ok(config)
 }
 
+fn normalize_legacy_model_alias(mut config: ModelConfig) -> ModelConfig {
+    if config.provider != "openai-chat" || config.model != "mimo-v2.6" {
+        return config;
+    }
+    let is_open_code_go = config
+        .base_url
+        .as_deref()
+        .or(config.endpoint.as_deref())
+        .and_then(|value| url::Url::parse(value).ok())
+        .map(|url| {
+            url.origin().ascii_serialization() == "https://opencode.ai"
+                && url.path().trim_end_matches('/').trim_end_matches("/chat/completions") == "/zen/go/v1"
+        })
+        .unwrap_or(false);
+    if is_open_code_go {
+        config.model = "mimo-v2.6-pro".to_string();
+    }
+    config
+}
+
 #[tauri::command]
 fn model_config() -> Result<ModelConfigResponse, String> {
     let config_path = model_config_path()?;
@@ -340,7 +414,7 @@ fn model_config() -> Result<ModelConfigResponse, String> {
             .map_err(|error| format!("读取模型配置失败: {error}"))?;
         let config = serde_json::from_str::<ModelConfig>(content.trim_start_matches('\u{feff}'))
             .map_err(|_| "模型配置不是有效 JSON".to_string())?;
-        validate_model_config(config)?
+        normalize_legacy_model_alias(validate_model_config(config)?)
     } else {
         default_model_config()
     };
@@ -353,7 +427,7 @@ fn model_config() -> Result<ModelConfigResponse, String> {
 
 #[tauri::command]
 fn save_model_config(config: ModelConfig) -> Result<ModelConfigResponse, String> {
-    let config = validate_model_config(config)?;
+    let config = normalize_legacy_model_alias(validate_model_config(config)?);
     let config_path = model_config_path()?;
     persist_model_config(&config_path, &config)?;
     Ok(ModelConfigResponse {
@@ -391,6 +465,8 @@ fn persist_model_config(config_path: &Path, config: &ModelConfig) -> Result<(), 
         "endpoint",
         "apiKeyEnv",
         "sessionHeader",
+        "customInstructions",
+        "verifier",
     ] {
         if let Some(value) = editable.get(key) {
             object.insert(key.to_string(), value.clone());
@@ -546,6 +622,11 @@ fn handle_runtime_stdout_line(
     if let Ok(mut heartbeat_at_ms) = state.active_runtime_last_heartbeat_at_ms.lock() {
         *heartbeat_at_ms = Some(unix_time_ms());
     }
+    if value.get("kind").and_then(Value::as_str) == Some("runtime.heartbeat") {
+        if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+            *heartbeat_seen = true;
+        }
+    }
     let _ = app.emit("runtime-event", value);
 }
 
@@ -589,7 +670,13 @@ fn clear_runtime_launch_reservation(state: &AppState) {
 }
 
 #[tauri::command]
-fn runtime_snapshot(app: AppHandle, state: State<'_, AppState>) -> Result<RuntimeSnapshot, String> {
+async fn runtime_snapshot(app: AppHandle, state: State<'_, AppState>) -> Result<RuntimeSnapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime_snapshot_impl(app, &state))
+        .await.map_err(|error| error.to_string())?
+}
+
+fn runtime_snapshot_impl(app: AppHandle, state: &AppState) -> Result<RuntimeSnapshot, String> {
     let release_channel = desktop_release_channel()?;
     let runtime = runtime_entrypoint(&app)?;
     let output = runtime_command(&runtime)
@@ -635,14 +722,14 @@ fn runtime_snapshot(app: AppHandle, state: State<'_, AppState>) -> Result<Runtim
         node_version,
         model: health.model,
         config_loaded,
-        context_sidecar: openviking_sidecar_status_impl(&state.openviking_sidecar),
+        context_sidecar: local_context_status(),
         dream_maintenance: dream_maintenance_status_impl(&state.dream_maintenance),
     })
 }
 
 #[tauri::command]
-fn context_sidecar_status(state: State<'_, AppState>) -> OpenVikingSidecarStatus {
-    openviking_sidecar_status_impl(&state.openviking_sidecar)
+fn context_sidecar_status() -> LocalContextStatus {
+    local_context_status()
 }
 
 fn parse_runtime_health_line(line: &str) -> Result<RuntimeHealthResponse, String> {
@@ -740,13 +827,20 @@ fn read_workspace_file(
 }
 
 #[tauri::command]
-fn list_threads(app: AppHandle) -> Result<Value, String> {
-    run_runtime_json(&app, &["thread", "--operation", "list"])
+async fn list_threads(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_runtime_json(&app, &["thread", "--operation", "list", "--summary", "true"]))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn runtime_dashboard(app: AppHandle) -> Result<Value, String> {
-    run_runtime_json(&app, &["dashboard"])
+async fn runtime_dashboard(app: AppHandle, details: Option<bool>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if details.unwrap_or(false) {
+            run_runtime_json(&app, &["dashboard", "--timeline-limit", "0"])
+        } else {
+            run_runtime_json(&app, &["dashboard", "--summary", "true"])
+        }
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -783,11 +877,20 @@ fn get_thread(app: AppHandle, thread_id: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn list_thread_events(app: AppHandle, thread_id: String) -> Result<Value, String> {
+async fn list_thread_events(app: AppHandle, thread_id: String, limit: Option<u32>, before: Option<String>) -> Result<Value, String> {
     if thread_id.trim().is_empty() {
         return Err("threadId 不能为空".to_string());
     }
-    run_runtime_json(&app, &["thread-events", "--thread-id", thread_id.as_str()])
+    let limit = limit.unwrap_or(100);
+    if !(1..=500).contains(&limit) || before.as_ref().is_some_and(|value| value.len() > 2048) {
+        return Err("THREAD_HISTORY_PAGE_INVALID".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let limit = limit.to_string();
+        let mut args = vec!["thread-events", "--thread-id", thread_id.as_str(), "--limit", limit.as_str()];
+        if let Some(before) = before.as_deref() { args.extend(["--before", before]); }
+        run_runtime_json(&app, &args)
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -811,7 +914,12 @@ fn fork_thread(app: AppHandle, thread_id: String, title: Option<String>) -> Resu
 }
 
 #[tauri::command]
-fn list_execution_state(app: AppHandle, record_type: Option<String>) -> Result<Value, String> {
+async fn list_execution_state(app: AppHandle, record_type: Option<String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || list_execution_state_blocking(app, record_type))
+        .await.map_err(|error| error.to_string())?
+}
+
+fn list_execution_state_blocking(app: AppHandle, record_type: Option<String>) -> Result<Value, String> {
     let mut args = vec!["execution-state", "--operation", "list"];
     let record_type_value;
     if let Some(record_type) = record_type.filter(|value| !value.trim().is_empty()) {
@@ -848,16 +956,79 @@ fn reconcile_execution_state(app: AppHandle) -> Result<Value, String> {
     run_runtime_json(&app, &["execution-state", "--operation", "reconcile"])
 }
 
-#[tauri::command]
-fn reconcile_runtime_state(app: AppHandle) -> Result<Value, String> {
-    // Run the same recovery scan used at task startup, but expose it to the
-    // desktop bootstrap so orphaned approvals and role contexts are closed
-    // before the user submits another task. Recovery never replays work.
-    run_runtime_json(&app, &["recovery"])
+fn mutate_execution_record(
+    app: &AppHandle,
+    operation: &str,
+    record_id: String,
+    expected_digest: Option<String>,
+    reason: &str,
+) -> Result<Value, String> {
+    let record_id = required_runtime_argument(Some(record_id), "recordId")?;
+    if !["cancel-approval", "revoke-lease"].contains(&operation) {
+        return Err("执行状态操作无效".to_string());
+    }
+    let mut args = vec!["execution-state".to_string(), "--operation".to_string(), operation.to_string(), "--record-id".to_string(), record_id];
+    if let Some(expected_digest) = expected_digest.filter(|value| !value.trim().is_empty()) {
+        args.extend(["--expected-digest".to_string(), expected_digest]);
+    }
+    args.extend(["--reason".to_string(), reason.to_string()]);
+    run_runtime_json_owned(app, &args)
 }
 
 #[tauri::command]
-fn list_memories(app: AppHandle, status: Option<String>) -> Result<Value, String> {
+fn cancel_execution_approval(
+    app: AppHandle,
+    record_id: String,
+    expected_digest: Option<String>,
+) -> Result<Value, String> {
+    mutate_execution_record(&app, "cancel-approval", record_id, expected_digest, "USER_RECOVERY_CANCELLED")
+}
+
+#[tauri::command]
+fn revoke_execution_lease(
+    app: AppHandle,
+    record_id: String,
+    expected_digest: Option<String>,
+) -> Result<Value, String> {
+    mutate_execution_record(&app, "revoke-lease", record_id, expected_digest, "USER_RECOVERY_REVOKED")
+}
+
+#[tauri::command]
+fn export_data(app: AppHandle, scope: String) -> Result<Value, String> {
+    let scope = required_runtime_argument(Some(scope), "scope")?;
+    if !["all", "runs", "settings"].contains(&scope.as_str()) {
+        return Err("导出范围无效".to_string());
+    }
+    let dir = app.path().app_data_dir().map_err(|error| format!("无法定位应用数据目录: {error}"))?.join("exports");
+    fs::create_dir_all(&dir).map_err(|error| format!("创建导出目录失败: {error}"))?;
+    let output = dir.join(format!("export-{}-{}.json", scope, SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()));
+    let output_string = output.to_string_lossy().to_string();
+    let args = vec!["export-data".to_string(), "--scope".to_string(), scope, "--output".to_string(), output_string.clone()];
+    let mut result = run_runtime_json_owned(&app, &args)?;
+    if let Some(object) = result.as_object_mut() { object.insert("output".to_string(), Value::String(output_string)); }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn reconcile_runtime_state(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    // Run the same recovery scan used at task startup, but expose it to the
+    // desktop bootstrap so orphaned approvals and role contexts are closed
+    // before the user submits another task. Recovery never replays work.
+    let mut args = vec!["recovery".to_string()];
+    if let Ok(root) = ensure_default_workspace(&app, &state) {
+        args.extend(["--workspace".to_string(), root.to_string_lossy().to_string()]);
+    }
+    tauri::async_runtime::spawn_blocking(move || run_runtime_json_owned(&app, &args))
+        .await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn list_memories(app: AppHandle, status: Option<String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || list_memories_blocking(app, status))
+        .await.map_err(|error| error.to_string())?
+}
+
+fn list_memories_blocking(app: AppHandle, status: Option<String>) -> Result<Value, String> {
     let mut args = vec![
         "memory".to_string(),
         "--operation".to_string(),
@@ -921,9 +1092,11 @@ fn memory_action(
     accepted: Option<bool>,
     reason: Option<String>,
     source_event_ids: Option<Vec<String>>,
+    sensitivity: Option<String>,
+    conflicts_with_memory_ids: Option<Vec<String>>,
 ) -> Result<Value, String> {
     let operation = required_runtime_argument(Some(operation), "operation")?.to_ascii_lowercase();
-    if !["propose", "verify", "activate", "retract", "delete"].contains(&operation.as_str()) {
+    if !["propose", "edit", "resolve-conflict", "verify", "activate", "retract", "delete"].contains(&operation.as_str()) {
         return Err("memory operation 无效".to_string());
     }
     let mut args = vec![
@@ -932,15 +1105,25 @@ fn memory_action(
         operation.clone(),
     ];
     match operation.as_str() {
-        "propose" => {
-            let statement = required_runtime_argument(statement, "statement")?;
-            args.extend(["--statement".to_string(), statement]);
+        "propose" | "edit" => {
+            if operation == "propose" {
+                let statement = required_runtime_argument(statement, "statement")?;
+                args.extend(["--statement".to_string(), statement]);
+            } else if let Some(statement) = statement.filter(|value| !value.trim().is_empty()) {
+                args.extend(["--statement".to_string(), required_runtime_argument(Some(statement), "statement")?]);
+            }
             optional_runtime_argument(&mut args, "--scope", scope, "scope")?;
+            optional_runtime_argument(&mut args, "--sensitivity", sensitivity, "sensitivity")?;
             if let Some(confidence) = confidence {
                 if !confidence.is_finite() || !(0.0..=1.0).contains(&confidence) {
                     return Err("confidence 必须在 0 到 1 之间".to_string());
                 }
                 args.extend(["--confidence".to_string(), confidence.to_string()]);
+            }
+            if let Some(memory_id) = memory_id {
+                args.extend(["--memory-id".to_string(), required_runtime_argument(Some(memory_id), "memoryId")?]);
+            } else if operation == "edit" {
+                return Err("memoryId 不能为空".to_string());
             }
             if let Some(source_event_ids) = source_event_ids {
                 if source_event_ids.len() > 32 {
@@ -948,18 +1131,29 @@ fn memory_action(
                 }
                 let mut normalized = Vec::with_capacity(source_event_ids.len());
                 for source_event_id in source_event_ids {
-                    normalized.push(required_runtime_argument(
-                        Some(source_event_id),
-                        "sourceEventId",
-                    )?);
+                    normalized.push(required_runtime_argument(Some(source_event_id), "sourceEventId")?);
                 }
                 if normalized.iter().collect::<HashSet<_>>().len() != normalized.len() {
                     return Err("sourceEventIds 不能重复".to_string());
                 }
-                let encoded = serde_json::to_string(&normalized)
-                    .map_err(|_| "sourceEventIds 无效".to_string())?;
+                let encoded = serde_json::to_string(&normalized).map_err(|_| "sourceEventIds 无效".to_string())?;
                 args.extend(["--source-event-ids".to_string(), encoded]);
             }
+            if let Some(conflicts) = conflicts_with_memory_ids {
+                if conflicts.len() > 32 { return Err("conflictsWithMemoryIds 最多 32 个".to_string()); }
+                let mut normalized = Vec::with_capacity(conflicts.len());
+                for conflict in conflicts {
+                    normalized.push(required_runtime_argument(Some(conflict), "conflictMemoryId")?);
+                }
+                if normalized.iter().collect::<HashSet<_>>().len() != normalized.len() { return Err("conflictsWithMemoryIds 不能重复".to_string()); }
+                let encoded = serde_json::to_string(&normalized).map_err(|_| "conflictsWithMemoryIds 无效".to_string())?;
+                args.extend(["--conflicts-with-memory-ids".to_string(), encoded]);
+            }
+        }
+        "resolve-conflict" => {
+            let memory_id = required_runtime_argument(memory_id, "memoryId")?;
+            args.extend(["--memory-id".to_string(), memory_id]);
+            optional_runtime_argument(&mut args, "--reason", reason, "reason")?;
         }
         "verify" => {
             let memory_id = required_runtime_argument(memory_id, "memoryId")?;
@@ -988,7 +1182,12 @@ fn memory_action(
 }
 
 #[tauri::command]
-fn list_dream_runs(app: AppHandle, project_id: Option<String>) -> Result<Value, String> {
+async fn list_dream_runs(app: AppHandle, project_id: Option<String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || list_dream_runs_blocking(app, project_id))
+        .await.map_err(|error| error.to_string())?
+}
+
+fn list_dream_runs_blocking(app: AppHandle, project_id: Option<String>) -> Result<Value, String> {
     let mut args = vec![
         "dream".to_string(),
         "--operation".to_string(),
@@ -1084,8 +1283,9 @@ fn stop_dream_maintenance(
 }
 
 #[tauri::command]
-fn list_plugin_governance(app: AppHandle) -> Result<Value, String> {
-    run_runtime_json(&app, &["plugin", "--operation", "list"])
+async fn list_plugin_governance(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_runtime_json(&app, &["plugin", "--operation", "list"]))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1115,8 +1315,9 @@ fn plugin_action(
 }
 
 #[tauri::command]
-fn list_evolution(app: AppHandle) -> Result<Value, String> {
-    run_runtime_json(&app, &["evolution", "--operation", "list"])
+async fn list_evolution(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_runtime_json(&app, &["evolution", "--operation", "list"]))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1245,12 +1446,45 @@ fn run_model_task_blocking(
     lease_commands: Option<Vec<String>>,
     lease_network_targets: Option<serde_json::Value>,
 ) -> Result<RuntimeTaskResponse, String> {
+    // Hold this for the full task lifetime. Runtime dashboard/list commands
+    // acquire the same lock, so a startup read finishes before the task can
+    // open the Harness database and no read can interrupt event persistence.
+    let lock_wait_started = Instant::now();
+    // std::sync::Mutex::lock() cannot be interrupted. Poll try_lock instead so
+    // Cancel can be observed while another dashboard/task command owns the lock.
+    let _runtime_command_guard = loop {
+        match state.runtime_command_lock.try_lock() {
+            Ok(guard) => break guard,
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err("运行时命令状态不可用".to_string());
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let cancelled = *state
+                    .active_runtime_cancel_requested
+                    .lock()
+                    .map_err(|_| "运行时状态不可用".to_string())?;
+                if cancelled {
+                    return Err("Cordis runtime 已在启动前取消".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    };
+    let lock_wait_ms = lock_wait_started.elapsed().as_millis();
+    if lock_wait_ms > 0 {
+        append_desktop_log(&format!("runtime task waited for command lock {lock_wait_ms}ms"));
+    }
+    // A queued task can be cancelled while a dashboard owns the command lock.
+    // Do not spawn a child for that cancelled reservation.
+    if *state.active_runtime_cancel_requested.lock()
+        .map_err(|_| "运行时状态不可用".to_string())? {
+        return Err("Cordis runtime 已在启动前取消".to_string());
+    }
     let channel = desktop_release_channel()?;
     validate_release_mode(&channel, execution_mode.as_deref())?;
     let root = ensure_default_workspace(&app, &state)?;
     let runtime = runtime_entrypoint(&app)?;
-    let context_sidecar = ensure_openviking_sidecar(&runtime, &state.openviking_sidecar);
-    let _ = app.emit("context-sidecar-status", &context_sidecar);
+    let _ = app.emit("context-sidecar-status", &local_context_status());
     let mut command = runtime_command(&runtime);
     command
         .arg(runtime)
@@ -1329,6 +1563,9 @@ fn run_model_task_blocking(
         let pid = child.id();
         let child_stdin = child.stdin.take();
         *active_pid = Some(pid);
+        if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+            *heartbeat_seen = false;
+        }
         if let Ok(mut started_at_ms) = state.active_runtime_started_at_ms.lock() {
             let started = unix_time_ms();
             *started_at_ms = Some(started);
@@ -1345,6 +1582,9 @@ fn run_model_task_blocking(
                 }
                 if let Ok(mut heartbeat_at_ms) = state.active_runtime_last_heartbeat_at_ms.lock() {
                     *heartbeat_at_ms = None;
+                }
+                if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+                    *heartbeat_seen = false;
                 }
                 let _ = child.kill();
                 let _ = child.wait();
@@ -1365,6 +1605,9 @@ fn run_model_task_blocking(
             }
             if let Ok(mut heartbeat_at_ms) = state.active_runtime_last_heartbeat_at_ms.lock() {
                 *heartbeat_at_ms = None;
+            }
+            if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+                *heartbeat_seen = false;
             }
             if let Ok(mut launching) = state.active_runtime_launching.lock() {
                 *launching = false;
@@ -1419,10 +1662,16 @@ fn run_model_task_blocking(
     });
     let mut stdout_text = String::new();
     let mut stdout_error = None;
+    let mut terminal_seen_at_ms = None;
     loop {
         match stdout_receiver.recv_timeout(Duration::from_millis(RUNTIME_WATCHDOG_POLL_MS)) {
             Ok(Ok(Some(line))) => {
                 handle_runtime_stdout_line(&app, &state, pid, &line, &mut stdout_text);
+                if runtime_last_phase(&stdout_text).is_some_and(|phase| {
+                    matches!(phase.as_str(), "run.state_changed:SUCCEEDED" | "run.state_changed:FAILED" | "run.state_changed:CANCELLED")
+                }) {
+                    terminal_seen_at_ms.get_or_insert(unix_time_ms());
+                }
             }
             Ok(Ok(None)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                 append_desktop_log("runtime stdout closed");
@@ -1434,12 +1683,33 @@ fn run_model_task_blocking(
                 break;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let stale = state
-                    .active_runtime_last_heartbeat_at_ms
+                let now_ms = unix_time_ms();
+                let heartbeat_seen = state
+                    .active_runtime_heartbeat_seen
                     .lock()
-                    .map(|value| runtime_heartbeat_is_stale(*value, unix_time_ms()))
-                    .unwrap_or(true);
-                if stale && runtime_process_is_active(&state, pid) {
+                    .map(|value| *value)
+                    .unwrap_or(false);
+                let startup_elapsed_ms = state
+                    .active_runtime_started_at_ms
+                    .lock()
+                    .ok()
+                    .and_then(|value| *value)
+                    .map(|started| now_ms.saturating_sub(started))
+                    .unwrap_or(RUNTIME_STARTUP_GRACE_MS + 1);
+                let stale = if heartbeat_seen {
+                    state
+                        .active_runtime_last_heartbeat_at_ms
+                        .lock()
+                        .map(|value| runtime_heartbeat_is_stale(*value, now_ms))
+                        .unwrap_or(true)
+                } else {
+                    startup_elapsed_ms > RUNTIME_STARTUP_GRACE_MS
+                };
+                let terminal_shutdown_expired = terminal_seen_at_ms
+                    .is_some_and(|seen| now_ms.saturating_sub(seen) > RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS);
+                if (stale && terminal_seen_at_ms.is_none() || terminal_shutdown_expired)
+                    && runtime_process_is_active(&state, pid)
+                {
                     let exited = child.try_wait().map_or(false, |status| status.is_some());
                     let terminal_error = if exited {
                         terminal_stdout_error(&stdout_text)
@@ -1454,10 +1724,11 @@ fn run_model_task_blocking(
                             error
                         }
                         None => {
+                            let phase = runtime_last_phase(&stdout_text).unwrap_or_else(|| "未收到首个心跳".to_string());
                             append_desktop_log(&format!(
-                                "runtime 心跳超时，监督器终止进程 pid={pid}"
+                                "runtime 心跳超时，监督器终止进程 pid={pid} phase={phase}"
                             ));
-                            "Cordis runtime 心跳超时，已由监督器终止".to_string()
+                            format!("Cordis runtime 心跳超时，已由监督器终止（阶段: {phase}）")
                         }
                     };
                     stdout_error = Some(message);
@@ -1502,6 +1773,9 @@ fn run_model_task_blocking(
                 }
                 if let Ok(mut heartbeat_at_ms) = state.active_runtime_last_heartbeat_at_ms.lock() {
                     *heartbeat_at_ms = None;
+                }
+                if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+                    *heartbeat_seen = false;
                 }
             }
         }
@@ -1633,6 +1907,9 @@ fn cancel_runtime_process(state: &AppState) -> Result<RuntimeCancellation, Strin
         }
         if let Ok(mut heartbeat_at_ms) = state.active_runtime_last_heartbeat_at_ms.lock() {
             *heartbeat_at_ms = None;
+        }
+        if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
+            *heartbeat_seen = false;
         }
         pid
     };
@@ -1947,6 +2224,26 @@ fn terminal_stdout_error(stdout_text: &str) -> Option<String> {
     None
 }
 
+fn runtime_last_phase(stdout_text: &str) -> Option<String> {
+    for line in stdout_text.lines().rev() {
+        let Ok(value) = serde_json::from_str::<Value>(line.trim()) else { continue };
+        if value.get("type").and_then(Value::as_str) != Some("runtime_event") { continue }
+        let kind = value.get("kind").and_then(Value::as_str);
+        let payload = value.get("payload");
+        if kind == Some("runtime.phase") {
+            if let Some(phase) = payload.and_then(|item| item.get("phase")).and_then(Value::as_str) {
+                return Some(phase.to_string());
+            }
+        }
+        if kind == Some("run.state_changed") {
+            if let Some(state) = payload.and_then(|item| item.get("to")).and_then(Value::as_str) {
+                return Some(format!("run.state_changed:{state}"));
+            }
+        }
+    }
+    None
+}
+
 fn bounded_process_error(stderr: &str) -> String {
     let trimmed = stderr.trim();
     if trimmed.is_empty() {
@@ -1956,8 +2253,32 @@ fn bounded_process_error(stderr: &str) -> String {
     format!(": {suffix}")
 }
 
+fn is_history_read(args: &[&str]) -> bool {
+    args.first() == Some(&"thread-events")
+        || (args.first() == Some(&"dashboard") && args.windows(2).any(|pair| pair == ["--summary", "true"]))
+        || (args.first() == Some(&"thread")
+            && args.windows(2).any(|pair| pair == ["--summary", "true"])
+            && args.windows(2).any(|pair| pair == ["--operation", "list"] || pair == ["--operation", "get"]))
+}
+
 fn run_runtime_json(app: &AppHandle, args: &[&str]) -> Result<Value, String> {
+    // Dashboard, recovery and governance commands use the same Harness store
+    // as a live task. Serialize the process lifetime here instead of relying
+    // on SQLite's busy timeout, which can otherwise stall the task before it
+    // emits RoleContextAllocated.
+    let lock_wait_started = Instant::now();
+    let state = app.state::<AppState>();
+    // These commands open a read-only transaction and never recover or rebuild.
+    // Keep writes serialized without queuing history behind an entire recovery.
+    let _runtime_command_guard = if is_history_read(args) { None } else {
+        Some(state.runtime_command_lock.lock()
+            .map_err(|_| "运行时命令状态不可用".to_string())?)
+    };
+    let lock_wait_ms = lock_wait_started.elapsed().as_millis();
+    let command_name = args.first().copied().unwrap_or("unknown");
+    append_desktop_log(&format!("runtime query start command={command_name} lock_wait_ms={lock_wait_ms}"));
     let runtime = runtime_entrypoint(app)?;
+    let runtime = if is_history_read(args) { runtime.with_file_name("history-cli.mjs") } else { runtime };
     let output = runtime_command(&runtime)
         .arg(runtime)
         .args(args)
@@ -1973,20 +2294,34 @@ fn run_runtime_json(app: &AppHandle, args: &[&str]) -> Result<Value, String> {
         .rev()
         .find(|value| !value.trim().is_empty())
         .ok_or_else(|| {
+            append_desktop_log(&format!(
+                "runtime query empty command={command_name} status={:?} stderr={}",
+                output.status,
+                bounded_process_error(&stderr)
+            ));
             format!(
                 "Cordis runtime 没有返回结果{}",
                 bounded_process_error(&stderr)
             )
         })?;
-    let value = serde_json::from_str::<Value>(line)
-        .map_err(|error| format!("Cordis runtime 返回了无效结果: {error}"))?;
+    let value = serde_json::from_str::<Value>(line).map_err(|error| {
+        append_desktop_log(&format!(
+            "runtime query invalid-json command={command_name} error={error}"
+        ));
+        format!("Cordis runtime 返回了无效结果: {error}")
+    })?;
     if !output.status.success() || value.get("ok").and_then(Value::as_bool) == Some(false) {
         let detail = value
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("runtime 命令失败");
+        append_desktop_log(&format!(
+            "runtime query failed command={command_name} status={:?} detail={detail}",
+            output.status
+        ));
         return Err(detail.to_string());
     }
+    append_desktop_log(&format!("runtime query complete command={command_name}"));
     Ok(value)
 }
 
@@ -2154,11 +2489,8 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
-                if let Ok(runtime) = runtime_entrypoint(&app_handle) {
-                    let status = ensure_openviking_sidecar(
-                        &runtime,
-                        &app_handle.state::<AppState>().openviking_sidecar,
-                    );
+                if runtime_entrypoint(&app_handle).is_ok() {
+                    let status = local_context_status();
                     let _ = app_handle.emit("context-sidecar-status", &status);
                 }
             });
@@ -2184,7 +2516,10 @@ pub fn run() {
             list_execution_state,
             get_execution_state,
             reconcile_execution_state,
+            cancel_execution_approval,
+            revoke_execution_lease,
             reconcile_runtime_state,
+            export_data,
             list_memories,
             memory_action,
             list_dream_runs,
@@ -2207,7 +2542,6 @@ pub fn run() {
             let state = app_handle.state::<AppState>();
             let _ = cancel_runtime_process(state.inner());
             let _ = stop_dream_maintenance_impl(&app_handle, &state.dream_maintenance);
-            stop_openviking_sidecar(&state.openviking_sidecar);
         }
     });
 }
@@ -2246,6 +2580,18 @@ mod desktop_log_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_read_only_history_commands_bypass_the_runtime_write_lock() {
+        assert!(is_history_read(&["thread-events", "--thread-id", "test", "--limit", "100"]));
+        assert!(is_history_read(&["dashboard", "--summary", "true"]));
+        assert!(is_history_read(&["thread", "--operation", "list", "--summary", "true"]));
+        assert!(is_history_read(&["thread", "--operation", "get", "--summary", "true"]));
+        for args in [vec!["dashboard"], vec!["dashboard", "--summary", "false"],
+            vec!["recovery"], vec!["thread", "--operation", "fork", "--summary", "true"]] {
+            assert!(!is_history_read(&args));
+        }
+    }
 
     #[test]
     fn task_response_preserves_runtime_identity_for_desktop() {
@@ -2294,7 +2640,13 @@ mod tests {
             "protocol": "chat-completions",
             "model": "custom-model",
             "baseURL": "https://models.example/v1",
-            "apiKeyEnv": "CUSTOM_API_KEY"
+            "apiKeyEnv": "CUSTOM_API_KEY",
+            "verifier": {
+                "criteria": ["只输出结论"],
+                "repetitions": 3,
+                "maxComparisons": 8,
+                "passThreshold": 0.95
+            }
         }))
         .unwrap();
         assert_eq!(
@@ -2304,6 +2656,32 @@ mod tests {
         let serialized = serde_json::to_value(config).unwrap();
         assert_eq!(serialized["baseURL"], "https://models.example/v1");
         assert!(serialized.get("baseUrl").is_none());
+        assert_eq!(serialized["verifier"]["repetitions"], 3);
+        assert_eq!(serialized["verifier"]["criteria"][0], "只输出结论");
+        // 未配置时必须整体省略，避免写出空对象覆盖 runtime 默认值。
+        let bare: ModelConfig = serde_json::from_value(serde_json::json!({
+            "schemaVersion": "1.0",
+            "provider": "compatible",
+            "protocol": "chat-completions",
+            "model": "custom-model",
+            "apiKeyEnv": "CUSTOM_API_KEY"
+        }))
+        .unwrap();
+        let bare_serialized = serde_json::to_value(bare).unwrap();
+        assert!(bare_serialized.get("verifier").is_none());
+    }
+
+    #[test]
+    fn model_config_migrates_retired_opencode_go_model_alias() {
+        let mut config = default_model_config();
+        config.model = "mimo-v2.6".to_string();
+        let migrated = normalize_legacy_model_alias(config);
+        assert_eq!(migrated.model, "mimo-v2.6-pro");
+
+        let mut other_route = default_model_config();
+        other_route.model = "mimo-v2.6".to_string();
+        other_route.base_url = Some("https://gateway.example/v1".to_string());
+        assert_eq!(normalize_legacy_model_alias(other_route).model, "mimo-v2.6");
     }
 
     #[test]
@@ -2321,10 +2699,72 @@ mod tests {
         config.model = "second-model".to_string();
         persist_model_config(&path, &config).unwrap();
 
-        let saved: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(saved["model"], "second-model");
         assert_eq!(saved["models"][0]["modelId"], "backup");
         assert_eq!(saved["roleBindings"]["executor"], "backup");
+        assert!(saved.get("verifier").is_none());
+    }
+
+    #[test]
+    fn model_config_save_round_trips_verifier_section() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("model-config.json");
+        let mut config = default_model_config();
+        config.verifier = Some(serde_json::json!({
+            "criteria": ["只输出结论", "禁止编造路径"],
+            "repetitions": 4,
+            "maxComparisons": 16,
+            "pivots": 2,
+            "maxPromptChars": 60000,
+            "seed": 2026,
+            "passThreshold": 0.9,
+            "failThreshold": 0.5
+        }));
+        persist_model_config(&path, &config).unwrap();
+
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["verifier"]["repetitions"], 4);
+        assert_eq!(saved["verifier"]["criteria"].as_array().unwrap().len(), 2);
+        assert_eq!(saved["verifier"]["passThreshold"], 0.9);
+
+        // 写回时也要能原样读回，并在清空后从文件中删除。
+        let reloaded: ModelConfig = serde_json::from_value(saved.clone()).unwrap();
+        assert!(reloaded.verifier.is_some());
+        config.verifier = None;
+        persist_model_config(&path, &config).unwrap();
+        let cleared: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(cleared.get("verifier").is_none());
+        assert_eq!(cleared["model"], config.model);
+    }
+
+    #[test]
+    fn model_config_custom_instructions_round_trip_and_clear() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("model-config.json");
+        fs::write(&path, r#"{"models":[{"modelId":"backup"}],"roleBindings":{"executor":"backup"}}"#).unwrap();
+        let mut config = default_model_config();
+        config.custom_instructions = Some("  每次回复都使用中文。\n\t先给结论。  ".to_string());
+        let config = validate_model_config(config).unwrap();
+        persist_model_config(&path, &config).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["customInstructions"], "每次回复都使用中文。\n\t先给结论。");
+        assert_eq!(saved["roleBindings"]["executor"], "backup");
+        let mut reloaded: ModelConfig = serde_json::from_value(saved).unwrap();
+        assert_eq!(reloaded.custom_instructions, config.custom_instructions);
+        reloaded.custom_instructions = Some("  \n".to_string());
+        let cleared = validate_model_config(reloaded).unwrap();
+        persist_model_config(&path, &cleared).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(saved.get("customInstructions").is_none());
+        assert_eq!(saved["models"][0]["modelId"], "backup");
+        let mut config = default_model_config();
+        config.custom_instructions = Some("中".repeat(8000));
+        assert!(validate_model_config(config.clone()).is_ok());
+        config.custom_instructions = Some("😀".repeat(4001));
+        assert!(validate_model_config(config.clone()).is_err());
+        config.custom_instructions = Some("a\0b".to_string());
+        assert!(validate_model_config(config).is_err());
     }
 
     #[test]
@@ -2443,6 +2883,35 @@ mod tests {
         assert!(!runtime_heartbeat_is_stale(Some(10_000), 39_999));
         assert!(runtime_heartbeat_is_stale(Some(10_000), 40_001));
         assert!(runtime_heartbeat_is_stale(None, 1));
+    }
+
+    #[test]
+    fn extracts_last_runtime_phase_for_watchdog_diagnostics() {
+        let stdout = r#"{"type":"runtime_event","kind":"run.started","payload":{}}
+{"type":"runtime_event","kind":"runtime.phase","payload":{"phase":"LEGACY_MIGRATION_CHECK"}}
+"#;
+        assert_eq!(runtime_last_phase(stdout).as_deref(), Some("LEGACY_MIGRATION_CHECK"));
+    }
+
+    #[test]
+    fn runtime_command_lock_serializes_dashboard_and_task_slots() {
+        let state = AppState::default();
+        let guard = state.runtime_command_lock.lock().unwrap();
+        let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let worker = std::thread::spawn(move || {
+            let _worker_guard = worker_state.runtime_command_lock.lock().unwrap();
+            ready_sender.send(()).unwrap();
+        });
+
+        assert!(ready_receiver
+            .recv_timeout(Duration::from_millis(50))
+            .is_err());
+        drop(guard);
+        assert!(ready_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .is_ok());
+        worker.join().unwrap();
     }
 
     #[test]

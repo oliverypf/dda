@@ -74,3 +74,28 @@ test('comparison reports mismatched fields', () => {
   assert.ok(result.mismatchedFields.includes('snapshotDigest'));
   assert.equal(compareExecutionScopeSnapshots(a, a).ok, true);
 });
+
+test('every execution scope field mismatch is detected (S2-02 field matrix)', () => {
+  const baseInput = {
+    runId: 'run-1', operationId: 'op-1', workspaceRootDigest: 'ws', canonicalRootDigest: 'canonical',
+    repositoryRootDigest: 'repo', beforeHead: 'head', allowedPathRoots: ['src/a.txt'], allowedPathGlobs: ['src/**'],
+    forbiddenPathGlobs: ['.env'], allowedCapabilities: ['read'], allowedCommands: ['git status'],
+    allowedNetworkTargets: ['api.example.test'], executionMode: 'CONTROLLED',
+    releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED', policyVersion: 'runtime-safety-1',
+    bindingSnapshotDigest: 'binding', approvalScopeDigest: 'approval', leaseScopeDigest: 'lease',
+    decisionIds: ['d1'], createdAtMs: 42
+  };
+  const base = createExecutionScopeSnapshot(baseInput);
+  const fields = Object.keys(base).filter((field) => field !== 'snapshotDigest');
+  assert.equal(fields.length, 20);
+  for (const field of fields) {
+    const current = base[field];
+    const mutated = Array.isArray(current)
+      ? [...current, 'zz-mismatch']
+      : typeof current === 'number' ? current + 1 : `${current}-x`;
+    const changed = createExecutionScopeSnapshot({ ...baseInput, [field]: mutated });
+    const comparison = compareExecutionScopeSnapshots(base, changed);
+    assert.equal(comparison.ok, false, `${field} change must fail the comparison`);
+    assert.ok(comparison.mismatchedFields.includes(field), `${field} must be listed as mismatched`);
+  }
+});

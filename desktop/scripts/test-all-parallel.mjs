@@ -21,6 +21,10 @@ const npmArgs = (args) => (npmCli ? [npmCli, ...args] : args);
 const suites = [
   { name: 'runtime', cwd: runtimeRoot, command: npmCommand, args: npmArgs(['test']) },
   { name: 'desktop', cwd: desktopRoot, command: npmCommand, args: npmArgs(['test']) },
+  // node:test scripts under desktop/scripts are excluded from the Vitest run;
+  // run them here so the W10 evidence gate and build-channel tests are covered.
+  { name: 'desktop-scripts', cwd: desktopRoot, command: npmCommand, args: npmArgs(['run', 'test:scripts']) },
+  { name: 'phase3-evidence', cwd: desktopRoot, command: npmCommand, args: npmArgs(['run', 'test:phase3-evidence']) },
   {
     name: 'typescript',
     cwd: desktopRoot,

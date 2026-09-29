@@ -115,3 +115,30 @@ test('rule verifier does not treat empty evidence containers as proof', () => {
   assert.equal(report.status, 'UNCERTAIN');
   assert.equal(report.failureCodes.includes('BUILD_FAILED'), false);
 });
+
+test('binary workspace reads request recovery while keeping the unsuccessful action visible', () => {
+  const report = new RuleVerifier().verify({
+    output: 'The binary file could not be read; use another source.',
+    workspace: { granted: true },
+    actions: [{ name: 'workspace.read', path: 'image.bin', state: 'FAILED', errorCode: 'WORKSPACE_BINARY_FILE' }]
+  });
+  assert.equal(report.status, 'CONTINUE');
+  assert.equal(report.nextAction, 'CONTINUE_EXECUTION');
+  assert.equal(report.progress, 0);
+  assert.equal(report.failureCodes.includes('ACTION_FAILED'), false);
+  assert.equal(report.checks.find((item) => item.id === 'actions.progress').status, 'UNKNOWN');
+});
+
+test('hard action failures report their error codes and reference the failed action after many successes', () => {
+  const actions = Array.from({ length: 20 }, (_, index) => ({ name: 'workspace.read', path: 'file-' + index, state: 'SUCCEEDED' }));
+  actions.push({ name: 'workspace.read', path: '.env', state: 'FAILED', errorCode: 'WORKSPACE_SENSITIVE_PATH' });
+  actions.push({ name: 'workspace.read', path: 'image.bin', state: 'FAILED', errorCode: 'WORKSPACE_BINARY_FILE' });
+  const report = new RuleVerifier().verify({ output: 'inspection stopped', workspace: { granted: true }, actions });
+  const check = report.checks.find((item) => item.id === 'actions.progress');
+  assert.equal(report.status, 'FAIL');
+  assert.equal(report.nextAction, 'STOP_AND_REPORT');
+  assert.ok(report.failureCodes.includes('ACTION_FAILED'));
+  assert.match(check.message, /WORKSPACE_SENSITIVE_PATH/);
+  assert.ok(check.evidence.some((ref) => ref.startsWith('action:20:')));
+  assert.equal(check.evidence.some((ref) => ref.startsWith('action:21:')), false);
+});

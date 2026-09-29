@@ -16,8 +16,10 @@ export const classifyTask = (prompt) => {
 export class RuleRouter {
   #routes;
   constructor({ routes = DEFAULT_ROUTES } = {}) { this.#routes = structuredClone(routes); }
-  resolve({ prompt, mode = 'READ_ONLY', allowedRoles = ['planner', 'executor', 'verifier'] } = {}) {
-    const taskClass = classifyTask(prompt);
+  resolve({ prompt, taskClass: requestedTaskClass, mode = 'READ_ONLY', allowedRoles = ['planner', 'executor', 'verifier'] } = {}) {
+    const taskClass = typeof requestedTaskClass === 'string' && requestedTaskClass.trim()
+      ? requestedTaskClass.trim()
+      : classifyTask(prompt);
     const route = this.#routes[taskClass] ?? this.#routes.unknown ?? {};
     if (!['READ_ONLY', 'CONTROLLED'].includes(mode)) {
       return { taskClass, status: 'BLOCKED', reason: 'INVALID_EXECUTION_MODE', roles: {} };

@@ -5,7 +5,7 @@
 
 ## 1. 目标
 
-评价体系决定 Agent、Model、Skill、Verifier、Router、Council、Dreaming 和学习策略能否进入生产。任何“看起来更聪明”的能力都必须证明：质量提高、成本可接受、没有安全退化，而且结果可复现。
+评价体系决定 Agent、Model、Skill、Rule Verifier、Jev Decision Plane、Router、Council、Dreaming 和学习策略能否进入生产。任何“看起来更聪明”的能力都必须证明：质量提高、成本可接受、没有安全退化，而且结果可复现。
 
 安全是硬门，质量/成本/延迟只在安全候选内比较。
 
@@ -52,7 +52,7 @@ Fixture 必须去除真实秘密和个人数据；真实 Trajectory 用于 eval 
 每个新策略与以下至少一个固定基线比较：
 
 - `B0`：单模型、单 Agent、无自适应路由；
-- `B1`：单 Planner/Executor + RuleVerifier；
+- `B1`：单 Planner/Executor + RuleVerifier + Jev Decision Plane；
 - `B2`：当前生产 Router/角色配置；
 - `B3`：同预算的单 Agent，用于评价 Council；
 - `B4`：无 Memory/Dreaming，用于评价跨会话优化。
@@ -100,13 +100,13 @@ Fixture 必须去除真实秘密和个人数据；真实 Trajectory 用于 eval 
 
 - `decisionCoverage`：必须记录的关键 Agent 决策中，存在合规 committed record 的比例，发布目标 100%。
 - `evidenceLinkRate`、`optionCoverage`：有可用事前证据、真实分支候选和淘汰原因的比例。
-- `decisionOutcomeLinkRate`：已结算决策链接执行/Verifier/用户结果的比例；取消和未执行单独分层。
+- `decisionOutcomeLinkRate`：已结算决策链接执行/Rule Verifier/Jev/用户结果的比例；取消和未执行单独分层。
 - `decisionReversalRate`、`repeatedBadDecisionRate`：修订/拒绝及相同失败指纹重复比例。
 - `confidenceCalibration`、`predictionError`：Agent 自报置信度及质量/成本/风险预测与独立结果的偏差。
 - `creditEvidenceCoverage`：Credit/Blame 可回放到决策、动作和独立证据的比例。
 - `traceOverhead`：Decision Trace 引入的 token、p95 延迟和存储开销。
 
-学习数据集必须使用不可变的 decision-time feature snapshot；未来 outcome、后续证据和 Verifier 结论只作为 label，不得进入 context feature。Agent 自评和 provider reasoning summary 不作为唯一标签。证据已删除、版本身份不完整、发生 identity mismatch 或检测到 outcome leakage 的样本标记为不可训练。
+学习数据集必须使用不可变的 decision-time feature snapshot；未来 outcome、后续证据和 Rule Verifier/Jev 结论只作为 label，不得进入 context feature。Agent/Jev 自评和 provider reasoning summary 不作为唯一标签。证据已删除、版本身份不完整、发生 identity mismatch 或检测到 outcome leakage 的样本标记为不可训练。
 
 ## 6. Grader 层级
 
@@ -115,7 +115,7 @@ Fixture 必须去除真实秘密和个人数据；真实 Trajectory 用于 eval 
 1. 安全硬规则和副作用审计；
 2. 编译、测试、静态分析、文件/diff/格式等确定性检查；
 3. 用户明确验收条件；
-4. 独立语义 Verifier；
+4. Jev 证据判断与保守 fallback；
 5. 人工抽检。
 
 模型式 grader 不能单独判断安全通过、提升权限或覆盖失败测试。Grader 的模型、提示、版本和盲测设置必须记录，避免与被测 Agent 共享可污染上下文。
@@ -134,7 +134,7 @@ Fixture 必须去除真实秘密和个人数据；真实 Trajectory 用于 eval 
 - 只读回归集 taskSuccessRate 达到产品设定基线且不低于 B1；
 - 事件全量回放得到相同终态和 read model checksum；
 - crash/recovery、cancel、timeout、database full case 全通过；
-- `decisionCoverage=100%`；由 Agent 产生的 route、plan、read/action choice、Verifier verdict、诊断/停止和 Memory Proposal 都满足 commit-before-effect，已结算决策可追溯 outcome；确定性规则决策仍由其权威事件覆盖；
+- `decisionCoverage=100%`；由 Agent/Jev 产生的 route、plan、read/action choice、工具门禁、行为判断、诊断/停止和 Memory Proposal 都满足 commit-before-effect，已结算决策可追溯 outcome；确定性规则决策仍由其权威事件覆盖；
 - `unauthorizedSideEffectCount=0`，Phase 1 写入尝试 100% 拒绝。
 
 ### Phase 1.5

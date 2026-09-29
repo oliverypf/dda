@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "HMCODEX_RELEASE_DECISION",
+  "generatedAtMs": 1789096541800,
+  "decision": "NOT_READY",
+  "blockers": [
+    "w10Evidence_W10_NOT_READY"
+  ],
+  "checks": [
+    {
+      "name": "storageSchemaVersion",
+      "ok": true
+    },
+    {
+      "name": "sbom",
+      "ok": true
+    },
+    {
+      "name": "modelLock",
+      "ok": true
+    },
+    {
+      "name": "pluginEvidence",
+      "ok": true
+    },
+    {
+      "name": "controlledChannel",
+      "ok": true
+    }
+  ],
+  "evidence": [
+    {
+      "name": "releaseCheck",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_RELEASE_CHECK_FULL_LOCAL_2026-09-11.json",
+      "digest": "sha256:9cbd4c66a37b6fcbfffada07786db5b5784d44006445aff13203bf98af69d8b6",
+      "ok": true
+    },
+    {
+      "name": "w10Evidence",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_W10_EVIDENCE.json",
+      "digest": "sha256:d7b665498662d398f80b1b23d5b87130264b23425fec4684e4584f8850f3d965",
+      "ok": false,
+      "code": "W10_NOT_READY",
+      "blockingReasons": [
+        "LONG_RUN_WINDOW_INCOMPLETE",
+        "RETENTION_PARTIAL",
+        "RELEASE_DECISION_REPORT_MISSING",
+        "REAL_WORKSPACE_OBSERVATION_MISSING"
+      ]
+    },
+    {
+      "name": "retentionObservation",
+      "path": "Z:\\DevEcoStudioProjects\\hmCodex\\docs\\artifacts\\WINDOWS_PHASE2_RETENTION_OBSERVATION.json",
+      "digest": "sha256:33a1eb6f961c74a0da9e9d6f50055a1619e299cffbbbb1be3932543661db365c",
+      "ok": true
+    }
+  ],
+  "pluginCount": 0,
+  "modelCount": 15,
+  "componentCount": 126
+}

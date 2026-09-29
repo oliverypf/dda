@@ -3,8 +3,11 @@ import {
   applyRuntimeSubAgentEvent,
   beginRun,
   cancelPendingApprovals,
+  expireRequestedApprovals,
   completeStreamingAgent,
   createInitialReadModel,
+  setActiveThread,
+  setThreads,
   setRunState,
   setExecutionMode,
   setRuntimeReady,
@@ -18,6 +21,88 @@ import {
 import type { RuntimeEvent } from './models';
 
 describe('HarnessReadModel store', () => {
+  it('expires requests at the deadline without changing approved or undated records', () => {
+    const request = { requestId: 'timed', capability: 'shell.execute', requestDigest: 'digest', state: 'REQUESTED' as const, createdAtMs: 1, approvalExpiresAt: 100 };
+    const model = { ...createInitialReadModel(), approvals: [request, { ...request, requestId: 'approved', state: 'APPROVED' as const }, { ...request, requestId: 'undated', approvalExpiresAt: undefined }] };
+    expect(expireRequestedApprovals(model, 99)).toBe(model);
+    const expired = expireRequestedApprovals(model, 100);
+    expect(expired.approvals.map(item => item.state)).toEqual(['EXPIRED', 'APPROVED', 'REQUESTED']);
+    expect(expired.projectionVersion).toBeGreaterThan(model.projectionVersion);
+    expect(expireRequestedApprovals(expired, 101)).toBe(expired);
+    expect(model.approvals[0].state).toBe('REQUESTED');
+  });
+
+  it.each(['SUCCEEDED', 'FAILED', 'CANCELLED'] as const)('removes pending approval actions on terminal state %s', (state) => {
+    const model = { ...beginRun(createInitialReadModel(), 'task'), approvals: [{ requestId: 'pending', capability: 'shell.execute', requestDigest: 'digest', state: 'REQUESTED' as const, createdAtMs: 1 }] };
+    expect(setRunState(model, state).approvals[0].state).toBe('CANCELLED');
+    expect(setRunState(model, 'VERIFYING').approvals[0].state).toBe('REQUESTED');
+  });
+  it('starts a fresh task when the workspace root changes without deleting saved threads', () => {
+    const thread = { id: 'thread-old', title: 'Saved task', cwd: 'C:\\projects\\old', turnCount: 1, createdAtMs: 1, updatedAtMs: 2 };
+    let model = setWorkspace(createInitialReadModel(), 'old', '', [], thread.cwd);
+    model = setActiveThread(setThreads(model, [thread]), thread.id, true);
+    model = setWorkspaceFile(beginRun(model, 'old workspace task'), {
+      relativePath: 'README.md', content: 'old file', contentDigest: 'sha256:old', totalBytes: 8, truncated: false, binary: false
+    });
+    const switched = setWorkspace(model, 'new', '', [], 'C:\\projects\\new');
+    expect(switched.activeThreadId).toBeUndefined();
+    expect(switched.resumeThreadId).toBeUndefined();
+    expect(switched.activeRun).toBeUndefined();
+    expect(switched.timeline).toEqual([]);
+    expect(switched.subAgents).toEqual([]);
+    expect(switched.approvals).toEqual([]);
+    expect(switched.decisions).toEqual([]);
+    expect(switched.processVerification).toBeUndefined();
+    expect(switched.continuousVerification).toEqual([]);
+    expect(switched.workspace.selectedFile).toBeUndefined();
+    expect(switched.threads).toEqual([thread]);
+    expect(model.activeThreadId).toBe(thread.id);
+  });
+
+  it.each([
+    ['C:\\', 'c:/'],
+    ['C:\\Projects\\Demo', 'c:/projects/demo/'],
+    ['\\\\?\\C:\\Projects\\Demo', 'C:\\Projects\\Demo'],
+    ['\\\\?\\UNC\\Server\\Share\\Demo', '\\\\server\\share\\demo\\'],
+    ['/projects/demo', '/projects/demo/']
+  ])('keeps the thread when reopening the same root: %s -> %s', (current, selected) => {
+    let model = setWorkspace(createInitialReadModel(), 'demo', '', [], current);
+    model = setActiveThread(model, 'thread-same', true);
+    const reopened = setWorkspace(model, 'demo', '', [], selected);
+    expect(reopened.activeThreadId).toBe('thread-same');
+    expect(reopened.resumeThreadId).toBe('thread-same');
+  });
+
+  it.each([
+    ['C:\\first\\demo', 'C:\\second\\demo'],
+    ['/projects/Demo', '/projects/demo']
+  ])('does not equate different roots with the same label: %s -> %s', (current, selected) => {
+    const model = setActiveThread(setWorkspace(createInitialReadModel(), 'demo', '', [], current), 'thread-old', true);
+    expect(setWorkspace(model, 'demo', '', [], selected).activeThreadId).toBeUndefined();
+  });
+
+  it('checks a restored thread cwd before the first workspace grant', () => {
+    const thread = { id: 'restored', title: 'Restored task', cwd: 'C:\\old', turnCount: 1, createdAtMs: 1, updatedAtMs: 2 };
+    const model = setActiveThread(setThreads(createInitialReadModel(), [thread]), thread.id, true);
+    expect(setWorkspace(model, 'new', '', [], 'C:\\new').activeThreadId).toBeUndefined();
+    expect(setWorkspace(model, 'old', '', [], 'C:\\old').activeThreadId).toBe(thread.id);
+  });
+
+  it('keeps the thread and checkpoint when browsing workspace subdirectories', () => {
+    const model = setActiveThread(setWorkspace(createInitialReadModel(), 'demo', '', [], 'C:\\demo'), 'thread-same', true);
+    const nested = setWorkspace(model, 'demo', 'src/components', []);
+    expect(nested.activeThreadId).toBe('thread-same');
+    expect(nested.resumeThreadId).toBe('thread-same');
+    expect(nested.workspace.rootPath).toBe('C:\\demo');
+  });
+
+  it('does not discard a viewed historical thread when only navigating workspace entries', () => {
+    const thread = { id: 'history', title: 'History', cwd: 'C:\\old', turnCount: 1, createdAtMs: 1, updatedAtMs: 2 };
+    const model = setActiveThread(setThreads(setWorkspace(createInitialReadModel(), 'new', '', [], 'C:\\new'), [thread]), thread.id);
+    expect(setWorkspace(model, 'new', 'src', []).activeThreadId).toBe(thread.id);
+    expect(setWorkspace(model, 'new', '', [], 'C:\\new').activeThreadId).toBeUndefined();
+  });
+
   it('retains runtime ownership while updating streaming content', () => {
     let model = upsertStreamingAgent(createInitialReadModel(), 'response', 'first', false, 'runtime-run');
     model = upsertStreamingAgent(model, 'response', ' second', true);
@@ -248,6 +333,35 @@ describe('HarnessReadModel store', () => {
       task: '已从 Thread checkpoint 恢复计划（2 步）'
     });
 
+    model = applyRuntimeSubAgentEvent(model, event('RoleContextAllocated', {
+      contextId: 'ctx-executor', role: 'executor'
+    }, 5));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')).toMatchObject({
+      state: 'STARTING', name: '执行 Agent'
+    });
+    model = applyRuntimeSubAgentEvent(model, event('RoleContextStateChanged', {
+      contextId: 'ctx-executor', role: 'executor', from: 'READY', to: 'BUSY'
+    }, 6));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')?.state).toBe('RUNNING');
+    // The runtime persists and emits the aggregate allocation summary after
+    // the individual BUSY transitions. It must not regress live rows to the
+    // initial preparation state.
+    model = applyRuntimeSubAgentEvent(model, event('role.contexts_allocated', {
+      contexts: [
+        { contextId: 'ctx-executor', role: 'executor', model: 'test-model', isolation: 'DEDICATED' },
+        { contextId: 'ctx-critic', role: 'critic', model: 'test-model', isolation: 'DEDICATED' }
+      ]
+    }, 7));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')).toMatchObject({
+      state: 'RUNNING',
+      task: '等待执行已验证计划'
+    });
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-critic')?.state).toBe('STARTING');
+    model = applyRuntimeSubAgentEvent(model, event('RoleContextStateChanged', {
+      contextId: 'ctx-executor', role: 'executor', from: 'BUSY', to: 'CLOSED'
+    }, 8));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')?.state).toBe('SUCCEEDED');
+
     model = applyRuntimeSubAgentEvent(model, event('role.contexts_reconciled', {
       reconciled: 1,
       contexts: [{ contextId: 'ctx-verifier', role: 'semanticVerifier', state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }]
@@ -262,7 +376,8 @@ describe('HarnessReadModel store', () => {
     const initial = createInitialReadModel();
     const workspace = setWorkspace(initial, 'demo', 'src', [
       { name: 'main.ts', relativePath: 'src/main.ts', kind: 'FILE', sizeBytes: 12 }
-    ]);
+    ], 'C:\\projects\\demo');
+    const nestedWorkspace = setWorkspace(workspace, 'demo', 'src/components', []);
     const withFile = setWorkspaceFile(workspace, {
       relativePath: 'src/main.ts',
       content: 'const x = 1;',
@@ -273,7 +388,8 @@ describe('HarnessReadModel store', () => {
     });
 
     expect(initial.workspace.granted).toBe(false);
-    expect(workspace.workspace).toMatchObject({ granted: true, rootLabel: 'demo', currentPath: 'src' });
+    expect(workspace.workspace).toMatchObject({ granted: true, rootLabel: 'demo', rootPath: 'C:\\projects\\demo', currentPath: 'src' });
+    expect(nestedWorkspace.workspace.rootPath).toBe('C:\\projects\\demo');
     expect(withFile.workspace.selectedFile?.relativePath).toBe('src/main.ts');
     expect(withFile.projectionVersion).toBeGreaterThan(workspace.projectionVersion);
   });

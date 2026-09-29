@@ -1,3 +1,4 @@
+import { deleteRunResponse } from './run-response-store.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 import {
@@ -652,7 +653,10 @@ export class HarnessEventStore {
       if (typeof runId !== 'string' || !runId.trim()) throw new Error('HARNESS_PURGE_RUN_REQUIRED');
       const normalizedRunId = runId.trim().slice(0, MAX_TEXT);
       const existingTombstone = this.#tombstones.get(normalizedRunId);
-      if (existingTombstone) return { status: 'COMMITTED', tombstone: clone(existingTombstone), idempotent: true };
+      if (existingTombstone) {
+        await deleteRunResponse(this.#storagePath, normalizedRunId);
+        return { status: 'COMMITTED', tombstone: clone(existingTombstone), idempotent: true };
+      }
       const unsigned = {
         schemaVersion: HARNESS_STORE_SCHEMA_VERSION,
         tombstoneId: 'tombstone-' + this.#idFactory(),
@@ -665,6 +669,7 @@ export class HarnessEventStore {
         const db = openHarnessDatabase(this.#storagePath);
         try {
           const result = purgeHarnessRun(db, tombstone, validateSqliteDatabase);
+          await deleteRunResponse(this.#storagePath, normalizedRunId);
           this.#sqliteSummary = readHarnessSummary(db);
           this.#tombstones = new Map(readHarnessTombstones(db).map((item) => [item.runId, clone(item)]));
           return clone(result);
@@ -703,6 +708,7 @@ export class HarnessEventStore {
       this.#events = committedSnapshot.events.map(clone);
       this.#receipts = new Map(committedSnapshot.receipts.map((receipt) => [receipt.commandId, clone(receipt)]));
       this.#tombstones = new Map((committedSnapshot.tombstones ?? []).map((item) => [item.runId, clone(item)]));
+      await deleteRunResponse(this.#storagePath, normalizedRunId);
       return { status: 'COMMITTED', tombstone: clone(tombstone), purgedEventCount: removedIds.size, idempotent: false };
     };
     this.#queue = this.#queue.then(operation, operation);

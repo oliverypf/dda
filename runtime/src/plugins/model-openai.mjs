@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { stableToolDefinitions, cacheSessionId } from '../prompt-cache.mjs';
+import { providerTokenUsage } from '../model-usage.mjs';
 import { cordisPlugin } from './cordis-plugin.mjs';
 import {
   ToolCallNormalizationError,
@@ -480,9 +482,15 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
     async *stream(request) {
       const apiKey = process.env[apiKeyEnv]?.trim();
       if (!apiKey) throw new Error(`MISSING_CREDENTIAL:${apiKeyEnv}`);
+      const cacheEnabled = process.env.HMCODEX_PROMPT_CACHE !== 'off';
+      const scopedSession = cacheEnabled && request.cacheScope ? cacheSessionId({
+        scope: request.cacheScope, endpoint, model, role: request.cacheRole ?? 'executor',
+        system: request.system ?? '', tools: request.tools
+      }) : sessionId;
+      const requestTools = cacheEnabled ? stableToolDefinitions(request.tools) : request.tools;
       const body = protocol === 'responses'
         ? (() => {
-            const tools = responsesTools(request.tools);
+            const tools = responsesTools(requestTools);
             return {
               model,
               instructions: request.system,
@@ -493,7 +501,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
             };
           })()
         : (() => {
-            const tools = chatCompletionsTools(request.tools);
+            const tools = chatCompletionsTools(requestTools);
             return {
               model,
               messages: request.system
@@ -503,6 +511,14 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
               stream: true
             };
           })();
+      if (protocol === 'chat-completions' && process.env.HMCODEX_STREAM_USAGE !== 'off') body.stream_options = { include_usage: true };
+      // Only the official OpenAI host is assumed to support this routing field.
+      // Compatible gateways still benefit from identical prefixes and their
+      // configured session header, without being sent unsupported cache keys.
+      if (cacheEnabled && request.cacheScope && new URL(endpoint).hostname === 'api.openai.com') {
+        body.prompt_cache_key = cacheSessionId({ scope: request.cacheScope, endpoint, model,
+          role: request.cacheRole ?? 'executor', system: request.system ?? '', tools: requestTools });
+      }
       if (request.logprobs === true && protocol === 'chat-completions') {
         body.logprobs = true;
         body.top_logprobs = 20;
@@ -511,7 +527,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         method: 'POST',
         headers: {
           ...extraHeaders,
-          ...(sessionHeader ? { [sessionHeader]: sessionId } : {}),
+          ...(sessionHeader ? { [sessionHeader]: scopedSession } : {}),
           accept: 'text/event-stream',
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json'
@@ -524,17 +540,24 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         throw new Error(`MODEL_HTTP_ERROR:${failureMessage(response.status, parseJson(raw))}`);
       }
       let finished = false;
+      let usage;
+      let pendingFinish;
       const toolState = protocol === 'responses' ? createResponsesToolState() : createChatToolState();
       for await (const event of sseEvents(response.body)) {
         if (event.data === '[DONE]') {
           if (!finished) {
             for (const toolCall of toolState.flush()) yield toolCall;
-            const reason = { kind: toolState.size > 0 ? 'tool-calls' : 'stop' };
-            yield { type: 'finish', reason };
+            if (usage) yield { type: 'usage', usage };
+            yield pendingFinish ?? { type: 'finish', reason: { kind: toolState.size > 0 ? 'tool-calls' : 'stop' } };
           }
           finished = true;
           continue;
         }
+        // Usage may arrive after finish_reason with choices=[], or on the
+        // final Responses envelope. Keep the latest cumulative snapshot once.
+        const rawUsage = protocol === 'responses' ? event.parsed?.response?.usage ?? event.parsed?.usage : event.parsed?.usage;
+        const reportedUsage = providerTokenUsage(rawUsage, protocol);
+        if (reportedUsage) usage = reportedUsage;
         const toolCalls = protocol === 'responses'
           ? toolState.consume(event.event, event.parsed)
           : toolState.consume(event.parsed);
@@ -558,15 +581,16 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         if (chunk.type === 'finish' && chunk.reason.kind === 'stop' && toolState.size > 0) {
           chunk.reason = { kind: 'tool-calls' };
         }
-        yield chunk;
         if (chunk.type === 'finish') {
-          finished = true;
+          pendingFinish = chunk;
+          continue;
         }
+        yield chunk;
       }
       if (!finished) {
         for (const toolCall of toolState.flush()) yield toolCall;
-        const reason = { kind: toolState.size > 0 ? 'tool-calls' : 'stop' };
-        yield { type: 'finish', reason };
+        if (usage) yield { type: 'usage', usage };
+        yield pendingFinish ?? { type: 'finish', reason: { kind: toolState.size > 0 ? 'tool-calls' : 'stop' } };
       }
     }
   });

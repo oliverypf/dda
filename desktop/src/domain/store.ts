@@ -11,6 +11,7 @@ import type {
   WorkspaceEntry,
   WorkspaceFile
 } from './models';
+import { sameWorkspaceRoot } from './workspace';
 
 const runtimeRoleLabel = (role: string): string => ({
   planner: '计划 Agent',
@@ -65,6 +66,7 @@ export const createInitialReadModel = (): HarnessReadModel => ({
   memories: [],
   dreamRuns: [],
   plugins: [],
+  pluginVersions: [],
   evolutionProposals: [],
   evolutionReports: [],
   decisions: [],
@@ -141,6 +143,18 @@ export const upsertApproval = (
   if (index < 0) approvals.push(approval);
   else approvals[index] = approval;
   return { ...model, projectionVersion: model.projectionVersion + 1, approvals };
+};
+
+// A delayed runtime event must not keep a locally expired request actionable.
+// This is a UI projection only; the runtime still validates every decision.
+export const expireRequestedApprovals = (model: HarnessReadModel, now = Date.now()): HarnessReadModel => {
+  let changed = false;
+  const approvals = model.approvals.map((approval) => {
+    if (approval.state !== 'REQUESTED' || approval.approvalExpiresAt === undefined || approval.approvalExpiresAt > now) return approval;
+    changed = true;
+    return { ...approval, state: 'EXPIRED' as const };
+  });
+  return changed ? { ...model, approvals, projectionVersion: model.projectionVersion + 1 } : model;
 };
 
 export const cancelPendingApprovals = (model: HarnessReadModel): HarnessReadModel => {
@@ -228,6 +242,7 @@ export const beginRun = (model: HarnessReadModel, prompt: string): HarnessReadMo
 const isSubAgentActive = (state: SubAgentState): boolean => state === 'STARTING' || state === 'RUNNING';
 
 export const setRunState = (model: HarnessReadModel, state: RunState): HarnessReadModel => {
+  if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(state)) model = cancelPendingApprovals(model);
   const terminalAgentState: SubAgentState | undefined = state === 'CANCELLED'
     ? 'CANCELLED'
     : state === 'FAILED'
@@ -298,6 +313,31 @@ export const applyRuntimeSubAgentEvent = (
   const role = typeof payload.role === 'string' ? payload.role : '';
   const contextId = typeof payload.contextId === 'string' ? payload.contextId : undefined;
 
+  if (event.kind === 'RoleContextAllocated') {
+    const contextKey = typeof payload.contextId === 'string' ? payload.contextId : undefined;
+    if (!role || !contextKey) return model;
+    return upsertSubAgent(model, {
+      agentId: contextKey,
+      name: runtimeRoleDisplayLabel(role, contextKey),
+      task: runtimeRoleTask(role),
+      state: 'STARTING'
+    });
+  }
+
+  if (event.kind === 'RoleContextStateChanged') {
+    const contextKey = typeof payload.contextId === 'string' ? payload.contextId : undefined;
+    const nextState = typeof payload.to === 'string' ? payload.to.toUpperCase() : '';
+    const state: SubAgentState = nextState === 'BUSY' || nextState === 'INTERRUPTING' ? 'RUNNING'
+      : nextState === 'CLOSED' ? 'SUCCEEDED'
+        : nextState === 'FAILED' ? 'FAILED' : 'STARTING';
+    if (!contextKey) return model;
+    return upsertSubAgent(model, {
+      agentId: contextKey,
+      ...(role ? { name: runtimeRoleDisplayLabel(role, contextKey), task: runtimeRoleTask(role) } : {}),
+      state
+    });
+  }
+
   if (event.kind === 'role.contexts_allocated') {
     const contexts = Array.isArray(payload.contexts) ? payload.contexts : [];
     let next = model;
@@ -307,12 +347,23 @@ export const applyRuntimeSubAgentEvent = (
       const contextRole = typeof context.role === 'string' ? context.role : '';
       if (!contextRole) continue;
       const contextKey = typeof context.contextId === 'string' ? context.contextId : undefined;
-      next = upsertSubAgent(next, {
-        agentId: runtimeRoleAgentId(event.runId, contextRole, contextKey),
-        name: runtimeRoleDisplayLabel(contextRole, contextKey),
-        task: runtimeRoleTask(contextRole),
-        state: 'STARTING'
-      });
+      const agentId = runtimeRoleAgentId(event.runId, contextRole, contextKey);
+      // Runtime emits the individual allocation/state frames before this
+      // aggregate summary.  The summary is descriptive and must not move an
+      // already BUSY or completed role back to STARTING (the exact ordering
+      // seen by the desktop is Allocated -> BUSY -> contexts_allocated).
+      const existing = next.subAgents.find((agent) => agent.agentId === agentId);
+      next = existing
+        ? upsertSubAgent(next, {
+            agentId,
+            name: runtimeRoleDisplayLabel(contextRole, contextKey)
+          })
+        : upsertSubAgent(next, {
+            agentId,
+            name: runtimeRoleDisplayLabel(contextRole, contextKey),
+            task: runtimeRoleTask(contextRole),
+            state: 'STARTING'
+          });
     }
     return next;
   }
@@ -431,16 +482,50 @@ export const setWorkspace = (
   model: HarnessReadModel,
   rootLabel: string,
   currentPath: string,
-  entries: WorkspaceEntry[]
-): HarnessReadModel => ({
+  entries: WorkspaceEntry[],
+  rootPath?: string
+): HarnessReadModel => {
+  const nextRoot = rootPath ?? model.workspace.rootPath;
+  const threadRoot = model.threads.find((thread) => thread.id === model.activeThreadId)?.cwd;
+  const rootChanged = Boolean(rootPath && [model.workspace.rootPath, threadRoot]
+    .some((previous) => previous && !sameWorkspaceRoot(previous, rootPath)));
+  return {
+    ...model,
+    ...(rootChanged ? {
+      activeThreadId: undefined,
+      resumeThreadId: undefined,
+      activeRun: undefined,
+      timeline: [],
+      subAgents: [],
+      approvals: [],
+      decisions: [],
+      continuousVerification: [],
+      processVerification: undefined,
+      composer: { ...model.composer, enabled: true }
+    } : {}),
+    projectionVersion: model.projectionVersion + 1,
+    workspace: {
+      granted: true,
+      rootLabel,
+      ...(nextRoot ? { rootPath: nextRoot } : {}),
+      currentPath,
+      entries,
+      stale: false
+    }
+  };
+};
+
+export const clearWorkspace = (model: HarnessReadModel): HarnessReadModel => ({
   ...model,
   projectionVersion: model.projectionVersion + 1,
   workspace: {
-    granted: true,
-    rootLabel,
-    currentPath,
-    entries,
-    stale: false
+    granted: false,
+    rootLabel: '未绑定项目',
+    rootPath: undefined,
+    currentPath: '',
+    entries: [],
+    stale: false,
+    selectedFile: undefined
   }
 });
 

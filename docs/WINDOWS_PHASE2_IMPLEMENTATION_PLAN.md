@@ -6,6 +6,8 @@
 状态：阶段一完成后的执行计划  
 上位计划：[Windows 全功能优先实施计划](WINDOWS_ALL_FEATURES_IMPLEMENTATION_PLAN.md)
 
+> **架构更新（2026-09-22）**：本文的阶段二工作包和历史状态保留用于追溯，不再把 OpenViking、LLM-as-a-Verifier、独立语义 Verifier 或 Candidate Judge 作为当前需求。当前运行时决策基线是 [Jev Decision Plane 设计](JEV_DECISION_PLANE_DESIGN.md)：证据 → Jev → 硬安全边界 → 执行。
+
 ## 1. 阶段定位
 
 阶段一按 W0–W7 完成并发布为 `WINDOWS_PHASE1_READ_ONLY`。阶段一已经覆盖只读任务、唯一 Harness Event Store、commit-before-effect 基础、全量回放、崩溃恢复、Decision Trace、运维/隐私/容量能力，以及 Windows 安装包和 UI 验收。
@@ -41,9 +43,9 @@
 - 受控 UI 的审批详情、一次性语义、过期/拒绝/替代、取消和未知结果恢复；
 - 多进程并发写入同一 workspace、进程树清理和副作用恢复的真实 Windows 验收。
 
-### 2.2 W9：已有模块尚未完成全功能集成
+### 2.2 W9：已有模块尚未完成全功能集成（历史计划口径）
 
-- OpenViking 目前已有 ContextPort 和 sidecar supervisor 的契约测试，但尚未完成随 Windows 安装包交付、loopback 连接、健康检查、重启、索引损坏降级和真实工作区验收；
+- 旧版 OpenViking ContextPort/sidecar 方案已从当前架构移除；当前上下文使用本地 Memory Journal，Jev 通过 DecisionEngine 接收有界证据；旧 sidecar 条目仅用于历史证据追溯；
 - Plugin manifest、loader 和 governance 已存在，但动态插件在阶段一关闭，尚未完成生产级签名/撤销、side-by-side 升级、配置迁移、self-test、shadow、quarantine、回滚和 UI 管理闭环；
 - Thread/Turn 基础和本地 fork/checkpoint 已有实现，仍需补齐完整的 list/resume/fork、外部 Adapter 身份变化、跨进程恢复和用户输入请求语义；
 - Feedback/ModelScenarioProfile/Bayesian 已有 runtime 基础，桌面目前主要展示脱敏摘要，尚未完成用户提交/修订/撤回、模型/角色精确归因、shadow 结果进入安全候选排序和完整评估报告；
@@ -52,9 +54,9 @@
 - Dashboard 已有核心治理摘要，尚未覆盖完整 Decision DAG、Approval/Lease 详情、Verifier 证据、Recovery、OpenViking、Plugin、Memory、Dream 和 Evolution 的交互验收；
 - runtime 当前仍按任务短命启动，长期驻留、并发 TaskRun、资源预算和跨组件生命周期仍需 W10 验收。
 
-### 2.3 LLM as a Verifier 的准确状态
+### 2.3 旧 LLM as a Verifier 状态（已废弃）
 
-这项能力已经接入当前 runtime，但完成度需要分开看：
+这项能力属于历史候选版本的实现记录，不是当前 runtime 设计：
 
 - `runtime/src/agent-turns.mjs` 已实现 `runSemanticVerifierTurn`，它使用配置的模型 provider 发起独立、无工具权限的语义验证回合；
 - `runtime/src/index.mjs` 在 `agentMode=multi` 的每个计划步骤中先运行确定性 `RuleVerifier`，再调用语义 Verifier；模型输出被解析为结构化 `PASS`/`FAIL`/`ABSTAIN`，无效或调用失败会安全降级为 `ABSTAIN`；
@@ -62,14 +64,14 @@
 - 默认 `agentMode=single` 不调用 LLM Verifier；多角色模式下如果没有可用 binding 也只会 `ABSTAIN`。当前默认语义 Verifier 可能与 Planner/Executor 使用同一个模型配置，虽然上下文隔离，但还没有完成高风险场景必须使用独立模型或独立 provider 的发布门；
 - 当前 LLM verdict 是语义证据之一，不能替代 RuleVerifier、Safety Monitor、Approval、PolicyLease 或独立执行事实；它还没有完成受控副作用场景的真实 Windows 验收、P0/P1 对抗测试、完整 Verifier 状态映射（`CONTINUE/STALLED/UNCERTAIN`）和完整 UI 证据展示。
 
-因此，LLM as a Verifier 不属于“未实现”，而属于“已有可运行垂直切片，阶段二继续完成独立绑定、受控链路、证据/事件完整性和发布验收”。
+因此，LLM as a Verifier 不再进入后续实现、配置或发布验收；当前行为判断统一迁移到 Jev Decision Plane，Rule Verifier 和 Runtime Safety 保留为硬边界。
 
-### 2.4 多候选扇出与选择尚未实现
+### 2.4 多候选扇出与选择（已迁移到 Jev）
 
-`ModelSelector` 的三种模式都只解析出单个模型，Router 是事前选择；同角色多候选并发生成、评分后再选择的机制尚不存在：
+历史版本的 `ModelSelector` 只解析单个模型；当前候选并发生成后，由 Jev Decision Plane 基于证据在有限集合中选择：
 
 - `ModelSelector` 没有 `CANDIDATE_SET` 扇出模式，`ModelInvocationGateway` 只有单次调用语义；
-- 没有 `CandidateSelectionPolicy`：确定性硬淘汰、独立 judge 排序、降级路径和扇出预算都未定义；
+- `CandidateSelectionPolicy` 不再调用独立 judge；硬淘汰由确定性检查完成，选择/拒绝/补证据由 Jev 完成，并有显式保守 fallback；
 - Decision Trace 没有 `SELECT_CANDIDATE` 决策类型，候选草稿只以 `outputDraftDigest` 字段预留；
 - 成本、出域记录和 Support Bundle 边界尚未按候选粒度展开。
 
@@ -170,7 +172,7 @@ HarmonyOS、Linux、Gateway、跨设备和其他平台功能继续遵守总计�
 - Recovery 只做状态查询、lease 撤销、证据校验和用户可见恢复，不直接重放副作用；
 - 同一 workspace 同时最多一个持有可写 lease 的 ExecutionRole；
 - 副作用已发生但结果未知时生成补偿/验证路径，不把失败消息当成“没有执行”。
-- 将已存在的 LLM semantic verifier 纳入受控链路：高风险任务要求独立模型或 provider，保留独立 RoleContext，并把模型 verdict 与 RuleVerifier 结果分开记录；
+- 将 Jev Decision Plane 纳入受控链路：高风险任务必须收集完整证据并经过 Action Gate；Jev 结果与 RuleVerifier 事实分开记录，不能覆盖硬失败；
 - 统一 `PASS/FAIL/ABSTAIN` 与 `CONTINUE/STALLED/UNCERTAIN` 的映射，语义 Verifier 不能覆盖确定性硬失败，也不能单独授予成功或权限。
 
 验收：重启和 recovery 任意重复执行都不会新增副作用；所有成功受控 run 都有独立 Verifier 证据，所有未知结果都保持 UNKNOWN/RECOVERING 语义。
@@ -200,16 +202,16 @@ HarmonyOS、Linux、Gateway、跨设备和其他平台功能继续遵守总计�
 
 验收：Controlled 安装包通过 `release-check`、安装/升级/卸载、UI 回归和安全场景后，才允许发布 `WINDOWS_PHASE1_5_CONTROLLED`。
 
-### S2-09 OpenViking 与本地长期运行时（进入 W9，依赖 S2-08）
+### S2-09 本地 Memory Journal、Jev 与长期运行时（进入 W9，依赖 S2-08）
 
 交付：
 
-- 将 OpenViking sidecar、版本、配置和数据目录纳入 Windows 安装包；
-- runtime 启动、健康检查、loopback 认证、重启、停止、索引损坏和不可用降级；
-- recall/record/used/commit 与 Thread/Turn、Memory、Dream 的事件和权限边界；
+- 将 Memory Journal、证据快照和 Jev Decision Engine 纳入 Windows runtime；
+- runtime 的 Jev 超时、不可用、证据不足和保守 fallback；
+- evidence/decision/outcome 与 Thread/Turn、Memory、Dream 的事件和权限边界；
 - 长期驻留 supervisor、心跳、资源预算、退出清理和故障恢复。
 
-验收：sidecar 不可用时明确显示“记忆不可用”但不影响安全和只读会话；可用时上下文召回有 URI、scope、digest 和使用记录。
+验收：Jev 或 Memory Journal 不可用时明确降级但不影响安全和只读会话；可用时上下文证据有来源、scope、digest 和使用记录。
 
 ### S2-10 Plugin 生产生命周期（进入 W9，依赖 S2-08）
 
@@ -232,7 +234,7 @@ HarmonyOS、Linux、Gateway、跨设备和其他平台功能继续遵守总计�
 - ModelScenarioProfile/Bayesian 只在安全过滤后的候选集合内做 shadow/advisory 排序，记录 cohort、版本、evidence window 和回退原因；
 - Memory source、冲突、过期、撤回、删除和不可训练标记；Dream 仍受空闲/预算/锁/取消门控；
 - Evolution 的 replay、shadow、canary、monitor、kill switch、promotion 和 rollback；
-- Dashboard 展示 Decision DAG、Verifier、Approval/Lease、Plugin、OpenViking、Memory、Dream、Evolution 和 Support Bundle。
+- Dashboard 展示 Decision DAG、Rule Verifier/Jev、Approval/Lease、Plugin、Memory、Dream、Evolution 和 Support Bundle。
 
 验收：每个模块都从 Event Store/ReadModel 读取事实；任何 Bayesian、Dream 或 Evolution 异常都回退规则基线，不扩大权限；删除、导出、回滚后 UI 不复活已清理内容。
 
@@ -242,7 +244,7 @@ HarmonyOS、Linux、Gateway、跨设备和其他平台功能继续遵守总计�
 
 - 扩展 `ModelSelector` 契约增加 `CANDIDATE_SET`（候选绑定、`fanout`、`selectionPolicyRef`、`fanoutBudget`），默认 `fanout=1` 保持现有单候选行为；
 - 将 `ModelInvocationGateway` 升级为扇出语义：并发上限、部分失败、超时、限流、去重和统一错误映射，至少一个候选成功即视为调用成功；
-- 实现 `CandidateSelectionPolicy`：确定性检查硬淘汰 → 独立 judge 排序 → 选择；judge 必须使用独立上下文且不与候选同源，不可用时降级为确定性加成本/延迟排序并记录原因；
+- 实现 `CandidateSelectionPolicy`：确定性检查硬淘汰 → Jev 基于证据选择；Jev 不可用时降级为确定性加成本/延迟排序并记录原因；
 - 扇出规模按风险自适应并受预算约束；超预算时按确定性顺序截断候选集并记录截断原因；
 - 新增 `SELECT_CANDIDATE` 决策类型，每个候选映射为一个 `DecisionOption`，选中项关联 Outcome，未选中项标记 `NOT_EXECUTED`；
 - 安全回归：所有候选先过 `TaskSafetyPrecheck` 和 `CandidateSafetyFilter`，被拒候选不进入评分集合，选中项副作用仍走 intent/approval/lease 链；
@@ -301,10 +303,10 @@ npm run test:all:parallel
 
 ### G3：Windows 计划内功能集成
 
-- OpenViking、Plugin、Thread、Feedback/Bayesian、Memory/Dream、Evolution 和 Dashboard 都使用同一 Event Store/ReadModel；
+- Memory Journal、Jev、Plugin、Thread、Feedback/Bayesian、Memory/Dream、Evolution 和 Dashboard 都使用同一 Event Store/ReadModel；
 - 每个自动能力都有 feature gate、版本、回滚点和安全失败路径；
 - Bayesian 只影响安全候选内部排序，不能放宽权限；
-- 多候选扇出与选择可用：`CANDIDATE_SET`、扇出预算、独立 judge 排序和 `SELECT_CANDIDATE` 决策记录落地，且评分不改变安全语义；
+- 多候选扇出与选择可用：候选扇出、扇出预算、Jev 选择和 `SELECT_CANDIDATE` 决策记录落地，且选择不改变安全语义；
 - Plugin/Evolution/Memories 的异常能 quarantine、撤回或回退规则基线。
 
 ### G4：`WINDOWS_FULL_LOCAL`

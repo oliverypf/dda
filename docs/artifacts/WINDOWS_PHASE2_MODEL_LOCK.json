@@ -1,0 +1,267 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "HMCODEX_MODEL_LOCK",
+  "generatedAtMs": 1789107106508,
+  "modelCount": 15,
+  "models": [
+    {
+      "modelId": "compatible/mimo-v2.5-pro",
+      "provider": "compatible",
+      "protocol": "chat-completions",
+      "model": "mimo-v2.5-pro",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:74be487923ae245ba77d05dde19129027cbb3de16f78c81981b1db1408ed5b47"
+    },
+    {
+      "modelId": "compatible/planner-fixture",
+      "provider": "compatible",
+      "protocol": "chat-completions",
+      "model": "planner-fixture",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:bfb505637ea0d30c9a37b7bfe2b46a64bb934620abdc15a0bf31ed11ffa97555"
+    },
+    {
+      "modelId": "deepseek/deepseek-chat",
+      "provider": "deepseek",
+      "protocol": "deepseek-harness",
+      "model": "deepseek-chat",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:135226f0a86ad2847bb3cae1cd6ad8a89eb43f1236b7e21bc9124aad71105a2f"
+    },
+    {
+      "modelId": "executor-fixture",
+      "provider": "compatible",
+      "protocol": "chat-completions",
+      "model": "executor-fixture",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream"
+      ],
+      "roles": [],
+      "recordDigest": "sha256:4dca6aa4ecf90a17d72f07f3c2f2815ec1ea9fa609c5659271b556dce7f3929d"
+    },
+    {
+      "modelId": "openai-chat/chat-model",
+      "provider": "openai-chat",
+      "protocol": "chat-completions",
+      "model": "chat-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:dcb56872873c7ce0f447923e1c21ec638019060471f2e39fc3f2fd1e704f722f"
+    },
+    {
+      "modelId": "openai-chat/gpt-4.1-mini",
+      "provider": "openai-chat",
+      "protocol": "chat-completions",
+      "model": "gpt-4.1-mini",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:a4ac5bfa95a7ee71b4c28a1d5c61e128039a03708e23326984aad5f7033e5e15"
+    },
+    {
+      "modelId": "openai-chat/mimo-v2.5-pro",
+      "provider": "openai-chat",
+      "protocol": "chat-completions",
+      "model": "mimo-v2.5-pro",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:afeb6fe658d8311e53411377466aab596a11188798a164c2348b04d800fcf5f2"
+    },
+    {
+      "modelId": "openai/configured-model",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "configured-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:2dcac41157281b2b85e418d4b3dd684f1afd0b6269d9b5cd42c5b581fdf7e9d5"
+    },
+    {
+      "modelId": "openai/continuation-model",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "continuation-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:571f507ed7e82baf667cdd0abccb9e18d51cefb36ee481a3a5565f705bbad766"
+    },
+    {
+      "modelId": "openai/council-integration-model",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "council-integration-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:e015900a4f88588ba178a51c6f8d29b783a1273e7bb652aab9dc6906dfc7aed6"
+    },
+    {
+      "modelId": "openai/gpt-4.1-mini",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "gpt-4.1-mini",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:09651d9b43f9f95ac022ccf8a39350507e60f90639e84a8b0723f5e7e1026a11"
+    },
+    {
+      "modelId": "openai/gpt-5.6-terra",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "gpt-5.6-terra",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner",
+        "semanticVerifier",
+        "verifier"
+      ],
+      "recordDigest": "sha256:dab22f59181a41e890579421ccf3ad40b5f40a6b72dc6529faa1e5bc0f76822c"
+    },
+    {
+      "modelId": "openai/missing-key-model",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "missing-key-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:89d9ab8a9e064c777ba1e657c34735c993ea70dd8056b947ca87c0de3b164bb9"
+    },
+    {
+      "modelId": "openai/responses-model",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "responses-model",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "executor",
+        "planner"
+      ],
+      "recordDigest": "sha256:a431975ad8cbc4c58febceb62c2c3c385237f6848adc52c4926e341e0a1ec4ff"
+    },
+    {
+      "modelId": "verifier-fixture",
+      "provider": "openai-chat",
+      "protocol": "chat-completions",
+      "model": "verifier-fixture",
+      "state": "ACTIVE",
+      "version": "1",
+      "capabilities": [
+        "model.invoke.stream"
+      ],
+      "roles": [],
+      "recordDigest": "sha256:bf61b3446525f28555372638891d7e7fbcd891b7f680904736278d29f9a42e22"
+    }
+  ]
+}

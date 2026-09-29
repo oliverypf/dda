@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {
   defaultModelConfigPath,
   loadModelConfig,
+  normalizeLegacyModelAlias,
+  resolveDecisionConfig,
   resolveModelConfig
 } from '../src/model-config.mjs';
 
@@ -34,6 +36,30 @@ test('uses OpenCode Go Chat Completions defaults when no configuration is provid
     apiKeyEnv: 'OPENCODE_GO_API_KEY',
     sessionHeader: 'x-opencode-session'
   });
+});
+
+test('migrates the retired OpenCode Go mimo-v2.6 alias to an available model', () => {
+  assert.equal(normalizeLegacyModelAlias({
+    provider: 'openai-chat',
+    model: 'mimo-v2.6',
+    baseURL: 'https://opencode.ai/zen/go/v1'
+  }), 'mimo-v2.6-pro');
+  assert.equal(resolveModelConfig({
+    fileConfig: {
+      provider: 'openai-chat',
+      protocol: 'chat-completions',
+      model: 'mimo-v2.6',
+      baseURL: 'https://opencode.ai/zen/go/v1',
+      apiKeyEnv: 'OPENCODE_GO_API_KEY',
+      sessionHeader: 'x-opencode-session'
+    },
+    env: {}
+  }).model, 'mimo-v2.6-pro');
+  assert.equal(normalizeLegacyModelAlias({
+    provider: 'openai-chat',
+    model: 'mimo-v2.6',
+    baseURL: 'https://gateway.example/v1'
+  }), 'mimo-v2.6');
 });
 
 test('preserves extra request headers and rejects unsafe header configuration', async () => {
@@ -185,6 +211,114 @@ test('loads a valid JSON config and rejects invalid config fields', async () => 
   await assert.rejects(loadModelConfig(configPath), /MODEL_CONFIG_UNKNOWN_FIELD:unknown/);
   await writeFile(configPath, JSON.stringify({ endpoint: 'file:///tmp/model' }));
   await assert.rejects(loadModelConfig(configPath), /MODEL_CONFIG_INVALID_FIELD:endpoint/);
+});
+
+test('accepts operator verifier thresholds and rejects an unusable window', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-verifier-config-'));
+  const configPath = join(directory, 'model-config.json');
+  await writeFile(configPath, JSON.stringify({
+    provider: 'openai',
+    protocol: 'responses',
+    model: 'fixture',
+    verifier: { passThreshold: 0.95, failThreshold: 0.4 }
+  }));
+  const config = await loadModelConfig(configPath);
+  assert.equal(config.verifier.passThreshold, 0.95);
+  assert.equal(config.verifier.failThreshold, 0.4);
+  assert.equal(config.verifier.repetitions, 2);
+
+  await writeFile(configPath, JSON.stringify({ provider: 'openai', verifier: { passThreshold: 0.3, failThreshold: 0.6 } }));
+  await assert.rejects(loadModelConfig(configPath), /MODEL_CONFIG_INVALID_FIELD:verifier/);
+  await writeFile(configPath, JSON.stringify({ provider: 'openai', verifier: { unknown: 1 } }));
+  await assert.rejects(loadModelConfig(configPath), /MODEL_CONFIG_UNKNOWN_FIELD:verifier.unknown/);
+});
+
+test('resolves Jev decision settings without changing the model route', () => {
+  assert.deepEqual(resolveDecisionConfig({ env: {} }), {
+    enabled: true,
+    enforce: true,
+    endpoint: 'https://api.typesafe.ai/v1/system_one',
+    apiKeyEnv: 'JEV_API_KEY',
+    model: 'jev-latest',
+    timeoutMs: 1200,
+    maxStateChars: 16000
+  });
+
+  assert.deepEqual(resolveDecisionConfig({
+    fileConfig: {
+      decision: {
+        enabled: true,
+        enforce: false,
+        endpoint: 'https://jev.example/decide',
+        apiKeyEnv: 'FILE_JEV_KEY',
+        model: 'jev-file',
+        timeoutMs: 900,
+        maxStateChars: 8000
+      }
+    },
+    env: {
+      HMCODEX_JEV_ENABLED: 'false',
+      HMCODEX_JEV_ENFORCE: 'true',
+      HMCODEX_JEV_ENDPOINT: 'https://jev-env.example/decide',
+      HMCODEX_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
+      HMCODEX_JEV_MODEL: 'jev-env',
+      HMCODEX_JEV_TIMEOUT_MS: '500',
+      HMCODEX_JEV_MAX_STATE_CHARS: '4000'
+    }
+  }), {
+    enabled: false,
+    enforce: true,
+    endpoint: 'https://jev.example/decide',
+    apiKeyEnv: 'FILE_JEV_KEY',
+    model: 'jev-file',
+    timeoutMs: 900,
+    maxStateChars: 8000
+  });
+
+  assert.deepEqual(resolveDecisionConfig({
+    env: {
+      HMCODEX_JEV_ENABLED: 'on',
+      HMCODEX_JEV_ENFORCE: 'off',
+      HMCODEX_JEV_ENDPOINT: 'https://jev-env.example/decide',
+      HMCODEX_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
+      HMCODEX_JEV_MODEL: 'jev-env',
+      HMCODEX_JEV_TIMEOUT_MS: '500',
+      HMCODEX_JEV_MAX_STATE_CHARS: '4000'
+    }
+  }), {
+    enabled: true,
+    enforce: false,
+    endpoint: 'https://jev-env.example/decide',
+    apiKeyEnv: 'ENV_JEV_KEY',
+    model: 'jev-env',
+    timeoutMs: 500,
+    maxStateChars: 4000
+  });
+});
+
+test('rejects invalid Jev environment overrides', () => {
+  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_TIMEOUT_MS: '12' } }), /MODEL_CONFIG_INVALID_FIELD:decision.timeoutMs/);
+  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_MAX_STATE_CHARS: '999' } }), /MODEL_CONFIG_INVALID_FIELD:decision.maxStateChars/);
+  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_API_KEY_ENV: 'not-a-valid-name' } }), /MODEL_CONFIG_INVALID_FIELD:decision.apiKeyEnv/);
+});
+
+test('resolves extended Jev decision flags independently', () => {
+  assert.deepEqual(resolveDecisionConfig({
+    env: {
+      HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED: 'true',
+      HMCODEX_JEV_CONTEXT_PACK_ENABLED: 'on'
+    }
+  }), {
+    enabled: true,
+    enforce: true,
+    endpoint: 'https://api.typesafe.ai/v1/system_one',
+    apiKeyEnv: 'JEV_API_KEY',
+    model: 'jev-latest',
+    timeoutMs: 1200,
+    maxStateChars: 16000,
+    recoveryDirectionEnabled: true,
+    contextPackEnabled: true
+  });
 });
 
 test('uses the Windows user config location when available', () => {

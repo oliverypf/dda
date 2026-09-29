@@ -114,7 +114,7 @@
 - Decision Trace 页面支持按 Agent、类型、状态、step、outcome 筛选；默认显示结构化摘要、选择和结果，展开显示候选、证据、假设、不确定项、reason codes 和检查预期；
 - 渲染 `parent`、`supersedes`、`critiques`、`selects`、`outcome` 关系，并跳转到 ActionIntent、Verifier、Memory Proposal、用户反馈和 Credit/Blame；
 - 清楚标记 FACT、MODEL_REPORTED、SYSTEM_JUDGMENT，及 PROPOSED、REJECTED、ABSTAINED、INVALIDATED、尚未验证、已被替代；
-- Council 页面展示 proposal claim/evidence、critique 对应 claim、judge 排序、选中 probe、预算、轮数和停止原因；用户可以停止审议并回退单 Agent；
+- Council 页面展示 proposal claim/evidence、critique 对应 claim、Jev 决策、选中 probe、预算、轮数和停止原因；用户可以停止审议并回退单 Agent；
 - provider reasoning summary 保持默认折叠、独立隐私开关、不可作为授权或证据。
 
 验收：用户可以从任意决策追溯其下游结果，且未执行、未验证、已替代和已失败决策不会被误显示为成功。

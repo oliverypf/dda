@@ -5,7 +5,7 @@ import { RuleRouter } from '../src/rule-router.mjs';
 import { TaskSafetyPrecheck } from '../src/task-safety-precheck.mjs';
 import { ThreadStore } from '../src/thread-store.mjs';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -22,6 +22,27 @@ test('thread checkpoints commit a redacted recovery event to the Harness Store',
   assert.equal(events[0].kind, 'ThreadCheckpointCommitted');
   assert.equal(events[0].payload.checkpointDigest, checkpoint.checkpointDigest);
   assert.doesNotMatch(JSON.stringify(events), /private title|workspace/);
+});
+
+test('thread title cache survives event-store reconstruction without entering durable events', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'thread-title-cache-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const storagePath = join(directory, 'threads.json');
+  const eventStore = createHarnessEventStore({ storagePath: join(directory, 'events.db') });
+  const writer = new ThreadStore({ storagePath, eventStore });
+  const created = await writer.create({ cwd: directory, title: '重启后仍显示的任务名' });
+  const local = JSON.parse(await readFile(storagePath, 'utf8'));
+  local.threads[0].state = 'FAILED';
+  local.threads.push({ id: 'thread-local-only', title: '不得注入', cwd: directory, turns: [],
+    state: 'IDLE', createdAtMs: 1, updatedAtMs: 1 });
+  await writeFile(storagePath, JSON.stringify(local), 'utf8');
+
+  const reader = new ThreadStore({ storagePath, eventStore: createHarnessEventStore({ storagePath: join(directory, 'events.db') }) });
+  const restored = await reader.get(created.id);
+  assert.equal(restored.title, '重启后仍显示的任务名');
+  assert.equal(restored.state, 'IDLE');
+  assert.equal(await reader.get('thread-local-only'), undefined);
+  assert.equal(JSON.stringify(await eventStore.list()).includes('重启后仍显示的任务名'), false);
 });
 
 test('durable role allocation and lifecycle commit Harness facts before cache updates', async () => {

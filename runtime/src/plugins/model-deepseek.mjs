@@ -3,9 +3,23 @@ import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-dee
 import { cordisPlugin } from './cordis-plugin.mjs';
 import { createOpenAICompatiblePlugin } from './model-openai.mjs';
 import { resolveModelConfig } from '../model-config.mjs';
+import { stableToolDefinitions } from '../prompt-cache.mjs';
 
 const provider = 'deepseek-official';
 
+export const deepSeekToolDefinitions = (tools) => {
+  if (!Array.isArray(tools)) return undefined;
+  const ordered = process.env.HMCODEX_PROMPT_CACHE === 'off' ? tools : stableToolDefinitions(tools);
+  return ordered.map((tool) => ({
+    name: tool.name ?? tool.id,
+    description: typeof tool.description === 'string' ? tool.description : '',
+    parameters: tool.parameters ?? tool.inputSchema ?? {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  }));
+};
 const modelPlugin = (options) => cordisPlugin((ctx) => {
   const config = resolveAdapterOptions({
     apiKeyEnv: options.apiKeyEnv ?? 'DEEPSEEK_API_KEY',
@@ -35,17 +49,7 @@ const modelPlugin = (options) => cordisPlugin((ctx) => {
         model: options.model,
         system: request.system,
         messages: request.messages,
-        ...(Array.isArray(request.tools) ? {
-          tools: request.tools.map((tool) => ({
-            name: tool.name ?? tool.id,
-            description: typeof tool.description === 'string' ? tool.description : '',
-            parameters: tool.parameters ?? tool.inputSchema ?? {
-              type: 'object',
-              properties: {},
-              additionalProperties: false
-            }
-          }))
-        } : {}),
+        ...(Array.isArray(request.tools) ? { tools: deepSeekToolDefinitions(request.tools) } : {}),
         ...(request.signal ? { signal: request.signal } : {})
       });
     }

@@ -7,6 +7,15 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
+
+const scorePositions = (letter, probability) => [
+  { token: '<score>' },
+  { token: letter, top_logprobs: [
+    { token: letter, logprob: Math.log(probability) },
+    { token: 'T', logprob: Math.log(1 - probability) }
+  ] }
+];
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -33,6 +42,7 @@ test('executes a multi-step planner DAG one step at a time and persists step che
     requests.push(body);
     const instructions = String(body.instructions ?? '');
     let text;
+    let logprobs;
     if (/Planner role/iu.test(instructions)) {
       text = JSON.stringify({
         planId: 'integration-plan',
@@ -62,16 +72,16 @@ test('executes a multi-step planner DAG one step at a time and persists step che
         ]
       });
     } else if (/Semantic Verifier role/iu.test(instructions)) {
-      text = JSON.stringify({ status: 'PASS', summary: 'step evidence is sufficient', progress: 1 });
+      text = JSON.stringify({ summary: 'step evidence is sufficient' }) + '<score>A</score>';
+      logprobs = scorePositions('A', 0.97);
     } else {
       text = `executor-step-${requests.filter((item) => !/Planner role|Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length}`;
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
-    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
+    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text, ...(logprobs ? { logprobs } : {}) })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -85,12 +95,19 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   assert.deepEqual(payload.plan.steps.map((step) => step.status), ['SUCCEEDED', 'SUCCEEDED']);
   assert.match(payload.text, /executor-step-1[\s\S]*executor-step-2/u);
   assert.equal(requests.filter((item) => /Planner role/iu.test(String(item.instructions ?? ''))).length, 1);
-  assert.equal(requests.filter((item) => /Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 2);
+  // Semantic verification is owned by the JEV Decision Plane. The runtime
+  // must not fan out a separate model verifier role for each step.
+  assert.equal(requests.filter((item) => /Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 0);
   assert.equal(requests.filter((item) => !/Planner role|Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 2);
   const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
   const stepEvents = events.filter((event) => event.kind === 'PlanStepStateChanged');
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'first' && step.status === 'SUCCEEDED')));
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'second' && step.status === 'SUCCEEDED')));
+  const semanticEvents = events.filter((event) => event.kind === 'SemanticVerificationCompleted');
+  assert.equal(semanticEvents.length, 2);
+  const semanticPayloads = semanticEvents.map((event) => event.payload?.payload ?? event.payload);
+  assert.ok(semanticPayloads.every((payload) => payload.source === 'JEV_DECISION_PLANE'));
+  assert.ok(semanticPayloads.every((payload) => payload.status === 'PASS'));
   const decisionTrace = JSON.parse(await readFile(`${trajectory}.decision-trace.json`, 'utf8'));
   const plannerDecision = decisionTrace.decisions.find((decision) => decision.decisionType === 'CREATE_PLAN');
   assert.deepEqual(plannerDecision.assumptions.map((item) => item.statement), [
@@ -126,6 +143,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
     const instructions = String(body.instructions ?? '');
     const inputText = inputTextOf(body);
     let text;
+    let logprobs;
     if (/Planner role/iu.test(instructions)) {
       text = JSON.stringify({ steps: [
         { stepId: 'one', summary: 'collect evidence', actionKind: 'READ' },
@@ -141,16 +159,16 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
     } else if (/Council member/iu.test(inputText)) {
       text = JSON.stringify({ summary: 'plan is bounded', claim: 'plan is bounded', evidenceRefs: ['plan'], confidence: 0.8 });
     } else if (/Semantic Verifier role/iu.test(instructions)) {
-      text = JSON.stringify({ status: 'PASS', summary: 'evidence is sufficient', progress: 1 });
+      text = JSON.stringify({ summary: 'evidence is sufficient' }) + '<score>A</score>';
+      logprobs = scorePositions('A', 0.97);
     } else {
       text = 'bounded executor result';
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
-    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
+    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text, ...(logprobs ? { logprobs } : {}) })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const configPath = join(workspace, 'council-models.json');
@@ -217,7 +235,6 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   const trajectory = join(workspace, 'trajectory.jsonl');
   const threadStore = join(workspace, 'threads.json');
   const requests = [];
-  let semanticCalls = 0;
   const inputTextOf = (body) => [
     JSON.stringify(body.input ?? []),
     ...(Array.isArray(body.input) ? body.input.flatMap((item) => Array.isArray(item?.content) ? item.content.map((block) => block?.text ?? '') : []) : [])
@@ -230,6 +247,7 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
     const instructions = String(body.instructions ?? '');
     const inputText = inputTextOf(body);
     let text;
+    let logprobs;
     if (/Planner role/iu.test(instructions)) {
       text = JSON.stringify({
         steps: [
@@ -237,22 +255,20 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
           { stepId: 'resume', summary: 'resume this step', actionKind: 'REPORT', dependencies: ['completed'] }
         ]
       });
-    } else if (/Semantic Verifier role/iu.test(instructions)) {
-      semanticCalls += 1;
-      if (semanticCalls === 2 || semanticCalls === 3) {
-        text = JSON.stringify({ status: 'UNCERTAIN', summary: 'evidence is insufficient', progress: 0, failureCodes: ['FIRST_ATTEMPT_UNCERTAIN'] });
-      } else {
-        text = JSON.stringify({ status: 'PASS', summary: 'resumed evidence is sufficient', progress: 1 });
-      }
     } else {
-      text = 'executor evidence';
+      // The first attempt intentionally returns no executor evidence for the
+      // resume step so the deterministic verifier records a failed checkpoint.
+      // A resumed prompt supplies the bounded evidence needed to complete it.
+      const resuming = inputText.includes('resume attempt');
+      const resumeStep = inputText.includes('Current plan step: resume')
+        || inputText.includes('Current validated plan step: resume');
+      text = resumeStep && !resuming ? '' : 'executor evidence';
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
-    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
+    response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text, ...(logprobs ? { logprobs } : {}) })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const common = [
@@ -277,12 +293,8 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.equal(evaluation.optionCoverage.percent, 100);
   assert.equal(evaluation.evidenceLinkRate.percent, 100);
   assert.equal(evaluation.decisionOutcomeLinkRate.percent, 100);
-  assert.ok(evaluation.decisionTypes.includes('DIAGNOSE_VERIFICATION'));
-  assert.ok(evaluation.decisionTypes.includes('RECOVER_TASK'));
-  const decisionTrace = JSON.parse(await readFile(`${trajectory}.decision-trace.json`, 'utf8'));
-  const uncertainVerification = decisionTrace.decisions.find((decision) =>
-    decision.decisionType === 'VERIFY_TASK_RESULT' && decision.selectedOptionId === 'verdict-UNCERTAIN');
-  assert.ok(uncertainVerification.uncertaintyCodes.includes('VERIFIER_EVIDENCE_INSUFFICIENT'));
+  const failureEvents = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && event.payload?.code === 'EMPTY_MODEL_RESPONSE'));
   const beforeResumeRequests = requests.length;
   const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], { HMCODEX_RESUME_KEY: 'resume-key' });
   assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
@@ -294,4 +306,51 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.equal(resumeRequests.filter((item) => /Planner role/iu.test(String(item.instructions ?? ''))).length, 0);
   assert.equal(resumeRequests.filter((item) => inputTextOf(item).includes('Current validated plan step: completed')).length, 0);
   assert.equal(resumeRequests.filter((item) => inputTextOf(item).includes('Current validated plan step: resume')).length, 1);
+});
+
+test('recovers from a binary workspace read and verifies a colored build log through the runtime', async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-log-recovery-'));
+  const trajectory = join(workspace, 'trajectory.jsonl');
+  const log = '\x1b[32mBUILD SUCCESSFUL\x1b[0m\n';
+  await writeFile(join(workspace, 'image.bin'), Buffer.from([0, 1, 2]));
+  await writeFile(join(workspace, 'build.log'), log);
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    const emit = (event) => response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    const round = requests.length;
+    if (round === 1 || round === 3) {
+      const itemId = `fc_${round}`;
+      const argumentsText = JSON.stringify({ path: round === 1 ? 'image.bin' : 'build.log' });
+      emit({ type: 'response.output_item.added', output_index: 0,
+        item: { type: 'function_call', id: itemId, call_id: `call_${round}`, name: 'workspace.read', arguments: '' } });
+      emit({ type: 'response.function_call_arguments.done', item_id: itemId, output_index: 0, arguments: argumentsText });
+    } else {
+      emit({ type: 'response.output_text.delta', delta: round === 2 ? 'Binary content cannot establish build status.' : 'The build log reports BUILD SUCCESSFUL.' });
+    }
+    emit({ type: 'response.completed' });
+    response.end();
+  });
+  t.after(() => server.close());
+  const port = await listenOnFetchablePort(server);
+  const result = await run([
+    'task', '--agent-mode', 'single', '--provider', 'openai', '--model', 'log-recovery-fixture',
+    '--endpoint', `http://127.0.0.1:${port}/responses`, '--api-key-env', 'HMCODEX_LOG_RECOVERY_KEY',
+    '--prompt', 'Inspect the build status using readable evidence.', '--workspace', workspace,
+    '--trajectory-store', trajectory, '--max-recovery-attempts', '2'
+  ], { HMCODEX_LOG_RECOVERY_KEY: 'fixture-key' });
+  assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
+  assert.equal(JSON.parse(result.stdout.trim()).ok, true);
+  assert.equal(requests.length, 4);
+  const firstOutput = requests[1].input.find((item) => item.type === 'function_call_output');
+  assert.match(firstOutput.output, /WORKSPACE_BINARY_FILE/);
+  const recoveredOutput = requests[3].input.find((item) => item.type === 'function_call_output');
+  assert.equal(JSON.parse(recoveredOutput.output).content, log);
+  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const verifications = events.filter((event) => event.kind === 'VerificationCompleted' && event.payload.status);
+  assert.deepEqual(verifications.map((event) => event.payload.status), ['CONTINUE', 'PASS']);
+  assert.equal(events.some((event) => event.kind === 'TaskRunFailed'), false);
 });

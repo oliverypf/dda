@@ -184,6 +184,7 @@ const actionFailed = (action) => {
 // was invalid), not a hard failure that must terminate the plan step.
 const RECOVERABLE_TOOL_ERROR_CODES = new Set([
   'WORKSPACE_UNSUPPORTED_FILE',
+  'WORKSPACE_BINARY_FILE',
   'WORKSPACE_FILE_TOO_LARGE',
   'WORKSPACE_PATH_NOT_FOUND',
   'WORKSPACE_PATH_INVALID',
@@ -397,15 +398,19 @@ export class RuleVerifier {
     } else {
       const doneCount = normalizedActions.filter(actionSucceeded).length;
       const recoverableFailureCount = normalizedActions.filter(actionRecoverableFailure).length;
-      const hardFailureCount = normalizedActions.filter((action) => actionFailed(action) && !actionRecoverableFailure(action)).length;
+      const hardFailureIndexes = normalizedActions.flatMap((action, index) => actionFailed(action) && !actionRecoverableFailure(action) ? [index] : []);
+      const hardFailureCount = hardFailureIndexes.length;
+      const hardFailureCodes = [...new Set(hardFailureIndexes.map((index) => normalizedActions[index].errorCode)
+        .filter((code) => typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/u.test(code)))].slice(0, 4);
       actionProgress = doneCount / normalizedActions.length;
       const actionRefs = normalizedActions.map((action, index) => `action:${index}:${actionFingerprint(action).slice(7, 23)}`);
       add(check('actions.progress', hardFailureCount
         ? 'FAIL' : recoverableFailureCount
-          ? 'CONTINUE' : doneCount === normalizedActions.length ? 'PASS' : 'UNKNOWN',
-      hardFailureCount ? `${hardFailureCount} 个动作没有成功证据` : recoverableFailureCount
+          ? 'UNKNOWN' : doneCount === normalizedActions.length ? 'PASS' : 'UNKNOWN',
+      hardFailureCount ? `${hardFailureCount} 个动作执行失败${hardFailureCodes.length ? `（${hardFailureCodes.join('、')}）` : ''}` : recoverableFailureCount
         ? `${recoverableFailureCount} 个动作返回可恢复工具错误，允许模型换路径重试` : doneCount === normalizedActions.length
-          ? '动作均有完成证据' : `仅 ${doneCount}/${normalizedActions.length} 个动作有完成证据`, actionRefs));
+          ? '动作均有完成证据' : `仅 ${doneCount}/${normalizedActions.length} 个动作有完成证据`,
+      hardFailureCount ? hardFailureIndexes.map((index) => actionRefs[index]) : actionRefs));
       if (hardFailureCount) signals.hardFailure = true;
       if (recoverableFailureCount || doneCount < normalizedActions.length) signals.shouldContinue = true;
 

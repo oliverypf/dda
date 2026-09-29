@@ -1,0 +1,4 @@
+hmCodex_0.1.0_x64-setup.exe /S (full-local, reinstall over existing) exit=0
+installed desktop exe sha256=1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154
+installed desktop exe bytes=9757184
+installed runtime index sha256=86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035

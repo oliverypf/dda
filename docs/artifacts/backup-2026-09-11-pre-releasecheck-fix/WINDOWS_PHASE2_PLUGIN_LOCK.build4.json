@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "HMCODEX_PLUGIN_LOCK",
+  "generatedAtMs": 1789096541631,
+  "unsignedPluginPolicy": "RELEASE_MODE_REQUIRES_SIGNATURE",
+  "pluginCount": 0,
+  "plugins": [],
+  "versions": [],
+  "active": {}
+}

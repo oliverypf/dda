@@ -65,39 +65,10 @@ npm run start -- dream --operation daemon --project-id 'my-project' --active-run
 `runtime.heartbeat`；Windows 宿主若 30 秒没有收到心跳，会终止该进程树并把任务
 报告为监督失败。心跳只用于进程健康判断，不进入用户时间线。
 
-ContextPort 默认使用本地 Memory Journal。若本机已单独启动 OpenViking server，
-可显式切换到仅允许 loopback 地址的 REST 适配器：
-
-```powershell
-$env:HMCODEX_CONTEXT_PROVIDER = 'openviking'
-$env:HMCODEX_OPENVIKING_URL = 'http://127.0.0.1:1933'
-$env:HMCODEX_OPENVIKING_API_KEY_ENV = 'OPENVIKING_API_KEY'
-$env:OPENVIKING_API_KEY = '...'
-npm run start -- task --prompt '检查项目结构' --workspace 'C:\project'
-```
-
-API key 可省略以连接未启用认证的本地 server。该适配器拒绝非 loopback URL，
-限制响应体和请求时长，只重试召回/健康检查等只读操作；写入和 commit 不会自动
-重试。OpenViking 不可用时，模型任务仍会继续，但结果中的 `context.status` 会是
-`DEGRADED`。默认值仍是 `journal`，所以未安装 sidecar 不影响现有运行方式。
-
-Windows Tauri 桌面端可以在明确提供本地 server executable 时托管 sidecar；它不会
-自动安装 Python 或 OpenViking。若目标端口已有健康的 loopback server，桌面端会直接
-复用它；否则才会启动并监督指定的 `.exe`，并在退出时只终止自己拥有的进程树：
-
-```powershell
-$env:HMCODEX_CONTEXT_PROVIDER = 'openviking'
-$env:HMCODEX_OPENVIKING_URL = 'http://127.0.0.1:1933'
-$env:HMCODEX_OPENVIKING_EXECUTABLE = 'C:\OpenViking\openviking-server.exe'
-# 可选：
-$env:HMCODEX_OPENVIKING_CONFIG = 'C:\OpenViking\config.yaml'
-$env:HMCODEX_OPENVIKING_WORKING_DIR = 'C:\OpenViking'
-```
-
-启动超时、健康检查间隔、失败阈值和最大重启次数也可用
-`HMCODEX_OPENVIKING_START_TIMEOUT_MS`、`HMCODEX_OPENVIKING_HEALTH_INTERVAL_MS`、
-`HMCODEX_OPENVIKING_HEALTH_FAILURE_THRESHOLD` 和 `HMCODEX_OPENVIKING_MAX_RESTARTS`
-设置；所有值都有边界。未设置 executable 时不会自动拉起服务，任务仍会安全降级。
+ContextPort 统一使用本地 Memory Journal。上下文召回、使用记录、任务摘要和
+commit 都在当前 runtime 的本地事件/记忆存储内完成，不再启动、连接或打包外部
+context sidecar；Jev 的判断证据来自当前 run 的轨迹、工具结果、规则检查和工作区
+快照 digest。
 
 For DeepSeek Harness, set `provider` to `deepseek` and `apiKeyEnv` to
 `DEEPSEEK_API_KEY` in the file, then set that environment variable. For an
@@ -112,6 +83,89 @@ then legacy environment variables (`HMCODEX_MODEL_*` and provider-specific
 model/base URL variables), then built-in defaults. Use `--config PATH` or
 `HMCODEX_MODEL_CONFIG` to select another file. An explicitly selected file must
 exist; the default file is optional.
+
+The Agent Loop uses Jev as the Decision Plane. Jev receives bounded evidence
+and finite choices for recovery, candidate selection, tool/action gating, and
+behavior verification; it cannot call tools, grant permissions, or invent
+commands. Planner and Executor remain the existing Execution Plane, while
+deterministic rules and Runtime Safety remain hard boundaries. Enable it in
+`model-config.json` and provide the key through the declared environment
+variable:
+
+```json
+{
+  "decision": {
+    "enabled": true,
+    "enforce": true,
+    "endpoint": "https://api.typesafe.ai/v1/system_one",
+    "model": "jev-latest",
+    "apiKeyEnv": "JEV_API_KEY",
+    "timeoutMs": 1200,
+    "maxStateChars": 16000,
+    "classificationEnabled": false,
+    "routeSelectionEnabled": false,
+    "topologyEnabled": false,
+    "planReviewEnabled": false,
+    "diagnosisEnabled": false,
+    "recoveryDirectionEnabled": false,
+    "contextPackEnabled": false
+  }
+}
+```
+
+`enforce` applies the bounded Jev result to recovery and tool execution. A
+`BLOCK` or `REQUEST_EVIDENCE` action is refused before `ToolRegistry.invoke`;
+Approval, PolicyLease and Runtime Safety are still required for side effects.
+If the key is absent, the request times out, or the response is invalid, the
+runtime records the decision-layer fallback and stays conservative: read-only
+tools may continue, side effects require the existing approval path, candidate
+selection falls back to deterministic cost/latency order, and behavior is
+`UNCERTAIN`. The judgments are recorded in Decision Trace as
+`FAILURE_ROUTER`, `ASSESS_EVIDENCE`, `TEST_SELECTOR`, `STOP_OR_CONTINUE`,
+`ESCALATE_OR_REQUEST_USER`, `SELECT_CANDIDATE`, `ACTION_GATE`, `VERIFY_BEHAVIOR`,
+`CLASSIFY_TASK`, `SELECT_ROUTE`, `SELECT_TOPOLOGY`, `REVIEW_PLAN`,
+`DIAGNOSE_VERIFICATION`, `SELECT_PROBE`, `SELECT_REPLAN_PLAN`, and
+`SELECT_CLARIFICATION_REQUEST`.
+Recovery direction selection is recorded as `SELECT_RECOVERY_DIRECTION`; a
+Jev-selected `stop-and-report` direction terminates the bounded recovery loop
+before another executor attempt.
+When escalation is requested, `SELECT_SAFE_MODEL_FALLBACK` may choose only
+between the already-bound active and strong providers; Jev cannot register or
+bind a new model.
+The corresponding
+environment overrides are `HMCODEX_JEV_ENABLED`, `HMCODEX_JEV_ENFORCE`,
+`HMCODEX_JEV_ENDPOINT`, `HMCODEX_JEV_API_KEY_ENV`, `HMCODEX_JEV_MODEL`,
+`HMCODEX_JEV_TIMEOUT_MS`, and `HMCODEX_JEV_MAX_STATE_CHARS`.
+The extended semantic stages are opt-in through `classificationEnabled`,
+`routeSelectionEnabled`,
+`topologyEnabled`,
+`planReviewEnabled`, `diagnosisEnabled`, `recoveryDirectionEnabled`, and
+`contextPackEnabled`, or the matching environment
+variables `HMCODEX_JEV_CLASSIFY_ENABLED`, `HMCODEX_JEV_ROUTE_ENABLED`,
+`HMCODEX_JEV_TOPOLOGY_ENABLED`,
+`HMCODEX_JEV_PLAN_REVIEW_ENABLED`,
+`HMCODEX_JEV_DIAGNOSIS_ENABLED`, `HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED`, and
+`HMCODEX_JEV_CONTEXT_PACK_ENABLED`.
+Context Pack selection uses the bounded `minimal`, `execution`, and `full`
+combinations; Jev cannot request arbitrary context or bypass redaction and
+length limits.
+They only select from bounded candidates;
+the router, recovery controller, safety checks, and state machine remain
+authoritative.
+
+Provider prompt caching uses deterministic tool definitions, a stable hashed
+workspace/model/role routing key, and an append-only request prefix. It never
+reuses a prior model answer or execution result. OpenAI Responses and Chat
+Completions usage, plus the official DeepSeek adapter usage, are recorded as
+redacted `ModelUsageRecorded` events. The dashboard reports cache hit rate,
+coverage, input tokens, cached input tokens, and uncached input tokens. Calls
+made before this instrumentation remain `UNKNOWN` rather than being counted as
+cache misses.
+
+Set `HMCODEX_PROMPT_CACHE=off` to restore the previous request layout. Set
+`HMCODEX_STREAM_USAGE=off` only for a Chat Completions gateway that rejects
+`stream_options.include_usage`; its cache rate will remain unknown unless it
+reports usage through another supported field.
 
 The registry is stored under `%LOCALAPPDATA%\hmCodex\evolution-proposals.json`
 on Windows (or `%APPDATA%` when `%LOCALAPPDATA%` is unavailable). Set

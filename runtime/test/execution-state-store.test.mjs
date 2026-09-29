@@ -360,3 +360,44 @@ test('rejects a claim with mismatched request digest or operation identity', asy
   );
   assert.equal(store.get(lease.recordId).state, 'ACTIVE');
 });
+
+
+test('cancels only orphaned pending approvals with an expected record digest', async () => {
+  const store = createExecutionStateStore({ ownerPid: 424242 });
+  const intent = await store.createIntent({ runId: 'run-recovery-approval', capability: 'shell.execute', request: { command: 'node' } });
+  await store.transition(intent.recordId, 'SAFETY_EVALUATING');
+  const approval = await store.createApproval({
+    runId: intent.runId,
+    intentId: intent.recordId,
+    capability: intent.capability,
+    requestDigest: intent.requestDigest,
+    displayedDigest: intent.requestDigest
+  });
+  await store.transition(approval.recordId, 'PRESENTED');
+  await store.transition(intent.recordId, 'WAITING_APPROVAL');
+  const pending = store.get(approval.recordId);
+  await assert.rejects(
+    () => store.cancelOrphanedApproval(approval.recordId, { expectedDigest: 'sha256:' + '0'.repeat(64), isOwnerAlive: () => false }),
+    /EXECUTION_STATE_CONFLICT/
+  );
+  await assert.rejects(
+    () => store.cancelOrphanedApproval(approval.recordId, { expectedDigest: pending.recordDigest, isOwnerAlive: () => true }),
+    /EXECUTION_APPROVAL_OWNER_ALIVE/
+  );
+  const cancelled = await store.cancelOrphanedApproval(approval.recordId, { expectedDigest: pending.recordDigest, reason: 'USER_RECOVERY_CANCELLED', isOwnerAlive: () => false });
+  assert.equal(cancelled.state, 'CANCELLED');
+  assert.equal(store.get(approval.recordId).state, 'CANCELLED');
+});
+
+test('revokes a lease only when the recovery action still targets the observed record', async () => {
+  const store = createExecutionStateStore();
+  const { lease } = await createApprovalLeaseFlow({ store, runId: 'run-recovery-lease' });
+  const observed = store.get(lease.recordId);
+  await assert.rejects(
+    () => store.revokeLeaseWithDigest(lease.recordId, { expectedDigest: 'sha256:' + 'f'.repeat(64) }),
+    /EXECUTION_STATE_CONFLICT/
+  );
+  const revoked = await store.revokeLeaseWithDigest(lease.recordId, { expectedDigest: observed.recordDigest, reason: 'USER_RECOVERY_REVOKED' });
+  assert.equal(revoked.state, 'REVOKED');
+  assert.equal(store.get(lease.recordId).transition.metadata.reason, 'USER_RECOVERY_REVOKED');
+});

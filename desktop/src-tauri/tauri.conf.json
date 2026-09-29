@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "node scripts/build-openviking-sidecar.mjs && npm run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -42,8 +42,6 @@
       "../../runtime/package.json": "runtime/package.json",
       "../../runtime/package-lock.json": "runtime/package-lock.json",
       "../../runtime/model-config.example.json": "runtime/model-config.example.json"
-      ,"../../runtime/openviking/config.json": "runtime/openviking/config.json"
-      ,"binaries/openviking-server.exe": "sidecar/openviking-server.exe"
     },
     "icon": ["icons/app-icon.png", "icons/icon.ico"],
     "shortDescription": "Local read-only hmCodex workbench",

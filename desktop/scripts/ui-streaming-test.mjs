@@ -3,11 +3,14 @@
 //
 // The old path rebuilt the whole app (innerHTML + createIcons + scroll reset)
 // on every text delta. This test marks the app root, submits a task, and
-// asserts the marker survives while the streaming row grows, which proves the
-// delta path patches only the streaming row.
+// asserts the shell node survives while the streaming row grows. A marker on
+// #app itself cannot detect replacement of that element's innerHTML.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
 const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
 const argv = process.argv.slice(2);
@@ -19,6 +22,9 @@ const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
 const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9335'));
 const prompt = option('--prompt', 'hello');
 const timeoutMs = Number(option('--timeout-ms', '180000'));
+const streamStartTimeoutMs = Number(option('--stream-start-timeout-ms', process.env.HMCODEX_STREAM_START_TIMEOUT_MS ?? '120000'));
+const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 class CdpClient {
   constructor(ws) {
@@ -70,7 +76,7 @@ const waitForTarget = async () => {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(5000) });
       const targets = await response.json();
-      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost/i.test(target.url));
+      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost|127\.0\.0\.1/i.test(target.url));
       if (page) return page;
     } catch {
       // Retry until the WebView is up.
@@ -103,38 +109,43 @@ const waitFor = async (client, expression, { timeout = 45000, interval = 300, la
 
 const main = async () => {
   spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  const fixture = await startUiModelFixture({ delayMs: 80 });
   const child = spawn(exe, [], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
     env: {
       ...process.env,
+      ...fixture.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
+      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      HMCODEX_WORKSPACE_ROOT: fixture.workspaceRoot
     }
   });
   child.unref();
   const client = await connect();
   try {
-    await waitFor(client, `!document.querySelector('.connection-status')?.innerText.includes('正在启动')`, { label: 'runtime ready' });
-    await waitFor(client, `document.querySelector('.mode-pill')?.disabled === true`, { label: 'phase1 gate' });
+    await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { label: 'runtime ready' });
+    await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('READ ONLY') === true`, { label: 'read-only execution mode' });
     await client.evaluate(`(() => {
-      document.querySelector('#app').dataset.renderMarker = 'keep';
       const textarea = document.querySelector('textarea[name="prompt"]');
       textarea.value = ${JSON.stringify(prompt)};
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
       document.querySelector('form[data-form="composer"]').requestSubmit();
       return 'SUBMITTED';
     })()`);
+    await waitFor(client, `document.querySelector('.timeline-item[data-status=\"STREAMING\"]')`, { timeout: streamStartTimeoutMs, label: 'streaming row started' });
+    await client.evaluate(`window.__streamingShell = document.querySelector('.app-shell')`);
     const samples = [];
     const deadline = Date.now() + timeoutMs;
     let lastLength = -1;
     let sawGrowth = false;
     let markerKeptWhileGrowing = 0;
     let maxBodyLength = 0;
+    let rebuiltWhileStreaming = false;
     while (Date.now() < deadline) {
       const sample = await client.evaluate(`JSON.stringify({
-        marker: document.querySelector('#app')?.dataset.renderMarker ?? null,
+        marker: window.__streamingShell === document.querySelector('.app-shell') ? 'keep' : null,
         runStatus: document.querySelector('.run-status')?.innerText.trim() ?? '',
         streamingLength: document.querySelector('.timeline-item[data-status="STREAMING"] .timeline-body')?.innerText.length ?? 0,
         itemCount: document.querySelectorAll('.timeline-item').length,
@@ -143,8 +154,9 @@ const main = async () => {
       })`);
       const parsed = JSON.parse(sample);
       samples.push(parsed);
+      if (parsed.streamingLength > 0 && parsed.marker !== 'keep') rebuiltWhileStreaming = true;
       maxBodyLength = Math.max(maxBodyLength, parsed.streamingLength);
-      if (parsed.streamingLength > lastLength) sawGrowth = true;
+      if (parsed.streamingLength > Math.max(0, lastLength)) sawGrowth = true;
       if (sawGrowth && parsed.marker === 'keep') markerKeptWhileGrowing += 1;
       lastLength = parsed.streamingLength;
       if (/只读检查完成|任务未完成|任务已取消/.test(parsed.runStatus)) break;
@@ -153,10 +165,13 @@ const main = async () => {
     const terminal = samples.at(-1)?.runStatus ?? '';
     console.log(`samples=${samples.length} maxStreamingLength=${maxBodyLength} markerKeptWhileGrowing=${markerKeptWhileGrowing} terminal=${terminal}`);
     if (!sawGrowth) throw new Error('STREAMING_GROWTH_NOT_OBSERVED');
-    if (markerKeptWhileGrowing < 3) throw new Error(`APP_ROOT_REBUILT_DURING_STREAMING: markerKeptWhileGrowing=${markerKeptWhileGrowing}`);
+    if (rebuiltWhileStreaming) throw new Error(`APP_ROOT_REBUILT_DURING_STREAMING: markerKeptWhileGrowing=${markerKeptWhileGrowing}`);
+    if (markerKeptWhileGrowing < 3) throw new Error(`INSUFFICIENT_STREAMING_SAMPLES: markerKeptWhileGrowing=${markerKeptWhileGrowing}`);
     console.log('PASS streaming row updated in place without rebuilding the app root');
   } finally {
     client.close();
+    spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+    await fixture.close();
   }
 };
 

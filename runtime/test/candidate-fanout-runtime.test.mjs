@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -23,12 +24,13 @@ const run = (args, env) => new Promise((resolve, reject) => {
   child.once('close', (code) => resolve({ code, stdout, stderr }));
 });
 
-const sse = (response, text) => {
+const sse = (response, text, logprobs) => {
   response.writeHead(200, { 'content-type': 'text/event-stream' });
-  response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: text })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
+  const data = { type: 'response.output_text.delta', delta: text, ...(logprobs ? { logprobs } : {}) };
+  response.end(`event: response.output_text.delta\ndata: ${JSON.stringify(data)}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
 };
 
-for (const scenario of ['success', 'drafts-failed', 'judge-failed']) {
+for (const scenario of ['success', 'drafts-failed', 'judge-failed', 'configured']) {
 test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-candidate-runtime-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
@@ -40,6 +42,19 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     requests.push({ url: request.url, body });
     const system = String(body.instructions ?? '');
+    if (request.url === '/jev') {
+      const answers = {};
+      for (const [id, question] of Object.entries(body.questions ?? {})) {
+        const choice = id === 'candidate' ? 'model-b'
+          : id === 'actionGate' ? 'ALLOW'
+            : id === 'verification' ? 'PASS'
+              : question.choices?.[0];
+        if (choice) answers[id] = { choice, confidence: 0.9 };
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ answers }));
+      return;
+    }
     if (scenario === 'drafts-failed' && /\/candidate-[ab]$/u.test(request.url) && /isolated hmCodex role/iu.test(system)) {
       sse(response, '');
       return;
@@ -61,29 +76,17 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
       }));
       return;
     }
-    if (/Independently verify/iu.test(system)) {
-      if (scenario === 'judge-failed') {
-        sse(response, 'no probability evidence');
-        return;
-      }
-      const input = JSON.parse(body.input[0].content[0].text);
-      const positions = ['A', 'B'].flatMap((slot) => {
-        const probability = input[`trajectory${slot}`].modelId === 'model-b' ? 0.9 : 0.2;
-        return [{ token: `<score_${slot}>` }, { token: 'A', top_logprobs: [{ token: 'A', logprob: Math.log(probability) }, { token: 'T', logprob: Math.log(1 - probability) }] }, { token: `</score_${slot}>` }];
-      });
-      response.writeHead(200, { 'content-type': 'text/event-stream' });
-      response.end(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: 'response.output_text.delta', delta: '<score_A>A</score_A><score_B>A</score_B>', logprobs: positions })}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
-      return;
-    }
     if (/Semantic Verifier role/iu.test(system)) {
-      sse(response, JSON.stringify({ status: 'PASS', summary: 'evidence is sufficient', progress: 1 }));
+      sse(response, JSON.stringify({ summary: 'evidence is sufficient' }) + '<score>A</score>', [
+        { token: '<score>' },
+        { token: 'A', top_logprobs: [{ token: 'A', logprob: Math.log(0.97) }, { token: 'T', logprob: Math.log(0.03) }] }
+      ]);
       return;
     }
     sse(response, 'executor completed the reported step');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const base = `http://127.0.0.1:${address.port}`;
@@ -107,8 +110,25 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
         fanout: 2,
         fanoutBudget: { maxCandidates: 2, maxConcurrency: 2 }
       },
-      semanticVerifier: { selector: 'PINNED', modelId: 'openai/default-model' }
-    }
+    },
+    decision: {
+      enabled: true,
+      enforce: true,
+      endpoint: `${base}/jev`,
+      apiKeyEnv: keyName,
+      model: 'jev-latest'
+    },
+    // Operator configuration, not a constant: "configured" proves the file
+    // value really reaches the verifier instead of the built-in defaults.
+    ...(scenario === 'configured' ? {
+      verifier: {
+        criteria: ['Specification: satisfies the task requirements', 'Output: proposed output matches the requested result'],
+        repetitions: 1,
+        pivots: 2,
+        maxComparisons: 8,
+        seed: 'configured-seed'
+      }
+    } : {})
   }), 'utf8');
 
   const result = await run([
@@ -119,7 +139,8 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
-  if (scenario !== 'success') {
+  const expectsSuccess = scenario === 'success' || scenario === 'configured';
+  if (!expectsSuccess) {
     const store = createHarnessEventStore({ storagePath: harnessStore });
     await store.load();
     const records = (await store.list({ aggregateType: 'ModelEgress' })).flatMap((event) => event.payload?.records ?? []);
@@ -127,17 +148,14 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
     assert.equal(drafts.length, 2);
     assert.ok(drafts.every((record) => record.status === (scenario === 'drafts-failed' ? 'FAILED' : 'SUCCEEDED')));
     const judges = records.filter((record) => record.phase === 'CANDIDATE_JUDGE');
-    assert.equal(judges.length, scenario === 'judge-failed' ? 1 : 0);
-    if (judges.length) assert.equal(judges[0].status, 'FAILED');
+    assert.equal(judges.length, 0);
     assert.equal(JSON.stringify(records).includes('no probability evidence'), false);
     return;
   }
-  // The judge runs in its own dedicated role context, bound to an independent
-  // model identity rather than to any candidate binding.
+  // Candidate selection is owned by Jev, so no candidate-judge model context
+  // is allocated.
   const judgeRole = payload.roles.find((role) => role.role === 'candidate-judge');
-  assert.ok(judgeRole, 'a dedicated candidate-judge role context must be allocated');
-  assert.equal(judgeRole.isolation, 'DEDICATED');
-  assert.equal(judgeRole.model, 'default-model');
+  assert.equal(judgeRole, undefined);
   assert.equal(payload.roles.some((role) => role.role === 'executor' && role.model === 'candidate-a'), true);
 
   // Both candidate bindings were really invoked, one physical draft call each,
@@ -152,12 +170,9 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
   }
 
   const egressStore = createHarnessEventStore({ storagePath: harnessStore });
-  const judgeCalls = requests.filter((item) => /Independently verify/iu.test(String(item.body.instructions ?? '')));
-  assert.equal(judgeCalls.length, 18);
-  assert.ok(judgeCalls.every((item) => item.body.top_logprobs === 20));
-  assert.deepEqual(judgeCalls[0].body.tools, []);
-  assert.match(JSON.stringify(judgeCalls[0].body), /draft from candidate-a/u);
-  assert.match(JSON.stringify(judgeCalls[0].body), /draft from candidate-b/u);
+  const jevCalls = requests.filter((item) => item.url === '/jev');
+  assert.ok(jevCalls.length >= 1);
+  assert.ok(jevCalls.every((item) => !Object.hasOwn(item.body, 'tools')));
   await egressStore.load();
   const events = await egressStore.list({ runId: payload.runId });
   const candidateEvents = events.filter((event) => event.kind === 'CandidateTurnCompleted');
@@ -183,19 +198,16 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
     assert.equal(record.egress.host, '127.0.0.1');
     assert.match(record.egress.targetDigest, /^sha256:[0-9a-f]{64}$/u);
   }
-  assert.equal(egressRecords.filter((record) => record.phase === 'CANDIDATE_JUDGE').length, 18);
+  assert.equal(egressRecords.filter((record) => record.phase === 'CANDIDATE_JUDGE').length, 0);
   const verificationSamples = events.filter((event) => event.kind === 'CandidateVerificationSample');
-  assert.equal(verificationSamples.length, 18);
+  assert.equal(verificationSamples.length, 0);
+  const verificationCompleted = events.filter((event) => event.kind === 'CandidateVerificationCompleted');
+  assert.equal(verificationCompleted.length, 0);
   assert.equal(JSON.stringify(egressRecords).includes('draft from candidate'), false);
   assert.deepEqual(selection.options.map((option) => option.optionId).sort(), ['model-a', 'model-b']);
   assert.equal(selection.selectedOptionId, 'model-b');
-  assert.ok(Math.abs(selection.options.find((option) => option.optionId === 'model-a').expectedQuality - 1 / (1 + Math.exp(0.7))) < 1e-10);
-  assert.ok(Math.abs(selection.options.find((option) => option.optionId === 'model-b').expectedQuality - 1 / (1 + Math.exp(-0.7))) < 1e-10);
+  assert.equal(selection.options.find((option) => option.optionId === 'model-b').expectedQuality, 0.9);
   assert.ok(selection.reasonCodes.includes('CANDIDATE_SELECTION_JUDGE_RANKED'));
-  assert.equal(selection.evidenceRefs.length, 20);
-  const sampleEventIds = new Set(verificationSamples.map((event) => event.eventId));
-  assert.equal(selection.evidenceRefs.filter((ref) => sampleEventIds.has(ref.eventId)).length, 18);
-  for (const option of selection.options) assert.equal(option.evidenceRefs.length, 19);
   const committed = JSON.parse(await readFile(`${trajectory}.decision-trace.json`, 'utf8'));
   assert.equal(JSON.stringify(committed).includes('draft from candidate-a'), false);
 

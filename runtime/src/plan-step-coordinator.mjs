@@ -150,7 +150,17 @@ export class PlanStepCoordinator {
       const step = this.nextReady();
       if (!step) {
         const failed = this.#plan.steps.find((item) => item.status === 'FAILED' || item.status === 'BLOCKED');
-        if (failed) return { ok: false, plan: this.plan, results, failedStepId: failed.stepId, report: results.at(-1)?.report };
+        if (failed) {
+          const failedRecord = [...results].reverse().find((entry) => entry.stepId === failed.stepId);
+          return {
+            ok: false,
+            plan: this.plan,
+            results,
+            failedStepId: failed.stepId,
+            report: failedRecord?.report ?? { status: failed.status, failureCodes: [failed.errorCode ?? 'STEP_FAILED'] },
+            errorCode: failed.errorCode
+          };
+        }
         if (this.#plan.steps.every((item) => TERMINAL_STEP_STATUSES.has(item.status))) {
           return { ok: true, plan: this.plan, results };
         }
@@ -229,7 +239,16 @@ export class PlanStepCoordinator {
       if (!completed) {
         await this.#propagateBlocked();
         const failed = this.#plan.steps.find((item) => item.stepId === step.stepId);
-        return { ok: false, plan: this.plan, results, failedStepId: step.stepId, report: results.at(-1)?.report, step: failed };
+        const failedRecord = [...results].reverse().find((entry) => entry.stepId === step.stepId);
+        return {
+          ok: false,
+          plan: this.plan,
+          results,
+          failedStepId: step.stepId,
+          report: failedRecord?.report ?? { status: failed?.status ?? 'FAIL', failureCodes: [failed?.errorCode ?? 'STEP_FAILED'] },
+          errorCode: failed?.errorCode,
+          step: failed
+        };
       }
     }
   }

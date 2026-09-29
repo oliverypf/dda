@@ -200,3 +200,68 @@ test('release-check accepts a controlled channel and does not claim side-effect 
   assert.equal(report.checks.sideEffectRejection, true);
   assert.equal(report.passed, true);
 });
+
+test('release-check accepts the phase-2 WINDOWS_FULL_LOCAL channel instead of failing on its own target', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-check-full-local-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const trajectory = join(directory, 'trajectory.jsonl');
+  const harness = join(directory, 'events.db');
+  const decisionTracePath = join(directory, 'decision-trace.json');
+  const eventStore = createHarnessEventStore({ storagePath: harness });
+  await eventStore.load();
+  await eventStore.append({ runId: 'run-full-local', kind: 'TaskRunCreated', commandId: 'full-local-created', payload: { title: 'full-local' } });
+  await eventStore.append({ runId: 'run-full-local', kind: 'TaskRunCompleted', commandId: 'full-local-completed', payload: { outcomeStatus: 'SUCCEEDED' } });
+  const trace = new AgentDecisionTrace({ storagePath: decisionTracePath, eventStore });
+  await proposeEligibleDecisions(trace, 'run-full-local');
+
+  const result = await promisify(execFile)(process.execPath, [
+    fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
+    'release-check'
+  ], {
+    env: {
+      ...process.env,
+      HMCODEX_BAKED_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+      HMCODEX_TRAJECTORY_STORE: trajectory,
+      HMCODEX_HARNESS_EVENT_STORE: harness,
+      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+    },
+    windowsHide: true
+  });
+  const report = JSON.parse(result.stdout).report;
+  assert.equal(report.releaseChannel, 'WINDOWS_FULL_LOCAL');
+  assert.equal(report.checks.releaseChannel, true);
+  assert.equal(report.checks.sideEffectRejection, true);
+  assert.deepEqual(report.sideEffectRejection, { blocked: false });
+  assert.equal(report.passed, true);
+});
+
+test('release-check still rejects an unapproved pre-phase-1 build', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-check-baseline-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const trajectory = join(directory, 'trajectory.jsonl');
+  const harness = join(directory, 'events.db');
+  const decisionTracePath = join(directory, 'decision-trace.json');
+  const eventStore = createHarnessEventStore({ storagePath: harness });
+  await eventStore.load();
+  await eventStore.append({ runId: 'run-baseline', kind: 'TaskRunCreated', commandId: 'baseline-created', payload: { title: 'baseline' } });
+  const trace = new AgentDecisionTrace({ storagePath: decisionTracePath, eventStore });
+  await proposeEligibleDecisions(trace, 'run-baseline');
+
+  const result = await promisify(execFile)(process.execPath, [
+    fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
+    'release-check'
+  ], {
+    env: {
+      ...process.env,
+      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_MVP_PRE_PHASE1',
+      HMCODEX_TRAJECTORY_STORE: trajectory,
+      HMCODEX_HARNESS_EVENT_STORE: harness,
+      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+    },
+    windowsHide: true
+  });
+  const report = JSON.parse(result.stdout).report;
+  assert.equal(report.releaseChannel, 'WINDOWS_MVP_PRE_PHASE1');
+  assert.equal(report.checks.releaseChannel, false);
+  assert.equal(report.passed, false);
+});

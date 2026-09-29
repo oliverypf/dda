@@ -1,3 +1,5 @@
+import type { ContinuousVerifierConfig } from './verifier-config';
+
 export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'READY' | 'ERROR';
 export type ConnectionMode = 'MOCK' | 'LOCAL_RUNTIME';
 export type RuntimeExecutionMode = 'READ_ONLY' | 'CONTROLLED';
@@ -55,6 +57,21 @@ export interface ModelConfig {
   endpoint?: string;
   apiKeyEnv: string;
   sessionHeader?: string;
+  customInstructions?: string;
+  decision?: JevDecisionConfig;
+  // Operator-set continuous-verifier budget and thresholds. Leaving the section
+  // out keeps the runtime defaults; clearing every field removes it again.
+  verifier?: ContinuousVerifierConfig;
+}
+
+export interface JevDecisionConfig {
+  enabled?: boolean;
+  enforce?: boolean;
+  endpoint?: string;
+  apiKeyEnv?: string;
+  model?: string;
+  timeoutMs?: number;
+  maxStateChars?: number;
 }
 
 export interface ModelConfigResponse {
@@ -111,6 +128,7 @@ export interface ThreadReadModel {
   title: string;
   cwd: string;
   turnCount: number;
+  resumable?: boolean;
   createdAtMs: number;
   updatedAtMs: number;
   forkedFrom?: string;
@@ -142,6 +160,16 @@ export interface TimelineItem {
   body: string;
   status: TimelineStatus;
   createdAtMs: number;
+  eventId?: string;
+  eventSequence?: number;
+  operationId?: string;
+  sourceRole?: string;
+  pluginVersion?: string;
+  digest?: string;
+  commandText?: string;
+  toolName?: string;
+  evidenceKind?: string;
+  truncated?: boolean;
 }
 
 export interface ApprovalReadModel {
@@ -159,6 +187,8 @@ export interface ApprovalReadModel {
   approvalExpiresAt?: number;
   leaseId?: string;
   leaseExpiresAt?: number;
+  leaseState?: 'ISSUED' | 'CLAIMED' | 'CONSUMED' | 'FAILED';
+  executionOk?: boolean;
   command?: string;
   path?: string;
   cwd?: string;
@@ -189,6 +219,7 @@ export interface WorkspaceFile {
 export interface WorkspaceReadModel {
   granted: boolean;
   rootLabel: string;
+  rootPath?: string;
   currentPath: string;
   entries: WorkspaceEntry[];
   stale: boolean;
@@ -216,13 +247,16 @@ export interface HarnessReadModel {
   memories: RuntimeMemoryRecord[];
   dreamRuns: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
+  pluginVersions: RuntimePluginVersionSummary[];
   evolutionProposals: RuntimeEvolutionProposal[];
   evolutionReports: RuntimeEvolutionReport[];
   evolutionControl?: EvolutionControlState;
   decisions: RuntimeDecisionNode[];
   continuousVerification?: ContinuousVerificationRecord[];
+  processVerification?: ProcessVerificationReadModel;
   supportBundle?: RuntimeSupportBundleReadiness;
   modelEgress?: RuntimeModelEgressSummary;
+  modelUsage?: RuntimeModelUsageSummary;
   timeline: TimelineItem[];
   workspace: WorkspaceReadModel;
   composer: ComposerReadModel;
@@ -241,9 +275,37 @@ export interface ContinuousVerificationRecord {
   rightScore?: number;
   leftVariance?: number;
   rightVariance?: number;
+  leftDistribution?: ContinuousVerificationDistribution[];
+  rightDistribution?: ContinuousVerificationDistribution[];
   config?: Record<string, unknown>;
   comparisonCount?: number;
   ranking?: Array<{ candidateId?: string; score?: number }>;
+}
+
+// Token-only probability evidence behind a continuous score. The runtime
+// projection never carries prompt, output or reasoning text here.
+export interface ContinuousVerificationDistribution {
+  token: string;
+  probability: number;
+  value: number;
+}
+
+// The process (step) verifier's continuous A-T expectation. `score` is host
+// derived from token probabilities, so the UI never shows a model-authored
+// status or number as verification evidence.
+export interface ProcessVerificationReadModel {
+  status?: string;
+  score?: number;
+  variance?: number;
+  distribution?: ContinuousVerificationDistribution[];
+  method?: string;
+  // The evidence channel, or the degradation reason when the host refused to
+  // synthesise a score. Surfaced verbatim from the token-only projection.
+  source?: string;
+  thresholds?: { passThreshold: number; failThreshold: number };
+  failureCodes?: string[];
+  lastRunId?: string;
+  lastEventSequence?: number;
 }
 
 export interface RuntimeSnapshot {
@@ -264,6 +326,7 @@ export interface RuntimeSnapshot {
 
 export interface WorkspaceGrant {
   rootLabel: string;
+  rootPath?: string;
 }
 
 export interface RuntimePluginSummary {
@@ -302,16 +365,27 @@ export interface RuntimeTrajectorySummary {
   eventCount: number;
 }
 
+export interface RuntimeVerificationCheck {
+  id: string;
+  status: string;
+  message: string;
+  evidence?: string[];
+}
+
 export interface RuntimeVerificationSummary {
-  status: 'PASS' | 'FAIL' | 'UNKNOWN';
+  status: 'PASS' | 'FAIL' | 'UNKNOWN' | 'CONTINUE' | 'STALLED' | 'UNCERTAIN';
   summary: string;
-  checks: Array<{ id: string; status: string; message: string }>;
+  failureCodes?: string[];
+  nextAction?: string;
+  checks: RuntimeVerificationCheck[];
   semantic?: {
     status: 'PASS' | 'FAIL' | 'ABSTAIN';
     summary: string;
     progress?: number;
     evidenceRefs?: string[];
     failureCodes?: string[];
+    source?: string;
+    required?: boolean;
     modelIdentity?: Record<string, unknown>;
     gate?: Record<string, unknown>;
   };
@@ -340,17 +414,32 @@ export interface RuntimeProcessStatus {
   healthy: boolean;
 }
 
+export interface RuntimeRemoteRecoveryStatus {
+  state: 'LOCAL_ONLY' | 'CONFIGURED' | 'UNAVAILABLE';
+  endpoint?: string | null;
+  checkedAtMs?: number;
+  reason?: string;
+}
+
 export interface RuntimeRecoveryResponse {
   ok: true;
   reconciled: number;
   execution: {
     reconciled: number;
-    records: Array<Record<string, unknown>>;
+    records: RuntimeExecutionRecord[];
   };
   roles: {
     reconciled: number;
     contexts: Array<Record<string, unknown>>;
   };
+  dream?: { reconciled?: number; records?: Array<Record<string, unknown>> };
+  workspace?: { status?: string; head?: string | null; observationDigest?: string | null; changedFiles?: number; staged?: number; unstaged?: number; untracked?: number; conflicted?: number; statusCodes?: string[]; pathDigests?: string[]; pathDigestTruncated?: boolean };
+  remote?: RuntimeRemoteRecoveryStatus;
+  pendingApprovals?: number;
+  pendingApprovalRecords?: Array<Record<string, unknown>>;
+  revokedLeases?: number;
+  revokedLeaseRecords?: Array<Record<string, unknown>>;
+  leaseRecords?: RuntimeExecutionRecord[];
 }
 
 export interface RuntimeTaskOptions {
@@ -375,10 +464,15 @@ export interface RuntimeExecutionRecord {
   state: string;
   capability?: string;
   operationId?: string;
+  intentId?: string;
+  approvalId?: string;
+  runId?: string;
+  recordDigest?: string;
   createdAtMs: number;
   updatedAtMs: number;
   requestSummary?: Record<string, unknown>;
   expiresAt?: number;
+  transition?: { from?: string; to?: string; atMs?: number; metadata?: Record<string, unknown> };
 }
 
 export interface RuntimeExecutionStateResponse {
@@ -455,17 +549,20 @@ export interface RuntimeFeedbackSummary {
 
 export interface RuntimeDashboardResponse {
   ok: true;
+  summaryOnly?: boolean;
   deletedRunIds?: string[];
   projection?: RuntimeProjection;
   projectionError?: string;
   supportBundle?: RuntimeSupportBundleReadiness;
   modelEgress?: RuntimeModelEgressSummary;
+  modelUsage?: RuntimeModelUsageSummary;
   threads: ThreadReadModel[];
   execution: RuntimeExecutionStateResponse;
   feedback: RuntimeFeedbackSummary[];
   memories: RuntimeMemoryRecord[];
   dreams: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
+  pluginVersions?: RuntimePluginVersionSummary[];
   evolution: {
     proposals: RuntimeEvolutionProposal[];
     reports: RuntimeEvolutionReport[];
@@ -512,6 +609,31 @@ export interface RuntimeModelEgressSummary {
   redaction: { promptIncluded: false; outputIncluded: false; credentialsIncluded: false };
 }
 
+export interface RuntimeModelUsageBucket {
+  schemaVersion: string;
+  calls: number;
+  usageReportedCalls: number;
+  cacheReportedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheEligibleInputTokens: number;
+  cachedInputTokens: number;
+  uncachedInputTokens: number;
+  cacheHitRate: number | null;
+  cacheCoverage: number | null;
+  estimated: false;
+  source: 'PROVIDER_USAGE';
+  prefixChangedCalls: number;
+}
+
+export interface RuntimeModelUsageSummary extends RuntimeModelUsageBucket {
+  status: 'REPORTED' | 'UNKNOWN';
+  reason?: 'PROVIDER_CACHE_USAGE_NOT_REPORTED' | 'NO_RECORDED_PROVIDER_USAGE';
+  historicalCoverage: 'SINCE_USAGE_INSTRUMENTATION';
+  legacyEgressRecords: number;
+  byModel: Record<string, RuntimeModelUsageBucket>;
+}
+
 export interface EvolutionControlState {
   enabled: boolean;
   reason?: string;
@@ -536,6 +658,10 @@ export interface RuntimeMemoryRecord {
   lastUsedAtMs?: number;
   untrainable?: boolean;
   untrainableAtMs?: number;
+  sensitivity?: string;
+  version?: number | string;
+  supersedesMemoryId?: string;
+  conflictsWithMemoryIds?: string[];
 }
 
 export interface RuntimeDreamRun {
@@ -564,6 +690,34 @@ export interface RuntimePluginGovernanceRecord {
   createdAtMs: number;
   updatedAtMs: number;
   history?: Array<Record<string, unknown>>;
+}
+
+export type RuntimePluginVersionState = 'INSTALLED' | 'ACTIVE' | 'ROLLED_BACK_AVAILABLE' | 'ROLLED_BACK' | 'DEGRADED';
+
+export interface RuntimePluginVersionRecord {
+  pluginId: string;
+  version: string;
+  packageDigest: string;
+  config: Record<string, unknown>;
+  state: RuntimePluginVersionState;
+  installedAtMs: number;
+  activatedAtMs?: number;
+  failureCode?: string;
+  lifecycleId: string;
+}
+
+export interface RuntimePluginVersionSummary {
+  pluginId: string;
+  activeVersion?: string;
+  governanceState?: string;
+  quarantineReason?: string;
+  versions: RuntimePluginVersionRecord[];
+}
+
+export interface RuntimePluginVersionLifecycleSnapshot {
+  schemaVersion: '1.0';
+  versions: RuntimePluginVersionRecord[];
+  active: Record<string, string>;
 }
 
 export interface RuntimeEvolutionProposal {

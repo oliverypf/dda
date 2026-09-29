@@ -32,7 +32,7 @@
 5. **能力与安全**：模型/角色、Plugin、Profile、策略和 endpoint。
 6. **设置/诊断**：连接、存储、隐私、支持包和平台能力。
 
-窄屏按相同信息层级拆成页面，不删除 Approval/Safety/Verifier 关键信息。
+窄屏按相同信息层级拆成页面，不删除 Approval/Safety/Rule Verifier/Jev 关键信息。
 
 ## 3. HarnessReadModel
 
@@ -81,7 +81,7 @@ Read model 字段只用于展示。UI 命令携带 `expectedRunVersion`、approv
 
 ## 5. 时间线
 
-标准时间线项：用户消息、Agent 结果、结构化 Agent 决策、计划摘要、模型/角色选择、workspace 读取、ActionIntent、安全判定、Approval、执行、命令输出、diff、Verifier、诊断、Profile/Policy 变化和系统错误。
+标准时间线项：用户消息、Agent 结果、结构化 Agent 决策、计划摘要、模型/角色选择、workspace 读取、候选选择、ActionIntent、Jev 工具门禁、安全判定、Approval、执行、命令输出、diff、Rule Verifier、Jev 行为判断、诊断、Profile/Policy 变化和系统错误。
 
 - 高频 token/output delta 在 UI 合并更新，完成后变为稳定 item。
 - 每项有 stable event/item ID、时间、状态、来源角色和可展开证据。
@@ -119,7 +119,7 @@ Approval 是主时间线内的高优先级卡片，并同步出现在右侧“�
 
 ## 8. Route、角色与模型
 
-右侧 Route 面板显示：Task class/risk、候选数量、被安全排除的原因、最终拓扑、Planner/Executor/Verifier 的实际 provider/model/effort/Agent/Skill、fallback、预算和 capability snapshot 时间。
+右侧 Route 面板显示：Task class/risk、候选数量、被安全排除的原因、最终拓扑、Planner/Executor 的实际 provider/model/effort/Agent/Skill、Jev 决策源/模型/版本、fallback、预算和 capability snapshot 时间。
 
 - Luna/Sol 只作为用户可选 preset label，不作为固定角色。
 - 默认展示简短原因码和分数分量，不伪造自然语言“内心推理”。
@@ -138,7 +138,7 @@ Approval 是主时间线内的高优先级卡片，并同步出现在右侧“�
 
 默认层只显示一句结构化摘要、选择和结果；展开后显示候选比较和证据。事实、模型自报和系统判定使用不同视觉标签。`PROPOSED`、`REJECTED`、`ABSTAINED`、`INVALIDATED` 不得渲染成已执行；存在 `supersedes` 关系时显示“已被新决策替代”，但仍如实保留旧决策已经发生的 Outcome。缺少 outcome 显示“尚未验证”，不能显示成功。
 
-UI 明确说明“这里是可审计的决策摘要，不是模型隐藏思维”。Provider reasoning summary 若存在，默认折叠并标记“供应商生成、未验证、不可作为授权或证据”，且受独立隐私开关控制。用户可以按 Agent、类型、状态、step 和结果筛选，并从决策跳转到对应证据、ActionIntent、Verifier 报告和 Memory Proposal。
+UI 明确说明“这里是可审计的决策摘要，不是模型隐藏思维”。Provider reasoning summary 若存在，默认折叠并标记“供应商生成、未验证、不可作为授权或证据”，且受独立隐私开关控制。用户可以按 Agent、Jev、类型、状态、step 和结果筛选，并从决策跳转到对应证据、ActionIntent、Rule Verifier 报告、Jev 判断和 Memory Proposal。
 
 ## 9. Safety 与 Profile
 
@@ -151,9 +151,9 @@ Safety 面板分开显示：
 
 收紧即时可见；放开显示样本窗口、人工门槛和不会超过的上限。用户不能通过 UI 单击绕过硬规则；可提交审查/恢复操作。
 
-## 10. Verifier 与证据
+## 10. Rule Verifier、Jev 与证据
 
-Verifier 面板按检查项展示 `PASS/FAIL/UNKNOWN/SKIPPED`、证据来源、时间和影响：编译/测试、静态检查、diff、目标覆盖、安全、过程进展和语义检查。
+验证面板按检查项展示 `PASS/FAIL/UNKNOWN/SKIPPED`、证据来源、时间和影响：编译/测试、静态检查、diff、目标覆盖、安全、过程进展和语义检查。确定性检查标记为 Rule Verifier；语义判断显示 Jev 的 decision、reason codes、证据摘要、fallback 和延迟，不显示独立语义模型身份。
 
 - `UNKNOWN` 不使用绿色或“完成”；高风险 unknown 阻止成功。
 - 模型式判断明确标记“语义评估”，与确定性检查区分。
@@ -171,10 +171,10 @@ Verifier 面板按检查项展示 `PASS/FAIL/UNKNOWN/SKIPPED`、证据来源、�
 
 ## 12. 多 Agent 审议
 
-Council UI 展示：问题、各 Proposal 的 claim/evidence、Critique 指向的具体 claim、Judge 排序、选择的 Probe、预算/轮数和 `ABSTAIN`。不展示 chain-of-thought，不用拟人化聊天气泡制造虚假独立性。
+Council UI 展示：问题、各 Proposal 的 claim/evidence、Critique 指向的具体 claim、Jev 决策、选择的 Probe、预算/轮数和 `ABSTAIN`。不展示 chain-of-thought，不用拟人化聊天气泡制造虚假独立性。
 
 - 角色/模型是否真正不同清楚标注。
-- 多数同意不是通过证据；最终仍回到 Safety/Executor/Verifier。
+- 多数同意不是通过证据；最终仍回到 Safety/Executor/Rule Verifier/Jev。
 - 用户可停止审议并回退单 Agent。
 - 达到预算、无收敛或错误共识风险时显示停止原因。
 

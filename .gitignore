@@ -50,6 +50,15 @@ target-unlimited/
 # ---- Transient artifacts ----
 .tmp-release-check.json
 *.tmp
+/.codex-tmp/
+**/__pycache__/
+/desktop/*.log
+/docs/artifacts/**/logs/
+/docs/artifacts/bundle-backup-*/
 
 # ---- Agent harness session state ----
 /.pi/
+
+# ---- Decision-Driven Agent runtime evidence ----
+/.decision/
+jev.config.json

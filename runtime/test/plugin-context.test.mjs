@@ -85,6 +85,8 @@ test('allows only contribution or plugin-namespaced service publication', () => 
   assert.deepEqual(pluginContextGrantSummary(manifest(), plugin), {
     pluginId: 'com.example.scoped',
     services: [],
-    permissions: []
+    permissions: [],
+    // An undeclared ceiling keeps the full known vocabulary.
+    ceiling: 'CONTROLLED'
   });
 });

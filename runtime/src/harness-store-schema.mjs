@@ -33,14 +33,20 @@ function validateSchemaConstraints(db) {
 }
 
 // Opening an existing database must never silently migrate or repair it.
-export function openHarnessDatabase(storagePath, { readOnly = false } = {}) {
+export function openHarnessDatabase(storagePath, { readOnly = false, verifyIntegrity = true } = {}) {
   if (typeof storagePath !== 'string' || !storagePath.trim()) throw new Error('HARNESS_DATABASE_PATH_REQUIRED');
   if (!readOnly && storagePath !== ':memory:') mkdirSync(dirname(storagePath), { recursive: true });
   const db = new DatabaseSync(storagePath, { readOnly });
   try {
-    db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;');
-    const integrity = db.prepare('PRAGMA integrity_check').all();
-    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') throw new Error('HARNESS_DATABASE_CORRUPT');
+    // secure_delete keeps purged prompt/source bytes out of freed pages; a
+    // plain DELETE only unlinks rows and leaves the payload on disk.
+    db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
+    // Interactive read-only projections validate returned envelopes. Audits and
+    // every writable connection still run the complete integrity check.
+    if (!readOnly || verifyIntegrity) {
+      const integrity = db.prepare('PRAGMA integrity_check').all();
+      if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') throw new Error('HARNESS_DATABASE_CORRUPT');
+    }
     const version = db.prepare('PRAGMA user_version').get().user_version;
     if (version === 0) {
       if (readOnly) throw new Error('HARNESS_DATABASE_MIGRATION_REQUIRED');
@@ -200,6 +206,23 @@ export function readHarnessEventPage(db, { limit = 500, afterRunId, afterSequenc
   };
 }
 
+// Read the newest events for one run without scanning and materializing its full history.
+export function readHarnessEventTail(db, { runIds = [], kinds = [], before, limit = 100 } = {}) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('THREAD_HISTORY_LIMIT_INVALID');
+  if (!runIds.length) return { events: [], hasMore: false };
+  const params = [JSON.stringify(runIds), JSON.stringify(kinds)];
+  const cursor = before
+    ? "AND (json_extract(envelope, '$.emittedAtMs'), run_id, sequence) < (?, ?, ?)"
+    : '';
+  if (before) params.push(before.emittedAtMs, before.runId, before.sequence);
+  const rows = db.prepare(`SELECT * FROM trajectory_events
+    WHERE run_id IN (SELECT value FROM json_each(?))
+    AND json_extract(envelope, '$.kind') IN (SELECT value FROM json_each(?))
+    ${cursor}
+    ORDER BY json_extract(envelope, '$.emittedAtMs') DESC, run_id DESC, sequence DESC LIMIT ?`)
+    .all(...params, limit + 1);
+  return { events: rows.slice(0, limit).reverse().map(parseEventRow), hasMore: rows.length > limit };
+}
 export function readHarnessEventsByIds(db, eventIds) {
   if (!Array.isArray(eventIds) || eventIds.length === 0) return [];
   const placeholders = eventIds.map(() => '?').join(',');

@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { createMemoryJournal } from '../src/memory-journal.mjs';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
@@ -35,8 +36,7 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -110,8 +110,7 @@ test('Phase 1 records memory conflict and supersession suggestions from recalled
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const trajectory = join(workspace, 'trajectory.jsonl');
@@ -177,8 +176,7 @@ test('task timeout aborts the model request and records a failed run', async (t)
     server.closeAllConnections?.();
     server.close();
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -210,8 +208,7 @@ test('task cancel request aborts a running task and records a cancelled run', as
     server.closeAllConnections?.();
     server.close();
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
@@ -318,8 +315,7 @@ test('emits monotonic runtime heartbeats while a streamed model request is pendi
     }, 850);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -342,7 +338,7 @@ test('emits monotonic runtime heartbeats while a streamed model request is pendi
   assert.equal(payload.text, 'heartbeat complete');
 });
 
-test('runs a verified task through the optional local OpenViking ContextPort', async (t) => {
+test('runs a verified task through the local Memory Journal context port', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-openviking-'));
   await writeFile(join(workspace, 'README.md'), '# OpenViking fixture\n');
   let modelRequestBody = '';
@@ -356,8 +352,7 @@ test('runs a verified task through the optional local OpenViking ContextPort', a
     });
   });
   t.after(() => modelServer.close());
-  modelServer.listen(0, '127.0.0.1');
-  await once(modelServer, 'listening');
+  await listenOnFetchablePort(modelServer);
   const modelAddress = modelServer.address();
   assert.ok(modelAddress && typeof modelAddress === 'object');
 
@@ -398,8 +393,7 @@ test('runs a verified task through the optional local OpenViking ContextPort', a
     });
   });
   t.after(() => contextServer.close());
-  contextServer.listen(0, '127.0.0.1');
-  await once(contextServer, 'listening');
+  await listenOnFetchablePort(contextServer);
   const contextAddress = contextServer.address();
   assert.ok(contextAddress && typeof contextAddress === 'object');
 
@@ -416,27 +410,17 @@ test('runs a verified task through the optional local OpenViking ContextPort', a
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
-  assert.equal(payload.context.provider, 'openviking');
+  assert.equal(payload.context.provider, 'memory-journal');
   assert.equal(payload.context.status, 'COMMITTED');
-  assert.equal(payload.context.recalledCount, 1);
-  assert.equal(payload.context.usedCount, 1);
+  assert.equal(payload.context.recalledCount, 0);
+  assert.equal(payload.context.usedCount, 0);
   assert.equal(payload.context.recordedCount, 1);
   assert.equal(payload.context.committedCount, 1);
-  assert.match(modelRequestBody, /Use the recalled OpenViking project context\./u);
-  assert.equal(contextRequests.length, 5);
-  assert.equal(contextRequests[0].path, '/api/v1/sessions');
-  assert.equal(contextRequests[1].path, '/api/v1/search/search');
-  assert.ok(contextRequests[2].path.endsWith('/used'));
-  assert.ok(contextRequests[3].path.endsWith('/messages/batch'));
-  assert.ok(contextRequests[4].path.endsWith('/commit'));
-  assert.ok(contextRequests.every((request) => request.authorization === 'Bearer context-test-key'));
-  assert.ok(contextRequests.every((request) => /^hmcodex-workspace-[a-f0-9]{32}$/u.test(request.actorPeer)));
-  const batch = contextRequests.find((request) => request.path.endsWith('/messages/batch'));
-  assert.match(batch.body.messages[0].content, /^Verified task outcome: class=/u);
-  assert.doesNotMatch(batch.body.messages[0].content, /OpenViking task complete/u);
+  assert.doesNotMatch(modelRequestBody, /Use the recalled OpenViking project context\./u);
+  assert.equal(contextRequests.length, 0);
 });
 
-test('degrades safely when an explicitly selected OpenViking server is unavailable', async (t) => {
+test('keeps the local context path independent of an unavailable external server', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-openviking-degraded-'));
   await writeFile(join(workspace, 'README.md'), '# Unavailable context fixture\n');
   const modelServer = createServer((_request, response) => {
@@ -446,8 +430,7 @@ test('degrades safely when an explicitly selected OpenViking server is unavailab
     response.end('data: [DONE]\n\n');
   });
   t.after(() => modelServer.close());
-  modelServer.listen(0, '127.0.0.1');
-  await once(modelServer, 'listening');
+  await listenOnFetchablePort(modelServer);
   const modelAddress = modelServer.address();
   assert.ok(modelAddress && typeof modelAddress === 'object');
   const contextServer = createServer((_request, response) => {
@@ -455,8 +438,7 @@ test('degrades safely when an explicitly selected OpenViking server is unavailab
     response.end(JSON.stringify({ status: 'error', error: { code: 'UNAVAILABLE', message: 'secret internal detail' } }));
   });
   t.after(() => contextServer.close());
-  contextServer.listen(0, '127.0.0.1');
-  await once(contextServer, 'listening');
+  await listenOnFetchablePort(contextServer);
   const contextAddress = contextServer.address();
   assert.ok(contextAddress && typeof contextAddress === 'object');
 
@@ -471,9 +453,9 @@ test('degrades safely when an explicitly selected OpenViking server is unavailab
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
-  assert.equal(payload.context.provider, 'openviking');
-  assert.equal(payload.context.status, 'DEGRADED');
-  assert.equal(payload.context.recallError, 'OPENVIKING_UNAVAILABLE');
+  assert.equal(payload.context.provider, 'memory-journal');
+  assert.equal(payload.context.status, 'COMMITTED');
+  assert.equal(payload.context.recalledCount, 0);
   assert.doesNotMatch(JSON.stringify(payload.context), /secret internal detail/u);
 });
 
@@ -490,8 +472,7 @@ test('auto-derives a PROPOSED evolution candidate from a verified task outcome',
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -562,8 +543,7 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
     response.end('data: ' + JSON.stringify({ choices: [{ delta: { content: 'harness task complete' }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const trajectory = join(workspace, 'trajectory.jsonl');

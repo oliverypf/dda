@@ -125,6 +125,18 @@ export const runVerifierRecovery = async ({
       ? await diagnose({ attempt, report: clone(report), result, previousActions: clone(previousActions) })
       : recoveryContext(report, { attempt, previousActions });
     recovery = clone(diagnosed ?? recoveryContext(report, { attempt, previousActions }));
+    if (recovery.stopRecovery === true || recovery.requestUser === true) {
+      return {
+        ok: false,
+        attempts: attempt,
+        result,
+        report,
+        history,
+        stopped: recovery.stopRecovery === true,
+        requestUser: recovery.requestUser === true,
+        stopReason: recovery.recoveryDirection ?? 'STOP_AND_REPORT'
+      };
+    }
     await onPhase?.({ phase: 'RECOVERING', attempt, report: clone(report), recovery: clone(recovery) });
   }
 

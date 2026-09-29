@@ -1,0 +1,94 @@
+{
+    "schemaVersion":  "1.0",
+    "artifact":  "WINDOWS_PHASE2_INSTALL_LIFECYCLE_STEP",
+    "step":  "install",
+    "installer":  "NSIS_PER_MACHINE",
+    "evidenceClass":  "REAL_EXECUTION",
+    "hostName":  "USER-SNTTJQ3HLT",
+    "elevated":  true,
+    "finishedAtMs":  1789106931184,
+    "command":  "hmCodex_0.1.0_x64-setup.exe /S (fresh per-machine install after uninstall)",
+    "exitCode":  0,
+    "log":  {
+                "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911-r2\\logs\\nsis-install.log",
+                "bytes":  518,
+                "sha256":  "54ef6538d00fb2372934f671260729f81bc68cba89ee47f98f4b6fd5e8571df2",
+                "modifiedAtUtc":  "2026-09-11T06:08:51"
+            },
+    "logs":  [
+                 {
+                     "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911-r2\\logs\\nsis-install.log",
+                     "bytes":  518,
+                     "sha256":  "54ef6538d00fb2372934f671260729f81bc68cba89ee47f98f4b6fd5e8571df2",
+                     "modifiedAtUtc":  "2026-09-11T06:08:51"
+                 }
+             ],
+    "before":  {
+                   "sampledAtMs":  1789106924550,
+                   "installDir":  false,
+                   "desktopExe":  null,
+                   "runtimeIndex":  null,
+                   "uninstaller":  null,
+                   "registry":  {
+
+                                }
+               },
+    "after":  {
+                  "sampledAtMs":  1789106931184,
+                  "installDir":  true,
+                  "desktopExe":  {
+                                     "path":  "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+                                     "bytes":  9757184,
+                                     "sha256":  "1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154",
+                                     "modifiedAtUtc":  "2026-09-11T06:00:40"
+                                 },
+                  "runtimeIndex":  {
+                                       "path":  "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+                                       "bytes":  289060,
+                                       "sha256":  "86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035",
+                                       "modifiedAtUtc":  "2026-09-11T03:20:02"
+                                   },
+                  "uninstaller":  {
+                                      "path":  "C:\\Program Files\\hmCodex\\uninstall.exe",
+                                      "bytes":  82266,
+                                      "sha256":  "5ac1c2ec5a9d4ac9cc5d486539771bfdf2fb05ab9b180ad78f9eb2a909375dc3",
+                                      "modifiedAtUtc":  "2026-09-11T06:08:46"
+                                  },
+                  "registry":  {
+                                   "hive":  "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                                   "key":  "hmCodex",
+                                   "displayName":  "hmCodex",
+                                   "version":  "0.1.0",
+                                   "installLocation":  "\"C:\\Program Files\\hmCodex\"",
+                                   "uninstallString":  "\"C:\\Program Files\\hmCodex\\uninstall.exe\""
+                               }
+              },
+    "assertions":  [
+                       {
+                           "name":  "exitCodeZero",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "cleanStateBeforeInstall",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "installedRuntimeMatchesBuiltRuntime",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "installedBinaryByteIdenticalToUpgradeInstall",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "uninstallerRegistered",
+                           "ok":  true
+                       }
+                   ],
+    "installScope":  "PER_MACHINE",
+    "installDir":  "C:\\Program Files\\hmCodex",
+    "installedBinarySha256":  "1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154",
+    "installedRuntimeSha256":  "86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035",
+    "installerSetupSha256":  "5f6c80faf5a1e0aa3abd888390f4777179fe00304579308a8e9d47b3b1abb90b",
+    "ok":  true
+}

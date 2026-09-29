@@ -5,7 +5,7 @@
 
 ## 1. 目的
 
-Decision Trace 记录每个 Agent 在关键决策点的可审计过程，使系统能够解释“依据什么作出什么选择”，并在获得执行和 Verifier 结果后做可靠的 Credit/Blame、离线回放和策略学习。
+Decision Trace 记录每个 Agent/Jev 在关键决策点的可审计过程，使系统能够解释“依据什么作出什么选择”，并在获得执行、Rule Verifier 和用户结果后做可靠的 Credit/Blame、离线回放和策略学习。语义决策统一由 Jev Decision Plane 完成；旧的 LLM-as-a-Verifier、独立 Candidate Judge 和语义 Verifier 角色不属于本规范的当前实现。
 
 这里的“过程”是结构化决策轨迹，不是模型隐藏 chain-of-thought。系统记录输入事实、约束、候选、选择标准、简短理由、假设、不确定性、输出和结果；不要求、不推断、也不长期保存不可验证的逐 token 内心推理。
 
@@ -21,7 +21,7 @@ Decision Trace 记录每个 Agent 在关键决策点的可审计过程，使系�
 | Router/Coordinator Agent | topology、角色/模型/Agent/Skill/Executor、fallback、升级/降级、预算分配 |
 | PlanningRole | 计划步骤、假设、依赖、信息缺口、是否请求用户、下一目标 |
 | ExecutionRole | 选择哪个只读操作或 `ActionIntent`、参数/scope、重试/停止、最小 Probe |
-| VerificationRole | 证据采信/排除、verdict、置信与缺口、继续/诊断/失败/通过 |
+| Jev Decision Plane | 证据充分性、候选选择、工具门禁、行为判断、停止/升级方向 |
 | Diagnostician | 多假设生成、区分性证据、Probe 建议和排序输入 |
 | Critic/Judge/Council | Proposal、定向质疑、反例、排序、选中/淘汰和 `ABSTAIN` |
 | MemoryConsolidator | MemoryProposal、来源、冲突处理、合并/撤回建议 |
@@ -39,7 +39,7 @@ SafetyDecision、用户 Approval、PolicyLease 和确定性 RuleRouter 也要记
 5. **不可变修订。** 决策不覆盖；改变主意时创建新的 `COMMITTED` Decision，使用 `supersedesDecisionId` 并发布 `AgentDecisionRevised`，旧记录及其真实 Outcome 保持不变。
 6. **结果后绑定。** Decision 创建时不能预写成功；Execution/Verifier 完成后追加 `DecisionOutcomeLinked`。
 7. **权限不来自记录。** “理由充分”不能授予权限，仍必须经过 Safety/Approval/PolicyLease。
-8. **可学习但不自我证明。** 学习使用独立 Verifier/用户/确定性结果，不使用 Agent 自评作为唯一标签。
+8. **可学习但不自我证明。** 学习使用 Rule Verifier、真实执行结果和用户反馈，不使用 Agent 或 Jev 自评作为唯一标签。
 
 ## 4. 数据契约
 
@@ -179,7 +179,9 @@ interface DecisionOutcome {
 - `SELECT_PROBE`
 - `CRITIQUE_PROPOSAL`
 - `RANK_PROPOSALS`
-- `VERIFIER_VERDICT`
+- `SELECT_CANDIDATE`
+- `ACTION_GATE`
+- `VERIFY_BEHAVIOR`
 - `REQUEST_USER_INPUT`
 - `ABSTAIN_OR_ESCALATE`
 - `PROPOSE_MEMORY`
@@ -216,11 +218,11 @@ Credit/Blame → Profile/Eval/Offline Learning
 强制步骤：
 
 1. 调用 Agent 前保存 binding、prompt template、policy、capability、workspace、budget 和 feature snapshot ID。
-2. Agent 通过结构化输出生成 `DecisionProposal`；Adapter 可附带 provider reasoning summary，但它只作为可选 `UNVERIFIED_PROVIDER_SUMMARY` artifact，不是权威记录。
+2. Agent 或 Jev 通过结构化输出生成 `DecisionProposal`；Adapter 可附带 provider reasoning summary，但它只作为可选 `UNVERIFIED_PROVIDER_SUMMARY` artifact，不是权威记录。
 3. Validator 验证 schema、option 唯一性、evidence 是否存在、输出 scope 和长度。
 4. Coordinator 持久化 Decision 后才接受其计划、Verifier verdict 或 ActionIntent。
-5. Safety/Router/Verifier 可以拒绝 Decision，但不能修改原记录；拒绝原因形成事件。
-6. 修改选择必须新建 Decision 并引用被替代记录。
+5. Safety/Router/Rule Verifier/Jev 可以拒绝 Decision，但不能修改原记录；拒绝原因形成事件。
+6. 修改选择必须新建 Decision 并引用被替代记录；Jev 不可用时只能走显式保守 fallback。
 7. Outcome 由执行事实与独立 Verifier 关联，Agent 不得自行写入。
 
 如果某模型无法稳定输出 Decision schema，该绑定降级为不可用于需要可审计决策的角色；不得从自由文本中猜测并生成虚假过程。

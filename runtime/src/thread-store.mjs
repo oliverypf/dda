@@ -53,14 +53,16 @@ export class ThreadStore {
     // remain retryable instead of poisoning all subsequent operations.
     if (!this.#loadPromise) {
       this.#loadPromise = (async () => {
-        if (!this.#storagePath && this.#eventStore?.list) {
+        if (this.#eventStore?.list) {
           let events;
           try { events = await this.#eventStore.list(); } catch { throw new Error('THREAD_STORE_INVALID'); }
           const restoredThreads = new Map();
+          const titleDigests = new Map();
           for (const event of events) {
             const payload = event.payload ?? {};
             if (event.kind !== 'ThreadCreated') continue;
             if (typeof payload.threadId !== 'string' || !payload.threadId) continue;
+            if (typeof payload.titleDigest === 'string') titleDigests.set(payload.threadId, payload.titleDigest);
             const thread = {
               id: payload.threadId,
               title: `Thread ${payload.threadId.slice(-8)}`,
@@ -103,6 +105,27 @@ export class ThreadStore {
             if (Number.isFinite(payload.updatedAtMs)) thread.updatedAtMs = Math.max(thread.updatedAtMs ?? 0, payload.updatedAtMs);
           }
           if (restoredThreads.size > 0) {
+            // The event stream remains authoritative for membership, turns,
+            // state and checkpoints. A matching local snapshot contributes
+            // only the user-visible title because ThreadCreated intentionally
+            // persists its digest instead of the original prompt text.
+            if (this.#storagePath) {
+              try {
+                const local = await readPersistentJsonFile(this.#storagePath);
+                if (local?.schemaVersion === '1.0' && Array.isArray(local.threads)) {
+                  for (const candidate of local.threads) {
+                    const restored = typeof candidate?.id === 'string' ? restoredThreads.get(candidate.id) : undefined;
+                    const expected = restored ? titleDigests.get(candidate.id) : undefined;
+                    if (restored && typeof candidate.title === 'string' && candidate.title
+                      && candidate.title.length <= 240 && typeof expected === 'string'
+                      && titleDigest(candidate.title) === expected) restored.title = candidate.title;
+                  }
+                }
+              } catch {
+                // A corrupt optional title cache must not make durable thread
+                // history unreadable. The placeholder is the fail-closed UI.
+              }
+            }
             this.#threads = restoredThreads;
             return;
           }
@@ -302,4 +325,4 @@ export class ThreadStore {
 }
 
 export const createThreadStore = (options) => new ThreadStore(options);
-export { THREAD_STATES, CHECKPOINT_PHASES, checkpointDigest };
+export { THREAD_STATES, CHECKPOINT_PHASES, checkpointDigest, titleDigest };

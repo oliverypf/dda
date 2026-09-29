@@ -1,0 +1,5 @@
+{
+  "base_url": "https://api.typesafe.ai/v1/systemone",
+  "model": "jev-latest",
+  "timeout": 30
+}

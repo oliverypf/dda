@@ -5,5 +5,21 @@
   "model": "mimo-v2.5-pro",
   "baseURL": "https://opencode.ai/zen/go/v1",
   "apiKeyEnv": "OPENCODE_GO_API_KEY",
-  "sessionHeader": "x-opencode-session"
+  "sessionHeader": "x-opencode-session",
+  "decision": {
+    "enabled": true,
+    "enforce": true,
+    "endpoint": "https://api.typesafe.ai/v1/system_one",
+    "model": "jev-latest",
+    "apiKeyEnv": "JEV_API_KEY",
+    "timeoutMs": 1200,
+    "maxStateChars": 16000,
+    "classificationEnabled": false,
+    "routeSelectionEnabled": false,
+    "topologyEnabled": false,
+    "planReviewEnabled": false,
+    "diagnosisEnabled": false,
+    "recoveryDirectionEnabled": false,
+    "contextPackEnabled": false
+  }
 }

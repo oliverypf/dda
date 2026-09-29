@@ -10,6 +10,20 @@ import {
   runSemanticVerifierTurn
 } from '../src/agent-turns.mjs';
 
+// The process verifier's status is derived from the token probability of the
+// ordered rating letter, so every fake provider must emit the real logprob
+// channel instead of a model-authored status or number.
+const scoreChunks = (body, { tag = '<score>', letter = 'A', probability = 0.97 } = {}) => [
+  { type: 'text-delta', text: `${body}${tag}${letter}${tag.replace('<', '</')}` },
+  { type: 'score-logprobs', positions: [
+    { token: tag },
+    { token: letter, top_logprobs: [
+      { token: letter, logprob: Math.log(probability) },
+      { token: letter === 'A' ? 'T' : 'A', logprob: Math.log(1 - probability) }
+    ] }
+  ] }
+];
+
 const providerFor = (chunks, onRequest) => ({
   provider: 'fake',
   protocol: 'responses',
@@ -73,21 +87,84 @@ test('planner rejects cyclic plans before they can reach an executor', () => {
   assert.throws(() => normalizePlannerPlan({ steps: [] }), /PLANNER_PLAN_INVALID/u);
 });
 
-test('semantic verifier is an independent no-tool turn and returns a structured verdict', async () => {
+test('semantic verifier is an independent no-tool turn and scores from token probabilities', async () => {
   let request;
   const verifier = await runSemanticVerifierTurn({
-    provider: providerFor([
-      { type: 'text-delta', text: '{"status":"PASS","summary":"Evidence matches","progress":1,"evidenceRefs":["workspace:snapshot"]}' }
-    ], (value) => { request = value; }),
+    provider: providerFor(scoreChunks('{"summary":"Evidence matches","evidenceRefs":["workspace:snapshot"]}', { letter: 'A', probability: 0.97 }), (value) => { request = value; }),
     contextId: 'role-context-verifier',
     ruleReport: { status: 'PASS', progress: 1, failureCodes: [], evidence: ['workspace:snapshot'] },
     result: { text: 'done', actions: [] },
     plan: normalizePlannerPlan({ steps: [{ stepId: 'step', summary: 'done' }] })
   });
   assert.deepEqual(request.tools, []);
+  assert.equal(request.logprobs, true);
+  // A near-certain A is a continuous expectation, not a parsed letter.
   assert.equal(verifier.verdict.status, 'PASS');
-  assert.equal(verifier.verdict.progress, 1);
+  assert.equal(verifier.verdict.source, 'TOKEN_LOGPROB_EXPECTATION');
+  assert.ok(Math.abs(verifier.verdict.score - 0.97) < 0.01);
+  assert.equal(verifier.verdict.progress, verifier.verdict.score);
+  assert.deepEqual(verifier.verdict.distribution.map((item) => item.token), ['A', 'T']);
+  assert.deepEqual(verifier.verdict.thresholds, { passThreshold: 0.9, failThreshold: 0.5 });
   assert.deepEqual(verifier.verdict.evidenceRefs, ['workspace:snapshot']);
+  assert.deepEqual(verifier.verdict.failureCodes, []);
+});
+
+test('a text-only process verdict cannot become a score', async () => {
+  const verifier = await runSemanticVerifierTurn({
+    provider: providerFor([
+      { type: 'text-delta', text: '{"status":"PASS","progress":1}<score>A</score>' }
+    ]),
+    result: { text: 'done', actions: [] }
+  });
+  assert.equal(verifier.verdict.status, 'ABSTAIN');
+  assert.equal(verifier.verdict.source, 'LOGPROBS_MISSING');
+  assert.equal(verifier.verdict.score, undefined);
+  assert.equal(verifier.verdict.progress, 0);
+  assert.ok(verifier.verdict.failureCodes.includes('SEMANTIC_VERIFIER_LOGPROBS_UNAVAILABLE'));
+});
+
+test('a low process expectation fails the step and a mid expectation abstains', async () => {
+  const failing = await runSemanticVerifierTurn({
+    provider: providerFor(scoreChunks('{"summary":"missing evidence"}', { letter: 'T', probability: 0.95 })),
+    result: { text: 'done', actions: [] }
+  });
+  assert.equal(failing.verdict.status, 'FAIL');
+  assert.ok(failing.verdict.failureCodes.includes('PROCESS_VERIFICATION_REJECTED'));
+  const uncertain = await runSemanticVerifierTurn({
+    provider: providerFor(scoreChunks('{"summary":"partly verified"}', { letter: 'D', probability: 0.96 })),
+    result: { text: 'done', actions: [] }
+  });
+  assert.equal(uncertain.verdict.status, 'ABSTAIN');
+  assert.ok(uncertain.verdict.failureCodes.includes('PROCESS_VERIFICATION_UNCERTAIN'));
+});
+
+test('operator thresholds reclassify the same probability evidence', async () => {
+  const strict = await runSemanticVerifierTurn({
+    provider: providerFor(scoreChunks('{"summary":"verified"}', { letter: 'A', probability: 0.97 })),
+    result: { text: 'done', actions: [] },
+    verifierConfig: { passThreshold: 0.99, failThreshold: 0.5 }
+  });
+  assert.equal(strict.verdict.status, 'ABSTAIN');
+  assert.ok(strict.verdict.failureCodes.includes('PROCESS_VERIFICATION_UNCERTAIN'));
+  assert.deepEqual(strict.verdict.thresholds, { passThreshold: 0.99, failThreshold: 0.5 });
+
+  const lenient = await runSemanticVerifierTurn({
+    provider: providerFor(scoreChunks('{"summary":"partial"}', { letter: 'D', probability: 0.96 })),
+    result: { text: 'done', actions: [] },
+    verifierConfig: { passThreshold: 0.6, failThreshold: 0.1 }
+  });
+  assert.equal(lenient.verdict.status, 'PASS');
+  assert.deepEqual(lenient.verdict.thresholds, { passThreshold: 0.6, failThreshold: 0.1 });
+});
+
+test('a missing probability channel still records the configured thresholds', async () => {
+  const verifier = await runSemanticVerifierTurn({
+    provider: providerFor([{ type: 'text-delta', text: '{"summary":"no evidence"}' }]),
+    result: { text: 'done', actions: [] },
+    verifierConfig: { passThreshold: 0.99, failThreshold: 0.5 }
+  });
+  assert.equal(verifier.verdict.source, 'LOGPROBS_MISSING');
+  assert.deepEqual(verifier.verdict.thresholds, { passThreshold: 0.99, failThreshold: 0.5 });
 });
 
 test('invalid semantic output fails closed to ABSTAIN', () => {
@@ -186,9 +263,11 @@ test('pipeline executes three role boundaries and keeps semantic ABSTAIN non-aut
 test('pipeline preserves a hard rule failure even if semantic verifier says pass', async () => {
   const provider = {
     async *stream(request) {
-      yield { type: 'text-delta', text: /Planner role/iu.test(request.system)
-        ? '{"steps":[{"stepId":"execute","summary":"inspect"}]}'
-        : '{"status":"PASS","progress":1}' };
+      if (/Planner role/iu.test(request.system)) {
+        yield { type: 'text-delta', text: '{"steps":[{"stepId":"execute","summary":"inspect"}]}' };
+      } else {
+        yield* scoreChunks('{"summary":"verified"}', { letter: 'A', probability: 0.98 });
+      }
     }
   };
   const output = await runAgentPipeline({

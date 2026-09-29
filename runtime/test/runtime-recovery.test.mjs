@@ -29,6 +29,10 @@ test('recovery records a Git observer checkpoint in the Harness Store', async ()
   assert.equal(result.code, 0, result.stderr);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
+  assert.equal(payload.workspace.available, false);
+  assert.equal(payload.workspace.status, 'NOT_A_REPOSITORY');
+  assert.equal(typeof payload.workspace.observationDigest, 'string');
+  assert.equal(typeof payload.workspace.changedFiles, 'number');
   const events = JSON.parse(await readFile(harnessPath, 'utf8')).events;
   assert.deepEqual(events.map((event) => event.kind), ['RecoveryStarted', 'GitStateObserved', 'RecoveryCompleted']);
   const audit = JSON.parse(await readFile(auditPath, 'utf8'));
@@ -90,9 +94,64 @@ test('recovery command closes records owned by a lost runtime process', async ()
   assert.deepEqual(payload.execution.records.map((record) => record.state).sort(), ['CANCELLED', 'REJECTED']);
   assert.equal(payload.dream.reconciled, 1);
   assert.equal(payload.dream.runs[0].errorCode, 'DREAM_OWNER_PROCESS_LOST');
+  assert.equal(payload.pendingApprovals, 0);
+  assert.equal(payload.revokedLeases, 0);
 
   const persisted = JSON.parse(await readFile(executionPath, 'utf8'));
   assert.deepEqual(persisted.records.map((record) => record.state).sort(), ['CANCELLED', 'REJECTED']);
   const persistedDream = JSON.parse(await readFile(dreamPath, 'utf8'));
   assert.equal(persistedDream.runs[0].state, 'FAILED');
+});
+
+
+test('execution-state CLI exposes digest-checked recovery actions for orphan records', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-recovery-actions-'));
+  const executionPath = join(directory, 'execution.json');
+  const store = createExecutionStateStore({ storagePath: executionPath, ownerPid: 0 });
+  const intent = await store.createIntent({ runId: 'run-recovery-actions', capability: 'shell.execute', request: { command: 'node' } });
+  await store.transition(intent.recordId, 'SAFETY_EVALUATING');
+  const approval = await store.createApproval({
+    runId: intent.runId,
+    intentId: intent.recordId,
+    capability: intent.capability,
+    requestDigest: intent.requestDigest,
+    displayedDigest: intent.requestDigest,
+    operationId: intent.operationId
+  });
+  await store.transition(approval.recordId, 'PRESENTED');
+  await store.transition(intent.recordId, 'WAITING_APPROVAL');
+  const pending = store.get(approval.recordId);
+  const cancelledResult = await run(['execution-state', '--operation', 'cancel-approval', '--record-id', approval.recordId, '--expected-digest', pending.recordDigest], { HMCODEX_EXECUTION_STATE_STORE: executionPath });
+  assert.equal(cancelledResult.code, 0, cancelledResult.stderr);
+  assert.equal(JSON.parse(cancelledResult.stdout.trim()).record.state, 'CANCELLED');
+
+  await store.reload();
+  const secondIntent = await store.createIntent({ runId: 'run-recovery-actions-lease', capability: 'shell.execute', request: { command: 'node' } });
+  await store.transition(secondIntent.recordId, 'SAFETY_EVALUATING');
+  const secondApproval = await store.createApproval({
+    runId: secondIntent.runId,
+    intentId: secondIntent.recordId,
+    capability: secondIntent.capability,
+    requestDigest: secondIntent.requestDigest,
+    displayedDigest: secondIntent.requestDigest,
+    operationId: secondIntent.operationId
+  });
+  await store.transition(secondApproval.recordId, 'PRESENTED');
+  await store.transition(secondApproval.recordId, 'APPROVED');
+  await store.transition(secondIntent.recordId, 'APPROVED');
+  await store.transition(secondIntent.recordId, 'EXECUTING');
+  const lease = await store.createLease({
+    runId: secondIntent.runId,
+    intentId: secondIntent.recordId,
+    approvalId: secondApproval.recordId,
+    capability: secondIntent.capability,
+    requestDigest: secondIntent.requestDigest,
+    operationId: secondIntent.operationId,
+    expiresAt: Date.now() + 30_000
+  });
+  await store.transition(lease.recordId, 'ACTIVE');
+  const activeLease = store.get(lease.recordId);
+  const revokedResult = await run(['execution-state', '--operation', 'revoke-lease', '--record-id', lease.recordId, '--expected-digest', activeLease.recordDigest], { HMCODEX_EXECUTION_STATE_STORE: executionPath });
+  assert.equal(revokedResult.code, 0, revokedResult.stderr);
+  assert.equal(JSON.parse(revokedResult.stdout.trim()).record.state, 'REVOKED');
 });

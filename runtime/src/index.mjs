@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { defaultModelConfigPath, loadModelConfig, resolveModelConfig } from './model-config.mjs';
+import { defaultModelConfigPath, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
 import { logger } from './logger.mjs';
 import { createTrajectoryStore, sha256Digest, parseLegacyTrajectoryEvents } from './trajectory-store.mjs';
 import { createGitObserver } from './git-observer.mjs';
@@ -22,11 +22,14 @@ import { assertLegacyHarnessMigrated } from './harness-store-migration-guard.mjs
 import { assertProjectionOutput } from './projection-output-guard.mjs';
 import { redactSensitiveData, scanSupportBundle } from './support-bundle-privacy.mjs';
 import { createMeteredHarnessEventStore, readCommitMetrics } from './commit-metrics.mjs';
-import { createReadModelRebuilder, pageProjectionTimeline } from './read-model-rebuilder.mjs';
+import { createReadModelRebuilder, loadFreshReadModel, pageProjectionTimeline } from './read-model-rebuilder.mjs';
 import { createFileRetentionProgressStore, createRetentionWorker, parseRetentionWorkerBatchSize, parseRetentionWorkerFailureLimit, parseRetentionWorkerInterval } from './retention-worker.mjs';
 import { createExecutionScopeSnapshot, compareGitObservations } from './execution-scope-snapshot.mjs';
 import { createExecutionStateStore, executionDigest } from './execution-state-store.mjs';
 import { createThreadStore } from './thread-store.mjs';
+import { readThreadHistory } from './thread-history-reader.mjs';
+import { saveRunResponse } from './run-response-store.mjs';
+import { runHistoryCommand } from './history-cli.mjs';
 import { createRuleVerifier } from './rule-verifier.mjs';
 import { createTaskRunCoordinator } from './task-run-coordinator.mjs';
 import { createTaskCancelRegistry, taskCancelStorePath } from './task-cancel-registry.mjs';
@@ -40,11 +43,9 @@ import { createTaskSafetyPrecheck } from './task-safety-precheck.mjs';
 const candidateFanoutRisk = (taskClass, mode) => taskClass === 'inspect'
   ? (mode === 'CONTROLLED' ? 'MEDIUM' : 'LOW')
   : (mode === 'CONTROLLED' ? 'HIGH' : 'MEDIUM');
-import { evaluateSemanticVerifierIndependence } from './semantic-verifier-gate.mjs';
 import { assembleCheckpointContext, assembleMemoryContext, assembleTrajectoryContext } from './context-assembler.mjs';
 import { createMemoryJournal } from './memory-journal.mjs';
 import { createJournalContextPort } from './journal-context-port.mjs';
-import { createOpenVikingContextPort } from './openviking-context-port.mjs';
 import { createDreamScheduler } from './dream-scheduler.mjs';
 import { createDreamMaintenanceSupervisor, parseDreamActiveRuns, parseDreamMaintenanceFailureLimit, parseDreamMaintenanceInterval } from './dream-maintenance-supervisor.mjs';
 import { createMemoryVerifier } from './memory-verifier.mjs';
@@ -66,16 +67,26 @@ import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
 import { createCreditBlameLedger } from './credit-blame-ledger.mjs';
 import { createModelEgressLedger, normalizeEgressTarget } from './model-egress-ledger.mjs';
+import { readModelUsage, withModelUsage } from './model-usage.mjs';
+import { withCustomInstructions } from './custom-instructions.mjs';
 import { createEvolutionEvaluator } from './evolution-evaluator.mjs';
 import { EvolutionControlStore } from './evolution-control.mjs';
-import { normalizePlannerPlan, restorePlannerPlan, runCandidateJudgeTurn, runCouncilJudgeTurn, runCouncilMemberTurn, runExecutorTurn, runIsolatedModelTurn, runPlannerTurn, runSemanticVerifierTurn } from './agent-turns.mjs';
+import { normalizePlannerPlan, restorePlannerPlan, runCouncilJudgeTurn, runCouncilMemberTurn, runExecutorTurn, runIsolatedModelTurn, runPlannerTurn } from './agent-turns.mjs';
 import { normalizeCandidateSetSpec, planCandidateFanout } from './candidate-fanout.mjs';
 import { runCandidateDraftStage } from './candidate-draft-stage.mjs';
 import { createAgentCouncil } from './agent-council.mjs';
 import { createPlanStepCoordinator } from './plan-step-coordinator.mjs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { canonicalMappedPath, preferMappedPath } from './windows-path.mjs';
 import { assessStorageCapacity, assertStorageCapacityForRun, DEFAULT_MAX_BYTES } from './storage-capacity.mjs';
+import { buildModelLock, buildPluginLock, buildReleaseDecision, buildSbom, isControlledReleaseChannel, releaseDigest, releaseFileDigest, writeReleaseArtifacts } from './release-manifest.mjs';
+import { redactRuntimeArgv } from './runtime-log-redaction.mjs';
+import { createDecisionEngine } from './decision/engine.mjs';
+import { createJevClient } from './decision/jev-client.mjs';
+import { createMcpReadOnlyHost, loadMcpConfig } from './mcp-host.mjs';
+import { createPlaywrightWorkerHost, registerPlaywrightTools } from './playwright-host.mjs';
 
 const BOOLEAN_ARGS = new Set(['--resume', '--auto-evolution-proposal', '--purge-expired', '--require-holdout']);
 const APPROVAL_TTL_MS = 120000;
@@ -142,6 +153,21 @@ const arg = (name, fallback) => {
   return value === undefined ? fallback : value;
 };
 
+// Repeatable flags such as --lock and --artifact keep every occurrence.
+const argValuesAll = (name) => {
+  const values = [];
+  for (let index = 3; index < process.argv.length; index += 1) {
+    const token = process.argv[index];
+    if (token === name) {
+      const value = process.argv[index + 1];
+      if (value !== undefined && !value.startsWith('--')) values.push(value);
+    } else if (token.startsWith(`${name}=`)) {
+      values.push(token.slice(name.length + 1));
+    }
+  }
+  return values;
+};
+
 const modelOverridesFromArgs = () => ({
   ...(argValue('--provider') !== undefined ? { provider: argValue('--provider') } : {}),
   ...(argValue('--protocol') !== undefined ? { protocol: argValue('--protocol') } : {}),
@@ -169,7 +195,9 @@ const capabilityNames = (value) => csv(value).map((item) => ({
   write: CAPABILITIES.WRITE_FILE,
   'file.write': CAPABILITIES.WRITE_FILE,
   test: CAPABILITIES.TEST,
-  'test.execute': CAPABILITIES.TEST
+  'test.execute': CAPABILITIES.TEST,
+  network: CAPABILITIES.NETWORK,
+  'network.request': CAPABILITIES.NETWORK
 }[item] ?? item));
 
 const parseNetworkTargets = (value) => {
@@ -301,14 +329,45 @@ const defaultPluginRoot = () => {
   return dataRoot ? join(dataRoot, 'hmCodex', 'plugins') : undefined;
 };
 
+const safeRuntimeMessage = (error, fallback = '') => {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const normalized = raw
+    .replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]')
+    .replace(/((?:api[_-]?key|token|authorization)\s*[=:]\s*)[^\s,;]+/giu, '$1[REDACTED]')
+    .replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 640);
+  return normalized || fallback;
+};
+
+const boundedVerificationChecks = (checks) => Array.isArray(checks)
+  ? checks.slice(0, 24).map((check) => ({
+      id: typeof check?.id === 'string' ? check.id.slice(0, 120) : 'unknown',
+      status: typeof check?.status === 'string' ? check.status.slice(0, 24) : 'UNKNOWN',
+      message: safeRuntimeMessage(typeof check?.message === 'string' ? check.message : '', '未提供检查说明'),
+      ...(Array.isArray(check?.evidence) ? { evidence: check.evidence.filter((ref) => typeof ref === 'string').slice(0, 8).map((ref) => ref.slice(0, 200)) } : {})
+    }))
+  : [];
+
 const trajectoryErrorPayload = (error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  const separator = message.indexOf(':');
-  const code = (separator < 0 ? message : message.slice(0, separator)).replace(/[^A-Z0-9_]/gi, '').slice(0, 80) || 'RUNTIME_ERROR';
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = safeRuntimeMessage(error, '运行时未提供具体错误信息');
+  const separator = rawMessage.indexOf(':');
+  const code = (separator < 0 ? rawMessage : rawMessage.slice(0, separator)).replace(/[^A-Z0-9_]/gi, '').slice(0, 80) || 'RUNTIME_ERROR';
   return {
     code,
-    messageDigest: sha256Digest(message),
-    messageLength: message.length
+    message,
+    messageDigest: sha256Digest(rawMessage),
+    messageLength: rawMessage.length,
+    ...(error?.failureCodes ? { failureCodes: error.failureCodes.slice(0, 16) } : {}),
+    ...(error?.stepId ? { stepId: String(error.stepId).slice(0, 160) } : {}),
+    ...(error?.phase ? { phase: String(error.phase).slice(0, 80) } : {}),
+    ...(error?.reportStatus ? { reportStatus: String(error.reportStatus).slice(0, 40) } : {}),
+    ...(error?.stepErrorCode ? { stepErrorCode: String(error.stepErrorCode).slice(0, 120) } : {}),
+    ...(error?.summary ? { summary: safeRuntimeMessage(error.summary) } : {}),
+    ...(error?.nextAction ? { nextAction: String(error.nextAction).slice(0, 120) } : {}),
+    ...(Array.isArray(error?.checks) ? { checks: boundedVerificationChecks(error.checks) } : {})
   };
 };
 
@@ -324,7 +383,7 @@ const manifests = () => {
   registry.register(pluginManifest('task-run-coordinator', 'Task Run Coordinator', 'agent', ['task.state.transition'], ['trajectory.write']));
   registry.register(pluginManifest('plan-step-coordinator', 'Plan Step Coordinator', 'agent', ['task.plan.schedule', 'task.plan.resume'], ['trajectory.write', 'thread.write']));
   registry.register(pluginManifest('rule-verifier', 'Deterministic Rule Verifier', 'verifier', ['verify.task.rules'], ['workspace.read.snapshot', 'trajectory.read.redacted']));
-  registry.register(pluginManifest('agent-turns', 'Isolated Planner and Semantic Verifier Turns', 'agent', ['agent.plan', 'agent.verify.semantic'], ['network.connect.host', 'trajectory.write']));
+  registry.register(pluginManifest('agent-turns', 'Isolated Planner Turns', 'agent', ['agent.plan'], ['network.connect.host', 'trajectory.write']));
   registry.register(pluginManifest('agent-council', 'Bounded Agent Council', 'agent', ['agent.deliberate', 'agent.abstain'], ['trajectory.write']));
   registry.register(pluginManifest('role-session-manager', 'Role Session Manager', 'agent', ['role.context.allocate', 'role.context.fork'], ['thread.read', 'thread.write']));
   registry.register(pluginManifest('rule-router', 'Static Rule Router', 'agent', ['route.resolve'], ['profile.read']));
@@ -332,7 +391,6 @@ const manifests = () => {
   registry.register(pluginManifest('plugin-governance', 'Plugin Governance', 'skill', ['plugin.validate', 'plugin.quarantine'], ['plugin.manifest.read', 'plugin.registry.write']));
   registry.register(pluginManifest('memory-journal', 'Memory Journal', 'skill', ['memory.propose', 'memory.verify'], ['trajectory.read.redacted']));
   registry.register(pluginManifest('context-port', 'Provider-neutral Context Port', 'skill', ['context.recall', 'context.record', 'context.used', 'context.commit'], ['trajectory.read.redacted']));
-  registry.register(pluginManifest('context-openviking', 'OpenViking Context Adapter', 'skill', ['context.recall', 'context.record', 'context.used', 'context.commit'], ['network.connect.loopback']));
   registry.register(pluginManifest('memory-verifier', 'Deterministic Memory Verifier', 'verifier', ['memory.verify.source', 'memory.verify.conflict'], ['trajectory.read.redacted', 'memory.read']));
   registry.register(pluginManifest('dream-scheduler', 'Dream Scheduler', 'skill', ['memory.dream.schedule'], ['trajectory.read.redacted']));
   registry.register(pluginManifest('evolution-registry', 'Evolution Proposal Registry', 'skill', ['profile.propose-update'], ['trajectory.read.redacted']));
@@ -347,6 +405,7 @@ async function runTask() {
   const approvedCapabilities = capabilityNames(arg('--lease-capabilities', process.env.HMCODEX_LEASE_CAPABILITIES ?? ''));
   const approvedCommands = csv(arg('--lease-commands', process.env.HMCODEX_LEASE_COMMANDS ?? ''));
   const approvedNetworkTargets = parseNetworkTargets(arg('--network-targets', process.env.HMCODEX_NETWORK_TARGETS));
+  const mcpConfigPath = arg('--mcp-config', process.env.HMCODEX_MCP_CONFIG);
   const autoEvolutionProposal = parseBoolean(
     process.argv.includes('--auto-evolution-proposal') ? 'true' : argValue('--auto-evolution-proposal'),
     parseBoolean(process.env.HMCODEX_AUTO_EVOLUTION_PROPOSAL, false)
@@ -374,7 +433,9 @@ async function runTask() {
       }, taskTimeoutMs)
     : undefined;
   taskTimeoutTimer?.unref?.();
-  logger.info(`run started | runId=${runId} | mode=${mode} | agentMode=${agentMode} | resume=${resumeRequested} | workspace=${workspaceRoot}`);
+  // The desktop watchdog starts at process spawn. Emit the run marker and
+  // start heartbeats before any legacy migration check, database validation,
+  // or workspace scan so slow startup remains observable.
   const approvalContexts = new Map();
   let activeSnapshotDigest;
   let initialGitObservation;
@@ -392,10 +453,49 @@ async function runTask() {
     };
     writeStdout(`${JSON.stringify(event)}\n`);
   };
+  const heartbeatState = { current: 'STARTING' };
+  const requestedHeartbeatIntervalMs = Number(arg('--heartbeat-interval-ms', process.env.HMCODEX_HEARTBEAT_INTERVAL_MS ?? '2000'));
+  const heartbeatIntervalMs = Number.isFinite(requestedHeartbeatIntervalMs)
+    ? Math.max(250, Math.min(10000, Math.trunc(requestedHeartbeatIntervalMs)))
+    : 2000;
+  const heartbeatTimer = eventOutput === 'stdout'
+    ? setInterval(() => emitEvent('runtime.heartbeat', {
+        state: heartbeatState.current,
+        uptimeMs: Math.max(0, Date.now() - runStartedAtMs)
+      }), heartbeatIntervalMs)
+    : undefined;
+  heartbeatTimer?.unref?.();
+  const setRuntimePhase = (phase, details = {}) => {
+    heartbeatState.current = phase;
+    logger.info(`run phase | runId=${runId} | phase=${phase}${Object.keys(details).length ? ` | details=${JSON.stringify(details)}` : ''}`);
+    emitEvent('runtime.phase', { phase, ...details });
+  };
+  logger.info(`run started | runId=${runId} | mode=${mode} | agentMode=${agentMode} | resume=${resumeRequested} | workspace=${workspaceRoot}`);
+  emitEvent('run.started', {
+    executionMode: mode,
+    resumed: resumeRequested
+  });
+  setRuntimePhase('INITIALIZING');
   const pendingApprovals = new Map();
   const approvalInterface = eventOutput === 'stdout' && mode === EXECUTION_MODES.CONTROLLED
     ? createInterface({ input: process.stdin })
     : undefined;
+  // Initialization can fail before the main task try/finally is entered (for
+  // example when the legacy Harness migration gate rejects stale history).
+  // Close every process resource here as well, otherwise the piped stdin
+  // readline listener keeps the runtime alive after it already emitted the
+  // terminal error and the desktop supervisor can only report a timeout.
+  const cleanupTaskResources = ({ stopHeartbeat = true } = {}) => {
+    cancelPollStopped = true;
+    if (cancelPollTimer) clearTimeout(cancelPollTimer);
+    if (taskTimeoutTimer) clearTimeout(taskTimeoutTimer);
+    if (stopHeartbeat && heartbeatTimer) clearInterval(heartbeatTimer);
+    approvalInterface?.close();
+    if (approvalInterface) {
+      process.stdin.unref?.();
+      process.stdin.destroy?.();
+    }
+  };
   approvalInterface?.on('line', (line) => {
     try {
       const message = JSON.parse(line);
@@ -574,6 +674,7 @@ async function runTask() {
     });
     return approvalPromise;
   };
+  setRuntimePhase('STORAGE_CONFIGURATION');
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
     || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
@@ -607,8 +708,26 @@ async function runTask() {
     : fallback();
   const harnessEventStorePath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   if (!scopedTrajectory && harnessEventStorePath === defaultHarnessEventStore()) {
-    await assertLegacyHarnessMigrated(harnessEventStorePath);
+    setRuntimePhase('LEGACY_MIGRATION_CHECK');
+    const migrationStartedAt = Date.now();
+    try {
+      await assertLegacyHarnessMigrated(harnessEventStorePath);
+    } catch (error) {
+      logger.error(`run initialization failed | runId=${runId} | phase=LEGACY_MIGRATION_CHECK | error=${error instanceof Error ? `${error.message} | stack=${error.stack ?? ''}` : String(error)}`);
+      cleanupTaskResources();
+      throw error;
+    }
+    logger.info(`run phase complete | runId=${runId} | phase=LEGACY_MIGRATION_CHECK | durationMs=${Date.now() - migrationStartedAt}`);
   }
+  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
+  setRuntimePhase('STORAGE_CAPACITY_CHECK');
+  const storageCapacity = await assertStorageCapacityForRun({
+    paths: [trajectoryPath, harnessEventStorePath, threadPath],
+    maxBytes: Number(arg('--storage-max-bytes', process.env.HMCODEX_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
+    warningRatio: Number(arg('--storage-warning-ratio', process.env.HMCODEX_STORAGE_WARNING_RATIO ?? '0.7')),
+    criticalRatio: Number(arg('--storage-critical-ratio', process.env.HMCODEX_STORAGE_CRITICAL_RATIO ?? '0.85')),
+    hardRatio: Number(arg('--storage-hard-ratio', process.env.HMCODEX_STORAGE_HARD_RATIO ?? '0.95'))
+  });
   const taskHarnessEventStoreInstance = harnessEventStorePath
     ? createMeteredHarnessEventStore({
         store: createHarnessEventStore({ storagePath: harnessEventStorePath }),
@@ -686,18 +805,12 @@ async function runTask() {
   // trajectory path; inheriting the global LOCALAPPDATA thread store would
   // make those runs contend with unrelated processes.  Explicit CLI/env
   // thread-store settings always take precedence.
-  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
   const threads = createThreadStore({ storagePath: threadPath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('THREAD_STORE_LOAD');
   await threads.load();
-  const storageCapacity = await assertStorageCapacityForRun({
-    paths: [trajectoryPath, harnessEventStorePath, threadPath],
-    maxBytes: Number(arg('--storage-max-bytes', process.env.HMCODEX_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
-    warningRatio: Number(arg('--storage-warning-ratio', process.env.HMCODEX_STORAGE_WARNING_RATIO ?? '0.7')),
-    criticalRatio: Number(arg('--storage-critical-ratio', process.env.HMCODEX_STORAGE_CRITICAL_RATIO ?? '0.85')),
-    hardRatio: Number(arg('--storage-hard-ratio', process.env.HMCODEX_STORAGE_HARD_RATIO ?? '0.95'))
-  });
   const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
   const feedbackRegistry = createFeedbackRegistry({ storagePath: feedbackPath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('FEEDBACK_STORE_LOAD');
   await feedbackRegistry.load();
   const requestedThreadId = argValue('--thread-id');
   let thread = requestedThreadId ? await threads.get(requestedThreadId) : undefined;
@@ -706,31 +819,15 @@ async function runTask() {
   if (resumeRequested && (!thread || !thread.checkpoint || typeof thread.checkpoint.plan !== 'object')) {
     throw new Error('THREAD_RESUME_CHECKPOINT_UNAVAILABLE');
   }
-  emitEvent('run.started', {
-    executionMode: mode,
-    ...(resumeRequested ? { resumedFromRunId: resumeSourceRunId } : {})
-  });
-  // 心跳必须从 run.started 起就流动：git 观测等工作区扫描可能远超 30 秒，
-  // 若定时器晚于这些步骤启动，监督器会在无心跳窗口内误杀进程。
-  const heartbeatState = { current: 'STARTING' };
-  const requestedHeartbeatIntervalMs = Number(arg('--heartbeat-interval-ms', process.env.HMCODEX_HEARTBEAT_INTERVAL_MS ?? '2000'));
-  const heartbeatIntervalMs = Number.isFinite(requestedHeartbeatIntervalMs)
-    ? Math.max(250, Math.min(10000, Math.trunc(requestedHeartbeatIntervalMs)))
-    : 2000;
-  const heartbeatTimer = eventOutput === 'stdout'
-    ? setInterval(() => emitEvent('runtime.heartbeat', {
-        state: heartbeatState.current,
-        uptimeMs: Math.max(0, Date.now() - runStartedAtMs)
-      }), heartbeatIntervalMs)
-    : undefined;
-  heartbeatTimer?.unref?.();
+  setRuntimePhase('THREAD_INITIALIZATION');
+  setRuntimePhase('INITIAL_GIT_AUDIT');
   const initialAudit = await appendGitAuditCheckpoint(resumeRequested ? 'RESUME_STARTED' : 'RUN_STARTED', requestedThreadId ? { threadId: requestedThreadId } : {}, resumeSourceRunId ? { resumedFromRunId: resumeSourceRunId } : {});
   initialGitObservation = initialAudit.checkpoint?.observation ?? initialAudit.event?.payload?.observation;
   if (thread && thread.cwd && workspaceRoot && workspacePathKey(thread.cwd) !== workspacePathKey(workspaceRoot)) {
     throw new Error('THREAD_WORKSPACE_MISMATCH');
   }
   if (!thread) {
-    thread = await threads.create({ cwd: workspaceRoot, title: prompt || 'hmCodex task' });
+    thread = await threads.create({ cwd: workspaceRoot, title: prompt || 'dda task' });
     emitEvent('thread.created', { threadId: thread.id, title: thread.title });
   } else {
     emitEvent('thread.resumed', { threadId: thread.id, title: thread.title, turnCount: thread.turns.length });
@@ -745,6 +842,7 @@ async function runTask() {
   const executionStatePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE
     ?? (harnessEventStorePath ? `${harnessEventStorePath}.execution-read-model.json` : (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.execution.json` : undefined)));
   const executionState = createExecutionStateStore({ storagePath: executionStatePath, eventStore: trajectory.harnessEventStore, releaseChannel });
+  setRuntimePhase('EXECUTION_STATE_LOAD');
   await executionState.load();
   const reconciliation = await executionState.reconcile();
   if (reconciliation.reconciled > 0) {
@@ -758,32 +856,23 @@ async function runTask() {
   }
   const memoryPath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE ?? scopedStorePath('memory.json', defaultMemoryStore));
   const memoryJournal = createMemoryJournal({ storagePath: memoryPath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('MEMORY_STORE_LOAD');
   await memoryJournal.load();
-  const contextProvider = String(arg('--context-provider', process.env.HMCODEX_CONTEXT_PROVIDER ?? 'journal')).trim().toLowerCase();
-  if (!['journal', 'openviking'].includes(contextProvider)) throw new Error('CONTEXT_PROVIDER_INVALID');
-  const openVikingApiKeyEnv = String(arg('--openviking-api-key-env', process.env.HMCODEX_OPENVIKING_API_KEY_ENV ?? 'OPENVIKING_API_KEY')).trim();
-  if (contextProvider === 'openviking' && !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(openVikingApiKeyEnv)) {
-    throw new Error('OPENVIKING_API_KEY_ENV_INVALID');
-  }
-  const contextPort = contextProvider === 'openviking'
-    ? createOpenVikingContextPort({
-        baseURL: arg('--openviking-url', process.env.HMCODEX_OPENVIKING_URL ?? 'http://127.0.0.1:1933'),
-        apiKey: process.env[openVikingApiKeyEnv],
-        timeoutMs: arg('--openviking-timeout-ms', process.env.HMCODEX_OPENVIKING_TIMEOUT_MS ?? '5000'),
-        workspaceRoot
-      })
-    : createJournalContextPort({ journal: memoryJournal });
+  // Decision evidence and durable local memory are the only context sources
+  // in the Jev architecture. OpenViking was a sidecar dependency in the old
+  // design; keeping context local avoids a second lifecycle and a second
+  // source of truth for evidence.
+  const contextProvider = 'memory-journal';
+  const contextPort = createJournalContextPort({ journal: memoryJournal });
   let contextRecall = {
-    provider: contextProvider === 'openviking' ? 'openviking' : 'memory-journal',
+    provider: contextProvider,
     status: 'UNAVAILABLE',
     items: [],
     chars: 0
   };
   let contextRecallError;
   try {
-    // Context providers receive the current query for ranking. The local
-    // adapter keeps it in memory; OpenViking receives it over loopback. hmCodex
-    // persists only digests and bounded, verified task summaries.
+    // The local adapter keeps bounded, verified task summaries in memory.
     contextRecall = await contextPort.recall({
       runId,
       query: prompt,
@@ -796,15 +885,19 @@ async function runTask() {
   }
   const profilePath = arg('--profile-store', process.env.HMCODEX_PROFILE_STORE ?? scopedStorePath('profiles.json', defaultProfileStore));
   const profileRegistry = createProfileRegistry({ storagePath: profilePath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('PROFILE_STORE_LOAD');
   await profileRegistry.load();
   const creditBlamePath = arg('--credit-blame-store', process.env.HMCODEX_CREDIT_BLAME_STORE ?? scopedStorePath('credit-blame.json', defaultCreditBlameStore));
   const creditBlameLedger = createCreditBlameLedger({ storagePath: creditBlamePath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('CREDIT_BLAME_LOAD');
   await creditBlameLedger.load();
   const modelEgressPath = arg('--model-egress-store', process.env.HMCODEX_MODEL_EGRESS_STORE ?? scopedStorePath('model-egress.json', defaultModelEgressStore));
   const modelEgressLedger = createModelEgressLedger({ storagePath: modelEgressPath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('MODEL_EGRESS_LOAD');
   await modelEgressLedger.load();
   const roleContextPath = arg('--role-context-store', process.env.HMCODEX_ROLE_CONTEXT_STORE ?? scopedStorePath('role-contexts.json', defaultRoleContextStore));
   const roleSessions = createRoleSessionManager({ storagePath: roleContextPath, eventStore: trajectory.harnessEventStore });
+  setRuntimePhase('ROLE_CONTEXT_STORE_LOAD');
   await roleSessions.load();
   const roleReconciliation = await roleSessions.reconcile();
   if (roleReconciliation.reconciled > 0) {
@@ -816,6 +909,7 @@ async function runTask() {
       sensitivity: 'SECURITY_AUDIT'
     });
   }
+  setRuntimePhase('TRAJECTORY_READ');
   const priorEvents = await trajectory.list();
   const continuation = assembleTrajectoryContext({ events: priorEvents, currentRunId: runId });
   // ContextPort returns already bounded records. Reuse the established
@@ -828,7 +922,7 @@ async function runTask() {
   const memoryContext = assembleMemoryContext({
     memories: (Array.isArray(contextRecall.items) ? contextRecall.items : []).map((item) => ({ ...item, status: 'ACTIVE' }))
   });
-  const historyContext = [checkpointContext.text, threadContext, continuation.text, memoryContext.text].filter(Boolean).join('\n\n').slice(0, 6000);
+  let historyContext = [checkpointContext.text, threadContext, continuation.text, memoryContext.text].filter(Boolean).join('\n\n').slice(0, 6000);
   let currentPlanCheckpoint = thread.checkpoint?.plan;
   let interruptedResumeDetected = false;
   const saveThreadCheckpoint = async (phase, details = {}) => {
@@ -866,7 +960,7 @@ async function runTask() {
     })
   });
   await coordinator.load();
-  // 心跳定时器已在 run.started 处提前创建（见上）。
+  setRuntimePhase('READY_FOR_CLASSIFICATION');
   const decisionTracePath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE ?? scopedStorePath('decision-trace.json', defaultDecisionTraceStore));
   const decisionTrace = createAgentDecisionTrace({ storagePath: decisionTracePath, eventStore: trajectory.harnessEventStore });
   await decisionTrace.load();
@@ -992,6 +1086,92 @@ async function runTask() {
     decisionIds.push(decision.decisionId);
     return decision;
   };
+  const recordDecisionLayer = async ({ step, attempt, decisionResult, evidenceRefs = [], parentDecisionIds = [] } = {}) => {
+    if (!decisionResult || typeof decisionResult !== 'object') return [];
+    const decisionParentIds = [...new Set([
+      ...parentDecisionIds,
+      ...(finalVerificationDecision?.decisionId ? [finalVerificationDecision.decisionId] : [])
+    ])].slice(-8);
+    const entries = [
+      ['FAILURE_ROUTER', decisionResult.failure],
+      ['ASSESS_EVIDENCE', decisionResult.evidence],
+      ['TEST_SELECTOR', decisionResult.test],
+      ['STOP_OR_CONTINUE', decisionResult.stop],
+      ['ESCALATE_OR_REQUEST_USER', decisionResult.escalation]
+    ];
+    const evidenceIds = evidenceRefs.map((ref) => typeof ref === 'string' ? ref : ref?.evidenceId).filter(Boolean);
+    const recorded = [];
+    for (const [type, item] of entries) {
+      if (!item?.decision) continue;
+      const scores = item.scores && typeof item.scores === 'object' ? item.scores : { [item.decision]: item.confidence };
+      const selectedKey = String(item.decision).replace(/[^A-Za-z0-9_.:-]/gu, '_').slice(0, 120);
+      const scoredEntries = Object.entries(scores);
+      const selectedEntry = scoredEntries.find(([key]) => String(key).replace(/[^A-Za-z0-9_.:-]/gu, '_').slice(0, 120) === selectedKey)
+        ?? [item.decision, item.confidence];
+      // Decision Trace allows at most eight options. Keep the selected choice
+      // even when it falls after the first seven finite choices.
+      const optionEntries = [
+        ...scoredEntries
+          .filter(([key]) => String(key).replace(/[^A-Za-z0-9_.:-]/gu, '_').slice(0, 120) !== selectedKey)
+          .slice(0, 7),
+        selectedEntry
+      ];
+      const optionIds = optionEntries.map(([key]) => String(key).replace(/[^A-Za-z0-9_.:-]/gu, '_').slice(0, 120));
+      const options = [...optionEntries.map(([key, score], index) => ({
+        optionId: optionIds[index] || `option-${index + 1}`,
+        actionKind: String(key).replace(/[^A-Za-z0-9_.:-]/gu, '_').slice(0, 120) || `OPTION_${index + 1}`,
+        summary: `Decision candidate ${String(key).slice(0, 180)}`,
+        requiredCapabilityIds: [],
+        evidenceRefs: evidenceIds,
+        riskCodes: [],
+        rejectionReasonCodes: String(key).toUpperCase() === String(item.decision).toUpperCase() ? [] : ['LOWER_DECISION_SCORE'],
+        expectedQuality: Number.isFinite(Number(score)) ? Math.max(0, Math.min(1, Number(score))) : undefined
+      })), {
+        optionId: selectedKey,
+        actionKind: selectedKey,
+        summary: `Selected decision ${String(item.decision).slice(0, 180)}`,
+        requiredCapabilityIds: [],
+        evidenceRefs: evidenceIds,
+        riskCodes: [],
+        rejectionReasonCodes: []
+      }];
+      const dedupedOptions = [];
+      const seenOptionIds = new Set();
+      for (const option of options) {
+        if (seenOptionIds.has(option.optionId)) continue;
+        seenOptionIds.add(option.optionId);
+        dedupedOptions.push(option);
+      }
+      const decision = await recordDecision({
+        stepId: `${step.stepId}-decision-${attempt}-${type.toLowerCase()}`,
+        role: 'decision-engine',
+        roleContextId: `${runId}-decision-engine`,
+        decisionType: `DECISION_${type}`,
+        actionKind: selectedKey,
+        parentDecisionIds: decisionParentIds,
+        summary: `${type} selected ${item.decision}`,
+        outputRefs: [`decision-layer-${step.stepId}-${attempt}-${type.toLowerCase()}`],
+        evidenceRefs,
+        options: dedupedOptions,
+        selectedOptionId: selectedKey,
+        reasonCodes: [item.source === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(item.reasonCode ? [item.reasonCode] : [])],
+        uncertaintyCodes: [
+          ...(item.fallbackUsed ? ['DECISION_FALLBACK_USED'] : []),
+          ...(item.confidence < 0.7 ? ['DECISION_LOW_CONFIDENCE'] : [])
+        ],
+        selectionCriteria: ['finite-choice-decision-layer'],
+        claimedConfidence: item.confidence,
+        expectedOutcome: {
+          successCriteriaRefs: [`criterion-${step.stepId}-decision-${attempt}-${type.toLowerCase()}`],
+          predictedOutcomeCode: selectedKey,
+          predictedProgress: 0,
+          predictedRiskCodes: item.fallbackUsed ? ['DECISION_FALLBACK_USED'] : []
+        }
+      });
+      recorded.push(decision);
+    }
+    return recorded;
+  };
   await trajectory.append({
     runId,
     kind: 'TaskRunCreated',
@@ -1009,12 +1189,12 @@ async function runTask() {
   setDecisionSnapshot('constraint', { mode, agentMode });
   setDecisionSnapshot('binding', { status: 'UNBOUND' });
   let root;
+  let mcpHost;
+  let playwrightHost;
   let allocatedRoles = [];
   // S2-12: the candidate judge must never score a draft from inside a context
   // that produced it, so it gets its own dedicated role context when the
   // executor role fans out.
-  let candidateJudgeBinding;
-  let candidateJudgeContextId;
   let currentTaskClass;
   let currentModelIdentity;
   let pluginGovernance;
@@ -1024,11 +1204,38 @@ async function runTask() {
   let roleBindingResolution;
   let roleProviderContexts = [];
   let activeModelProvider;
+  let strongModelProvider;
+  let decisionEngine;
+  let decisionConfig;
+  // Classification can run before model-role resolution. Build a bounded
+  // Jev client from environment defaults here; the full file-backed config is
+  // resolved later before provider allocation and replaces this instance.
+  {
+    const earlyDecisionConfig = resolveDecisionConfig({ env: process.env });
+    const earlyJevApiKey = process.env[earlyDecisionConfig.apiKeyEnv]?.trim();
+    const earlyJevClient = earlyJevApiKey ? createJevClient({
+      endpoint: earlyDecisionConfig.endpoint,
+      apiKey: earlyJevApiKey,
+      model: earlyDecisionConfig.model,
+      timeoutMs: earlyDecisionConfig.timeoutMs
+    }) : undefined;
+    decisionEngine = createDecisionEngine({
+      client: earlyJevClient,
+      enabled: earlyDecisionConfig.classificationEnabled && earlyDecisionConfig.enabled && Boolean(earlyJevApiKey),
+      enforce: earlyDecisionConfig.enforce,
+      config: earlyDecisionConfig
+    });
+  }
+  let pendingDecisionLayer;
+  const decisionLayerEvaluations = [];
+  let streamedResponseText = "";
   let plannerTurn;
   let plannerPlan;
   let councilResult;
   let executionPlan;
   let plannerDecision;
+  // Semantic verification is a Jev decision over normalized evidence. It is
+  // not a model role and therefore has no model context or provider binding.
   let semanticVerifierTurn;
   let finalVerification;
   let finalVerificationDecision;
@@ -1241,9 +1448,34 @@ async function runTask() {
     plan: [{ id: 'classify', status: 'RUNNING', actionDigest: sha256Digest(prompt.slice(0, 240)) }],
     pendingActions: ['classify task']
   });
-  const taskClass = classifyTask(prompt);
+  const ruleTaskClass = classifyTask(prompt);
+  let taskClass = ruleTaskClass;
+  let classificationSource = 'rule';
+  if (decisionEngine?.enabled) {
+    const classificationCandidates = ['inspect', 'modify', 'test', 'unknown'].map((candidateId) => ({
+      candidateId,
+      modelId: candidateId,
+      status: 'SUCCEEDED',
+      expectedCost: 0,
+      expectedLatencyMs: 0
+    }));
+    const semanticClassification = await decisionEngine.selectCandidates({
+      state: {
+        taskId: runId,
+        goal: prompt,
+        action: { kind: 'CLASSIFY_TASK', summary: 'Classify the user task before routing' },
+        observation: { status: 'PENDING' },
+        evidence: [{ id: `task-prompt-${runId}`, type: 'user_goal', claim: 'User task supplied for bounded classification', source: `prompt-digest:${sha256Digest(prompt)}` }]
+      },
+      candidates: classificationCandidates
+    });
+    if (semanticClassification.source === 'jev' && classificationCandidates.some(({ candidateId }) => candidateId === semanticClassification.selectedCandidateId)) {
+      taskClass = semanticClassification.selectedCandidateId;
+      classificationSource = 'jev';
+    }
+  }
   currentTaskClass = taskClass;
-  const classification = { taskClass, classifier: 'rule-1.0' };
+  const classification = { taskClass, classifier: classificationSource === 'jev' ? 'jev-1.0' : 'rule-1.0', ruleTaskClass };
   const classificationDecision = await recordDecision({
     stepId: 'classification',
     role: 'classifier',
@@ -1262,8 +1494,8 @@ async function runTask() {
       rejectionReasonCodes: candidate === taskClass ? [] : ['RULE_PATTERN_MISMATCH']
     })),
     selectedOptionId: `classify-${taskClass}`,
-    reasonCodes: ['DETERMINISTIC_RULE', 'NO_EVIDENCE_REQUIRED'],
-    selectionCriteria: ['task-classification-rule']
+    reasonCodes: [classificationSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(taskClass !== ruleTaskClass ? ['JEV_OVERRULED_RULE_CLASS'] : []), 'NO_EVIDENCE_REQUIRED'],
+    selectionCriteria: [classificationSource === 'jev' ? 'jev-bounded-semantic-classification' : 'task-classification-rule']
   });
   setDecisionSnapshot('feature', { promptDigest: sha256Digest(prompt), mode, agentMode, taskClass });
   const taskClassifiedEvent = await coordinator.recordEventAndFlush('TaskClassified', classification);
@@ -1286,12 +1518,31 @@ async function runTask() {
   if (precheck.status !== 'ALLOWED') throw new Error(`TASK_PRECHECK_BLOCKED:${precheck.reason}`);
   await coordinator.transitionAndFlush('ROUTING');
   await saveThreadCheckpoint('ROUTING', { pendingActions: ['resolve role and model bindings'] });
-  const routeDecision = createRuleRouter().resolve({ prompt, mode });
-  if (agentMode === 'multi') {
-    // Semantic verification is an explicit role in multi-agent mode. A
-    // configured `rule` binding may still decline it, but the role cannot be
-    // silently omitted from the route snapshot.
-    routeDecision.roles = { ...routeDecision.roles, semanticVerifier: 'default' };
+  setRuntimePhase('ROUTE_SELECTION');
+  const routeDecision = createRuleRouter().resolve({ prompt, taskClass, mode });
+  let routeSelectionSource = 'rule';
+  if (routeDecision.status === 'SELECTED' && decisionEngine?.enabled && decisionConfig?.routeSelectionEnabled === true) {
+    const routeSelection = await decisionEngine.selectCandidates({
+      state: {
+        taskId: runId,
+        goal: prompt,
+        currentStep: 'routing',
+        action: { kind: 'SELECT_ROUTE', summary: 'Select whether to execute the safety-checked route' },
+        observation: { status: 'PRECHECKED' },
+        evidence: [{ id: `route-precheck-${runId}`, type: 'route', claim: 'Rule route passed task safety precheck', source: `route:${taskClass}` }]
+      },
+      candidates: [
+        { candidateId: 'route-selected', modelId: 'route-selected', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 1 },
+        { candidateId: 'route-blocked', modelId: 'route-blocked', status: 'SUCCEEDED', expectedCost: 0, expectedLatencyMs: 0 }
+      ]
+    });
+    if (routeSelection.source === 'jev') {
+      routeSelectionSource = 'jev';
+      if (routeSelection.selectedCandidateId === 'route-blocked') {
+        routeDecision.status = 'BLOCKED';
+        routeDecision.reason = 'JEV_ROUTE_BLOCKED';
+      }
+    }
   }
   const routeSelected = routeDecision.status === 'SELECTED';
   const routingDecision = await recordDecision({
@@ -1324,8 +1575,8 @@ async function runTask() {
       }
     ],
     selectedOptionId: routeSelected ? 'route-selected' : 'route-blocked',
-    reasonCodes: ['DETERMINISTIC_RULE', 'NO_EVIDENCE_REQUIRED'],
-    selectionCriteria: ['read-only-route-rule']
+    reasonCodes: [routeSelectionSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', 'NO_EVIDENCE_REQUIRED'],
+    selectionCriteria: [routeSelectionSource === 'jev' ? 'jev-route-safety-choice' : 'read-only-route-rule']
   });
   emitEvent('route.selected', routeDecision);
   const routeSelectedEvent = await coordinator.recordEventAndFlush('RouteSelected', routeDecision);
@@ -1340,16 +1591,56 @@ async function runTask() {
   });
   if (routeDecision.status === 'BLOCKED') throw new Error(`ROUTE_BLOCKED:${routeDecision.reason}`);
   await coordinator.transitionAndFlush('ALLOCATING_CONTEXTS');
+  setRuntimePhase('ROLE_BINDING_RESOLUTION');
   const configArgument = argValue('--config');
   const environmentConfigPath = process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined;
   const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
   const fileConfig = await loadModelConfig(configuredPath, {
     required: configArgument !== undefined || environmentConfigPath !== undefined
   });
+  const decisionExplicitlyConfigured = Boolean(fileConfig?.decision)
+    || process.env.HMCODEX_JEV_ENABLED !== undefined;
   const modelConfig = resolveModelConfig({
     fileConfig,
     overrides: modelOverridesFromArgs()
   });
+  decisionConfig = resolveDecisionConfig({ fileConfig, env: process.env });
+  const jevApiKey = process.env[decisionConfig.apiKeyEnv]?.trim();
+  const jevClient = jevApiKey
+    ? createJevClient({
+        endpoint: decisionConfig.endpoint,
+        apiKey: jevApiKey,
+        model: decisionConfig.model,
+        timeoutMs: decisionConfig.timeoutMs
+      })
+    : undefined;
+  decisionEngine = createDecisionEngine({
+    client: jevClient,
+    enabled: decisionExplicitlyConfigured && decisionConfig.enabled && Boolean(jevApiKey),
+    enforce: decisionConfig.enforce,
+    config: decisionConfig
+  });
+  if (decisionEngine.enabled && decisionConfig.contextPackEnabled === true) {
+    const contextSections = [
+      { candidateId: 'checkpoint', text: checkpointContext.text, summary: 'Current checkpoint and task state' },
+      { candidateId: 'thread', text: threadContext, summary: 'Current thread context' },
+      { candidateId: 'trajectory', text: continuation.text, summary: 'Prior trajectory summary' },
+      { candidateId: 'memory', text: memoryContext.text, summary: 'Verified active memory context' }
+    ].filter((item) => item.text);
+    const section = (id) => contextSections.find((item) => item.candidateId === id)?.text;
+    const contextCandidates = [
+      { candidateId: 'minimal', text: [section('checkpoint'), section('thread')].filter(Boolean).join('\n\n'), summary: 'Checkpoint and current thread only' },
+      { candidateId: 'execution', text: [section('checkpoint'), section('thread'), section('memory')].filter(Boolean).join('\n\n'), summary: 'Execution context with verified memory' },
+      { candidateId: 'full', text: contextSections.map((item) => item.text).join('\n\n'), summary: 'Full bounded context including trajectory' }
+    ].filter((item) => item.text);
+    const contextSelection = await decisionEngine.selectCandidates({
+      state: { taskId: runId, goal: prompt.slice(0, 500), currentStep: 'context-pack', action: { kind: 'SELECT_CONTEXT_PACK', summary: 'Select bounded context sections for execution' }, observation: { available: contextCandidates.map((item) => item.candidateId) }, evidence: [] },
+      candidates: contextCandidates.map((item) => ({ candidateId: item.candidateId, modelId: 'context-pack', status: 'SUCCEEDED', expectedCost: item.candidateId === 'full' ? 2 : 1, expectedLatencyMs: item.candidateId === 'full' ? 2 : 1 }))
+    });
+    const selectedPack = contextCandidates.find((item) => item.candidateId === contextSelection.selectedCandidateId) ?? contextCandidates.find((item) => item.candidateId === 'full') ?? contextCandidates[0];
+    historyContext = selectedPack.text.slice(0, 6000);
+    await recordDecision({ stepId: 'context-pack', role: 'planner', roleContextId: `${runId}-planner`, decisionType: 'SELECT_CONTEXT_PACK', actionKind: 'CONTEXT_PACK', parentDecisionIds: [], summary: `Selected context pack ${selectedPack.candidateId}`, outputRefs: [`context-pack-${runId}`], evidenceRefs: [], options: contextCandidates.map((item) => ({ optionId: item.candidateId, actionKind: 'CONTEXT_PACK', summary: item.summary, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: item.candidateId === selectedPack.candidateId ? [] : ['NOT_SELECTED'] })), selectedOptionId: selectedPack.candidateId, reasonCodes: [contextSelection.source === 'jev' ? 'JEV_DECISION' : 'CONTEXT_PACK_DEFAULT'], selectionCriteria: ['bounded-context-pack'] });
+  }
   const modelRegistryPath = arg('--model-registry', process.env.HMCODEX_MODEL_REGISTRY ?? scopedStorePath('model-registry.json', defaultModelRegistryStore));
   modelRegistry = createModelRegistry({ storagePath: modelRegistryPath, eventStore: trajectory.harnessEventStore });
   await modelRegistry.load();
@@ -1369,7 +1660,7 @@ async function runTask() {
       ...(modelConfig.baseURL ? { baseURL: modelConfig.baseURL } : {}),
       ...(modelConfig.endpoint ? { endpoint: modelConfig.endpoint } : {}),
       ...(modelConfig.apiKeyEnv ? { apiKeyEnv: modelConfig.apiKeyEnv } : {}),
-      roles: ['planner', 'executor', 'verifier', 'semanticVerifier'],
+      roles: ['planner', 'executor', 'verifier'],
       capabilities: ['model.invoke.stream', 'tool.calls']
     };
     if (modelRegistry.hasDurableSink) await modelRegistry.registerDurably(defaultModel);
@@ -1429,7 +1720,21 @@ async function runTask() {
     model: modelConfig.model
   };
   const allocateRoleContext = (input) => roleSessions.hasDurableSink ? roleSessions.allocateDurably(input) : roleSessions.allocate(input);
-  const transitionRoleContext = (contextId, state) => roleSessions.hasDurableSink ? roleSessions.transitionDurably(contextId, state) : Promise.resolve(roleSessions[state === 'BUSY' ? 'setBusy' : 'close'](contextId));
+  const transitionRoleContext = async (contextId, state) => {
+    const current = roleSessions.get(contextId);
+    const next = roleSessions.hasDurableSink
+      ? await roleSessions.transitionDurably(contextId, state)
+      : roleSessions[state === 'BUSY' ? 'setBusy' : 'close'](contextId);
+    emitEvent('RoleContextStateChanged', {
+      contextId,
+      runId,
+      role: next?.role ?? current?.role,
+      from: current?.state,
+      to: state
+    });
+    return next;
+  };
+  setRuntimePhase('ROLE_CONTEXT_ALLOCATION');
   allocatedRoles = await Promise.all(Object.entries(routeDecision.roles).map(async ([role, binding]) => {
     const resolvedBinding = roleBindingResolution.roles[role];
     const roleAdapterIdentity = {
@@ -1469,37 +1774,18 @@ async function runTask() {
         metadata: { purpose: 'PLAN_REVIEW', isolation: 'DEDICATED' }
       }));
     }
-    const executorCandidateBindings = roleBindingResolution.roles.executor?.selector === 'CANDIDATE_SET'
-      ? roleBindingResolution.roles.executor.candidateBindings ?? []
-      : [];
-    // Only allocate the judge context when the risk policy can actually fan out.
-    if (executorCandidateBindings.length > 1 && candidateFanoutRisk(taskClass, mode) !== 'LOW') {
-      const candidateModelIds = new Set(executorCandidateBindings.map((binding) => binding.modelId));
-      candidateJudgeBinding = ['critic', 'semanticVerifier']
-        .map((roleName) => roleBindingResolution.roles[roleName])
-        .find((binding) => binding?.kind === 'MODEL' && binding.modelId && !candidateModelIds.has(binding.modelId));
-      if (candidateJudgeBinding) {
-        const judgeContext = await allocateRoleContext({
-          runId,
-          role: 'candidate-judge',
-          model: candidateJudgeBinding.model ?? modelConfig.model,
-          adapterIdentity: {
-            provider: candidateJudgeBinding.provider ?? modelConfig.provider,
-            protocol: candidateJudgeBinding.protocol ?? modelConfig.protocol,
-            model: candidateJudgeBinding.model ?? modelConfig.model
-          },
-          threadId: thread.id,
-          bindingSnapshot: {
-            role: 'candidate-judge',
-            requested: { role: 'candidateJudge', purpose: 'CANDIDATE_SELECTION' },
-            resolved: candidateJudgeBinding
-          },
-          metadata: { purpose: 'CANDIDATE_SELECTION', isolation: 'DEDICATED', excludesCandidateBindings: [...candidateModelIds] }
-        });
-        allocatedRoles.push(judgeContext);
-        candidateJudgeContextId = judgeContext.contextId;
-      }
-    }
+    // Candidate selection is owned by Jev and therefore does not allocate a
+    // model judge context. Candidate drafts remain read-only and tool-less.
+  }
+  setRuntimePhase('ROLE_CONTEXT_ALLOCATION_COMPLETE', { count: allocatedRoles.length });
+  for (const context of allocatedRoles) {
+    emitEvent('RoleContextAllocated', {
+      contextId: context.contextId,
+      runId,
+      role: context.role,
+      model: context.model,
+      isolation: context.isolation
+    });
   }
   for (const context of allocatedRoles) await transitionRoleContext(context.contextId, 'BUSY');
   const allocationDecision = await recordDecision({
@@ -1718,13 +2004,30 @@ async function runTask() {
     })
   });
   registerReadonlyWorkspaceTools(toolRegistry, workspace);
+  mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });
+  await mcpHost.connectAndRegister(toolRegistry);
+  if (mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0) {
+    playwrightHost = createPlaywrightWorkerHost({ targets: approvedNetworkTargets });
+    registerPlaywrightTools(toolRegistry, playwrightHost, {
+      leaseProvider,
+      monitor,
+      runId,
+      targets: approvedNetworkTargets
+    });
+  }
   const plugins = [
     readonlyWorkspacePlugin(workspace),
     toolRegistryPlugin(toolRegistry),
     executorPlugin(executor),
     executorToolsPlugin({
       leaseProvider,
-      ...(mode === EXECUTION_MODES.CONTROLLED ? { networkAdapter } : {}),
+      workspace,
+      includeReadOnlyPatchTools: mode === EXECUTION_MODES.CONTROLLED,
+      // Keep the network tool out of the model-facing surface until the host
+      // has supplied at least one explicit target. The adapter still enforces
+      // the same allowlist at execution time, but hiding the tool avoids
+      // exposing a capability that is guaranteed to fail closed.
+      ...(mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0 ? { networkAdapter } : {}),
       onLeaseStarted: async (event) => {
         const context = approvalContexts.get(executionDigest({ capability: event.capability, request: event.request }));
         if (!context?.leaseRecordId || !context.intent) throw new Error('EXECUTION_LEASE_CONTEXT_MISSING');
@@ -2063,8 +2366,33 @@ async function runTask() {
       await Promise.resolve(providerContext?.fiber?.dispose?.()).catch(() => {});
     }
   }
+  const modelUsageScope = workspaceRoot || 'default-workspace';
+  const recordModelUsage = async (sample) => {
+    await trajectory.append({
+      runId,
+      aggregateType: 'ModelUsage',
+      aggregateId: runId,
+      kind: 'ModelUsageRecorded',
+      payload: sample,
+      sensitivity: 'INTERNAL'
+    });
+  };
+  for (const [modelId, provider] of roleProviders) {
+    roleProviders.set(modelId, withCustomInstructions(withModelUsage(provider, {
+      scope: modelUsageScope,
+      onUsage: recordModelUsage,
+      onRecordingError: (code) => logger.warn(`model usage telemetry gap | runId=${runId} | modelId=${modelId} | code=${code}`)
+    }), modelConfig.customInstructions));
+  }
+  const defaultUsageProvider = roleProviders.get(defaultModelId);
   const executorBinding = roleBindingResolution.roles.executor;
-  activeModelProvider = roleProviders.get(executorBinding?.modelId) ?? root.modelProvider;
+  activeModelProvider = roleProviders.get(executorBinding?.modelId) ?? defaultUsageProvider;
+  const strongBinding = roleBindingResolution.roles.critic?.kind === 'MODEL'
+    ? roleBindingResolution.roles.critic
+    : roleBindingResolution.roles.planner?.kind === 'MODEL'
+      ? roleBindingResolution.roles.planner
+      : undefined;
+  strongModelProvider = roleProviders.get(strongBinding?.modelId) ?? defaultUsageProvider ?? activeModelProvider;
   if (activeModelProvider?.model) {
     currentModelIdentity = {
       provider: activeModelProvider.provider,
@@ -2072,10 +2400,10 @@ async function runTask() {
       model: activeModelProvider.model
     };
   }
+  setRuntimePhase('WORKSPACE_SNAPSHOT');
   const snapshot = await workspace.snapshot();
     activeSnapshotDigest = snapshot.snapshotDigest;
     const plannerContext = allocatedRoles.find((context) => context.role === 'planner');
-    const verifierContext = allocatedRoles.find((context) => context.role === 'semanticVerifier');
     const roleTurnEvent = (event) => emitEvent(event.kind, {
       role: event.role,
       contextId: event.contextId,
@@ -2099,7 +2427,7 @@ async function runTask() {
         }))
       });
       const plannerBinding = roleBindingResolution.roles.planner;
-      const plannerProvider = roleProviders.get(plannerBinding?.modelId) ?? root.modelProvider;
+      const plannerProvider = roleProviders.get(plannerBinding?.modelId) ?? defaultUsageProvider;
       if (resumeRequested) {
         plannerPlan = restorePlannerPlan(thread.checkpoint.plan);
         if (!plannerPlan) throw new Error('THREAD_RESUME_PLAN_INVALID');
@@ -2121,12 +2449,47 @@ async function runTask() {
         });
         plannerPlan = plannerTurn.plan;
       }
-      const shouldDeliberate = !resumeRequested
+      let shouldDeliberate = !resumeRequested
         && (plannerPlan.steps.length > 2 || ['modify', 'test'].includes(taskClass));
+      if (!resumeRequested && decisionEngine?.enabled && decisionConfig?.topologyEnabled === true) {
+        const topologyCandidates = [
+          { candidateId: 'DIRECT_EXECUTE', modelId: 'DIRECT_EXECUTE', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 1 },
+          { candidateId: 'DELIBERATE_THEN_EXECUTE', modelId: 'DELIBERATE_THEN_EXECUTE', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 100 },
+          ...(taskClass === 'diagnose' ? [{ candidateId: 'DIAGNOSE_PROBE_RECOVER', modelId: 'DIAGNOSE_PROBE_RECOVER', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 120 }] : [])
+        ];
+        const topologySelection = await decisionEngine.selectCandidates({
+          state: {
+            taskId: runId,
+            goal: prompt,
+            currentStep: 'topology-selection',
+            action: { kind: 'SELECT_TOPOLOGY', summary: 'Choose the bounded plan execution topology' },
+            observation: { status: 'PLAN_READY' },
+            evidence: [{ id: `plan-topology-${runId}`, type: 'plan', claim: `Plan has ${plannerPlan.steps.length} steps`, source: plannerPlan.planDigest }]
+          },
+          candidates: topologyCandidates
+        });
+        if (topologySelection.source === 'jev') {
+          shouldDeliberate = topologySelection.selectedCandidateId === 'DELIBERATE_THEN_EXECUTE';
+          await recordDecision({
+            stepId: 'topology-selection',
+            role: 'decision-engine',
+            roleContextId: `${runId}-decision-engine`,
+            decisionType: 'SELECT_TOPOLOGY',
+            actionKind: 'TOPOLOGY',
+            parentDecisionIds: [plannerDecision?.decisionId ?? allocationDecision.decisionId],
+            summary: `Jev selected ${topologySelection.selectedCandidateId}`,
+            outputRefs: [`topology-${runId}`],
+            options: topologyCandidates.map(({ candidateId: optionId }) => ({ optionId, actionKind: 'TOPOLOGY', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [`plan-topology-${runId}`], riskCodes: [], rejectionReasonCodes: optionId === topologySelection.selectedCandidateId ? [] : ['NOT_SELECTED_BY_JEV'] })),
+            selectedOptionId: topologySelection.selectedCandidateId,
+            reasonCodes: ['JEV_DECISION'],
+            selectionCriteria: ['bounded-plan-topology']
+          });
+        }
+      }
       if (shouldDeliberate) {
         const councilContexts = allocatedRoles.filter((context) => context.role.startsWith('council-'));
         const councilBinding = roleBindingResolution.roles.planner;
-        const councilProvider = roleProviders.get(councilBinding?.modelId) ?? root.modelProvider;
+        const councilProvider = roleProviders.get(councilBinding?.modelId) ?? defaultUsageProvider;
         const council = createAgentCouncil({
           members: [
             { id: 'plan-reviewer', role: 'planner', modelId: councilBinding?.modelId },
@@ -2141,15 +2504,42 @@ async function runTask() {
             contextId: councilContexts.find((context) => context.role === (member.role === 'critic' ? 'council-critic' : 'council-planner'))?.contextId,
             onEvent: roleTurnEvent
           }),
-          judge: async ({ taskClass: judgedTaskClass, proposals, evidence, signal }) => runCouncilJudgeTurn({
-            provider: councilProvider,
-            taskClass: judgedTaskClass,
-            proposals,
-            evidence,
-            signal,
-            contextId: councilContexts[0]?.contextId,
-            onEvent: roleTurnEvent
-          })
+          judge: async ({ taskClass: judgedTaskClass, proposals, evidence, signal }) => {
+            if (decisionEngine?.enabled && decisionConfig?.planReviewEnabled === true && Array.isArray(proposals) && proposals.length) {
+              const selection = await decisionEngine.selectCandidates({
+                state: {
+                  taskId: runId,
+                  goal: `Review the proposed plan for ${judgedTaskClass}`,
+                  currentStep: 'plan-review',
+                  action: { kind: 'REVIEW_PLAN', summary: 'Select the safest useful plan proposal' },
+                  observation: { status: 'PENDING' },
+                  evidence: (Array.isArray(evidence) ? evidence : []).map((item, index) => ({ id: String(item), type: 'plan-review', claim: 'Plan review evidence', source: String(item) || `council-evidence-${index + 1}` }))
+                },
+                candidates: proposals.map((proposal) => ({
+                  candidateId: proposal.proposalId,
+                  modelId: proposal.memberId,
+                  status: 'SUCCEEDED',
+                  outputDraftDigest: proposal.proposalDigest,
+                  expectedCost: 1,
+                  expectedLatencyMs: 100
+                })),
+                evidence: Array.isArray(evidence) ? evidence.map((item) => ({ id: String(item), type: 'plan-review', claim: 'Plan review evidence', source: String(item) })) : [],
+                signal
+              });
+              if (selection.source === 'jev' && selection.selectedCandidateId) {
+                return { decision: 'ACCEPT_PLAN', selectedProposalIds: [selection.selectedCandidateId], reasonCode: 'JEV_PLAN_SELECTION' };
+              }
+            }
+            return runCouncilJudgeTurn({
+              provider: councilProvider,
+              taskClass: judgedTaskClass,
+              proposals,
+              evidence,
+              signal,
+              contextId: councilContexts[0]?.contextId,
+              onEvent: roleTurnEvent
+            });
+          }
         });
         councilResult = await council.run({
           runId,
@@ -2568,6 +2958,17 @@ async function runTask() {
               `Verifier recovery attempt ${attempt}.`,
               `Previous verifier status: ${recovery.verifierStatus}.`,
               `Previous verifier next action: ${recovery.nextAction || 'REQUEST_EVIDENCE'}.`,
+              recovery.probeId ? `Selected diagnostic probe: ${recovery.probeId}.` : undefined,
+              recovery.recoveryDirection ? `Selected recovery direction: ${recovery.recoveryDirection}.` : undefined,
+              recovery.replanPlanId ? `Selected bounded replan: ${recovery.replanPlanId}.` : undefined,
+              recovery.clarificationId ? `Selected clarification request: ${recovery.clarificationId}.` : undefined,
+              recovery.clarificationPrompt ? `User clarification required: ${recovery.clarificationPrompt}` : undefined,
+              recovery.recoveryDirection === 'change-approach'
+                ? 'Use a materially different bounded approach from prior action digests; do not repeat the same method.'
+                : undefined,
+              recovery.recoveryDirection === 'request-user'
+                ? 'Identify the missing user decision and request it before attempting a side effect.'
+                : undefined,
               recovery.failureCodes?.length ? `Failure codes: ${recovery.failureCodes.join(',')}.` : undefined,
               recovery.previousActionDigests?.length
                 ? `Previously attempted action digests: ${recovery.previousActionDigests.join(',')}. Do not repeat them unless new evidence is required.`
@@ -2575,16 +2976,85 @@ async function runTask() {
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)
           : stepHistoryContext;
+        let recoveryModelProvider = pendingDecisionLayer?.action === 'ESCALATE'
+          ? (strongModelProvider ?? activeModelProvider)
+          : activeModelProvider;
+        if (pendingDecisionLayer?.action === 'ESCALATE' && decisionEngine?.enabled && activeModelProvider && strongModelProvider) {
+          const modelFallbackSelection = await decisionEngine.selectCandidates({
+            state: {
+              taskId: runId,
+              goal: `Choose a safe model fallback for ${step.stepId}`,
+              currentStep: 'model-fallback',
+              action: { kind: 'SELECT_SAFE_MODEL_FALLBACK', summary: 'Choose among already-bound model providers' },
+              observation: { recoveryDirection: recovery?.recoveryDirection, verifierStatus: recovery?.verifierStatus },
+              evidence: []
+            },
+            candidates: [
+              { candidateId: 'active-model', modelId: 'active-model', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 100 },
+              { candidateId: 'strong-model', modelId: 'strong-model', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 300 }
+            ]
+          });
+          const selectedModelId = modelFallbackSelection.source === 'jev' && ['active-model', 'strong-model'].includes(modelFallbackSelection.selectedCandidateId)
+            ? modelFallbackSelection.selectedCandidateId
+            : 'strong-model';
+          recoveryModelProvider = selectedModelId === 'active-model' ? activeModelProvider : strongModelProvider;
+          await recordDecision({
+            stepId: `${step.stepId}-model-fallback-${attempt}`,
+            role: 'planner',
+            roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
+            decisionType: 'SELECT_SAFE_MODEL_FALLBACK',
+            actionKind: 'MODEL_FALLBACK',
+            parentDecisionIds: recovery?.recoveryDecisionId ? [recovery.recoveryDecisionId] : [],
+            summary: `Selected ${selectedModelId} from already-bound providers`,
+            outputRefs: [`model-fallback-${runId}-${attempt}`],
+            evidenceRefs: [],
+            options: ['active-model', 'strong-model'].map((optionId) => ({ optionId, actionKind: 'MODEL_FALLBACK', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: optionId === selectedModelId ? [] : ['NOT_SELECTED'] })),
+            selectedOptionId: selectedModelId,
+            reasonCodes: [modelFallbackSelection.source === 'jev' ? 'JEV_DECISION' : 'MODEL_FALLBACK_DEFAULT'],
+            selectionCriteria: ['already-bound-models-only']
+          });
+        }
         const executorOptions = {
           prompt: stepPrompt,
           workspace: snapshot,
           historyContext: recoveryText,
           mode,
-          modelProvider: activeModelProvider,
+          modelProvider: recoveryModelProvider,
           onToolCall: async (call) => {
             const executorContext = allocatedRoles.find((context) => context.role === 'executor');
             const toolEvidence = await collectDecisionEvidence({ kinds: ['tool.result', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
             const toolEvidenceIds = toolEvidence.map((ref) => ref.evidenceId);
+            const toolReadOnly = call.name === 'workspace.list' || call.name === 'workspace.read';
+            const toolGate = await decisionEngine.decideActionGate({
+              signal: taskAbortController.signal,
+              state: {
+                taskId: runId,
+                goal: prompt,
+                currentStep: step.summary,
+                stepIndex: Math.max(0, executionPlan.steps.findIndex((item) => item.stepId === step.stepId)),
+                tool: call.name,
+                toolRequest: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}) },
+                evidence: toolEvidence.map((item) => ({
+                  id: item.evidenceId,
+                  type: item.kind ?? 'runtime_state',
+                  claim: item.summary ?? item.digest,
+                  source: item.eventId ?? item.evidenceId,
+                  confidence: 0.7
+                })),
+                requirements: [{ id: `requirement-${step.stepId}`, description: step.summary, status: 'unknown', evidenceIds: toolEvidenceIds }],
+                mode,
+                executionMode: mode,
+                readOnly: toolReadOnly,
+                toolReadOnly,
+                action: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}), stepId: step.stepId, attempt }
+              },
+              hardDecision: mode === EXECUTION_MODES.READ_ONLY && !toolReadOnly
+                ? {
+                    decision: 'BLOCK', confidence: 1, source: 'rule', fallbackUsed: false,
+                    reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE', decisionType: 'ACTION_GATE'
+                  }
+                : undefined
+            });
             const toolDecision = await recordDecision({
               stepId: `${step.stepId}-tool-${attempt}-${call.id}`,
               role: 'executor',
@@ -2593,7 +3063,7 @@ async function runTask() {
               actionKind: call.name,
               parentDecisionIds: activeActionParentDecisionIds,
               operationId: `operation-${step.stepId}-${attempt}-${call.id}`,
-              summary: `Selected provider-neutral tool ${call.name}`,
+              summary: `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -2604,7 +3074,7 @@ async function runTask() {
                   requiredCapabilityIds: [],
                   evidenceRefs: toolEvidenceIds,
                   riskCodes: [],
-                  rejectionReasonCodes: []
+                  rejectionReasonCodes: toolGate.decision === 'ALLOW' ? [] : ['JEV_ACTION_GATE_NOT_ALLOW']
                 },
                 {
                   optionId: `tool-${call.id}-no-tool`,
@@ -2616,9 +3086,9 @@ async function runTask() {
                   rejectionReasonCodes: ['EVIDENCE_GAP_REMAINS']
                 }
               ],
-              selectedOptionId: `tool-${call.id}-selected`,
-              reasonCodes: ['BOUNDED_TOOL_SELECTION'],
-              selectionCriteria: ['provider-neutral-tool-request']
+              selectedOptionId: toolGate.decision === 'ALLOW' ? `tool-${call.id}-selected` : `tool-${call.id}-no-tool`,
+              reasonCodes: [toolGate.reasonCode ?? 'JEV_ACTION_GATE'],
+              selectionCriteria: ['evidence-backed-jev-action-gate']
             });
             verificationActions.push({
               id: call.id,
@@ -2640,16 +3110,48 @@ async function runTask() {
               sensitivity: 'SECURITY_AUDIT'
             });
             linkDecisionEvent(toolDecision, toolCallRequestedEvent);
-            return toolCallRequestedEvent;
+            return {
+              allow: toolGate.decision !== 'BLOCK' && toolGate.decision !== 'REQUEST_EVIDENCE',
+              ...(toolGate.decision === 'BLOCK' || toolGate.decision === 'REQUEST_EVIDENCE' ? {
+                errorCode: toolGate.decision === 'BLOCK' ? 'TOOL_ACTION_BLOCKED_BY_JEV' : 'TOOL_ACTION_REQUIRES_EVIDENCE',
+                message: `Jev ${toolGate.decision.toLowerCase()} this tool action: ${toolGate.reasonCode ?? 'evidence required'}`,
+                nextAction: 'COLLECT_EVIDENCE'
+              } : {})
+            };
           },
-          onEvent: (event) => {
+          onEvent: async (event) => {
+            if (event.kind === 'model.text_delta' && typeof event.text === 'string') streamedResponseText += event.text;
             if (event.kind === 'tool.result') {
               const action = verificationActions.find((item) => item.id === event.id);
               if (action) {
                 action.state = event.ok === true ? 'SUCCEEDED' : 'FAILED';
                 if (event.ok === true && event.outputDigest) action.outputDigest = event.outputDigest;
                 if (event.ok !== true && event.errorCode) action.errorCode = event.errorCode;
+                if (event.ok !== true && event.message) action.errorMessage = String(event.message).slice(0, 640);
               }
+            }
+            // Calls rejected before ToolRegistry.invoke (for example a
+            // side-effect tool guessed in READ_ONLY mode) have no registry
+            // callback. Persist their bounded refusal so a historical task
+            // shows the same reason as the live stream.
+            if (event.kind === 'tool.result' && event.ok === false
+              && (event.errorCode === 'TOOL_NOT_ALLOWED_IN_MODE' || event.errorCode === 'TOOL_DUPLICATE_REQUEST')) {
+              await trajectory.append({
+                runId,
+                kind: 'ToolInvocationCompleted',
+                payload: {
+                  attempt,
+                  round: event.round,
+                  name: event.name,
+                  ok: false,
+                  status: 'FAILED',
+                  errorCode: event.errorCode,
+                  ...(event.message ? { message: String(event.message).slice(0, 640) } : {}),
+                  ...(event.mode ? { mode: String(event.mode).slice(0, 40) } : {}),
+                  ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {})
+                },
+                sensitivity: 'SECURITY_AUDIT'
+              });
             }
             emitEvent(event.kind, {
               attempt,
@@ -2661,7 +3163,10 @@ async function runTask() {
               ...(event.outputDigest ? { outputDigest: event.outputDigest } : {}),
               ...(event.outputChars !== undefined ? { outputChars: event.outputChars } : {}),
               ...(event.ok !== undefined ? { ok: event.ok } : {}),
-              ...(event.errorCode ? { errorCode: event.errorCode } : {})
+              ...(event.errorCode ? { errorCode: event.errorCode } : {}),
+              ...(event.message ? { message: String(event.message).slice(0, 640) } : {}),
+              ...(event.mode ? { mode: String(event.mode).slice(0, 40) } : {}),
+              ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {})
             });
           }
         };
@@ -2696,11 +3201,6 @@ async function runTask() {
             });
             const candidatePlan = planCandidateFanout({ spec: candidateSpec, risk: candidateRisk });
             if (candidatePlan.fanout < 2) throw new Error('CANDIDATE_FANOUT_EFFECTIVE_ONE');
-            const candidateModelIds = new Set(candidateSpec.candidateBindings.map((binding) => binding.modelId));
-            const judgeRoleBinding = candidateJudgeBinding ?? ['critic', 'semanticVerifier']
-              .map((roleName) => roleBindingResolution.roles[roleName])
-              .find((binding) => binding?.kind === 'MODEL' && binding.modelId && !candidateModelIds.has(binding.modelId));
-            const judgeProvider = judgeRoleBinding ? roleProviders.get(judgeRoleBinding.modelId) : undefined;
             const executorContextId = allocatedRoles.find((context) => context.role === 'executor')?.contextId ?? `${runId}-executor`;
             const draftStage = await runCandidateDraftStage({
               spec: candidateSpec,
@@ -2718,51 +3218,38 @@ async function runTask() {
               },
               invokeCandidate: ({ binding, signal: candidateSignal }) => runIsolatedModelTurn({
                 role: 'executor',
+                cacheRole: 'candidate',
                 provider: roleProviders.get(binding.modelId) ?? activeModelProvider,
                 prompt: stepPrompt,
                 context: stepHistoryContext,
                 signal: candidateSignal,
                 contextId: executorContextId
               }),
-              ...(judgeProvider ? {
-                judge: {
-                  bindingId: judgeRoleBinding.modelId,
-                  score: async ({ candidates: candidatePool }) => runCandidateJudgeTurn({
-                    provider: judgeProvider,
-                    taskClass,
-                    objective: stepPrompt,
-                    signal: taskAbortController.signal,
-                    onSample: async (sample) => {
-                      const recorded = await coordinator.recordEventAndFlush('CandidateVerificationSample', { stepId: step.stepId, attempt, modelId: judgeRoleBinding.modelId, ...sample });
-                      candidateAttemptEvents.push(recorded.eventId ?? recorded.event?.eventId);
-                    },
-                    onInvocation: async (invocation) => {
-                      const egress = modelEgressTargetFor(judgeRoleBinding.modelId);
-                      if (egress) await recordModelEgress([{
-                        phase: 'CANDIDATE_JUDGE', status: invocation.status, runId, stepId: step.stepId,
-                        modelId: judgeRoleBinding.modelId,
-                        ...(judgeRoleBinding.provider ? { provider: judgeRoleBinding.provider } : {}),
-                        egress, promptDigest: invocation.promptDigest, latencyMs: invocation.latencyMs
-                      }]);
-                    },
-                    onVerification: async (verificationResult) => {
-                      await coordinator.recordEventAndFlush('CandidateVerificationCompleted', {
-                        stepId: step.stepId, attempt, modelId: judgeRoleBinding.modelId,
-                        method: verificationResult.method, config: verificationResult.config,
-                        comparisonCount: verificationResult.comparisons?.length ?? 0,
-                        ranking: verificationResult.ranking
-                      });
-                    },
-                    contextId: candidateJudgeContextId ?? allocatedRoles.find((context) => context.role === 'critic' || context.role === 'semanticVerifier')?.contextId,
-                    candidates: candidatePool.map((candidate) => ({
-                      candidateId: candidate.candidateId,
-                      modelId: candidate.modelId,
-                      draftText: candidate.draftText,
-                      ...(candidate.outputDraftDigest ? { outputDigest: candidate.outputDraftDigest } : {})
-                    }))
-                  })
+              judge: {
+                bindingId: 'jev-decision-plane',
+                score: async ({ candidates: candidatePool }) => {
+                  const evidence = (await listDurableRunEvents())
+                    .slice(-16)
+                    .map((event) => evidenceFromEvent(event, { evidenceType: event.kind }))
+                    .filter(Boolean);
+                  const selected = await decisionEngine.selectCandidates({
+                    state: { taskId: runId, goal: stepPrompt, currentStep: step.summary, scenario: taskClass, agent: 'candidate-selector' },
+                    candidates: candidatePool,
+                    evidence,
+                    signal: taskAbortController.signal
+                  });
+                  if (selected.fallbackUsed) throw new Error(selected.reasonCode ?? 'JEV_CANDIDATE_SELECTION_FALLBACK');
+                  await coordinator.recordEventAndFlush('CandidateSelectionEvaluated', {
+                    stepId: step.stepId,
+                    attempt,
+                    source: selected.source,
+                    reasonCode: selected.reasonCode,
+                    selectedCandidateId: selected.selectedCandidateId,
+                    ranking: selected.ranking
+                  });
+                  return selected.ranking;
                 }
-              } : {})
+              }
             });
               // Record what actually left the machine, per candidate, before the
               // selection decision is used for anything else.
@@ -2864,6 +3351,22 @@ async function runTask() {
         return { ...result, actions: verificationActions };
       },
       verify: async ({ attempt, result, previousActions }) => {
+        if (coordinator.terminal) {
+          logger.warn('verifier skipped after terminal transition | runId=' + runId + ' | state=' + coordinator.state + ' | attempt=' + attempt);
+          return {
+            status: 'FAIL',
+            summary: 'Run already reached terminal state ' + coordinator.state,
+            progress: 0,
+            evidenceRefs: [],
+            failureCodes: ['RUN_TERMINATED'],
+            checks: [{
+              id: 'run-terminal',
+              status: 'FAIL',
+              message: 'Run already reached terminal state ' + coordinator.state,
+              evidence: []
+            }]
+          };
+        }
         await saveThreadCheckpoint('VERIFYING', {
           pendingActions: ['verify model output and tool evidence'],
           attempt,
@@ -2880,129 +3383,190 @@ async function runTask() {
           actions: result.actions,
           previousActions
         });
-        if (agentMode === 'multi') {
-          const semanticBinding = roleBindingResolution.roles.semanticVerifier;
-          const semanticProvider = roleProviders.get(semanticBinding?.modelId);
-          const executorModelRecord = modelRegistry.get(executorBinding?.modelId);
-          const semanticModelRecord = modelRegistry.get(semanticBinding?.modelId);
-          const verifierGate = evaluateSemanticVerifierIndependence({
-            mode,
-            taskClass,
-            executorBinding,
-            semanticBinding,
-            executorProvider: roleProviders.get(executorBinding?.modelId),
-            semanticProvider,
-            executorModel: executorModelRecord,
-            semanticModel: semanticModelRecord
-          });
-          const semanticModelIdentity = {
-            provider: semanticBinding?.provider ?? semanticModelRecord?.provider ?? modelConfig.provider,
-            model: semanticModelRecord?.model ?? modelConfig.model
+        const behaviorEvidence = [
+          ...(verification.checks ?? []).map((check, index) => ({
+            id: `verification-check-${step.stepId}-${attempt}-${index + 1}`,
+            type: 'verification_check',
+            claim: check.message,
+            source: check.id,
+            confidence: check.status === 'PASS' ? 0.95 : 0.35
+          })),
+          ...(result.actions ?? []).map((action, index) => ({
+            id: `tool-action-${step.stepId}-${attempt}-${index + 1}`,
+            type: 'tool_result',
+            claim: `${action.name ?? 'tool'} ${action.state ?? 'UNKNOWN'}`,
+            source: action.outputDigest ?? action.argumentsDigest ?? `action-${index + 1}`,
+            confidence: action.state === 'SUCCEEDED' ? 0.8 : 0.3
+          }))
+        ];
+        const behaviorDecision = await decisionEngine.judgeVerification({
+          signal: taskAbortController.signal,
+          ruleStatus: verification.status,
+          state: {
+            taskId: runId,
+            goal: prompt,
+            currentStep: step.summary,
+            action: { kind: step.actionKind, summary: step.summary, stepId: step.stepId, attempt },
+            observation: { status: verification.status, ok: verification.status === 'PASS', summary: verification.summary, failureCodes: verification.failureCodes, checks: verification.checks },
+            requirements: [{ id: `requirement-${step.stepId}`, description: step.summary, status: verification.status === 'PASS' ? 'supported' : 'unknown' }]
+          },
+          evidence: behaviorEvidence
+        });
+        const semanticStatus = behaviorDecision.decision;
+        semanticVerifierTurn = {
+          verdict: {
+            status: semanticStatus,
+            summary: `Jev behavior judgment: ${semanticStatus}`,
+            progress: semanticStatus === 'PASS' ? 1 : 0,
+            evidenceRefs: behaviorEvidence.map((item) => item.id),
+            failureCodes: semanticStatus === 'FAIL' ? ['JEV_BEHAVIOR_REJECTED'] : [],
+            source: 'JEV_DECISION_PLANE',
+            reasonCode: behaviorDecision.reasonCode
+          },
+          decision: behaviorDecision
+        };
+        if (semanticStatus === 'FAIL') {
+          verification = { ...verification, status: 'FAIL', summary: `Jev rejected the observed behavior: ${behaviorDecision.reasonCode}`, failureCodes: [...new Set([...(verification.failureCodes ?? []), 'JEV_BEHAVIOR_REJECTED'])], checks: [...(verification.checks ?? []), { id: 'jev-behavior-judge', status: 'FAIL', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }] };
+        } else if (semanticStatus === 'UNCERTAIN' && verification.status === 'PASS') {
+          verification = { ...verification, status: 'UNCERTAIN', summary: 'Deterministic checks passed but Jev requires more evidence', checks: [...(verification.checks ?? []), { id: 'jev-behavior-judge', status: 'UNKNOWN', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }] };
+        }
+        await coordinator.recordEventAndFlush('SemanticVerificationCompleted', {
+          attempt, stepId: step.stepId, status: semanticStatus,
+          failureCodes: semanticVerifierTurn.verdict.failureCodes,
+          source: 'JEV_DECISION_PLANE', decisionType: 'VERIFY_BEHAVIOR',
+          reasonCode: behaviorDecision.reasonCode,
+          evidenceRefs: behaviorEvidence.map((item) => item.id)
+        });
+        const decisionEvidence = await collectDecisionEvidence({
+          kinds: ['tool.result', 'VerificationCompleted', 'RoleTurnCompleted', 'TaskRunCreated'],
+          limit: 16
+        });
+        const decisionState = {
+          taskId: runId,
+          goal: prompt,
+          currentStep: step.summary,
+          stepIndex: Math.max(0, executionPlan.steps.findIndex((item) => item.stepId === step.stepId)),
+          action: {
+            kind: step.actionKind,
+            summary: step.summary,
+            stepId: step.stepId,
+            attempt,
+            argumentsDigest: result.actions?.[result.actions.length - 1]?.argumentsDigest
+          },
+          observation: {
+            status: verification.status,
+            ok: verification.status === 'PASS',
+            summary: verification.summary,
+            failureCodes: verification.failureCodes,
+            checks: verification.checks
+          },
+          evidence: [
+            ...verification.checks.map((check, index) => ({
+              id: `verification-check-${step.stepId}-${attempt}-${index + 1}`,
+              type: /test|lint|typecheck|build/u.test(String(check.id ?? check.message ?? '').toLowerCase()) ? 'test_result' : 'runtime_state',
+              claim: check.message,
+              source: check.id,
+              confidence: check.status === 'PASS' ? 0.95 : 0.35,
+              relatedRequirementIds: [`requirement-${step.stepId}`]
+            })),
+            ...result.actions.map((action, index) => ({
+              id: `tool-action-${step.stepId}-${attempt}-${index + 1}`,
+              type: 'tool_result',
+              claim: `${action.name ?? 'tool'} ${action.state ?? 'UNKNOWN'}`,
+              source: action.outputDigest ?? action.argumentsDigest ?? `action-${index + 1}`,
+              confidence: action.state === 'SUCCEEDED' ? 0.8 : 0.3,
+              relatedRequirementIds: [`requirement-${step.stepId}`]
+            }))
+          ],
+          requirements: [{
+            id: `requirement-${step.stepId}`,
+            description: step.summary,
+            status: verification.status === 'PASS' ? 'supported' : 'unknown',
+            evidenceIds: decisionEvidence.map((item) => item.evidenceId)
+          }],
+          retryCount: Math.max(0, attempt - 1),
+          loopCount: attempt,
+          elapsedMs: Math.max(0, Date.now() - runStartedAtMs),
+          recentActions: result.actions,
+          recentFailures: verification.failureCodes.map((code) => ({ code, summary: verification.summary })),
+          availableTests: [],
+          executedTests: result.actions
+            .filter((action) => /test|lint|typecheck|build/u.test(String(action.name ?? '').toLowerCase()))
+            .map((action, index) => ({ id: `executed-test-${index + 1}`, command: action.name, status: action.state })),
+          currentConfidence: verification.status === 'PASS' ? 0.9 : 0.35,
+          scenario: 'coding',
+          agent: 'executor',
+          skill: 'task-runner'
+        };
+        let decisionLayerResult;
+        try {
+          decisionLayerResult = await decisionEngine.decide({ ...decisionState, signal: taskAbortController.signal });
+        } catch (error) {
+          logger.warn(`decision layer degraded | runId=${runId} | step=${step.stepId} | error=${error?.code ?? error?.message ?? error}`);
+          decisionLayerResult = {
+            action: 'CONTINUE',
+            reasonCode: 'DECISION_LAYER_ERROR',
+            source: 'rule',
+            fallbackUsed: true,
+            latencyMs: 0,
+            state: decisionState,
+            failure: { decision: 'UNKNOWN', confidence: 0, source: 'rule', fallbackUsed: true, reasonCode: 'DECISION_LAYER_ERROR', scores: { UNKNOWN: 1 } },
+            evidence: { decision: 'UNKNOWN', confidence: 0, source: 'rule', fallbackUsed: true, reasonCode: 'DECISION_LAYER_ERROR', scores: { UNKNOWN: 1 } },
+            test: { decision: 'NONE', confidence: 0, source: 'rule', fallbackUsed: true, reasonCode: 'DECISION_LAYER_ERROR', scores: { NONE: 1 } },
+            stop: { decision: 'NEED_MORE_EVIDENCE', confidence: 0, source: 'rule', fallbackUsed: true, reasonCode: 'DECISION_LAYER_ERROR', scores: { NEED_MORE_EVIDENCE: 1 } },
+            escalation: { decision: 'USE_STRONG_MODEL', confidence: 0, source: 'rule', fallbackUsed: true, reasonCode: 'DECISION_LAYER_ERROR', scores: { USE_STRONG_MODEL: 1 } }
           };
-          if (!verifierGate.satisfied) {
-            semanticVerifierTurn = {
-              verdict: {
-                status: 'FAIL',
-                summary: 'High-risk execution requires an independent semantic verifier provider',
-                progress: 0,
-                evidenceRefs: [],
-                failureCodes: ['SEMANTIC_VERIFIER_INDEPENDENCE_REQUIRED'],
-                source: 'GATE'
-              },
-              gate: verifierGate
-            };
-          } else if (semanticBinding?.kind !== 'MODEL' || !semanticProvider) {
-            semanticVerifierTurn = {
-              verdict: {
-                status: 'ABSTAIN',
-                summary: 'No semantic verifier provider was bound',
-                progress: 0,
-                evidenceRefs: [],
-                failureCodes: ['SEMANTIC_VERIFIER_UNBOUND'],
-                source: 'UNBOUND'
-              },
-              modelIdentity: semanticModelIdentity
-            };
-          } else {
-            try {
-              semanticVerifierTurn = await runSemanticVerifierTurn({
-                provider: semanticProvider,
-                contextId: verifierContext?.contextId ?? `${runId}-semanticVerifier`,
-                ruleReport: verification,
-                result,
-                plan: executionPlan,
-                currentStep: step,
-                onEvent: roleTurnEvent
-              });
-              semanticVerifierTurn.modelIdentity = semanticModelIdentity;
-            } catch (error) {
-              semanticVerifierTurn = {
-                verdict: {
-                  status: 'ABSTAIN',
-                  summary: 'Semantic verifier invocation failed',
-                  progress: 0,
-                  evidenceRefs: [],
-                failureCodes: ['SEMANTIC_VERIFIER_UNAVAILABLE'],
-                source: 'ERROR'
-              },
-              modelIdentity: semanticModelIdentity,
-              errorCode: String(error instanceof Error ? error.message : error).split(':')[0].slice(0, 120)
-              };
-            }
-          }
-          const semanticStatus = semanticVerifierTurn.verdict?.status;
-          if (semanticStatus === 'FAIL') {
+        }
+        pendingDecisionLayer = decisionLayerResult;
+        const decisionLayerEvidence = decisionEvidence;
+        const decisionLayerDecisions = await recordDecisionLayer({
+          step,
+          attempt,
+          decisionResult: decisionLayerResult,
+          evidenceRefs: decisionLayerEvidence,
+          parentDecisionIds: activeActionParentDecisionIds
+        });
+        const decisionLayerSummary = {
+          action: decisionLayerResult.action,
+          source: decisionLayerResult.source,
+          fallbackUsed: decisionLayerResult.fallbackUsed === true,
+          reasonCode: decisionLayerResult.reasonCode,
+          latencyMs: decisionLayerResult.latencyMs,
+          jevLatencyMs: decisionLayerResult.jevLatencyMs,
+          decisionIds: decisionLayerDecisions.map((decision) => decision.decisionId),
+          failureType: decisionLayerResult.failure?.decision,
+          evidence: decisionLayerResult.evidence?.decision,
+          test: decisionLayerResult.test?.decision,
+          stop: decisionLayerResult.stop?.decision,
+          escalation: decisionLayerResult.escalation?.decision
+        };
+        decisionLayerEvaluations.push(decisionLayerSummary);
+        const decisionLayerEvent = await coordinator.recordEventAndFlush('DecisionLayerEvaluated', decisionLayerSummary);
+        await trajectory.append({
+          runId,
+          kind: 'DecisionLayerEvaluated',
+          payload: decisionLayerSummary,
+          sensitivity: 'INTERNAL'
+        });
+        emitEvent('decision.layer_evaluated', decisionLayerSummary);
+        for (const decision of decisionLayerDecisions) linkDecisionEvent(decision, decisionLayerEvent.event);
+        if (decisionEngine.enforce) {
+          if (decisionLayerResult.action === 'STOP' && verification.status !== 'PASS') {
             verification = {
               ...verification,
               status: 'FAIL',
-              summary: `Semantic verifier rejected the result: ${semanticVerifierTurn.verdict.summary}`,
-              failureCodes: [...new Set([...(verification.failureCodes ?? []), ...(semanticVerifierTurn.verdict.failureCodes ?? []), 'SEMANTIC_VERIFIER_FAIL'])],
-              checks: [...(verification.checks ?? []), {
-                id: 'semantic-verifier',
-                status: 'FAIL',
-                message: semanticVerifierTurn.verdict.summary,
-                evidence: semanticVerifierTurn.verdict.evidenceRefs ?? []
-              }]
+              nextAction: 'STOP',
+              summary: `Decision layer stopped recovery: ${decisionLayerResult.reasonCode}`
             };
-          } else if (semanticStatus !== 'PASS') {
+          } else if (['ESCALATE', 'CONTINUE'].includes(decisionLayerResult.action) && verification.status === 'PASS'
+            && decisionLayerResult.stop?.decision !== 'STOP_SUCCESS') {
             verification = {
               ...verification,
-              status: verification.status === 'PASS' ? 'UNCERTAIN' : verification.status,
-              summary: verification.status === 'PASS'
-                ? 'Deterministic checks passed but semantic verification abstained'
-                : verification.summary,
-              failureCodes: [...new Set([...(verification.failureCodes ?? []), ...(semanticVerifierTurn.verdict?.failureCodes ?? []), 'SEMANTIC_VERIFIER_ABSTAINED'])],
-              checks: [...(verification.checks ?? []), {
-                id: 'semantic-verifier',
-                status: 'UNKNOWN',
-                message: semanticVerifierTurn.verdict?.summary ?? 'Semantic verifier abstained',
-                evidence: semanticVerifierTurn.verdict?.evidenceRefs ?? []
-              }]
+              status: 'UNCERTAIN',
+              nextAction: decisionLayerResult.action === 'ESCALATE' ? 'ESCALATE_STRONG_MODEL' : 'REQUEST_EVIDENCE',
+              summary: `Decision layer requires additional verification: ${decisionLayerResult.reasonCode}`
             };
           }
-          await trajectory.append({
-            runId,
-            kind: 'RoleTurnCompleted',
-            payload: {
-              role: 'semanticVerifier',
-              contextId: verifierContext?.contextId ?? `${runId}-semanticVerifier`,
-              ...(semanticVerifierTurn.turnId ? { turnId: semanticVerifierTurn.turnId } : {}),
-              ...(semanticVerifierTurn.outputDigest ? { outputDigest: semanticVerifierTurn.outputDigest } : {}),
-              status: semanticVerifierTurn.verdict?.status ?? 'ABSTAIN',
-              evidenceRefs: semanticVerifierTurn.verdict?.evidenceRefs ?? [],
-              failureCodes: semanticVerifierTurn.verdict?.failureCodes ?? [],
-              ...(semanticVerifierTurn.modelIdentity ? { modelIdentity: semanticVerifierTurn.modelIdentity } : {}),
-              ...(semanticVerifierTurn.gate ? { gate: semanticVerifierTurn.gate } : {})
-            },
-            sensitivity: 'INTERNAL'
-          });
-          await coordinator.recordEventAndFlush('SemanticVerificationCompleted', {
-            attempt,
-            status: semanticVerifierTurn.verdict?.status ?? 'ABSTAIN',
-            failureCodes: semanticVerifierTurn.verdict?.failureCodes ?? [],
-            modelIdentity: semanticModelIdentity,
-            ...(verifierGate.required ? { verifierGate } : {})
-          });
         }
         const verificationEvidence = await collectDecisionEvidence({ kinds: ['tool.result', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 12 });
         const verificationEvidenceIds = verificationEvidence.map((ref) => ref.evidenceId);
@@ -3049,11 +3613,15 @@ async function runTask() {
         finalResult = result;
         finalVerification = verification;
         finalVerificationDecision = verificationDecision;
+        const verificationChecks = boundedVerificationChecks(verification.checks);
         const verificationCompletedEvent = await coordinator.recordEventAndFlush('VerificationCompleted', {
           attempt,
           status: verification.status,
           progress: verification.progress,
-          failureCodes: verification.failureCodes
+          failureCodes: verification.failureCodes,
+          summary: verification.summary,
+          nextAction: verification.nextAction,
+          checks: verificationChecks
         });
         linkDecisionEvent(verificationDecision, verificationCompletedEvent.event);
         const verificationTrajectoryEvent = await trajectory.append({
@@ -3062,13 +3630,24 @@ async function runTask() {
           payload: {
             attempt,
             status: verification.status,
-            checkCount: verification.checks.length,
+            progress: verification.progress,
+            summary: verification.summary,
+            nextAction: verification.nextAction,
+            failureCodes: verification.failureCodes,
+            checks: verificationChecks,
             ...(semanticVerifierTurn?.verdict ? { semanticStatus: semanticVerifierTurn.verdict.status } : {})
           },
           sensitivity: 'INTERNAL'
         });
         finalVerificationEventId = verificationTrajectoryEvent.eventId;
-        emitEvent('verification.completed', { attempt, status: verification.status, summary: verification.summary });
+        emitEvent('verification.completed', {
+          attempt,
+          status: verification.status,
+          summary: verification.summary,
+          nextAction: verification.nextAction,
+          failureCodes: verification.failureCodes,
+          checks: verificationChecks
+        });
         return verification;
       },
       diagnose: async ({ attempt, report, previousActions }) => {
@@ -3101,6 +3680,35 @@ async function runTask() {
           riskCodes: ['TASK_FAILED'],
           rejectionReasonCodes: ['BOUNDED_RECOVERY_REQUIRED']
         });
+        let selectedDiagnosisId = diagnosisOptions[0].optionId;
+        let diagnosisSelectionSource = 'rule';
+        if (decisionEngine?.enabled && decisionConfig?.diagnosisEnabled === true && diagnosisOptions.length > 1) {
+          const selectedDiagnosis = await decisionEngine.selectCandidates({
+            state: {
+              taskId: runId,
+              goal: `Diagnose verifier result for step ${step.stepId}`,
+              currentStep: step.stepId,
+              action: { kind: 'DIAGNOSE_HYPOTHESIS', summary: `Diagnose ${report.status}` },
+              observation: { status: report.status, failureCodes: diagnosisFailureCodes },
+              evidence: diagnosisEvidence.map((item) => ({ id: item.evidenceId, type: item.kind, claim: item.summary, source: item.evidenceId }))
+            },
+            candidates: diagnosisOptions.map((option) => ({
+              candidateId: option.optionId,
+              modelId: option.actionKind,
+              status: 'SUCCEEDED',
+              expectedCost: option.actionKind === 'STOP' ? 0 : 1,
+              expectedLatencyMs: option.actionKind === 'STOP' ? 0 : 100
+            }))
+          });
+          if (selectedDiagnosis.source === 'jev' && diagnosisOptions.some((option) => option.optionId === selectedDiagnosis.selectedCandidateId)) {
+            // A STOP hypothesis is recorded for traceability, but the recovery
+            // controller remains authoritative for whether recovery is allowed.
+            if (selectedDiagnosis.selectedCandidateId !== 'diagnosis-stop') {
+              selectedDiagnosisId = selectedDiagnosis.selectedCandidateId;
+              diagnosisSelectionSource = 'jev';
+            }
+          }
+        }
         const diagnosisDecision = await recordDecision({
           stepId: `${step.stepId}-diagnosis-${attempt}`,
           role: 'planner',
@@ -3112,9 +3720,9 @@ async function runTask() {
           outputRefs: [`diagnosis-${runId}-${attempt}`],
           evidenceRefs: diagnosisEvidence,
           options: diagnosisOptions,
-          selectedOptionId: diagnosisOptions[0].optionId,
-          reasonCodes: ['VERIFIER_FAILURE_DIAGNOSIS'],
-          selectionCriteria: ['failure-code-to-hypothesis'],
+          selectedOptionId: selectedDiagnosisId,
+          reasonCodes: [diagnosisSelectionSource === 'jev' ? 'JEV_DECISION' : 'VERIFIER_FAILURE_DIAGNOSIS'],
+          selectionCriteria: [diagnosisSelectionSource === 'jev' ? 'jev-diagnosis-hypothesis-selection' : 'failure-code-to-hypothesis'],
           expectedOutcome: {
             successCriteriaRefs: [`criterion-${step.stepId}-diagnosis-${attempt}`],
             predictedOutcomeCode: 'DIAGNOSIS_PRODUCED',
@@ -3122,13 +3730,158 @@ async function runTask() {
             predictedRiskCodes: diagnosisFailureCodes.slice(0, 32)
           }
         });
+        const probeOptions = [
+          { optionId: 'probe-readonly-evidence', actionKind: 'PROBE', summary: 'Collect bounded read-only evidence before retry' },
+          { optionId: 'probe-repeat-verification', actionKind: 'PROBE', summary: 'Repeat the verifier with the current evidence' },
+          { optionId: 'probe-stop', actionKind: 'STOP', summary: 'Stop without collecting another probe' }
+        ];
+        let selectedProbeId = 'probe-readonly-evidence';
+        if (decisionEngine?.enabled && decisionConfig?.recoveryDirectionEnabled === true) {
+          const probeSelection = await decisionEngine.selectCandidates({
+            state: {
+              taskId: runId,
+              goal: `Choose the next bounded probe for ${step.stepId}`,
+              currentStep: 'probe-selection',
+              action: { kind: 'SELECT_PROBE', summary: 'Select a read-only diagnostic probe' },
+              observation: { status: report.status, failureCodes: diagnosisFailureCodes },
+              evidence: diagnosisEvidence.map((item) => ({ id: item.evidenceId, type: item.kind, claim: item.summary, source: item.evidenceId }))
+            },
+            candidates: probeOptions.map((option) => ({ candidateId: option.optionId, modelId: option.actionKind, status: 'SUCCEEDED', expectedCost: option.actionKind === 'STOP' ? 0 : 1, expectedLatencyMs: option.actionKind === 'STOP' ? 0 : 100 }))
+          });
+          if (probeSelection.source === 'jev' && probeOptions.some((option) => option.optionId === probeSelection.selectedCandidateId)) selectedProbeId = probeSelection.selectedCandidateId;
+        }
+        const probeDecision = await recordDecision({
+          stepId: `${step.stepId}-probe-${attempt}`,
+          role: 'planner',
+          roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
+          decisionType: 'SELECT_PROBE',
+          actionKind: 'PROBE',
+          parentDecisionIds: [diagnosisDecision.decisionId],
+          summary: `Selected diagnostic probe ${selectedProbeId}`,
+          outputRefs: [`probe-${runId}-${attempt}`],
+          evidenceRefs: diagnosisEvidence,
+          options: probeOptions.map((option) => ({ optionId: option.optionId, actionKind: option.actionKind, summary: option.summary, requiredCapabilityIds: [], evidenceRefs: diagnosisEvidenceIds, riskCodes: option.actionKind === 'STOP' ? ['TASK_FAILED'] : [], rejectionReasonCodes: option.optionId === selectedProbeId ? [] : ['NOT_SELECTED'] })),
+          selectedOptionId: selectedProbeId,
+          reasonCodes: [decisionConfig?.diagnosisEnabled === true && decisionEngine?.enabled ? 'JEV_DECISION' : 'DIAGNOSTIC_PROBE_DEFAULT'],
+          selectionCriteria: ['bounded-readonly-probe']
+        });
+        const recoveryDirectionOptions = [
+          { optionId: 'collect-evidence', actionKind: 'COLLECT_EVIDENCE', summary: 'Collect bounded evidence before retry' },
+          { optionId: 'change-approach', actionKind: 'CHANGE_APPROACH', summary: 'Retry with a changed bounded approach' },
+          { optionId: 'request-user', actionKind: 'REQUEST_USER', summary: 'Request user clarification before retry' },
+          { optionId: 'stop-and-report', actionKind: 'STOP_AND_REPORT', summary: 'Stop and report the verified failure' }
+        ];
+        let selectedRecoveryDirection = 'collect-evidence';
+        let recoveryDirectionSource = 'rule';
+        if (decisionEngine?.enabled && decisionConfig?.diagnosisEnabled === true) {
+          const directionSelection = await decisionEngine.selectCandidates({
+            state: {
+              taskId: runId,
+              goal: `Choose recovery direction for ${step.stepId}`,
+              currentStep: 'recovery-direction',
+              action: { kind: 'SELECT_RECOVERY_DIRECTION', summary: 'Select a bounded recovery direction' },
+              observation: { status: report.status, failureCodes: diagnosisFailureCodes, probeId: selectedProbeId },
+              evidence: diagnosisEvidence.map((item) => ({ id: item.evidenceId, type: item.kind, claim: item.summary, source: item.evidenceId }))
+            },
+            candidates: recoveryDirectionOptions.map((option) => ({ candidateId: option.optionId, modelId: option.actionKind, status: 'SUCCEEDED', expectedCost: option.optionId === 'stop-and-report' ? 0 : 1, expectedLatencyMs: option.optionId === 'request-user' ? 50 : 100 }))
+          });
+          if (directionSelection.source === 'jev' && recoveryDirectionOptions.some((option) => option.optionId === directionSelection.selectedCandidateId)) {
+            selectedRecoveryDirection = directionSelection.selectedCandidateId;
+            recoveryDirectionSource = 'jev';
+          }
+        }
+        const recoveryDirectionDecision = await recordDecision({
+          stepId: `${step.stepId}-recovery-direction-${attempt}`,
+          role: 'planner',
+          roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
+          decisionType: 'SELECT_RECOVERY_DIRECTION',
+          actionKind: 'RECOVERY_DIRECTION',
+          parentDecisionIds: [diagnosisDecision.decisionId, probeDecision.decisionId],
+          summary: `Selected recovery direction ${selectedRecoveryDirection}`,
+          outputRefs: [`recovery-direction-${runId}-${attempt}`],
+          evidenceRefs: diagnosisEvidence,
+          options: recoveryDirectionOptions.map((option) => ({ optionId: option.optionId, actionKind: option.actionKind, summary: option.summary, requiredCapabilityIds: [], evidenceRefs: diagnosisEvidenceIds, riskCodes: option.optionId === 'stop-and-report' ? ['TASK_FAILED'] : [], rejectionReasonCodes: option.optionId === selectedRecoveryDirection ? [] : ['NOT_SELECTED'] })),
+          selectedOptionId: selectedRecoveryDirection,
+          reasonCodes: [recoveryDirectionSource === 'jev' ? 'JEV_DECISION' : 'BOUNDED_RECOVERY'],
+          selectionCriteria: ['bounded-recovery-direction']
+        });
+        let clarificationId;
+        let clarificationPrompt;
+        if (selectedRecoveryDirection === 'request-user') {
+          const clarificationOptions = [
+            { optionId: 'ask-goal-scope', summary: 'Clarify the required goal scope' },
+            { optionId: 'ask-allowed-side-effects', summary: 'Clarify which side effects are allowed' },
+            { optionId: 'ask-target-path', summary: 'Clarify the target path or resource' },
+            { optionId: 'ask-expected-output', summary: 'Clarify the expected output format' }
+          ];
+          clarificationId = clarificationOptions[0].optionId;
+          if (decisionEngine?.enabled && decisionConfig?.recoveryDirectionEnabled === true) {
+            const clarificationSelection = await decisionEngine.selectCandidates({
+              state: { taskId: runId, goal: `Choose clarification needed for ${step.stepId}`, currentStep: 'clarification-request', action: { kind: 'SELECT_CLARIFICATION_REQUEST', summary: 'Select the missing user decision' }, observation: { failureCodes: diagnosisFailureCodes }, evidence: diagnosisEvidence.map((item) => ({ id: item.evidenceId, type: item.kind, claim: item.summary, source: item.evidenceId })) },
+              candidates: clarificationOptions.map((option) => ({ candidateId: option.optionId, modelId: 'clarification', status: 'SUCCEEDED', expectedCost: 0, expectedLatencyMs: 50 }))
+            });
+            if (clarificationSelection.source === 'jev' && clarificationOptions.some((option) => option.optionId === clarificationSelection.selectedCandidateId)) clarificationId = clarificationSelection.selectedCandidateId;
+          }
+          await recordDecision({
+            stepId: `${step.stepId}-clarification-${attempt}`,
+            role: 'planner',
+            roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
+            decisionType: 'SELECT_CLARIFICATION_REQUEST',
+            actionKind: 'REQUEST_USER',
+            parentDecisionIds: [recoveryDirectionDecision.decisionId],
+            summary: `Selected clarification ${clarificationId}`,
+            outputRefs: [`clarification-${runId}-${attempt}`],
+            evidenceRefs: diagnosisEvidence,
+            options: clarificationOptions.map((option) => ({ optionId: option.optionId, actionKind: 'REQUEST_USER', summary: option.summary, requiredCapabilityIds: [], evidenceRefs: diagnosisEvidenceIds, riskCodes: [], rejectionReasonCodes: option.optionId === clarificationId ? [] : ['NOT_SELECTED'] })),
+            selectedOptionId: clarificationId,
+            reasonCodes: ['JEV_DECISION'],
+            selectionCriteria: ['bounded-clarification-question']
+          });
+          clarificationPrompt = {
+            'ask-goal-scope': '请明确本次任务必须覆盖的目标范围。',
+            'ask-allowed-side-effects': '请明确允许执行哪些副作用操作。',
+            'ask-target-path': '请明确目标路径或资源。',
+            'ask-expected-output': '请明确期望的输出格式或验收结果。'
+          }[clarificationId];
+        }
+        let replanPlanId;
+        if (selectedRecoveryDirection === 'change-approach' || selectedRecoveryDirection === 'collect-evidence') {
+          const replanOptions = [
+            { optionId: 'replan-narrow-scope', summary: 'Retry with a narrower bounded scope' },
+            { optionId: 'replan-collect-evidence', summary: 'Collect a different read-only evidence set' },
+            { optionId: 'replan-change-role', summary: 'Retry using an already-bound alternate role' }
+          ];
+          replanPlanId = replanOptions[0].optionId;
+          if (decisionEngine?.enabled && decisionConfig?.diagnosisEnabled === true) {
+            const replanSelection = await decisionEngine.selectCandidates({
+              state: { taskId: runId, goal: `Select a bounded replan for ${step.stepId}`, currentStep: 'replan-selection', action: { kind: 'SELECT_REPLAN_PLAN', summary: 'Choose a bounded recovery plan' }, observation: { recoveryDirection: selectedRecoveryDirection, failureCodes: diagnosisFailureCodes }, evidence: diagnosisEvidence.map((item) => ({ id: item.evidenceId, type: item.kind, claim: item.summary, source: item.evidenceId })) },
+              candidates: replanOptions.map((option) => ({ candidateId: option.optionId, modelId: 'replan', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 100 }))
+            });
+            if (replanSelection.source === 'jev' && replanOptions.some((option) => option.optionId === replanSelection.selectedCandidateId)) replanPlanId = replanSelection.selectedCandidateId;
+          }
+          await recordDecision({
+            stepId: `${step.stepId}-replan-${attempt}`,
+            role: 'planner',
+            roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
+            decisionType: 'SELECT_REPLAN_PLAN',
+            actionKind: 'REPLAN',
+            parentDecisionIds: [recoveryDirectionDecision.decisionId],
+            summary: `Selected bounded replan ${replanPlanId}`,
+            outputRefs: [`replan-${runId}-${attempt}`],
+            evidenceRefs: diagnosisEvidence,
+            options: replanOptions.map((option) => ({ optionId: option.optionId, actionKind: 'REPLAN', summary: option.summary, requiredCapabilityIds: [], evidenceRefs: diagnosisEvidenceIds, riskCodes: [], rejectionReasonCodes: option.optionId === replanPlanId ? [] : ['NOT_SELECTED'] })),
+            selectedOptionId: replanPlanId,
+            reasonCodes: ['JEV_DECISION'],
+            selectionCriteria: ['bounded-replan-plan']
+          });
+        }
         const recoveryDecision = await recordDecision({
           stepId: `${step.stepId}-recovery-${attempt}`,
           role: 'planner',
           roleContextId: allocatedRoles.find((context) => context.role === 'planner')?.contextId ?? `${runId}-planner`,
           decisionType: 'RECOVER_TASK',
           actionKind: 'RECOVER',
-          parentDecisionIds: [diagnosisDecision.decisionId],
+          parentDecisionIds: [diagnosisDecision.decisionId, probeDecision.decisionId, recoveryDirectionDecision.decisionId],
           summary: `Recovering after verifier ${report.status} with bounded new evidence`,
           outputRefs: [`recovery-${runId}-${attempt}`],
           evidenceRefs: diagnosisEvidence,
@@ -3152,8 +3905,8 @@ async function runTask() {
               rejectionReasonCodes: ['RECOVERY_BUDGET_AVAILABLE']
             }
           ],
-          selectedOptionId: 'recovery-retry-new-evidence',
-          reasonCodes: ['BOUNDED_RECOVERY'],
+          selectedOptionId: selectedRecoveryDirection === 'stop-and-report' ? 'recovery-stop' : 'recovery-retry-new-evidence',
+          reasonCodes: [selectedRecoveryDirection === 'stop-and-report' ? 'JEV_RECOVERY_STOP' : 'BOUNDED_RECOVERY'],
           selectionCriteria: ['new-evidence-before-retry']
         });
         activeActionParentDecisionIds = [recoveryDecision.decisionId];
@@ -3166,6 +3919,7 @@ async function runTask() {
         });
         linkDecisionEvent(diagnosisDecision, diagnosisRequestedEvent.event);
         linkDecisionEvent(recoveryDecision, diagnosisRequestedEvent.event);
+        linkDecisionEvent(recoveryDirectionDecision, diagnosisRequestedEvent.event);
         await trajectory.append({
           runId,
           kind: 'DiagnosisRequested',
@@ -3174,12 +3928,20 @@ async function runTask() {
             status: report.status,
             failureCodes: report.failureCodes,
             diagnosisDecisionId: diagnosisDecision.decisionId,
+            recoveryDirectionDecisionId: recoveryDirectionDecision.decisionId,
             recoveryDecisionId: recoveryDecision.decisionId
           },
           sensitivity: 'INTERNAL'
         });
         return {
           ...createRecoveryContext(report, { attempt, previousActions }),
+          probeId: selectedProbeId,
+          recoveryDirection: selectedRecoveryDirection,
+          replanPlanId,
+          stopRecovery: selectedRecoveryDirection === 'stop-and-report',
+          requestUser: selectedRecoveryDirection === 'request-user',
+          clarificationId,
+          clarificationPrompt,
           diagnosisDecisionId: diagnosisDecision.decisionId,
           recoveryDecisionId: recoveryDecision.decisionId
         };
@@ -3216,7 +3978,16 @@ async function runTask() {
             payload: { attempt, status: report?.status, recovery },
             sensitivity: 'INTERNAL'
           });
-          emitEvent('recovery.started', { attempt, status: report?.status });
+          emitEvent('recovery.started', {
+            attempt,
+            status: report?.status,
+            recoveryDirection: recovery?.recoveryDirection,
+            replanPlanId: recovery?.replanPlanId,
+            requestUser: recovery?.requestUser === true,
+            clarificationId: recovery?.clarificationId,
+            clarificationPrompt: recovery?.clarificationPrompt,
+            stopRecovery: recovery?.stopRecovery === true
+          });
         }
       }
       });
@@ -3236,7 +4007,17 @@ async function runTask() {
     });
     if (!planExecution.ok) {
       const failedReport = planExecution.report ?? { status: 'FAIL' };
-      throw new Error(`PLAN_STEP_FAILED:${planExecution.failedStepId ?? 'unknown'}:${failedReport.status}`);
+      const failure = new Error(`PLAN_STEP_FAILED:${planExecution.failedStepId ?? 'unknown'}:${failedReport.status}`);
+      failure.stepId = planExecution.failedStepId ?? 'unknown';
+      failure.phase = 'VERIFYING';
+      failure.reportStatus = failedReport.status;
+      failure.failureCodes = Array.isArray(failedReport.failureCodes) ? failedReport.failureCodes : [];
+      if (!failure.failureCodes.length && planExecution.errorCode) failure.failureCodes = [planExecution.errorCode];
+      failure.stepErrorCode = planExecution.step?.errorCode ?? planExecution.errorCode;
+      failure.summary = failedReport.summary;
+      failure.nextAction = failedReport.nextAction;
+      failure.checks = failedReport.checks;
+      throw failure;
     }
     executionPlan = planExecution.plan;
     if (plannerPlan) plannerPlan = executionPlan;
@@ -3284,6 +4065,7 @@ async function runTask() {
       summary: `state=SUCCEEDED | promptDigest=${sha256Digest(prompt)} | outputDigest=${sha256Digest(result.text)} | toolRounds=${result.toolRounds} | toolCalls=${result.toolCallCount}`,
       state: 'SUCCEEDED'
     });
+    await saveRunResponse(harnessEventStorePath ?? trajectoryPath ?? threadPath, runId, result.text);
     const completedTrajectoryEvent = await trajectory.append({
       runId,
       kind: 'TaskRunCompleted',
@@ -3429,9 +4211,8 @@ async function runTask() {
           steps: plannerPlan.steps.map(({ stepId, summary, actionKind, dependencies, status }) => ({ stepId, summary, actionKind, dependencies, status }))
         }
       } : {}),
-      // Keep the public READ_ONLY capability list compatible with the MVP;
-      // side-effect tools remain registered so an attempted model call still
-      // reaches RuntimeSafetyMonitor and receives a stable refusal.
+      // Controlled tools stay registered for the CONTROLLED path, while
+      // READ_ONLY responses expose only the read-only capability list.
       tools: root.toolRegistry.list().filter((tool) => mode === EXECUTION_MODES.CONTROLLED || tool.readOnly),
       plugins: manifests(),
       dynamicPlugins: dynamicPluginResults,
@@ -3468,7 +4249,9 @@ async function runTask() {
       verification: {
         status: verification.status,
         summary: verification.summary,
-        checks: verification.checks.map(({ id, status, message }) => ({ id, status, message })),
+        failureCodes: verification.failureCodes,
+        nextAction: verification.nextAction,
+        checks: boundedVerificationChecks(verification.checks),
         ...(semanticVerifierTurn?.verdict ? {
           semantic: {
             status: semanticVerifierTurn.verdict.status,
@@ -3476,8 +4259,14 @@ async function runTask() {
             progress: semanticVerifierTurn.verdict.progress,
             evidenceRefs: semanticVerifierTurn.verdict.evidenceRefs,
             failureCodes: semanticVerifierTurn.verdict.failureCodes,
-            ...(semanticVerifierTurn.modelIdentity ? { modelIdentity: semanticVerifierTurn.modelIdentity } : {}),
-            ...(semanticVerifierTurn.gate ? { gate: semanticVerifierTurn.gate } : {})
+            ...(Number.isFinite(semanticVerifierTurn.verdict.score) ? { score: semanticVerifierTurn.verdict.score } : {}),
+            ...(Number.isFinite(semanticVerifierTurn.verdict.variance) ? { variance: semanticVerifierTurn.verdict.variance } : {}),
+            ...(Array.isArray(semanticVerifierTurn.verdict.distribution) ? { distribution: semanticVerifierTurn.verdict.distribution } : {}),
+            ...(semanticVerifierTurn.verdict.method ? { method: semanticVerifierTurn.verdict.method } : {}),
+            ...(semanticVerifierTurn.verdict.thresholds ? { thresholds: semanticVerifierTurn.verdict.thresholds } : {}),
+            source: semanticVerifierTurn.verdict.source,
+            decisionType: semanticVerifierTurn.decision?.decisionType ?? 'VERIFY_BEHAVIOR',
+            reasonCode: semanticVerifierTurn.decision?.reasonCode
           }
         } : {})
       },
@@ -3491,6 +4280,13 @@ async function runTask() {
         }
       } : {}),
       decisionTrace: decisionTrace.summary(),
+      decisionLayer: {
+        enabled: decisionEngine?.enabled ?? false,
+        enforce: decisionEngine?.enforce ?? false,
+        configured: decisionConfig?.enabled ?? false,
+        evaluations: decisionLayerEvaluations,
+        last: decisionEngine?.summary?.()
+      },
       profiles: {
         store: profilePath ? 'PERSISTED' : 'MEMORY_ONLY',
         profileCount: profileRegistry.listProfiles().length,
@@ -3532,6 +4328,13 @@ async function runTask() {
       // Preserve the original runtime error when the thread store is unavailable.
     }
     let failedTrajectoryEvent;
+    let partialOutputDigest;
+    if (streamedResponseText.trim()) {
+      try {
+        await saveRunResponse(harnessEventStorePath ?? trajectoryPath ?? threadPath, runId, streamedResponseText);
+        partialOutputDigest = sha256Digest(streamedResponseText);
+      } catch { /* Keep the original task failure if local response storage fails. */ }
+    }
     try {
       failedTrajectoryEvent = await trajectory.append({
         runId,
@@ -3539,7 +4342,8 @@ async function runTask() {
         payload: {
           ...trajectoryErrorPayload(error),
           outcomeId: `task-outcome-${runId}`,
-          outcomeStatus: failureStatus
+          outcomeStatus: failureStatus,
+          ...(partialOutputDigest ? { outputDigest: partialOutputDigest } : {})
         },
         sensitivity: 'SECURITY_AUDIT'
       });
@@ -3619,36 +4423,42 @@ async function runTask() {
     }
     throw error;
   } finally {
-    cancelPollStopped = true;
-    if (cancelPollTimer) clearTimeout(cancelPollTimer);
-    if (taskCancelError) await cancelRegistry.consume(runId).catch(() => {});
-    if (taskTimeoutTimer) clearTimeout(taskTimeoutTimer);
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    await roleSessions.flush().catch(() => {});
-    await memoryJournal.flush().catch(() => {});
-    await coordinator.flush().catch(() => {});
-    await decisionTrace.flush().catch(() => {});
-    await profileRegistry.flush().catch(() => {});
-    await modelRegistry?.flush?.().catch(() => {});
-    await evolutionEvaluator?.flush?.().catch(() => {});
-    await creditBlameLedger.flush().catch(() => {});
-    await modelEgressLedger.flush().catch(() => {});
-    await Promise.resolve(pluginGovernance?.flush?.()).catch(() => {});
-    for (const pending of pendingApprovals.values()) {
-      clearTimeout(pending.timer);
-      pending.resolve(false);
+    // Keep the watchdog heartbeat alive while durable stores and provider
+    // fibers finish flushing. On slow UNC/workspace volumes these awaits can
+    // exceed the steady-state watchdog window even though the run already
+    // reached a terminal coordinator state.
+    cleanupTaskResources({ stopHeartbeat: false });
+    try {
+      if (taskCancelError) await cancelRegistry.consume(runId).catch(() => {});
+      await roleSessions.flush().catch(() => {});
+      await memoryJournal.flush().catch(() => {});
+      await coordinator.flush().catch(() => {});
+      await decisionTrace.flush().catch(() => {});
+      await profileRegistry.flush().catch(() => {});
+      await modelRegistry?.flush?.().catch(() => {});
+      await evolutionEvaluator?.flush?.().catch(() => {});
+      await creditBlameLedger.flush().catch(() => {});
+      await modelEgressLedger.flush().catch(() => {});
+      await Promise.resolve(pluginGovernance?.flush?.()).catch(() => {});
+      for (const pending of pendingApprovals.values()) {
+        clearTimeout(pending.timer);
+        pending.resolve(false);
+      }
+      pendingApprovals.clear();
+      approvalInterface?.close();
+      if (approvalInterface) {
+        process.stdin.unref?.();
+        process.stdin.destroy?.();
+      }
+      for (const providerContext of roleProviderContexts) await Promise.resolve(providerContext?.fiber?.dispose?.()).catch(() => {});
+      await Promise.resolve(mcpHost?.close?.()).catch(() => {});
+      await Promise.resolve(playwrightHost?.close?.()).catch(() => {});
+      if (root) await root.fiber.dispose();
+    } finally {
+      cleanupTaskResources();
     }
-    pendingApprovals.clear();
-    approvalInterface?.close();
-    if (approvalInterface) {
-      process.stdin.unref?.();
-      process.stdin.destroy?.();
-    }
-    for (const providerContext of roleProviderContexts) await Promise.resolve(providerContext?.fiber?.dispose?.()).catch(() => {});
-    if (root) await root.fiber.dispose();
   }
 }
-
 const parseBoolean = (value, fallback = false) => {
   if (value === undefined) return fallback;
   if (['true', '1', 'yes', 'on'].includes(String(value).toLowerCase())) return true;
@@ -4112,7 +4922,11 @@ async function runReleaseCheckCommand() {
   });
   const capacity = await assessStorageCapacity({ paths: [harnessPath], maxBytes: DEFAULT_MAX_BYTES });
   const checks = {
-    releaseChannel: releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' || releaseChannel === 'WINDOWS_PHASE1_5_CONTROLLED',
+    // Every channel in RELEASE_CHANNELS except the pre-phase-1 baseline is an
+    // approved release candidate: READ_ONLY, CONTROLLED and the phase-2 target
+    // WINDOWS_FULL_LOCAL. Excluding the target channel made the phase-2 release
+    // candidate fail its own gate on a passing report.
+    releaseChannel: releaseChannel !== 'WINDOWS_MVP_PRE_PHASE1',
     sideEffectRejection: releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? sideEffectRejection.blocked : !sideEffectRejection.blocked,
     eventStore: verification.ok,
     readModelChecksum: typeof projection.projectionChecksum === 'string' && /^sha256:[0-9a-f]{64}$/u.test(projection.projectionChecksum),
@@ -4150,6 +4964,87 @@ async function runReleaseCheckCommand() {
   const outputPath = argValue('--output');
   if (outputPath) await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   return { ok: true, operation: 'release-check', ...(outputPath ? { outputPath } : {}), report };
+}
+
+// S2-13 release supply chain: version manifest, SBOM, plugin/model lock and the
+// release decision report. Every input is a real store or file; a missing input
+// becomes a blocker instead of being skipped.
+async function runReleaseManifestCommand() {
+  const releaseChannel = resolveReleaseChannel();
+  const runtimeRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repositoryRoot = join(runtimeRoot, '..');
+  const defaultLocks = [join(runtimeRoot, 'package-lock.json'), join(repositoryRoot, 'desktop', 'package-lock.json')];
+  const lockPaths = argValuesAll('--lock').length ? argValuesAll('--lock') : defaultLocks.filter((path) => existsSync(path));
+  const artifactPaths = argValuesAll('--artifact').filter((path) => existsSync(path));
+  const governancePath = arg('--plugin-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE ?? defaultPluginGovernanceStore());
+  const registryPath = arg('--model-registry', process.env.HMCODEX_MODEL_REGISTRY_STORE ?? defaultModelRegistryStore());
+  const governance = createPluginGovernance({ storagePath: governancePath });
+  const registry = createModelRegistry({ storagePath: registryPath });
+  await Promise.all([governance.load(), registry.load()]);
+  const versions = {
+    appVersion: HARNESS_APP_VERSION,
+    producerVersion: HARNESS_PRODUCER_VERSION,
+    policyVersion: HARNESS_POLICY_VERSION,
+    protocolVersion: HARNESS_PROTOCOL_VERSION,
+    storageSchemaVersion: HARNESS_STORAGE_SCHEMA_VERSION
+  };
+  const sbom = await buildSbom({ lockPaths });
+  const pluginLock = buildPluginLock({ plugins: governance.list(), versionLifecycle: governance.versionLifecycleSnapshot() });
+  const modelLock = buildModelLock({ models: registry.list() });
+  const evidence = [];
+  for (const [name, flag] of [['releaseCheck', '--release-check'], ['w10Evidence', '--w10-evidence'], ['retentionObservation', '--retention-observation']]) {
+    const path = argValue(flag);
+    if (!path) { evidence.push({ name, ok: false, code: 'EVIDENCE_PATH_MISSING' }); continue; }
+    let parsed;
+    try {
+      parsed = JSON.parse(await readFile(path, 'utf8'));
+    } catch {
+      evidence.push({ name, ok: false, code: 'EVIDENCE_UNAVAILABLE', path });
+      continue;
+    }
+    const digest = await releaseFileDigest(path).catch(() => undefined);
+    if (name === 'releaseCheck') {
+      evidence.push({ name, path, digest, ok: parsed?.passed === true, code: parsed?.passed === true ? undefined : 'RELEASE_CHECK_NOT_PASSED' });
+    } else if (name === 'w10Evidence') {
+      evidence.push({ name, path, digest, ok: parsed?.releaseDecision === 'READY', code: parsed?.releaseDecision === 'READY' ? undefined : `W10_${parsed?.releaseDecision ?? 'MISSING'}`, blockingReasons: parsed?.blockingReasons });
+    } else {
+      evidence.push({ name, path, digest, ok: parsed?.ok === true, code: parsed?.ok === true ? undefined : 'RETENTION_OBSERVATION_NOT_OK' });
+    }
+  }
+  const checks = [
+    { name: 'storageSchemaVersion', ok: Number.isSafeInteger(HARNESS_STORAGE_SCHEMA_VERSION) && HARNESS_STORAGE_SCHEMA_VERSION > 0 },
+    { name: 'sbom', ok: sbom.componentCount > 0, code: sbom.componentCount > 0 ? undefined : 'SBOM_EMPTY' },
+    { name: 'modelLock', ok: modelLock.modelCount > 0, code: modelLock.modelCount > 0 ? undefined : 'MODEL_LOCK_EMPTY' },
+    { name: 'pluginEvidence', ok: true },
+    // The phase-2 target channel WINDOWS_FULL_LOCAL runs controlled tasks too, so
+    // the gate accepts every controlled channel instead of only the phase-1.5 one.
+    { name: 'controlledChannel', ok: isControlledReleaseChannel(releaseChannel), code: isControlledReleaseChannel(releaseChannel) ? undefined : 'RELEASE_CHANNEL_NOT_CONTROLLED' }
+  ];
+  const artifacts = [];
+  for (const path of artifactPaths) artifacts.push({ path, digest: await releaseFileDigest(path).catch(() => undefined) });
+  const decision = buildReleaseDecision({ versionManifest: { versions }, sbom, pluginLock, modelLock, checks, evidence });
+  const manifest = {
+    schemaVersion: '1.0',
+    artifact: 'HMCODEX_VERSION_MANIFEST',
+    generatedAtMs: Date.now(),
+    releaseChannel,
+    versions,
+    sbomDigest: releaseDigest(sbom),
+    pluginLockDigest: releaseDigest(pluginLock),
+    modelLockDigest: releaseDigest(modelLock),
+    releaseDecisionDigest: releaseDigest(decision),
+    artifacts,
+    evidence
+  };
+  const outputs = {
+    manifest: argValue('--output'),
+    sbom: argValue('--sbom-output'),
+    pluginLock: argValue('--plugin-lock-output'),
+    modelLock: argValue('--model-lock-output'),
+    decision: argValue('--decision-output')
+  };
+  const written = await writeReleaseArtifacts({ manifest, sbom, pluginLock, modelLock, decision, outputs });
+  return { ok: true, operation: 'release-manifest', releaseChannel, decision, written };
 }
 
 async function runReadModelCommand() {
@@ -4413,6 +5308,34 @@ async function runMemoryCommand() {
   await eventStore.load();
   const journal = createMemoryJournal({ storagePath, eventStore });
   await journal.load();
+  const parseSourceEventIds = () => {
+    const sourceArgument = argValue('--source-event-ids');
+    if (sourceArgument === undefined) return [];
+    let sourceEventIds;
+    try { sourceEventIds = JSON.parse(sourceArgument); } catch { throw new Error('MEMORY_SOURCES_INVALID_JSON'); }
+    if (!Array.isArray(sourceEventIds)) throw new Error('MEMORY_SOURCES_INVALID');
+    return sourceEventIds;
+  };
+  const validateSourceEventIds = async (sourceEventIds, requestedRunId) => {
+    if (sourceEventIds.length === 0) return;
+    const trajectory = scopedTrajectory && !phase1 ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
+    const sourceEvents = await trajectory.list();
+    const byId = new Map(sourceEvents.map((event) => [event.eventId, event]));
+    const missing = sourceEventIds.filter((eventId) => typeof eventId !== 'string' || !byId.has(eventId));
+    if (missing.length > 0) throw new Error(`MEMORY_SOURCE_NOT_FOUND:${missing.slice(0, 8).join(',')}`);
+    if (requestedRunId && requestedRunId !== 'manual') {
+      const mismatched = sourceEventIds.filter((eventId) => byId.get(eventId)?.runId !== requestedRunId);
+      if (mismatched.length > 0) throw new Error('MEMORY_SOURCE_RUN_MISMATCH');
+    }
+  };
+  const parseMemoryIds = (flagName) => {
+    const value = argValue(flagName);
+    if (value === undefined) return undefined;
+    let ids;
+    try { ids = JSON.parse(value); } catch { throw new Error('MEMORY_CONFLICTS_INVALID_JSON'); }
+    if (!Array.isArray(ids)) throw new Error('MEMORY_CONFLICTS_INVALID');
+    return ids;
+  };
   const operation = positionalOperation('list');
   if (operation === 'list') return { ok: true, memories: journal.list(argValue('--status')) };
   if (operation === 'get') {
@@ -4423,33 +5346,45 @@ async function runMemoryCommand() {
   if (operation === 'propose') {
     const statement = argValue('--statement');
     if (!statement) throw new Error('MEMORY_STATEMENT_REQUIRED');
-    let sourceEventIds = [];
-    const sourceArgument = argValue('--source-event-ids');
-    if (sourceArgument !== undefined) {
-      try { sourceEventIds = JSON.parse(sourceArgument); } catch { throw new Error('MEMORY_SOURCES_INVALID_JSON'); }
-      if (!Array.isArray(sourceEventIds)) throw new Error('MEMORY_SOURCES_INVALID');
-    }
-    if (sourceEventIds.length > 0) {
-      const trajectory = scopedTrajectory && !phase1 ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
-      const sourceEvents = await trajectory.list();
-      const byId = new Map(sourceEvents.map((event) => [event.eventId, event]));
-      const missing = sourceEventIds.filter((eventId) => typeof eventId !== 'string' || !byId.has(eventId));
-      if (missing.length > 0) throw new Error(`MEMORY_SOURCE_NOT_FOUND:${missing.slice(0, 8).join(',')}`);
-      const requestedRunId = argValue('--run-id');
-      if (requestedRunId && requestedRunId !== 'manual') {
-        const mismatched = sourceEventIds.filter((eventId) => byId.get(eventId)?.runId !== requestedRunId);
-        if (mismatched.length > 0) throw new Error('MEMORY_SOURCE_RUN_MISMATCH');
-      }
-    }
+    const sourceEventIds = parseSourceEventIds();
+    await validateSourceEventIds(sourceEventIds, argValue('--run-id'));
     const record = await journal.proposeDurably({
       runId: argValue('--run-id') ?? 'manual',
       statement,
       sourceEventIds,
       scope: arg('--scope', 'workspace'),
-      confidence: Number(arg('--confidence', '0.5'))
+      confidence: Number(arg('--confidence', '0.5')),
+      sensitivity: arg('--sensitivity', 'INTERNAL'),
+      version: Number(arg('--version', '1')),
+      supersedesMemoryId: argValue('--supersedes-memory-id'),
+      conflictsWithMemoryIds: parseMemoryIds('--conflicts-with-memory-ids')
     });
     await journal.flush();
     return { ok: true, memory: record };
+  }
+  if (operation === 'edit') {
+    const memoryId = argValue('--memory-id');
+    if (!memoryId) throw new Error('MEMORY_ID_REQUIRED');
+    const sourceEventIds = argValue('--source-event-ids') === undefined ? undefined : parseSourceEventIds();
+    if (sourceEventIds) await validateSourceEventIds(sourceEventIds, argValue('--run-id'));
+    const confidenceArgument = argValue('--confidence');
+    const record = await journal.editDurably(memoryId, {
+      ...(argValue('--statement') === undefined ? {} : { statement: argValue('--statement') }),
+      ...(sourceEventIds === undefined ? {} : { sourceEventIds }),
+      ...(argValue('--scope') === undefined ? {} : { scope: argValue('--scope') }),
+      ...(confidenceArgument === undefined ? {} : { confidence: Number(confidenceArgument) }),
+      ...(argValue('--sensitivity') === undefined ? {} : { sensitivity: argValue('--sensitivity') }),
+      ...(argValue('--conflicts-with-memory-ids') === undefined ? {} : { conflictsWithMemoryIds: parseMemoryIds('--conflicts-with-memory-ids') })
+    });
+    await journal.flush();
+    return { ok: true, memory: record };
+  }
+  if (operation === 'resolve-conflict') {
+    const memoryId = argValue('--memory-id');
+    if (!memoryId) throw new Error('MEMORY_ID_REQUIRED');
+    const memory = await journal.resolveConflictDurably(memoryId, arg('--reason', 'USER_RESOLVED_CONFLICT'));
+    await journal.flush();
+    return { ok: true, memory };
   }
   if (operation === 'verify') {
     const memoryId = argValue('--memory-id');
@@ -4525,6 +5460,22 @@ async function runExecutionStateCommand() {
     if (!record) throw new Error('EXECUTION_STATE_NOT_FOUND');
     return { ok: true, record };
   }
+  if (operation === 'cancel-approval') {
+    const recordId = argValue('--record-id');
+    if (!recordId) throw new Error('EXECUTION_RECORD_ID_REQUIRED');
+    const expectedDigest = argValue('--expected-digest');
+    const reason = arg('--reason', 'RECOVERY_CANCELLED');
+    const record = await store.cancelOrphanedApproval(recordId, { expectedDigest, reason });
+    return { ok: true, operation, record };
+  }
+  if (operation === 'revoke-lease') {
+    const recordId = argValue('--record-id');
+    if (!recordId) throw new Error('EXECUTION_RECORD_ID_REQUIRED');
+    const expectedDigest = argValue('--expected-digest');
+    const reason = arg('--reason', 'RECOVERY_REVOKED');
+    const record = await store.revokeLeaseWithDigest(recordId, { expectedDigest, reason });
+    return { ok: true, operation, record };
+  }
   if (operation === 'reconcile') return { ok: true, ...(await store.reconcile()) };
   throw new Error('EXECUTION_OPERATION_INVALID');
 }
@@ -4553,6 +5504,7 @@ async function runRecoveryCommand() {
   const roleSessions = createRoleSessionManager({ storagePath: roleContextPath, eventStore: trajectory.harnessEventStore });
   const dream = createDreamScheduler({ storagePath: dreamPath, eventStore: trajectory.harnessEventStore });
   await trajectory.append({ runId: recoveryRunId, kind: 'RecoveryStarted', payload: { recoveryRunId }, sensitivity: 'SECURITY_AUDIT' });
+  let workspace;
   const recoveryWorkspace = argValue('--workspace');
   if (recoveryWorkspace) {
     try {
@@ -4561,13 +5513,30 @@ async function runRecoveryCommand() {
         timeoutMs: Number(arg('--timeout-ms', process.env.HMCODEX_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
         untrackedFiles: arg('--git-observer-untracked', process.env.HMCODEX_GIT_OBSERVER_UNTRACKED ?? 'normal')
       }).snapshot({ reason: 'RECOVERY' });
+      const gitStatus = observation.status && typeof observation.status === 'object' ? observation.status : {};
+      workspace = {
+        available: observation.available !== false,
+        status: observation.available === false ? String(observation.status ?? 'UNAVAILABLE') : 'READY',
+        head: observation.head ?? null,
+        observationDigest: observation.observationDigest ?? null,
+        workspaceRootDigest: observation.workspaceRootDigest ?? null,
+        changedFiles: Number(gitStatus.entryCount ?? 0),
+        staged: Number(gitStatus.stagedCount ?? 0),
+        unstaged: Number(gitStatus.unstagedCount ?? 0),
+        untracked: Number(gitStatus.untrackedCount ?? 0),
+        conflicted: Number(gitStatus.conflictedCount ?? 0),
+        statusCodes: Array.isArray(gitStatus.statusCodes) ? gitStatus.statusCodes : [],
+        pathDigests: Array.isArray(gitStatus.pathDigests) ? gitStatus.pathDigests : [],
+        pathDigestTruncated: gitStatus.pathDigestTruncated === true
+      };
       const event = await trajectory.append({ runId: recoveryRunId, kind: 'GitStateObserved', payload: { checkpointKind: 'RECOVERY', observation }, sensitivity: 'SECURITY_AUDIT' });
       const auditPath = arg('--audit-store', process.env.HMCODEX_GIT_AUDIT_STORE ?? (harnessEventStorePath ? `${harnessEventStorePath}.git-audit.json` : defaultGitAuditStore()));
       const audit = createGitAuditStore({ storagePath: auditPath, ...auditSigningOptions() });
       await audit.load();
       await audit.append({ runId: recoveryRunId, eventId: event.eventId, eventSequence: event.sequence, checkpointKind: 'RECOVERY', status: 'READY', observationDigest: observation.observationDigest, trajectoryRootDigest: event.recordDigest, observation });
     } catch (error) {
-      await trajectory.append({ runId: recoveryRunId, kind: 'GitStateObserved', payload: { checkpointKind: 'RECOVERY', errorCode: error instanceof Error ? error.message.slice(0, 120) : 'GIT_OBSERVER_FAILED' }, sensitivity: 'SECURITY_AUDIT' });
+      workspace = { available: false, status: 'ERROR', errorCode: error instanceof Error ? error.message.slice(0, 120) : 'GIT_OBSERVER_FAILED' };
+      await trajectory.append({ runId: recoveryRunId, kind: 'GitStateObserved', payload: { checkpointKind: 'RECOVERY', errorCode: workspace.errorCode }, sensitivity: 'SECURITY_AUDIT' });
     }
   }
   await Promise.all([execution.load(), roleSessions.load(), dream.load()]);
@@ -4576,12 +5545,23 @@ async function runRecoveryCommand() {
     roleSessions.reconcile(),
     dream.reconcile()
   ]);
+  const executionRecords = execution.list();
+  const pendingApprovalRecords = executionRecords.filter((record) => record.recordType === 'approval' && ['REQUESTED', 'PRESENTED'].includes(record.state));
+  const leaseRecords = executionRecords.filter((record) => record.recordType === 'lease');
+  const revokedLeaseRecords = leaseRecords.filter((record) => record.state === 'REVOKED');
   const result = {
     ok: true,
     reconciled: executionResult.reconciled + roleResult.reconciled + dreamResult.reconciled,
     execution: executionResult,
     roles: roleResult,
-    dream: dreamResult
+    dream: dreamResult,
+    ...(workspace ? { workspace } : {}),
+    remote: { state: 'LOCAL_ONLY', endpoint: null, checkedAtMs: Date.now(), reason: '当前 runtime 未配置远端恢复源' },
+    pendingApprovals: pendingApprovalRecords.length,
+    pendingApprovalRecords,
+    leaseRecords,
+    revokedLeases: revokedLeaseRecords.length,
+    revokedLeaseRecords
   };
   await trajectory.append({ runId: recoveryRunId, kind: 'RecoveryCompleted', payload: { recoveryRunId, reconciled: result.reconciled }, sensitivity: 'SECURITY_AUDIT' });
   return result;
@@ -4757,6 +5737,21 @@ const parseJsonObjectArgument = (name, fallback = {}) => {
   return parsed;
 };
 
+// Activation evidence is read from files the operator produced, never
+// synthesized here, so an activation cannot claim a migration or self-test
+// that never ran.
+const readPluginEvidence = async (name, missingCode) => {
+  const filePath = argValue(name);
+  if (filePath === undefined) throw new Error(missingCode);
+  let raw;
+  try { raw = await readFile(filePath, 'utf8'); } catch { throw new Error('PLUGIN_EVIDENCE_UNAVAILABLE'); }
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('PLUGIN_EVIDENCE_INVALID_JSON'); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('PLUGIN_EVIDENCE_INVALID');
+  if (parsed.ok !== true) throw new Error('PLUGIN_EVIDENCE_NOT_OK');
+  return parsed;
+};
+
 const readPluginManifest = async () => {
   const manifestPath = argValue('--manifest-path');
   const manifestArgument = argValue('--manifest');
@@ -4804,7 +5799,7 @@ async function runPluginCommand() {
   await eventStore.load();
   const operation = pluginOperation();
   const pluginId = argValue('--plugin-id') ?? argValue('--id');
-  if (['validate', 'transition', 'load', 'revoke'].includes(operation) && !pluginId) {
+  if (['validate', 'transition', 'load', 'revoke', 'versions', 'install-version', 'activate-version', 'rollback-version'].includes(operation) && !pluginId) {
     throw new Error('PLUGIN_ID_REQUIRED');
   }
   const requestedState = operation === 'transition' ? (argValue('--state') ?? argValue('--to')) : undefined;
@@ -4844,8 +5839,59 @@ async function runPluginCommand() {
     return {
       ok: true,
       plugins: governance.list(),
+      versionLifecycle: governance.versionLifecycleSnapshot(),
       loaded: []
     };
+  }
+
+  if (operation === 'versions') {
+    return {
+      ok: true,
+      versions: governance.listVersions(pluginId),
+      active: governance.versionLifecycle.active(pluginId)
+    };
+  }
+
+  if (operation === 'install-version') {
+    const version = argValue('--version');
+    if (!version) throw new Error('PLUGIN_VERSION_REQUIRED');
+    const packageDigest = argValue('--package-digest') ?? argValue('--digest');
+    if (!packageDigest) throw new Error('PLUGIN_PACKAGE_DIGEST_REQUIRED');
+    const record = governance.installVersion({
+      pluginId,
+      version,
+      packageDigest,
+      config: parseJsonObjectArgument('--config')
+    });
+    await governance.flush();
+    return { ok: true, version: record, versions: governance.listVersions(pluginId) };
+  }
+
+  if (operation === 'activate-version') {
+    const version = argValue('--version');
+    if (!version) throw new Error('PLUGIN_VERSION_REQUIRED');
+    // Side-by-side activation is only granted on operator-supplied migration,
+    // self-test and shadow evidence. Missing evidence fails closed instead of
+    // falling back to an implicit success.
+    const migrationPlan = await readPluginEvidence('--migration-plan', 'PLUGIN_MIGRATION_EVIDENCE_REQUIRED');
+    const selfTestReport = await readPluginEvidence('--self-test-report', 'PLUGIN_SELF_TEST_EVIDENCE_REQUIRED');
+    const shadowReport = await readPluginEvidence('--shadow-report', 'PLUGIN_SHADOW_EVIDENCE_REQUIRED');
+    if (!migrationPlan.config || typeof migrationPlan.config !== 'object' || Array.isArray(migrationPlan.config)) {
+      throw new Error('PLUGIN_MIGRATION_EVIDENCE_INVALID');
+    }
+    const activation = await governance.activateVersion(pluginId, version, {
+      migrate: async () => ({ ok: true, config: migrationPlan.config }),
+      selfTest: async () => ({ ok: selfTestReport.ok === true, reportDigest: selfTestReport.reportDigest }),
+      shadow: async () => ({ ok: shadowReport.ok === true, reportDigest: shadowReport.reportDigest })
+    });
+    await governance.flush();
+    return { ok: true, activation, versions: governance.listVersions(pluginId) };
+  }
+
+  if (operation === 'rollback-version') {
+    const previous = await governance.rollbackVersion(pluginId);
+    await governance.flush();
+    return { ok: true, active: previous, versions: governance.listVersions(pluginId) };
   }
 
   if (operation === 'discover') {
@@ -5102,9 +6148,30 @@ async function runTools() {
 }
 
 async function runThreadCommand() {
+  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined
+    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const explicitThreadStore = argValue('--thread-store') !== undefined
+    || Boolean(process.env.HMCODEX_THREAD_STORE?.trim());
+  const harnessEventStorePath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? defaultThreadStore());
-  const threads = createThreadStore({ storagePath: threadPath });
+  // The dashboard reads the default Phase 1 thread projection from the
+  // durable Harness Event Store. Thread commands must use the same authority;
+  // otherwise the sidebar can list a thread that get/resume immediately
+  // reports as THREAD_NOT_FOUND after a history refresh. An explicitly
+  // selected legacy --thread-store remains supported for compatibility.
+  const harnessEventStore = harnessEventStorePath && !explicitThreadStore
+    ? createHarnessEventStore({ storagePath: harnessEventStorePath })
+    : undefined;
+  const threads = harnessEventStore
+    ? createThreadStore({ storagePath: threadPath, eventStore: harnessEventStore })
+    : createThreadStore({ storagePath: threadPath });
   const operation = positionalOperation('list');
+  if (argValue('--summary') === 'true' && (operation === 'list' || operation === 'get')) {
+    return readThreadHistory({ harnessPath: harnessEventStorePath, threadPath, trajectoryPath,
+      explicitThreadStore, threadId: argValue('--thread-id'), listOnly: operation === 'list', summariesOnly: true });
+  }
+  if (harnessEventStore) await harnessEventStore.load();
   await threads.load();
   if (operation === 'list') return { ok: true, threads: await threads.list() };
   if (operation === 'get' || operation === 'resume') {
@@ -5135,46 +6202,7 @@ async function runThreadCommand() {
 }
 
 async function runThreadEventsCommand() {
-  const threadId = argValue('--thread-id');
-  if (!threadId) throw new Error('THREAD_ID_REQUIRED');
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
-  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE
-    ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultThreadStore()));
-  const threads = createThreadStore({ storagePath: threadPath });
-  await threads.load();
-  const thread = await threads.get(threadId);
-  if (!thread) throw new Error('THREAD_NOT_FOUND');
-  const runIds = new Set(
-    (Array.isArray(thread.turns) ? thread.turns : [])
-      .map((turn) => turn?.runId)
-      .filter((runId) => typeof runId === 'string' && runId.trim())
-  );
-  const trajectory = createTrajectoryStore(trajectoryPath, harnessPath ? { harnessStoragePath: harnessPath } : {});
-  const events = await trajectory.list();
-  return {
-    ok: true,
-    threadId: thread.id,
-    events: events
-      .filter((event) => runIds.has(event.runId))
-      .map((event) => ({
-        eventId: event.eventId,
-        type: 'runtime_event',
-        schemaVersion: '1.0',
-        runId: event.runId,
-        sequence: event.sequence,
-        kind: `history.${String(event.kind)
-          .replace(/([a-z0-9])([A-Z])/g, '$1.$2')
-          .replace(/[^A-Za-z0-9_.-]/g, '.')
-          .toLowerCase()}`,
-        payload: {
-          ...(event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload) ? event.payload : {}),
-          persistedKind: event.kind
-        },
-        emittedAtMs: event.emittedAtMs
-      }))
-  };
+  return runHistoryCommand('thread-events');
 }
 
 async function runHealth() {
@@ -5220,6 +6248,9 @@ async function runDashboardCommand() {
     ? `${trajectoryPath}.${suffix}`
     : fallback();
   const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
+  if (argValue('--summary') === 'true') {
+    return runHistoryCommand('dashboard');
+  }
   const executionStatePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE
     ?? (harnessEventStorePath ? `${harnessEventStorePath}.execution-read-model.json` : (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.execution.json` : undefined)));
   const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
@@ -5235,9 +6266,6 @@ async function runDashboardCommand() {
     import('./plugins/evolution-registry.mjs'),
     import('./evolution-evaluator.mjs')
   ]);
-  const threads = harnessEventStorePath
-    ? createThreadStore({ eventStore: dashboardEventStore })
-    : createThreadStore({ storagePath: threadPath });
   const execution = createExecutionStateStore({ storagePath: executionStatePath });
   const memory = createMemoryJournal({ storagePath: memoryPath });
   const dream = harnessEventStorePath
@@ -5258,7 +6286,6 @@ async function runDashboardCommand() {
     : new EvolutionEvaluator({ registry: evolution, storagePath: evaluationPath, control: evolutionControl });
   await Promise.all([
     dashboardEventStore.load(),
-    threads.load(),
     execution.load(),
     memory.load(),
     dream.load(),
@@ -5268,26 +6295,55 @@ async function runDashboardCommand() {
     modelEgress.load(),
     evaluator.load()
   ]);
+  const modelUsage = await readModelUsage(dashboardEventStore);
   let projection;
   let projectionError;
   let deletedRunIds;
   if (harnessEventStorePath && readModelPath) {
     try {
-      const eventStore = createHarnessEventStore({ storagePath: harnessEventStorePath });
-      const rebuilder = createReadModelRebuilder({ eventStore });
+      const rebuilder = createReadModelRebuilder({ eventStore: dashboardEventStore });
       // Empty authoritative history must replace stale UI state after purge.
       await assertProjectionOutput(readModelPath, [harnessEventStorePath]);
-      projection = await rebuilder.rebuild({ storagePath: readModelPath });
-      const timelinePage = pageProjectionTimeline(projection, { cursor: 0, limit: 200 }).timelinePage;
+      projection = await loadFreshReadModel({ eventStore: dashboardEventStore, storagePath: readModelPath })
+        ?? await rebuilder.rebuild({ storagePath: readModelPath });
+      const timelineLimit = Number(argValue('--timeline-limit') ?? 200);
+      if (!Number.isInteger(timelineLimit) || timelineLimit < 0 || timelineLimit > 1_000) {
+        throw new Error('READ_MODEL_TIMELINE_LIMIT_INVALID');
+      }
+      const timelinePage = timelineLimit === 0
+        ? {
+            items: [], cursor: 0, limit: 0, total: projection.timeline.length,
+            hasMore: projection.timeline.length > 0,
+            ...(projection.timeline.length > 0 ? { nextCursor: 0 } : {})
+          }
+        : pageProjectionTimeline(projection, { cursor: 0, limit: timelineLimit }).timelinePage;
       projection = { ...projection, timeline: timelinePage.items, timelinePage };
-      deletedRunIds = await eventStore.listDeletedRunIds();
+      deletedRunIds = await dashboardEventStore.listDeletedRunIds();
     } catch (error) {
       projectionError = error instanceof Error ? error.message.slice(0, 120) : 'READ_MODEL_REBUILD_FAILED';
     }
   }
-  const threadList = await threads.list();
+  const { threads: threadList } = await readThreadHistory({ harnessPath: harnessEventStorePath, threadPath, trajectoryPath,
+    explicitThreadStore: argValue('--thread-store') !== undefined || Boolean(process.env.HMCODEX_THREAD_STORE?.trim()), listOnly: true });
   const feedbackList = await feedback.listDurableSummaries().catch(() => []);
   const pluginList = governance.list();
+  // Version lifecycle facts come from the same governance store. The desktop
+  // panel shows installed/active/rolled-back versions and the quarantine
+  // reason instead of inferring them from the governance state alone.
+  const pluginVersions = [...new Set(pluginList.map((plugin) => plugin.pluginId))]
+    .sort()
+    .map((pluginId) => {
+      const record = pluginList.find((item) => item.pluginId === pluginId);
+      const active = governance.versionLifecycle.active(pluginId);
+      const quarantined = record?.state === 'QUARANTINED' || record?.state === 'REJECTED';
+      return {
+        pluginId,
+        activeVersion: active?.version,
+        governanceState: record?.state,
+        quarantineReason: quarantined ? (record?.transition?.metadata?.reason ?? record?.state) : undefined,
+        versions: governance.versionLifecycle.list(pluginId)
+      };
+    });
   const proposalList = evolution.list();
   const reportList = evaluator.list();
   // The dashboard must be able to state, from live facts rather than intent,
@@ -5308,7 +6364,18 @@ async function runDashboardCommand() {
       plugins: { count: pluginList.length },
       evolution: { proposals: proposalList.length, reports: reportList.length },
       decisions: { count: (projection?.decisions ?? []).length },
-      modelEgress: modelEgress.summarize()
+      modelEgress: modelEgress.summarize(),
+      modelUsage: {
+        status: modelUsage.status,
+        calls: modelUsage.calls,
+        cacheReportedCalls: modelUsage.cacheReportedCalls,
+        inputTokens: modelUsage.inputTokens,
+        cachedInputTokens: modelUsage.cachedInputTokens,
+        uncachedInputTokens: modelUsage.uncachedInputTokens,
+        cacheHitRate: modelUsage.cacheHitRate,
+        cacheCoverage: modelUsage.cacheCoverage,
+        historicalCoverage: modelUsage.historicalCoverage
+      }
     };
     const scan = scanSupportBundle({ stores });
     return {
@@ -5335,6 +6402,7 @@ async function runDashboardCommand() {
     ...(deletedRunIds ? { deletedRunIds } : {}),
     supportBundle,
     modelEgress: modelEgress.summarize(),
+    modelUsage,
     threads: threadList,
     releaseChannel,
     execution: { ok: true, records: projection ? (projection.executionRecords ?? []) : execution.list() },
@@ -5342,6 +6410,7 @@ async function runDashboardCommand() {
     memories: projection ? (projection.memories ?? []) : memory.list(),
     dreams: await dream.list(),
     plugins: pluginList,
+    pluginVersions,
     evolution: {
       proposals: proposalList,
       reports: reportList,
@@ -5358,7 +6427,7 @@ logger.install();
   const bannerConfigPath = argValue('--config')
     ?? (process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined)
     ?? defaultModelConfigPath();
-  logger.info(`runtime start | node=${process.version} | pid=${process.pid} | argv=${JSON.stringify(process.argv.slice(2))} | modelConfig=${bannerConfigPath ?? 'none'}`);
+  logger.info(`runtime start | node=${process.version} | pid=${process.pid} | argv=${JSON.stringify(redactRuntimeArgv(process.argv.slice(2)))} | modelConfig=${bannerConfigPath ?? 'none'}`);
 }
 
 try {
@@ -5409,6 +6478,8 @@ try {
             ? await runExportDataCommand()
       : command === 'release-check'
             ? await runReleaseCheckCommand()
+      : command === 'release-manifest'
+            ? await runReleaseManifestCommand()
       : command === 'model-profile' || command === 'model-profiles'
             ? await runModelProfileCommand()
       : command === 'feedback' || command === 'bayesian'

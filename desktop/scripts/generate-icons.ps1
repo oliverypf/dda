@@ -38,7 +38,7 @@ function New-BrandBitmap([int] $size) {
     $format = [Drawing.StringFormat]::new()
     $format.Alignment = [Drawing.StringAlignment]::Center
     $format.LineAlignment = [Drawing.StringAlignment]::Center
-    $graphics.DrawString('hm', $font, [Drawing.Brushes]::White, [Drawing.RectangleF]::new(0, $size * 0.01, $size, $size * 0.98), $format)
+    $graphics.DrawString('dda', $font, [Drawing.Brushes]::White, [Drawing.RectangleF]::new(0, $size * 0.01, $size, $size * 0.98), $format)
 
     $format.Dispose()
     $font.Dispose()

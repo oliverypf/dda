@@ -65,6 +65,112 @@ test('runs a model-requested tool and sends its result into the next round', asy
   }
 });
 
+test('READ_ONLY requests expose only read-only tools', async () => {
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  registry.register({
+    name: 'fixture.read', description: 'Read-only fixture.', readOnly: true,
+    inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    handler: () => ({ ok: true })
+  });
+  registry.register({
+    name: 'shell.execute', description: 'Controlled fixture.', readOnly: false,
+    inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    handler: () => ({ ok: true })
+  });
+  const requests = [];
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+      async *stream(request) {
+        requests.push(request);
+        yield { type: 'text-delta', text: '只读完成' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      }
+    });
+  }, 'fixture-read-only-tools');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    await root.taskRunner.run({ prompt: 'inspect', workspace, mode: 'READ_ONLY' });
+    assert.deepEqual(requests[0].tools.map((tool) => tool.name), ['fixture.read']);
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
+test('rejects a hidden side-effect tool call with an actionable mode error', async () => {
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  let invoked = false;
+  registry.register({
+    name: 'shell.execute', description: 'Controlled fixture.', readOnly: false,
+    inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    handler: () => { invoked = true; return { ok: true }; }
+  });
+  const events = [];
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+      async *stream(request) {
+        if (request.messages.some((message) => message.source?.kind === 'tool')) {
+          yield { type: 'text-delta', text: '已收到只读模式限制' };
+          yield { type: 'finish', reason: { kind: 'stop' } };
+          return;
+        }
+        yield { type: 'tool-call', id: 'call-shell', name: 'shell.execute', arguments: '{}' };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      }
+    });
+  }, 'fixture-hidden-side-effect');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    const result = await root.taskRunner.run({ prompt: 'inspect', workspace, mode: 'READ_ONLY', onEvent: (event) => events.push(event) });
+    const failure = events.find((event) => event.kind === 'tool.result');
+    assert.equal(result.text, '已收到只读模式限制');
+    assert.equal(failure.errorCode, 'TOOL_NOT_ALLOWED_IN_MODE');
+    assert.equal(failure.mode, 'READ_ONLY');
+    assert.match(failure.message, /shell\.execute.*READ_ONLY/);
+    assert.equal(invoked, false);
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
+test('stops repeated workspace requests after four rounds without new evidence', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'workspace.list', description: 'List fixture.', readOnly: true,
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: [], additionalProperties: false },
+    handler: ({ path = '' }) => ({ path, entries: [] })
+  });
+  const events = [];
+  let round = 0;
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+      async *stream() {
+        round += 1;
+        yield { type: 'tool-call', id: `call-list-${round}`, name: 'workspace.list', arguments: JSON.stringify({ path: `dir-${round}` }) };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      }
+    });
+  }, 'fixture-no-new-evidence');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    await assert.rejects(root.taskRunner.run({ prompt: 'inspect', workspace, onEvent: (event) => events.push(event) }), /TOOL_NO_NEW_EVIDENCE/);
+    assert.equal(events.filter((event) => event.kind === 'tool.result').length, 5);
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
 test('stops at the configured tool-round cap instead of allowing an unbounded loop', async () => {
   // 生产默认不限轮数；此用例显式设置上限来验证熔断行为本身。
   process.env.HMCODEX_MAX_TOOL_ROUNDS = '4';
@@ -155,6 +261,7 @@ test('preserves recoverable tool error codes and lets the model switch paths', a
     const failedResult = events.find((event) => event.kind === 'tool.result' && event.id === 'call_bad');
     assert.equal(failedResult.ok, false);
     assert.equal(failedResult.errorCode, 'WORKSPACE_UNSUPPORTED_FILE');
+    assert.match(failedResult.message, /WORKSPACE_UNSUPPORTED_FILE/);
     const goodResult = events.find((event) => event.kind === 'tool.result' && event.id === 'call_good');
     assert.equal(goodResult.ok, true);
     const actions = [

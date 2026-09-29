@@ -137,6 +137,33 @@ test('memory rejects duplicate source event ids before persistence can be corrup
   }), /MEMORY_SOURCES_INVALID/);
 });
 
+test('memory edits create durable superseding versions and conflict resolution clears conflicts', async () => {
+  const eventStore = createHarnessEventStore();
+  await eventStore.load();
+  const journal = new MemoryJournal({ eventStore, now: () => 2000 });
+  const original = await journal.proposeDurably({ runId: 'memory-version', statement: 'team prefers concise output', sourceEventIds: ['event-1'], sensitivity: 'INTERNAL' });
+  const edited = await journal.editDurably(original.memoryId, {
+    statement: 'team prefers concise Chinese output',
+    scope: 'project',
+    confidence: 0.9,
+    sensitivity: 'SENSITIVE',
+    sourceEventIds: ['event-2']
+  });
+  assert.notEqual(edited.memoryId, original.memoryId);
+  assert.equal(edited.version, 2);
+  assert.equal(edited.supersedesMemoryId, original.memoryId);
+  assert.equal(edited.sensitivity, 'SENSITIVE');
+  assert.equal(journal.get(original.memoryId).statement, original.statement);
+  const conflict = await journal.proposeDurably({ runId: 'memory-version', statement: 'team prefers verbose output', sourceEventIds: ['event-3'], conflictsWithMemoryIds: [edited.memoryId] });
+  assert.deepEqual(conflict.conflictsWithMemoryIds, [edited.memoryId]);
+  const resolved = await journal.resolveConflictDurably(conflict.memoryId, 'USER_SELECTED_NEW_VERSION');
+  assert.equal(resolved.version, 2);
+  assert.equal(resolved.supersedesMemoryId, conflict.memoryId);
+  assert.equal(resolved.conflictsWithMemoryIds, undefined);
+  const events = await eventStore.list({ aggregateType: 'Memory' });
+  assert.equal(events.filter((event) => event.kind === 'MemoryProposalCommitted').length, 4);
+});
+
 test('durable Dream lifecycle is represented in the Harness Event Store', async () => {
   const eventStore = createHarnessEventStore();
   await eventStore.load();

@@ -39,7 +39,7 @@ const connectCdp = async (timeoutMs = 30000) => {
       const targets = await (await fetch(`http://127.0.0.1:${cdpPort}/json`, {
         signal: AbortSignal.timeout(1000)
       })).json();
-      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost/i.test(target.url));
+      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost|127\.0\.0\.1/i.test(target.url));
       if (page) {
         const ws = new WebSocket(page.webSocketDebuggerUrl);
         await new Promise((resolve, reject) => {

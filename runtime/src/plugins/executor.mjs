@@ -11,6 +11,6 @@ export const executorPlugin = (executor) => cordisPlugin((ctx) => {
 }, 'executor-windows');
 
 /** Register model-facing side-effect tools only after registry and executor injection. */
-export const executorToolsPlugin = ({ leaseProvider, onLeaseStarted, onLeaseConsumed, onLeaseFailed, networkAdapter } = {}) => cordisPlugin((ctx) => {
-  registerExecutorTools(ctx.toolRegistry, ctx.executor, { leaseProvider, onLeaseStarted, onLeaseConsumed, onLeaseFailed, networkAdapter });
+export const executorToolsPlugin = ({ leaseProvider, onLeaseStarted, onLeaseConsumed, onLeaseFailed, networkAdapter, workspace, includeReadOnlyPatchTools } = {}) => cordisPlugin((ctx) => {
+  registerExecutorTools(ctx.toolRegistry, ctx.executor, { leaseProvider, onLeaseStarted, onLeaseConsumed, onLeaseFailed, networkAdapter, workspace, includeReadOnlyPatchTools });
 }, 'executor-tools', ['toolRegistry', 'executor']);

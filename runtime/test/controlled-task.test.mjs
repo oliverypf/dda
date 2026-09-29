@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -59,8 +60,7 @@ test('runs a bounded OpenAI tool round through CONTROLLED executor approval', as
     ].join('\n\n') + '\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const keyName = `HMCODEX_TEST_CONTROLLED_KEY_${randomUUID().replaceAll('-', '')}`;
   const result = await run([

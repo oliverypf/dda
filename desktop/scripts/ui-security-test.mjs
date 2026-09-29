@@ -5,7 +5,7 @@
 
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,7 @@ const option = (name, fallback) => {
 const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
 const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9335'));
 const closeWhenDone = !argv.includes('--keep-open');
+const output = option('--output', undefined);
 const results = [];
 const record = (name, status, detail = '') => {
   results.push({ name, status, detail });
@@ -75,7 +76,7 @@ const waitForTarget = async (timeoutMs = 30000) => {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(2000) });
       const targets = await response.json();
-      const page = targets.find((item) => item.type === 'page' && /tauri\.localhost|localhost/i.test(item.url));
+      const page = targets.find((item) => item.type === 'page' && /tauri\.localhost|localhost|127\.0\.0\.1/i.test(item.url));
       if (page) return page;
     } catch (error) { lastError = error; }
     await delay(250);
@@ -118,16 +119,27 @@ const click = (client, selector) => client.evaluate(`(() => {
   element.click();
   return 'CLICKED';
 })()`);
-const clickApproval = (client, approved) => client.evaluate(`(() => {
+const clickApproval = async (client, approved) => {
+  const result = await client.evaluate(`(() => {
   const element = document.querySelector('[data-action="resolve-approval"][data-approved="${approved ? 'true' : 'false'}"]');
   if (!element) return 'NOT_FOUND';
   if (element.disabled) return 'DISABLED';
   element.click();
   return 'CLICKED';
 })()`);
+  if (result === 'CLICKED' && approved && await exists(client, 'dialog.approval-confirmation[open]')) {
+    assert((await click(client, '[data-confirmation="approve"]')) === 'CLICKED', 'explicit high-risk confirmation');
+  }
+  return result;
+};
 const approveAll = async (client) => {
   while ((await clickApproval(client, true)) === 'CLICKED') await delay(1000);
 };
+const expandExecution = (client) => client.evaluate(`(() => {
+  const group = document.querySelector('[data-execution-group]');
+  if (group && !group.open) group.querySelector('summary')?.click();
+  return true;
+})()`);
 const setComposer = (client, value) => client.evaluate(`(() => {
   const textarea = document.querySelector('textarea[name="prompt"]');
   if (!textarea) return 'NOT_FOUND';
@@ -152,6 +164,22 @@ const textResponse = (response, content) => sse(response, [
   { choices: [{ delta: { content }, finish_reason: null }] },
   { choices: [{ delta: {}, finish_reason: 'stop' }] }
 ]);
+// The runtime derives the semantic verdict from the ordered A-T token
+// probabilities of the <score> tag, never from model-authored text. A verifier
+// fixture that only returns JSON is treated as ABSTAIN, so the controlled-UI
+// suite must stream the score position with real logprobs, mirroring
+// runtime/test/plan-step-runtime.test.mjs.
+const scorePositions = (letter, probability) => [
+  { token: '<score>' },
+  { token: letter, top_logprobs: [
+    { token: letter, logprob: Math.log(probability) },
+    { token: 'T', logprob: Math.log(1 - probability) }
+  ] }
+];
+const scoreResponse = (response, content, letter, probability) => sse(response, [
+  { choices: [{ delta: { content }, logprobs: { content: scorePositions(letter, probability) }, finish_reason: null }] },
+  { choices: [{ delta: {}, finish_reason: 'stop' }] }
+]);
 const toolResponse = (response, call) => sse(response, [
   { choices: [{ delta: { tool_calls: [{ index: 0, id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] }, finish_reason: null }] },
   { choices: [{ delta: {}, finish_reason: 'tool_calls' }] }
@@ -168,11 +196,11 @@ const startMockProvider = () => {
       if (process.env.HMCODEX_UI_SECURITY_DEBUG === '1') {
         console.log(`DEBUG model=${model} tools=${Array.isArray(payload.tools) ? payload.tools.length : 0} messages=${messages.length}`);
       }
-      if (model === 'planner-fixture' && Array.isArray(payload.tools) && payload.tools.length > 0 && messages.length <= 2) {
-        const prompt = messages.at(-1)?.content ?? '';
+      if (['planner-fixture', 'executor-fixture'].includes(model) && Array.isArray(payload.tools) && payload.tools.length > 0 && !messages.some((message) => message.role === 'tool')) {
+        const prompt = messages.map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')).join(' ');
         const call = prompt.includes('TIMEOUT_SECURITY_PROBE')
           ? { id: `call-timeout-${randomUUID()}`, name: 'shell.execute', arguments: { command: 'node', args: ['-e', 'setTimeout(() => console.log("late"), 10000); console.log("started")'], timeoutMs: 1000 } }
-          : { id: `call-write-${randomUUID()}`, name: 'file.write', arguments: { path: prompt.includes('DENY_SECURITY_PROBE') ? 'denied-by-ui.txt' : 'approved-by-ui.txt', content: 'controlled-ui-ok' } };
+          : { id: `call-write-${randomUUID()}`, name: 'file.write', arguments: { path: prompt.includes('CANCEL_SECURITY_PROBE') ? 'cancelled-by-ui.txt' : prompt.includes('DENY_SECURITY_PROBE') ? 'denied-by-ui.txt' : 'approved-by-ui.txt', content: 'controlled-ui-ok' } };
         toolResponse(response, call);
         return;
       }
@@ -196,7 +224,9 @@ const startMockProvider = () => {
         return;
       }
       if (model === 'verifier-fixture') {
-        textResponse(response, JSON.stringify({ status: 'PASS', summary: 'Evidence-backed controlled execution', progress: 1, evidenceRefs: ['security-ui-fixture'], failureCodes: [] }));
+        // Bounded verdict structure first, then exactly one ordered rating tag.
+        // 'A' with 0.97 mass maps to a PASS above the 0.9 host threshold.
+        scoreResponse(response, JSON.stringify({ summary: 'Evidence-backed controlled execution', evidenceRefs: ['security-ui-fixture'], failureCodes: [] }) + '<score>A</score>', 'A', 0.97);
         return;
       }
       textResponse(response, 'fixture ready');
@@ -224,11 +254,23 @@ const makeModelConfig = (server, endpointOverride) => {
       { modelId: 'executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'executor-fixture', endpoint, apiKeyEnv: 'HMCODEX_SECURITY_UI_API_KEY', roles: ['executor'], capabilities: ['model.invoke.stream', 'tool.calls'] },
       { modelId: 'verifier-fixture', provider: 'openai-chat', protocol: 'chat-completions', model: 'verifier-fixture', endpoint, apiKeyEnv: 'HMCODEX_SECURITY_UI_API_KEY', roles: ['semanticVerifier'], capabilities: ['model.invoke.stream'] }
     ],
-    roleBindings: { semanticVerifier: 'verifier-fixture' }
+    roleBindings: { semanticVerifier: 'verifier-fixture' },
+    // Keep this controlled UI suite self-contained. JEV decision branches are
+    // covered by runtime/decision-layer.test.mjs; this fixture validates the
+    // approval and verifier UI without an external endpoint.
+    decision: { enabled: false, enforce: false }
   };
 };
 
+let launchedPid;
 const terminate = () => {
+  if (launchedPid) {
+    spawnSync('taskkill', ['/PID', String(launchedPid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    launchedPid = undefined;
+    return;
+  }
+  // A prior detached UI suite may have left the executable running. Clear it
+  // before the first controlled launch so its release-channel environment wins.
   spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
 };
 
@@ -244,10 +286,14 @@ const launch = (modelConfigPath, modelRegistryPath, dataDir) => {
       HMCODEX_MODEL_CONFIG: modelConfigPath,
       HMCODEX_MODEL_REGISTRY: modelRegistryPath,
       HMCODEX_DATA_DIR: dataDir,
+      HMCODEX_WORKSPACE_ROOT: dataDir,
+      LOCALAPPDATA: join(dataDir, 'local-app-data'),
+      APPDATA: join(dataDir, 'roaming-app-data'),
       HMCODEX_SECURITY_UI_API_KEY: 'fixture-key',
       HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED'
     }
   });
+  launchedPid = child.pid;
   child.unref();
   return child.pid;
 };
@@ -260,11 +306,9 @@ const ready = async (client) => {
 };
 
 const setWorkspace = async (client, root) => {
-  await client.evaluate(`(async () => {
-    await window.__TAURI__.core.invoke('set_workspace', { path: ${JSON.stringify(root)} });
-    return true;
-  })()`);
-  await delay(500);
+  // The fixture workspace is selected before process launch. Verify the visible
+  // grant, rather than changing only native state behind the frontend model.
+  await waitFor(client, `(document.querySelector('.workspace-path')?.innerText ?? '').toLowerCase().includes(${JSON.stringify(root.toLowerCase())})`, { label: 'visible workspace matches isolated test root' });
 };
 
 const setControlledMode = async (client) => {
@@ -286,6 +330,7 @@ const terminal = (client, timeout = 120000) => waitFor(client, `/只读检查完
 
 const main = async () => {
   console.log(`hmCodex controlled UI security tests · exe=${exe} · port=${port}`);
+  if (output) await mkdir(output, { recursive: true });
   const server = await startMockProvider();
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-ui-security-'));
   const normalConfigPath = join(workspace, 'model-config.json');
@@ -303,6 +348,7 @@ const main = async () => {
       const mode = await text(client, '.mode-pill');
       const note = await text(client, '.composer-note');
       assert(mode.includes('CONTROLLED'), `mode=${mode}`);
+      assert((await text(client, '.version-label')).includes('受控模式'), 'footer mode agrees with controlled selection');
       assert(note.includes('受控模式'), `note=${note}`);
       return mode;
     });
@@ -333,6 +379,22 @@ const main = async () => {
       assert(!existsSync(join(workspace, 'denied-by-ui.txt')), 'denied file absent');
       return 'approval declined; no write';
     });
+    await runTest('S03b 从审批卡片取消任务且不写入', async () => {
+      client.close();
+      launch(normalConfigPath, join(workspace, 'model-registry.json'), workspace);
+      client = await connect();
+      await setControlledMode(client);
+      await setWorkspace(client, workspace);
+      await runTask(client, 'CANCEL_SECURITY_PROBE write cancelled-by-ui.txt');
+      await waitFor(client, `Boolean(document.querySelector('[data-live-region="approvals"] .approval-card [data-action="cancel-run"]'))`, { timeout: 90000, label: 'card cancellation available' });
+      assert((await click(client, '[data-live-region="approvals"] .approval-card [data-action="cancel-run"]')) === 'CLICKED', 'cancel from approval card');
+      await terminal(client, 60000);
+      await waitFor(client, `!document.querySelector('[data-action="resolve-approval"]') && document.querySelector('.send-button')?.disabled === false`, { label: 'cancelled approval removed and composer unlocked' });
+      assert(!existsSync(join(workspace, 'cancelled-by-ui.txt')), 'cancelled write absent');
+      await expandExecution(client);
+      assert(!(await bodyText(client)).includes('只读运行没有产生外部副作用'), 'controlled cancellation does not claim no prior effects');
+      return 'card cancellation settled; no target file; composer ready';
+    });
     await runTest('S04 审批批准执行一次并显示 Verifier', async () => {
       client.close();
       launch(normalConfigPath, join(workspace, 'model-registry.json'), workspace);
@@ -341,12 +403,43 @@ const main = async () => {
       await setWorkspace(client, workspace);
       await runTask(client, 'APPROVE_SECURITY_PROBE write approved-by-ui.txt');
       await waitFor(client, `Boolean(document.querySelector('.approval-card'))`, { timeout: 90000, label: 'approval card' });
-      assert((await clickApproval(client, true)) === 'CLICKED', 'approve approval');
+      if (output) {
+        await client.evaluate(`(() => {
+          const toggle = document.querySelector('[data-action="toggle-subagents"][aria-expanded="true"]');
+          toggle?.click();
+          const card = document.querySelector('[data-live-region="approvals"] .approval-card');
+          card?.scrollIntoView({ block: 'center' });
+        })()`);
+        const capture = await client.send('Page.captureScreenshot', { format: 'png' });
+        await writeFile(join(output, 'native-approval-requested.png'), Buffer.from(capture.data, 'base64'));
+      }
+      const targets = await client.evaluate(`[...document.querySelectorAll('[data-live-region="approvals"] .approval-actions button')].map(button => {
+        const range = document.createRange(); range.selectNodeContents(button);
+        return { width: button.getBoundingClientRect().width, textHeight: range.getBoundingClientRect().height, fontSize: parseFloat(getComputedStyle(button).fontSize) };
+      })`);
+      assert(targets.length === 3 && targets[0].width >= targets[1].width - 1, 'reject target is at least as wide as approve');
+      assert(targets.every(target => target.textHeight <= target.fontSize * 1.6), 'approval labels render on one line');
+      assert((await click(client, '[data-live-region="approvals"] [data-approved="true"]')) === 'CLICKED', 'open high-risk confirmation');
+      await waitFor(client, 'Boolean(document.querySelector("dialog.approval-confirmation[open]"))', { label: 'second confirmation visible' });
+      assert(!existsSync(join(workspace, 'approved-by-ui.txt')), 'first approval click must not write');
+      assert(await client.evaluate('document.activeElement?.dataset.confirmation === "back"'), 'default focus does not approve');
+      if (output) {
+        const capture = await client.send('Page.captureScreenshot', { format: 'png' });
+        await writeFile(join(output, 'native-high-risk-confirmation.png'), Buffer.from(capture.data, 'base64'));
+      }
+      assert((await click(client, '[data-confirmation="approve"]')) === 'CLICKED', 'confirm one high-risk operation');
       await approveAll(client);
       await waitForFile(join(workspace, 'approved-by-ui.txt'), { timeout: 60000, label: 'approved file' });
+      await expandExecution(client);
       await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('PolicyLease 已消费')`, { timeout: 30000, label: 'lease consumed' });
+      await waitFor(client, `[...document.querySelectorAll('.approval-card')].some(card => card.innerText.includes('授权已使用'))`, { label: 'consumed lease reflected in approval card' });
+      assert(!(await exists(client, '.approval-card [data-action="resolve-approval"]:enabled')), 'consumed approval cannot be replayed');
+      if (output) {
+        const capture = await client.send('Page.captureScreenshot', { format: 'png' });
+        await writeFile(join(output, 'native-approval-consumed.png'), Buffer.from(capture.data, 'base64'));
+      }
       await approveAll(client);
-      await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('语义 Verifier 证据') && document.querySelector('.timeline')?.innerText.includes('verifier-fixture')`, { timeout: 180000, label: 'verifier evidence' });
+      await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('语义 Verifier 证据') && /verifier-fixture|JEV_DECISION_PLANE|来源 JEV_DECISION_PLANE/.test(document.querySelector('.timeline')?.innerText ?? '')`, { timeout: 180000, label: 'verifier evidence' });
       if (await client.evaluate(`Boolean(document.querySelector('.composer-stop') && !document.querySelector('.composer-stop').disabled)`)) {
         assert((await click(client, '.composer-stop')) === 'CLICKED', 'cancel lingering run');
       }
@@ -354,10 +447,12 @@ const main = async () => {
       const content = await readFile(join(workspace, 'approved-by-ui.txt'), 'utf8');
       assert(content === 'controlled-ui-ok', 'approved file content');
       assert(await timelineHas(client, '语义 Verifier 证据'), 'semantic verifier evidence visible');
-      assert(await timelineHas(client, 'verifier-fixture'), 'independent verifier identity visible');
+      assert(await timelineHas(client, 'verifier-fixture') || await timelineHas(client, 'JEV_DECISION_PLANE') || await timelineHas(client, '来源 JEV_DECISION_PLANE'), 'semantic verifier identity visible');
+      assert(await timelineHas(client, 'Verdict PASS'), 'semantic verdict actually reports PASS');
+      assert(!(await bodyText(client)).includes('只读运行没有产生外部副作用'), 'controlled cancellation must not claim no side effects');
       return 'approved write; verifier PASS';
     });
-    await runTest('S05 副作用超时进入失败终态', async () => {
+    await runTest('S05 副作用超时错误可见且可取消', async () => {
       client.close();
       launch(normalConfigPath, join(workspace, 'model-registry.json'), workspace);
       client = await connect();
@@ -367,11 +462,15 @@ const main = async () => {
       await waitFor(client, `Boolean(document.querySelector('.approval-card'))`, { timeout: 90000, label: 'approval card' });
       assert((await clickApproval(client, true)) === 'CLICKED', 'approve timed action');
       await approveAll(client);
+      await expandExecution(client);
       await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('ACTION_FAILED') || document.querySelector('.timeline')?.innerText.includes('失败')`, { timeout: 60000, label: 'timeout failure evidence' });
-      assert((await click(client, '.composer-stop')) === 'CLICKED', 'cancel lingering timeout run');
+      await waitFor(client, `[...document.querySelectorAll('.approval-card')].some(card => /执行器报告失败|执行结果不确定/.test(card.innerText))`, { label: 'failed action no longer displayed as authorized' });
+      if (await client.evaluate(`Boolean(document.querySelector('.composer-stop') && !document.querySelector('.composer-stop').disabled)`)) {
+        assert((await click(client, '.composer-stop')) === 'CLICKED', 'cancel lingering timeout run');
+      }
       await terminal(client, 60000);
       assert(await timelineHas(client, '任务未完成') || await timelineHas(client, 'ACTION_FAILED') || await timelineHas(client, '失败'), 'timeout failure visible');
-      return 'timeout reached terminal failure';
+      return 'timeout failure visible in timeline and authorization card; run settled after cancellation if needed';
     });
     await runTest('S06 断线显示失败并可恢复', async () => {
       terminate();
@@ -379,6 +478,7 @@ const main = async () => {
       client.close();
       client = await connect();
       await setControlledMode(client);
+      await setWorkspace(client, workspace);
       await runTask(client, 'DISCONNECT_SECURITY_PROBE');
       await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('Cordis runtime') || document.body.innerText.includes('MODEL_HTTP_ERROR')`, { timeout: 180000, label: 'disconnect failure evidence' });
       await terminal(client, 30000);
@@ -399,6 +499,7 @@ const main = async () => {
     server.close();
     await rm(workspace, { recursive: true, force: true }).catch(() => {});
   }
+  if (output) await writeFile(join(output, 'results.json'), JSON.stringify({ exe, results }, null, 2));
   const passed = results.filter((item) => item.status === 'PASS').length;
   const failed = results.filter((item) => item.status === 'FAIL').length;
   console.log(`\nSummary: ${passed} passed, ${failed} failed, 0 skipped`);

@@ -128,6 +128,17 @@ const jsonEqual = (left, right) => {
   }
 };
 
+const safeInvocationErrorMessage = (error) => {
+  const raw = error instanceof Error ? error.message : '';
+  const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
+    ? error.code
+    : typeof raw === 'string' ? raw.match(/^([A-Z][A-Z0-9_]{1,96})(?::|$)/)?.[1] : undefined;
+  if (!code || !/^(?:TOOL|WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+$/u.test(code)) return undefined;
+  const message = raw.startsWith(`${code}:`) ? raw.slice(code.length + 1) : raw;
+  const normalized = message.replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 640);
+  return normalized || undefined;
+};
+
 const canonicalJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (isPlainObject(value)) {
@@ -476,10 +487,10 @@ export class ToolRegistry {
         if (error instanceof ToolRegistryError) throw error;
         const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
           ? error.code
-          : typeof error?.message === 'string' && /^(?:WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+$/.test(error.message)
-            ? error.message
+          : typeof error?.message === 'string' && /^(?:WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+(?::.*)?$/.test(error.message)
+            ? error.message.split(':', 1)[0]
             : undefined;
-        if (code) throw new ToolRegistryError(code);
+        if (code) throw new ToolRegistryError(code, error.message.includes(':') ? error.message.slice(code.length + 1) : '');
         throw new ToolRegistryError(TOOL_ERROR_CODES.HANDLER_FAILED, 'handler failed', { name });
       }
       if (!isJsonValue(value)) fail(TOOL_ERROR_CODES.INVALID_OUTPUT, 'output must be JSON data', { name });
@@ -527,6 +538,8 @@ export class ToolRegistry {
           ok: false,
           ...(inputDigest ? { inputDigest } : {}),
           errorCode: error?.code ?? 'TOOL_ERROR',
+          ...(safeInvocationErrorMessage(error) ? { message: safeInvocationErrorMessage(error) } : {}),
+          ...(typeof error?.details?.path === 'string' ? { path: error.details.path.slice(0, 512) } : {}),
           durationMs: Math.max(0, Date.now() - startedAt)
         });
         try { await this.#onInvocation(summary); } catch (callbackError) {
@@ -568,17 +581,18 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   });
   registry.register({
     name: 'workspace.read',
-    description: "Read a bounded UTF-8 text file from the authorized workspace. path MUST be relative, such as README.md or src/main.ts; never pass a drive-letter or UNC absolute path.",
+    description: "Read a bounded UTF-8 text file from the authorized workspace. path MUST be relative, such as README.md or src/main.ts; never pass a drive-letter or UNC absolute path. For files larger than 32KB, use offsetChars to read the next window.",
     inputSchema: {
       type: 'object',
       properties: {
         path: { type: 'string', minLength: 1, maxLength: 512 },
-        maxChars: { type: 'integer', minimum: 1, maximum: 32768 }
+        maxChars: { type: 'integer', minimum: 1, maximum: 32768 },
+        offsetChars: { type: 'integer', minimum: 0 }
       },
       required: ['path'],
       additionalProperties: false
     },
-    handler: ({ path, maxChars = 32768 }) => workspace.read(path, maxChars)
+    handler: ({ path, maxChars = 32768, offsetChars = 0 }) => workspace.read(path, maxChars, offsetChars)
   });
   return registry;
 };

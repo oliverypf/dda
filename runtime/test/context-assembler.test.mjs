@@ -20,7 +20,7 @@ test('assembles bounded redacted state from prior runs', () => {
   ];
   const result = assembleTrajectoryContext({ events, currentRunId: 'run-current' });
   assert.equal(result.runCount, 1);
-  assert.match(result.text, /Previous hmCodex run summaries/);
+  assert.match(result.text, /Previous dda run summaries/);
   assert.match(result.text, /state=SUCCEEDED/);
   assert.match(result.text, /openai\/responses\/gpt-4\.1-mini/);
   assert.match(result.text, /entries=4/);
@@ -58,7 +58,7 @@ test('restores only active bounded memory as advisory context', () => {
     { memoryId: 'active', status: 'ACTIVE', scope: 'project', confidence: 0.875, statement: 'Use the checked build command\nwhen validating changes.' }
   ] });
   assert.equal(result.memoryCount, 1);
-  assert.match(result.text, /Active hmCodex memories/);
+  assert.match(result.text, /Active dda memories/);
   assert.match(result.text, /confidence=0\.88/);
   assert.match(result.text, /Use the checked build command when validating changes/);
   assert.equal(result.text.includes('do not restore'), false);

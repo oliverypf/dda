@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "WINDOWS_PHASE2_W10_EVIDENCE",
+  "startedAt": "2026-09-10T12:22:34.483Z",
+  "execution": {
+    "hostPlatform": "win32",
+    "node": "v24.19.0",
+    "installedPackage": false,
+    "longRunMinutes": 0
+  },
+  "lifecycle": {
+    "upgradeActivated": true,
+    "rollbackVersion": "1.0.0"
+  },
+  "install": {
+    "status": "NOT_RUN",
+    "evidenceClass": "SIMULATION_ONLY",
+    "missing": [
+      "installedHost"
+    ]
+  },
+  "longRun": {
+    "status": "NOT_RUN",
+    "requiredMinutes": 1440,
+    "observedMinutes": 0,
+    "missing": [
+      "longRunWindow"
+    ]
+  },
+  "backupRestore": {
+    "status": "PENDING_INSTALLED_HOST"
+  },
+  "privacyDeletion": {
+    "status": "PENDING_INSTALLED_HOST"
+  },
+  "killSwitch": {
+    "status": "PENDING_INSTALLED_HOST"
+  },
+  "retention": {
+    "status": "UNKNOWN",
+    "reason": "OBSERVATION_START_MISSING"
+  },
+  "releaseDecision": "NOT_READY"
+}

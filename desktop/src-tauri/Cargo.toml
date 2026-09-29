@@ -1,8 +1,8 @@
 [package]
 name = "hmcodex-desktop"
 version = "0.1.0"
-description = "Windows-first read-only desktop harness for hmCodex"
-authors = ["hmCodex contributors"]
+description = "Windows-first read-only desktop harness for dda"
+authors = ["dda contributors"]
 edition = "2021"
 default-run = "hmcodex-desktop"
 
@@ -10,17 +10,9 @@ default-run = "hmcodex-desktop"
 name = "hmcodex_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[features]
-sidecar = []
-
 [[bin]]
 name = "hmcodex-desktop"
 path = "src/main.rs"
-
-[[bin]]
-name = "openviking-server"
-path = "src/bin/openviking-server.rs"
-required-features = ["sidecar"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -30,7 +22,6 @@ rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-getrandom = "0.2"
 tauri = { version = "2", features = [] }
 url = "2"
 tempfile = "3"

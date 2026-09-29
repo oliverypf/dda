@@ -9,6 +9,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Context } from '@deepseek-ai/cordis';
 import { createModelPlugins } from '../src/plugins/model-deepseek.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
@@ -57,8 +59,7 @@ test('sends configured extra headers and a generated OpenCode Go session header'
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const configPath = join(workspace, 'headers-config.json');
@@ -100,8 +101,7 @@ test('calls an OpenAI Responses endpoint and normalizes output_text deltas', asy
     response.end();
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -133,8 +133,7 @@ test('calls an OpenAI-compatible Chat Completions endpoint', async (t) => {
     response.end('data: [DONE]\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const result = await run([
@@ -159,13 +158,14 @@ test('loads the OpenAI Responses route from a JSON config file', async (t) => {
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     assert.equal(body.model, 'configured-model');
+    assert.match(body.instructions, /每次回复都使用中文。\n先给结论。/);
+    assert.match(body.instructions, /READ_ONLY/);
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Configured."}\n\n');
     response.end('event: response.completed\ndata: {"type":"response.completed"}\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   await writeFile(configPath, JSON.stringify({
@@ -173,7 +173,8 @@ test('loads the OpenAI Responses route from a JSON config file', async (t) => {
     protocol: 'responses',
     model: 'configured-model',
     endpoint: `http://127.0.0.1:${address.port}/configured-responses`,
-    apiKeyEnv: 'TEST_CONFIG_KEY'
+    apiKeyEnv: 'TEST_CONFIG_KEY',
+    customInstructions: '每次回复都使用中文。\n先给结论。'
   }));
   const result = await run([
     'task', '--config', configPath, '--prompt', '使用文件配置', '--workspace', workspace
@@ -203,8 +204,7 @@ test('restores a bounded prior-run context on the next task', async (t) => {
     response.end(`event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"run-${requestBodies.length}"}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const commonArgs = [
@@ -218,8 +218,11 @@ test('restores a bounded prior-run context on the next task', async (t) => {
   const second = await run([...commonArgs, '--prompt', '第二轮任务'], { TEST_CONTINUATION_KEY: 'continuation-key' });
   assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
   assert.equal(requestBodies.length, 2);
-  const secondInput = requestBodies[1].input[0].content[0].text;
-  assert.match(secondInput, /Previous hmCodex run summaries/);
+  const secondInput = requestBodies[1].input
+    .flatMap((message) => message.content ?? [])
+    .map((content) => content.text ?? '')
+    .join('\n');
+  assert.match(secondInput, /Previous dda run summaries/);
   assert.match(secondInput, /state=SUCCEEDED/);
   assert.equal(secondInput.includes('第一轮任务'), false);
   const secondTrajectory = JSON.parse(second.stdout.trim()).trajectory;
@@ -244,4 +247,41 @@ test('records a redacted failure event when model credentials are missing', asyn
   assert.equal(JSON.parse(result.stdout.trim()).runId, failedEvent.runId);
   assert.equal(failedEvent.payload.code, 'MISSING_CREDENTIAL');
   assert.equal(events.some((event) => JSON.stringify(event).includes('failure prompt must not be stored')), false);
+});
+
+test('requests streaming usage and durably records provider cache hits', async (t) => {
+  const workspace = await workspaceFixture();
+  const trajectoryPath = join(workspace, 'cache-usage.jsonl');
+  const harnessPath = join(workspace, 'cache-usage.db');
+  let requestBody;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requestBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'cached' }, finish_reason: null }] })}\n\n`);
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+    response.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 80 } } })}\n\n`);
+    response.end('data: [DONE]\n\n');
+  });
+  t.after(() => server.close());
+  await listenOnFetchablePort(server);
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const result = await run([
+    'task', '--provider', 'openai-chat', '--model', 'cache-model',
+    '--endpoint', `http://127.0.0.1:${address.port}/chat/completions`,
+    '--api-key-env', 'TEST_CACHE_KEY', '--prompt', 'cache check', '--workspace', workspace,
+    '--trajectory-store', trajectoryPath, '--harness-event-store', harnessPath
+  ], { TEST_CACHE_KEY: 'cache-key' });
+  assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
+  assert.deepEqual(requestBody.stream_options, { include_usage: true });
+  const events = await createHarnessEventStore({ storagePath: harnessPath }).list();
+  const usage = events.find((event) => event.kind === 'ModelUsageRecorded');
+  assert.ok(usage);
+  assert.equal(usage.payload.inputTokens, 100);
+  assert.equal(usage.payload.cachedInputTokens, 80);
+  assert.equal(usage.payload.uncachedInputTokens, 20);
+  assert.equal(usage.payload.status, 'SUCCEEDED');
+  assert.equal(Object.hasOwn(usage.payload, 'prompt'), false);
 });

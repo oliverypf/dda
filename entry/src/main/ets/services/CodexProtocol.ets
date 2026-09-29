@@ -141,7 +141,7 @@ export class CodexProtocol {
     const params: InitializeParams = {
       clientInfo: {
         name: clientName,
-        title: 'hmCodex',
+        title: 'dda',
         version: clientVersion
       },
       capabilities: {

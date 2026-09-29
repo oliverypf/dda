@@ -109,6 +109,17 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
     latencyMs: 75,
     expectedCost: 0.4
   }]);
+  await eventStore.append({
+    runId: 'run-decision',
+    aggregateType: 'ModelUsage',
+    aggregateId: 'run-decision',
+    kind: 'ModelUsageRecorded',
+    payload: {
+      provider: 'openai', protocol: 'responses', model: 'model-a', status: 'SUCCEEDED',
+      inputTokens: 100, outputTokens: 10, cachedInputTokens: 80, uncachedInputTokens: 20,
+      cacheReported: true, usageReported: true, prefixChanged: false
+    }
+  });
 
   const result = await promisify(execFile)(process.execPath, [
     fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
@@ -130,8 +141,11 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   assert.ok(payload.execution.records.some((record) => record.recordId === intent.recordId && record.state === 'SAFETY_EVALUATING'));
   const projectedThread = payload.threads.find((item) => item.id === thread.id);
   assert.equal(projectedThread?.title, `Thread ${thread.id.slice(-8)}`);
-  assert.equal(projectedThread?.turns.length, 1);
-  assert.equal(projectedThread?.checkpoint?.phase, 'EXECUTING');
+  assert.equal(projectedThread?.turnCount, 1);
+  assert.equal(projectedThread?.turns, undefined);
+  assert.equal(projectedThread?.checkpoint, undefined);
+  assert.equal(projectedThread?.state, 'RUNNING');
+  assert.equal(projectedThread?.resumable, false);
   assert.ok(payload.memories.some((item) => item.memoryId === memoryRecord.memoryId && item.statement === memoryRecord.statement));
   // The Decision DAG the desktop renders must come from the same durable facts.
   const dagNodes = Object.fromEntries((payload.projection?.decisions ?? []).map((node) => [node.decisionId, node]));
@@ -148,6 +162,10 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   assert.equal(payload.modelEgress?.recordCount, 1);
   assert.equal(payload.modelEgress?.byCandidate['binding-a'].modelId, 'model-a');
   assert.equal(payload.supportBundle?.stores.modelEgress.recordCount, 1);
+  assert.equal(payload.modelUsage?.status, 'REPORTED');
+  assert.equal(payload.modelUsage?.cacheHitRate, 0.8);
+  assert.equal(payload.modelUsage?.cacheCoverage, 1);
+  assert.equal(payload.supportBundle?.stores.modelUsage.cachedInputTokens, 80);
   assert.equal(payload.supportBundle?.privacy.scan.ok, true);
   assert.equal(JSON.stringify(await eventStore.list()).includes('Event thread'), false);
 });

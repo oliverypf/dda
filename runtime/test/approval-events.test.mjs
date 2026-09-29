@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 test('stdout approval round-trip persists and consumes a one-shot lease', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-approval-events-'));
@@ -36,8 +37,7 @@ test('stdout approval round-trip persists and consumes a one-shot lease', async 
     ].join('\n\n') + '\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const keyName = `HMCODEX_APPROVAL_KEY_${randomUUID().replaceAll('-', '')}`;

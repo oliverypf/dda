@@ -1,5 +1,25 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { normalizeCustomInstructions } from './custom-instructions.mjs';
+import { normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
+
+// The continuous-verifier budget and criteria are operator configuration, not
+// constants. They are validated by the same normaliser the verifier itself
+// uses, so a config that reaches the runtime cannot disagree with what the
+// verifier accepts.
+const validateVerifierConfig = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('MODEL_CONFIG_INVALID_FIELD:verifier');
+  }
+  for (const key of Object.keys(input)) {
+    if (!VERIFIER_KEYS.has(key)) throw new Error(`MODEL_CONFIG_UNKNOWN_FIELD:verifier.${key}`);
+  }
+  try {
+    return normalizeContinuousVerifierConfig(input);
+  } catch {
+    throw new Error('MODEL_CONFIG_INVALID_FIELD:verifier');
+  }
+};
 
 export const MODEL_PROVIDERS = Object.freeze([
   'openai',
@@ -29,6 +49,27 @@ export const DEFAULT_MODEL_CONFIG = Object.freeze({
   sessionHeader: 'x-opencode-session'
 });
 
+// OpenCode Go removed the short `mimo-v2.6` alias while retaining the
+// explicitly versioned variants. Keep old hmCodex installations usable by
+// normalising that alias only on the OpenCode Go route; other providers and
+// user-selected model ids remain untouched.
+const normalizeOpenCodeRoute = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const url = new URL(value.trim());
+    const path = url.pathname.replace(/\/+$/u, '').replace(/\/chat\/completions$/u, '');
+    return url.origin === 'https://opencode.ai' && path === '/zen/go/v1';
+  } catch {
+    return false;
+  }
+};
+
+export const normalizeLegacyModelAlias = ({ provider, model, baseURL, endpoint } = {}) => {
+  if (provider !== 'openai-chat' || model !== 'mimo-v2.6') return model;
+  if (normalizeOpenCodeRoute(baseURL) || normalizeOpenCodeRoute(endpoint)) return 'mimo-v2.6-pro';
+  return model;
+};
+
 export const defaultModelConfigPath = (env = process.env) => {
   const dataRoot = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
   return dataRoot ? join(dataRoot, 'hmCodex', 'model-config.json') : undefined;
@@ -45,14 +86,19 @@ const ALLOWED_KEYS = new Set([
   'apiKeyEnv',
   'headers',
   'sessionHeader',
+  'customInstructions',
   'models',
-  'roleBindings'
+  'roleBindings',
+  'verifier',
+  'decision'
 ]);
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$/;
 const ROLE_BINDING_KEYS = new Set(['selector', 'modelId', 'allowList', 'requiredCapabilities', 'requireEligible', 'candidateBindings', 'fanout', 'selectionPolicyRef', 'fanoutBudget']);
 const CANDIDATE_BINDING_KEYS = new Set(['bindingId', 'modelId', 'expectedCost', 'expectedLatencyMs', 'expectedTokens']);
 const FANOUT_BUDGET_KEYS = new Set(['maxCandidates', 'maxConcurrency', 'maxCost', 'maxTokens']);
+const VERIFIER_KEYS = new Set(['criteria', 'repetitions', 'maxComparisons', 'pivots', 'seed', 'maxPromptChars', 'passThreshold', 'failThreshold']);
+const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']);
 const MODEL_ENTRY_KEYS = new Set(['id', 'modelId', 'provider', 'protocol', 'model', 'baseURL', 'endpoint', 'apiKeyEnv', 'headers', 'sessionHeader', 'capabilities', 'roles', 'costPer1kTokens', 'latencyMs', 'state', 'version']);
 
 const clone = (value) => structuredClone(value);
@@ -238,6 +284,48 @@ const validateRoleBindings = (input) => {
   return result;
 };
 
+const validateDecisionConfig = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('MODEL_CONFIG_INVALID_FIELD:decision');
+  }
+  for (const key of Object.keys(input)) {
+    if (!DECISION_KEYS.has(key)) throw new Error(`MODEL_CONFIG_UNKNOWN_FIELD:decision.${key}`);
+  }
+  for (const key of ['enabled', 'enforce', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']) {
+    if (input[key] !== undefined && typeof input[key] !== 'boolean') {
+      throw new Error(`MODEL_CONFIG_INVALID_FIELD:decision.${key}`);
+    }
+  }
+  const endpoint = validateUrl(input.endpoint, 'decision.endpoint');
+  const apiKeyEnv = optionalString(input.apiKeyEnv, 'decision.apiKeyEnv', 120);
+  if (apiKeyEnv !== undefined && !API_KEY_ENV_PATTERN.test(apiKeyEnv)) {
+    throw new Error('MODEL_CONFIG_INVALID_FIELD:decision.apiKeyEnv');
+  }
+  const model = optionalString(input.model, 'decision.model', 200);
+  const timeoutMs = input.timeoutMs === undefined
+    ? undefined
+    : validateBoundedInteger(input.timeoutMs, 'decision.timeoutMs', 100, 10000);
+  const maxStateChars = input.maxStateChars === undefined
+    ? undefined
+    : validateBoundedInteger(input.maxStateChars, 'decision.maxStateChars', 1000, 32000);
+  return {
+    ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+    ...(input.enforce === undefined ? {} : { enforce: input.enforce }),
+    ...(endpoint ? { endpoint } : {}),
+    ...(apiKeyEnv ? { apiKeyEnv } : {}),
+    ...(model ? { model } : {}),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(maxStateChars === undefined ? {} : { maxStateChars }),
+    ...(input.classificationEnabled === undefined ? {} : { classificationEnabled: input.classificationEnabled }),
+    ...(input.routeSelectionEnabled === undefined ? {} : { routeSelectionEnabled: input.routeSelectionEnabled }),
+    ...(input.topologyEnabled === undefined ? {} : { topologyEnabled: input.topologyEnabled }),
+    ...(input.planReviewEnabled === undefined ? {} : { planReviewEnabled: input.planReviewEnabled }),
+    ...(input.diagnosisEnabled === undefined ? {} : { diagnosisEnabled: input.diagnosisEnabled })
+    ,...(input.recoveryDirectionEnabled === undefined ? {} : { recoveryDirectionEnabled: input.recoveryDirectionEnabled })
+    ,...(input.contextPackEnabled === undefined ? {} : { contextPackEnabled: input.contextPackEnabled })
+  };
+};
+
 export const validateModelConfig = (input) => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('MODEL_CONFIG_INVALID');
@@ -263,6 +351,7 @@ export const validateModelConfig = (input) => {
   }
   const baseURL = validateUrl(input.baseURL, 'baseURL');
   const endpoint = validateUrl(input.endpoint, 'endpoint');
+  const customInstructions = normalizeCustomInstructions(input.customInstructions);
   return {
     schemaVersion: '1.0',
     ...(provider ? { provider } : {}),
@@ -273,10 +362,13 @@ export const validateModelConfig = (input) => {
     ...(apiKeyEnv ? { apiKeyEnv } : {}),
     ...(input.headers === undefined ? {} : { headers: validateHeaders(input.headers, 'headers') }),
     ...(input.sessionHeader === undefined ? {} : { sessionHeader: validateSessionHeader(input.sessionHeader) }),
+    ...(customInstructions ? { customInstructions } : {}),
     ...(input.models === undefined ? {} : {
       models: Array.isArray(input.models) && input.models.length <= 256 ? input.models.map(validateModelEntry) : (() => { throw new Error('MODEL_CONFIG_INVALID_FIELD:models'); })()
     }),
-    ...(input.roleBindings === undefined ? {} : { roleBindings: validateRoleBindings(input.roleBindings) })
+    ...(input.roleBindings === undefined ? {} : { roleBindings: validateRoleBindings(input.roleBindings) }),
+    ...(input.verifier === undefined ? {} : { verifier: validateVerifierConfig(input.verifier) }),
+    ...(input.decision === undefined ? {} : { decision: validateDecisionConfig(input.decision) })
   };
 };
 
@@ -389,20 +481,62 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     envValue('HMCODEX_MODEL_SESSION_HEADER'),
     usesDefaultRoute ? DEFAULT_MODEL_CONFIG.sessionHeader : undefined
   );
+  const normalizedModel = normalizeLegacyModelAlias({ provider, model, baseURL, endpoint });
   const candidate = {
     schemaVersion: '1.0',
     provider,
     ...(protocol ? { protocol } : {}),
-    model,
+    model: normalizedModel,
     ...(baseURL ? { baseURL } : {}),
     ...(endpoint ? { endpoint } : {}),
     apiKeyEnv,
     ...(headers ? { headers: clone(headers) } : {}),
     ...(sessionHeader ? { sessionHeader } : {}),
+    ...(fileConfig.customInstructions === undefined ? {} : { customInstructions: fileConfig.customInstructions }),
     ...(Array.isArray(fileConfig.models) ? { models: clone(fileConfig.models) } : {}),
-    ...(fileConfig.roleBindings ? { roleBindings: clone(fileConfig.roleBindings) } : {})
+    ...(fileConfig.roleBindings ? { roleBindings: clone(fileConfig.roleBindings) } : {}),
+    ...(fileConfig.verifier ? { verifier: clone(fileConfig.verifier) } : {}),
+    ...(fileConfig.decision ? { decision: clone(fileConfig.decision) } : {})
   };
   const resolved = validateModelConfig(candidate);
   if (isDeepSeek) resolved.protocol = 'deepseek-harness';
   return clone(resolved);
+};
+
+const parseBoolean = (value) => {
+  if (value === undefined) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return undefined;
+};
+
+/** Resolve the optional Jev decision plane without changing the model route. */
+export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {}) => {
+  const configured = fileConfig?.decision ?? {};
+  const envValue = (name) => {
+    const value = env?.[name];
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  };
+  // Jev is the default Decision Plane. Without a credential the engine still
+  // fails closed to its bounded conservative fallbacks; it never revives the
+  // removed LLM verifier path.
+  const enabled = parseBoolean(envValue('HMCODEX_JEV_ENABLED')) ?? configured.enabled ?? true;
+  const enforce = parseBoolean(envValue('HMCODEX_JEV_ENFORCE')) ?? configured.enforce ?? enabled;
+  const endpoint = configured.endpoint ?? envValue('HMCODEX_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/system_one';
+  const apiKeyEnv = configured.apiKeyEnv ?? envValue('HMCODEX_JEV_API_KEY_ENV') ?? 'JEV_API_KEY';
+  const model = configured.model ?? envValue('HMCODEX_JEV_MODEL') ?? 'jev-latest';
+  const timeoutMs = configured.timeoutMs ?? Number(envValue('HMCODEX_JEV_TIMEOUT_MS') ?? 1200);
+  const maxStateChars = configured.maxStateChars ?? Number(envValue('HMCODEX_JEV_MAX_STATE_CHARS') ?? 16000);
+  const featureFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName];
+  return validateDecisionConfig({
+    enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, maxStateChars,
+    classificationEnabled: featureFlag('HMCODEX_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
+    routeSelectionEnabled: featureFlag('HMCODEX_JEV_ROUTE_ENABLED', 'routeSelectionEnabled'),
+    topologyEnabled: featureFlag('HMCODEX_JEV_TOPOLOGY_ENABLED', 'topologyEnabled'),
+    planReviewEnabled: featureFlag('HMCODEX_JEV_PLAN_REVIEW_ENABLED', 'planReviewEnabled'),
+    diagnosisEnabled: featureFlag('HMCODEX_JEV_DIAGNOSIS_ENABLED', 'diagnosisEnabled'),
+    recoveryDirectionEnabled: featureFlag('HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED', 'recoveryDirectionEnabled'),
+    contextPackEnabled: featureFlag('HMCODEX_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled')
+  });
 };

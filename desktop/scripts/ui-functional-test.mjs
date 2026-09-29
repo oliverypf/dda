@@ -14,7 +14,10 @@
 //   node scripts/ui-functional-test.mjs --exe "C:\path\to\hmcodex-desktop.exe" --port 9333
 
 import { spawn, spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
 const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
 const argv = process.argv.slice(2);
@@ -29,6 +32,8 @@ const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9333'));
 const runTaskFlow = flag('--task') || process.env.HMCODEX_UI_TASK === '1';
 const inspectOnly = flag('--inspect');
 const closeWhenDone = flag('--close');
+const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 const results = [];
 const record = (name, status, detail = '') => {
@@ -118,7 +123,7 @@ const waitForTarget = async (timeoutMs = 30000) => {
   while (Date.now() < deadline) {
     try {
       const targets = await fetchTargets();
-      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost/i.test(target.url));
+      const page = targets.find((target) => target.type === 'page' && /tauri\.localhost|localhost|127\.0\.0\.1/i.test(target.url));
       if (page) return page;
     } catch (error) {
       lastError = error;
@@ -138,7 +143,7 @@ const connect = async () => {
   return new CdpClient(ws);
 };
 
-const launchApp = () => {
+const launchApp = (extraEnv = {}) => {
   spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const child = spawn(exe, [], {
     detached: true,
@@ -146,8 +151,10 @@ const launchApp = () => {
     windowsHide: true,
     env: {
       ...process.env,
+      ...extraEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
+      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      HMCODEX_WORKSPACE_ROOT: extraEnv.HMCODEX_WORKSPACE_ROOT ?? workspaceRoot
     }
   });
   child.unref();
@@ -229,25 +236,37 @@ const inspectDom = async (client) => {
     workspaceEntries: document.querySelectorAll('.workspace-entry').length,
     governanceGroups: document.querySelectorAll('.governance-group').length,
     timelineMore: Boolean(document.querySelector('.timeline-more')),
+    workspacePath: document.querySelector('.workspace-path')?.innerText.trim() ?? null,
     bodyText: document.body.innerText.slice(0, 500)
   }, null, 2)`);
   console.log(summary);
 };
 
 const waitForReady = async (client) => {
-  await waitFor(client, `!document.querySelector('.connection-status')?.innerText.includes('正在启动')`, {
+  await waitFor(client, `document.querySelector('.connection-status')?.classList.contains('status-ready') === true`, {
     timeout: 45000,
     interval: 500,
     label: 'runtime ready'
   });
-  await waitFor(client, `document.querySelector('.mode-pill') && (document.querySelector('.mode-pill').disabled === true || /WINDOWS_PHASE1_5_CONTROLLED/u.test(document.querySelector('.mode-pill').title))`, {
-    timeout: 45000,
+  // Runtime readiness is reported before startup recovery finishes loading
+  // persisted state. Wait for the composer gate as well so the initial shell
+  // assertion does not race the background recovery queries.
+  await waitFor(client, `document.querySelector('textarea[name="prompt"]')?.disabled === false`, {
+    timeout: 120000,
     interval: 500,
-    label: 'release mode gate'
+    label: 'composer ready'
+  });
+  // The full-local debug build is a valid native channel too. The previous
+  // gate only accepted the phase-1.5 title, so it timed out after the runtime
+  // was already ready and made the UI suite report a false startup failure.
+  await runTest('T00 发布渠道标记', async () => {
+    await waitFor(client, `document.querySelector('.mode-pill') && /WINDOWS_(?:MVP_PRE_PHASE1|PHASE1_READ_ONLY|PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(document.querySelector('.mode-pill').title)`, {
+      timeout: 5000, interval: 500, label: 'release mode gate'
+    });
   });
 };
 
-const isControlledChannel = async (client) => /WINDOWS_PHASE1_5_CONTROLLED/u.test(await attr(client, '.mode-pill', 'title') ?? '');
+const isControlledChannel = async (client) => /WINDOWS_(?:PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(await attr(client, '.mode-pill', 'title') ?? '');
 
 const suite = async (client) => {
   await waitForReady(client);
@@ -259,7 +278,7 @@ const suite = async (client) => {
     assert(await exists(client, '.workbench'), 'workbench');
     assert(await exists(client, '.context-panel'), 'context-panel');
     assert((await text(client, '.connection-status')).length > 0, 'connection-status');
-    assert((await text(client, '.run-status')) === '等待任务', 'run-status idle');
+    assert(/等待任务|只读检查完成|任务未完成|任务已取消|历史会话/u.test(await text(client, '.run-status')), 'startup restores idle or saved terminal state');
     const controlled = await isControlledChannel(client);
     if (controlled) {
       assert((await attr(client, '.mode-pill', 'disabled')) === null, 'mode pill enabled');
@@ -277,21 +296,39 @@ const suite = async (client) => {
   });
 
   await runTest('T02 上下文面板开关', async () => {
-    const before = await attr(client, '.app-shell', 'class');
+    const before = (await attr(client, '.app-shell', 'class')).includes('context-open');
     assert((await click(client, '[data-action="toggle-context"]')) === 'CLICKED', 'toggle click');
-    await waitFor(client, `document.querySelector('.app-shell')?.className !== ${JSON.stringify(before)}`, { label: 'context panel opened' });
+    await waitFor(client, `document.querySelector('.app-shell')?.classList.contains('context-open') !== ${JSON.stringify(before)}`, { label: 'context panel opened' });
     const opened = await attr(client, '.app-shell', 'class');
-    assert(opened.includes('context-open'), 'context-open class');
+    assert(opened.includes('context-open') !== before, 'context visibility toggled');
     assert((await click(client, '[data-action="toggle-context"]')) === 'CLICKED', 'toggle click again');
-    await waitFor(client, `document.querySelector('.app-shell')?.className === ${JSON.stringify(before)}`, { label: 'context panel closed' });
+    await waitFor(client, `document.querySelector('.app-shell')?.classList.contains('context-open') === ${JSON.stringify(before)}`, { label: 'context panel closed' });
     return 'open/close';
   });
 
-  await runTest('T03 工作区目录导航', async () => {
+  await runTest('T03 工作区目录导航与三态变更证据', async () => {
+    assert((await click(client, '[data-action="navigate"][data-page="workspace"]')) === 'CLICKED', 'workspace page navigation');
+    await waitFor(client, `Boolean(document.querySelector('[data-diff-panel="workspace"]'))`, { label: 'workspace diff panel' });
+    assert(await count(client, '[data-diff-state="proposed"]') === 1, 'proposed diff state');
+    assert(await count(client, '[data-diff-state="executed"]') === 1, 'executed diff state');
+    assert(await count(client, '[data-diff-state="verified"]') === 1, 'verified diff state');
+    assert((await text(client, '[data-diff-panel="workspace"]')).includes('建议 / 执行 / 验证'), 'diff state legend');
+    await waitFor(client, `(document.querySelector('.workspace-path')?.innerText.trim() ?? '').length > 0`, {
+      timeout: 45000,
+      interval: 300,
+      label: 'workspace path'
+    });
     const directory = await client.evaluate(`[...document.querySelectorAll('.workspace-entry[data-entry-kind="DIRECTORY"]')]
       .map((element) => element.dataset.entryPath)[0] ?? null`);
     if (!directory) skipTest('当前工作区没有可导航目录');
     const beforePath = await text(client, '.workspace-path');
+    assert(/^(?:[A-Za-z]:[\\/]|\\\\|\/)/u.test(beforePath), `workspace path is not absolute: ${beforePath}`);
+    const pathLayout = await client.evaluate(`(() => {
+      const element = document.querySelector('.workspace-path');
+      const style = element ? getComputedStyle(element) : null;
+      return element && style ? { whiteSpace: style.whiteSpace, overflowWrap: style.overflowWrap } : null;
+    })()`);
+    assert(pathLayout?.whiteSpace !== 'nowrap' && pathLayout?.overflowWrap === 'anywhere', `workspace path cannot wrap: ${JSON.stringify(pathLayout)}`);
     assert((await clickByDataset(client, '.workspace-entry', 'entryPath', directory)) === 'CLICKED', 'directory click');
     await waitFor(client, `document.querySelector('.workspace-path')?.innerText.trim() !== ${JSON.stringify(beforePath)}`, { label: 'workspace path changed' });
     const afterPath = await text(client, '.workspace-path');
@@ -301,7 +338,7 @@ const suite = async (client) => {
       await click(client, '[data-action="workspace-up"]');
       await waitFor(client, `document.querySelector('.workspace-path')?.innerText.trim() === ${JSON.stringify(beforePath)}`, { label: 'workspace path restored' });
     }
-    return `entered ${directory}${up ? ' + returned' : ''}`;
+    return `${beforePath} · entered ${directory}${up ? ' + returned' : ''}`;
   });
 
   await runTest('T04 文件只读预览', async () => {
@@ -341,9 +378,44 @@ const suite = async (client) => {
 
   await runTest('T06 新建任务重置', async () => {
     assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task click');
-    await waitFor(client, `document.querySelector('.run-status')?.innerText.trim() === '等待任务'`, { label: 'idle after new task' });
+    await waitFor(client, `Boolean(document.querySelector('.project-picker-backdrop'))`, { label: 'project picker visible' });
+    const projectOption = await client.evaluate(`(() => {
+      const options = [...document.querySelectorAll('[data-action="select-new-task-project"]')];
+      return options.find((option) => option.dataset.projectId !== '__projectless__')?.dataset.projectId
+        ?? options[0]?.dataset.projectId
+        ?? null;
+    })()`);
+    assert(projectOption, 'project picker option');
+    assert((await clickByDataset(client, '[data-action="select-new-task-project"]', 'projectId', projectOption)) === 'CLICKED', 'project selected');
+    await waitFor(client, `!document.querySelector('.project-picker-backdrop')`, { label: 'project picker closed' });
+    await waitFor(client, `document.querySelector('.run-status')?.innerText.trim().startsWith('等待任务')`, { label: 'idle after new task' });
     assert((await attr(client, '.composer-stop', 'disabled')) !== null, 'cancel disabled idle');
     assert((await attr(client, '.send-button', 'disabled')) === null, 'send enabled idle');
+    const editableProject = await client.evaluate(`(() => {
+      const button = document.querySelector('.project-edit-button');
+      const project = button?.closest('.project-group')?.querySelector('.project-header-copy strong')?.innerText.trim() ?? null;
+      return button && project ? { project } : null;
+    })()`);
+    assert(editableProject?.project, 'editable project');
+    assert((await click(client, '.project-edit-button')) === 'CLICKED', 'edit project click');
+    await waitFor(client, `Boolean(document.querySelector('.project-edit-card'))`, { label: 'project edit dialog' });
+    assert(await exists(client, '[data-action="add-project-target"]'), 'add target control');
+    const editName = `${editableProject.project}（测试）`;
+    assert((await client.evaluate(`(() => { const input = document.querySelector('[data-role="project-edit-name"]'); if (!input) return 'NOT_FOUND'; input.value = ${JSON.stringify(editName)}; input.dispatchEvent(new Event('input', { bubbles: true })); return 'SET'; })()`)) === 'SET', 'edit project name');
+    assert((await click(client, '[data-action="save-project-edit"]')) === 'CLICKED', 'save project edit');
+    await waitFor(client, `!document.querySelector('.project-edit-card')`, { label: 'project edit closed' });
+    assert((await client.evaluate(`document.body.innerText.includes(${JSON.stringify(editName)})`)), 'edited project name visible');
+    assert((await click(client, '.project-edit-button')) === 'CLICKED', 'reopen project edit');
+    await waitFor(client, `Boolean(document.querySelector('.project-edit-card'))`, { label: 'project edit reopen' });
+    await client.evaluate(`(() => { const input = document.querySelector('[data-role="project-edit-name"]'); input.value = ${JSON.stringify(editableProject.project)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await click(client, '[data-action="save-project-edit"]');
+    await waitFor(client, `!document.querySelector('.project-edit-card')`, { label: 'project edit restore' });
+    assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'projectless new task click');
+    await waitFor(client, `Boolean(document.querySelector('.project-picker-backdrop'))`, { label: 'projectless picker visible' });
+    assert((await clickByDataset(client, '[data-action="select-new-task-project"]', 'projectId', '__projectless__')) === 'CLICKED', 'projectless selected');
+    await waitFor(client, `!document.querySelector('.project-picker-backdrop')`, { label: 'projectless picker closed' });
+    const projectlessLabel = await text(client, '.workspace-identity strong');
+    assert(projectlessLabel === '未绑定项目', `projectless workspace label: ${projectlessLabel}`);
     return 'idle/composer reset';
   });
 
@@ -351,22 +423,29 @@ const suite = async (client) => {
     const threads = await count(client, '.thread-row');
     if (threads === 0) skipTest('当前没有已保存线程');
     const first = await client.evaluate(`(() => {
-      const row = document.querySelector('.thread-row');
+      const row = [...document.querySelectorAll('.thread-row')].find((candidate) => !candidate.innerText.includes('0 次 Turn'));
       return row ? { id: row.dataset.threadId, title: row.querySelector('.thread-title')?.innerText.trim() ?? '' } : null;
     })()`);
     assert(first?.id, 'first thread id');
     assert((await clickByDataset(client, '.thread-row', 'threadId', first.id)) === 'CLICKED', 'thread click');
     await waitFor(client, `document.querySelector('.thread-row.active')?.dataset.threadId === ${JSON.stringify(first.id)}`, { label: 'thread active' });
     await waitFor(client, `document.querySelectorAll('.timeline-item').length > 0`, { label: 'thread timeline' });
+    await waitFor(client, `document.querySelector('[data-region="conversation"]')?.getAttribute('aria-busy') === 'false'`, { label: 'history load settled' });
+    assert(await exists(client, 'textarea[name="prompt"]'), 'composer after history load');
+    assert((await attr(client, 'textarea[name="prompt"]', 'disabled')) === null, 'composer enabled after history load');
+    assert(await exists(client, '.run-status'), 'run status after history load');
+    assert((await text(client, '.run-status')).startsWith('等待任务') || /任务未完成|只读检查完成|任务已取消|已验证完成|历史会话/u.test(await text(client, '.run-status')), 'run status after history load');
+    const historyText = await text(client, 'body');
+    for (const hiddenKind of ['RecoveryStarted', 'RecoveryCompleted', 'DiagnosisRequested', 'DreamRunReconciled']) {
+      assert(!historyText.includes(hiddenKind), `internal history event hidden: ${hiddenKind}`);
+    }
     return `${first.title || first.id} · ${await count(client, '.timeline-item')} timeline items`;
   });
 
-  await runTest('T08 时间线分页', async () => {
-    if (!(await exists(client, '.timeline-more'))) skipTest('当前时间线没有更多分页');
-    const before = await count(client, '.timeline-item');
-    assert((await click(client, '[data-action="load-more-timeline"]')) === 'CLICKED', 'load more click');
-    await waitFor(client, `document.querySelectorAll('.timeline-item').length > ${before}`, { timeout: 20000, label: 'timeline grew' });
-    return `${before} -> ${await count(client, '.timeline-item')}`;
+  await runTest('T08 会话不加载全局审计分页', async () => {
+    assert(!(await exists(client, '.timeline-more')), 'global audit pagination hidden from transcript');
+    assert(!(await exists(client, '[data-action="load-more-timeline"]')), 'global timeline action absent');
+    return `${await count(client, '.timeline-item')} thread timeline items`;
   });
 
   await runTest('T09 治理面板刷新', async () => {
@@ -389,8 +468,33 @@ const suite = async (client) => {
     return 'no render error';
   });
 
+  for (const page of ['runs', 'workspace', 'memory', 'safety', 'diagnostics', 'workbench']) {
+    await runTest(`NAV ${page}`, async () => {
+      assert((await clickByDataset(client, '.nav-list [data-page]', 'page', page)) === 'CLICKED', 'navigation click');
+      await waitFor(client, `document.querySelector('.nav-list [data-page="${page}"]')?.classList.contains('active')`, { label: `${page} active` });
+      assert((await text(client, '.transcript')).length > 0, 'page content visible');
+      assert(!(await text(client, 'body')).includes('界面渲染出错'), 'no render error');
+      return 'active navigation and visible content';
+    });
+  }
+
   if (runTaskFlow) {
+    await runTest('T13 真实任务终态与时间线渲染', async () => {
+      assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task click');
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 10000, label: 'new task ready to submit' });
+      assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
+      assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
+      await waitFor(client, `document.querySelector('.composer-stop')?.disabled === false`, { timeout: 30000, label: 'new task actually started' });
+      await waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'task terminal state' });
+      const terminal = await text(client, '.run-status');
+      assert((await count(client, '.timeline-item')) > 0, 'timeline items after terminal state');
+      await waitFor(client, `document.querySelectorAll('.thread-row').length > 0`, { timeout: 60000, label: 'thread persisted after terminal state' });
+      const hasErrorOrOutput = await client.evaluate(`[...document.querySelectorAll('.timeline-item')].some((item) => item.innerText.length > 80 || /run\\.failed|PLAN_STEP_FAILED|错误|失败/u.test(item.innerText))`);
+      assert(hasErrorOrOutput, 'timeline renders model output or terminal error');
+      return `${terminal} · ${await count(client, '.timeline-item')} timeline items · ${await count(client, '.thread-row')} threads`;
+    });
     await runTest('T12 真实任务取消流程', async () => {
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 180000, label: 'previous task reader released' });
       assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
       assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
       await waitFor(client, `document.querySelector('.composer-stop') && !document.querySelector('.composer-stop').disabled`, { timeout: 30000, label: 'cancel enabled while running' });
@@ -398,22 +502,10 @@ const suite = async (client) => {
       assert((await click(client, '.composer-stop')) === 'CLICKED', 'cancel click');
       await waitFor(client, `document.querySelector('.run-status')?.innerText.includes('任务已取消')`, { timeout: 30000, label: 'cancelled state' });
       assert((await attr(client, '.composer-stop', 'disabled')) !== null, 'cancel disabled after cancellation');
-      assert((await attr(client, '.send-button', 'disabled')) === null, 'send enabled after cancellation');
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 10000, label: 'send enabled after cancellation' });
       return 'running -> cancelled -> idle';
     });
 
-    await runTest('T13 真实任务终态与时间线渲染', async () => {
-      assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task click');
-      assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
-      assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
-      await waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'task terminal state' });
-      const terminal = await text(client, '.run-status');
-      assert((await count(client, '.timeline-item')) > 0, 'timeline items after terminal state');
-      assert((await count(client, '.thread-row')) > 0, 'thread persisted after terminal state');
-      const hasErrorOrOutput = await client.evaluate(`[...document.querySelectorAll('.timeline-item')].some((item) => item.innerText.length > 80 || /run\\.failed|PLAN_STEP_FAILED|错误|失败/u.test(item.innerText))`);
-      assert(hasErrorOrOutput, 'timeline renders model output or terminal error');
-      return `${terminal} · ${await count(client, '.timeline-item')} timeline items · ${await count(client, '.thread-row')} threads`;
-    });
   } else {
     skip('T12 真实任务取消流程', '使用 --task 运行真实模型任务流程');
     skip('T13 真实任务终态与时间线渲染', '使用 --task 运行真实模型任务流程');
@@ -421,7 +513,13 @@ const suite = async (client) => {
 };
 
 const main = async () => {
-  const pid = launchApp();
+  const fixture = runTaskFlow ? await startUiModelFixture({ delayMs: 80 }) : undefined;
+  const pid = launchApp(fixture ? {
+    ...fixture.env,
+    HMCODEX_MODEL_CONFIG: fixture.modelConfigPath,
+    HMCODEX_UI_MODEL_FIXTURE_KEY: 'fixture-key',
+    HMCODEX_WORKSPACE_ROOT: fixture.workspaceRoot
+  } : {});
   console.log(`hmCodex UI functional tests · exe=${exe} · port=${port} · pid=${pid}`);
   let client;
   try {
@@ -436,6 +534,7 @@ const main = async () => {
     if (closeWhenDone) {
       spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
     }
+    await fixture?.close();
   }
   const passed = results.filter((item) => item.status === 'PASS').length;
   const failed = results.filter((item) => item.status === 'FAIL').length;

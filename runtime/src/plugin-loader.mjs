@@ -3,6 +3,8 @@ import { realpath, readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pluginGovernanceDigest } from './plugin-governance.mjs';
+import { KNOWN_PERMISSIONS, PERMISSION_CEILINGS, permissionsExceedingCeiling } from './plugin-permissions.mjs';
+import { emptyPluginRevocations, pluginRevocationHit, readPluginRevocations } from './plugin-revocations.mjs';
 import { preferMappedPath } from './windows-path.mjs';
 import { resolveReleaseChannel } from './release-channel.mjs';
 
@@ -12,19 +14,7 @@ const CONTRIBUTION_TYPES = new Set([
   'agent', 'skill', 'verifier', 'model-provider', 'executor', 'workspace',
   'approval', 'ui-contribution', 'tooling'
 ]);
-const PERMISSION_CEILINGS = new Set(['READ_ONLY', 'CONTROLLED']);
 const SIGNATURE_ALGORITHMS = new Set(['ed25519']);
-// This is the host permission vocabulary. Unknown permissions are rejected so
-// a typo cannot silently turn into a future capability grant.
-const KNOWN_PERMISSIONS = new Set([
-  'workspace.read.metadata', 'workspace.read.content', 'workspace.read.snapshot',
-  'workspace.write.patch', 'filesystem.write.workspace',
-  'process.execute.argv', 'process.execute.shell', 'process.spawn.restricted',
-  'network.connect.host', 'trajectory.read.redacted', 'trajectory.write',
-  'profile.read', 'profile.propose-update', 'ui.render.timeline-item',
-  'executor.invoke.controlled', 'thread.read', 'thread.write',
-  'plugin.manifest.read', 'plugin.registry.write'
-]);
 
 const digestBytes = (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const clone = (value) => structuredClone(value);
@@ -52,7 +42,7 @@ const validApiRange = (value) => {
 };
 
 const validPermission = (value) => typeof value === 'string'
-  && KNOWN_PERMISSIONS.has(value);
+  && KNOWN_PERMISSIONS.includes(value);
 
 const validCapability = (value) => typeof value === 'string'
   && /^[a-z][a-z0-9._-]{1,127}$/iu.test(value);
@@ -102,10 +92,13 @@ export const validatePluginManifest = (manifest) => {
     if (contribution.permissions?.some((value) => !validPermission(value))) {
       throw new Error('PLUGIN_PERMISSIONS_UNDECLARED');
     }
-    if (contribution.permissionCeiling !== undefined && !PERMISSION_CEILINGS.has(contribution.permissionCeiling)) {
+    if (contribution.permissionCeiling !== undefined && !PERMISSION_CEILINGS.includes(contribution.permissionCeiling)) {
       throw new Error('PLUGIN_PERMISSION_CEILING_INVALID');
     }
   }
+  // A declared ceiling is an upper bound, not a label: a READ_ONLY manifest that
+  // declares control-level permissions is rejected before it can be loaded.
+  if (permissionsExceedingCeiling(manifest).length > 0) throw new Error('PLUGIN_PERMISSION_CEILING_EXCEEDED');
   if (manifest.dependencies !== undefined) {
     if (!Array.isArray(manifest.dependencies) || manifest.dependencies.length > 64) throw new Error('PLUGIN_DEPENDENCIES_INVALID');
     const seenDependencies = new Set();
@@ -210,14 +203,33 @@ export class DynamicPluginLoader {
   #governance;
   #registry;
   #importer;
+  #revocations;
+  #revocationProvider;
   #loaded = new Map();
 
-  constructor({ rootDir, governance, registry, importer = (url) => import(url) } = {}) {
+  constructor({ rootDir, governance, registry, importer = (url) => import(url), revocations, revocationProvider } = {}) {
     if (!rootDir || !governance || !registry) throw new Error('PLUGIN_LOADER_INVALID');
     this.#rootDir = rootDir;
     this.#governance = governance;
     this.#registry = registry;
     this.#importer = importer;
+    this.#revocations = revocations;
+    this.#revocationProvider = revocationProvider;
+  }
+
+  /**
+   * The operator revocation list is re-read for every operation so a revoked
+   * artifact is blocked on the next discovery or load without a restart.
+   */
+  async #revocationList() {
+    if (this.#revocations) return this.#revocations;
+    if (typeof this.#revocationProvider === 'function') return this.#revocationProvider();
+    return readPluginRevocations();
+  }
+
+  async #revocationHit(identity) {
+    const list = await this.#revocationList();
+    return pluginRevocationHit(identity, list ?? emptyPluginRevocations());
   }
 
   async discover({ manifest, entryPath, packageDigest, signature } = {}) {
@@ -231,6 +243,9 @@ export class DynamicPluginLoader {
     const bytes = await readFile(file);
     const actualDigest = digestBytes(bytes);
     if (packageDigest !== undefined && packageDigest !== actualDigest) throw new Error('PLUGIN_PACKAGE_DIGEST_MISMATCH');
+    // A revoked artifact is refused before any governance record is created.
+    const revoked = await this.#revocationHit({ pluginId: manifest.id, version: manifest.version, entryDigest: actualDigest });
+    if (revoked.hit) throw new Error(revoked.kind === 'DIGEST' ? 'PLUGIN_PACKAGE_REVOKED' : 'PLUGIN_VERSION_REVOKED');
     const governedManifest = {
       ...clone(manifest),
       entryPath: relative(this.#rootDir, file).replaceAll('\\', '/'),
@@ -251,6 +266,18 @@ export class DynamicPluginLoader {
     const record = this.#governance.get(pluginId);
     if (!record) throw new Error('PLUGIN_NOT_FOUND');
     if (record.state !== 'ACTIVE') throw new Error(`PLUGIN_NOT_ACTIVE:${record.state}`);
+    // A revocation hit quarantines the installed record as well as refusing the
+    // import, so a previously ACTIVE plugin cannot keep running after revoke.
+    const revoked = await this.#revocationHit({
+      pluginId,
+      version: record.manifest?.version,
+      entryDigest: record.manifest?.entryDigest,
+      packageDigest: record.packageDigest
+    });
+    if (revoked.hit) {
+      await this.#governance.revoke(pluginId, `PLUGIN_REVOCATION_HIT_${revoked.kind}`).catch(() => {});
+      throw new Error(revoked.kind === 'DIGEST' ? 'PLUGIN_PACKAGE_REVOKED' : 'PLUGIN_VERSION_REVOKED');
+    }
     const entryPath = record.manifest?.entryPath;
     const file = await this.#authorizedFile(entryPath);
     const bytes = await readFile(file);

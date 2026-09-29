@@ -3,7 +3,7 @@ import { persistJsonFile, readPersistentJsonFile } from './persistent-json-store
 import { createHarnessEventStore, validateHarnessEvent } from './harness-event-store.mjs';
 
 const SCHEMA_VERSION = '1.0';
-const PROJECTION_VERSION = 8;
+const PROJECTION_VERSION = 10;
 const MAX_EVENTS = 100_000;
 const MAX_RUNS = 4_096;
 // Array input stays bounded; streamed rebuilds can project a larger timeline
@@ -85,6 +85,7 @@ const KNOWN_EVENT_KINDS = new Set([
   'ModelRegistryRecordUpdated',
   'CreditBlameRecorded',
   'ModelEgressRecorded',
+  'ModelUsageRecorded',
   'DreamRunStarted',
   'DreamPhaseCheckpointed',
   'DreamRunFinished',
@@ -92,11 +93,66 @@ const KNOWN_EVENT_KINDS = new Set([
   ,'CandidateVerificationSample', 'CandidateVerificationCompleted'
 ]);
 
+// These facts feed dedicated read models or runtime recovery. Showing them in
+// the conversation duplicates other UI and makes historical dashboard loads
+// create hundreds of low-value DOM rows.
+const NON_CONVERSATIONAL_TIMELINE_KINDS = new Set([
+  'RoleContextsReconciled',
+  'DiagnosisRequested',
+  'RecoveryPhaseEntered',
+  'RecoveryStarted',
+  'RecoveryCompleted',
+  'ExecutionStateReconciled',
+  'ExecutionStateChanged',
+  'GitStateObserved',
+  'ThreadCheckpointCommitted',
+  'ThreadCheckpointCleared',
+  'DecisionTraceEvent',
+  'FeedbackFactRecorded',
+  'FeedbackSubmitted',
+  'FeedbackRevised',
+  'FeedbackRetracted',
+  'ModelScenarioScoreProjected',
+  'BayesianAssessmentCreated',
+  'MemoryProposalCommitted',
+  'MemoryStateChanged',
+  'RoleContextAllocated',
+  'RoleContextStateChanged',
+  'PluginDiscovered',
+  'PluginStateChangeCommitted',
+  'EvolutionProposalCommitted',
+  'EvolutionStateChanged',
+  'EvolutionOutcomeRecorded',
+  'EvolutionEvaluationRecorded',
+  'ProfileEvidenceRecorded',
+  'ProfileProjectionUpdated',
+  'ModelRegistryRecordCommitted',
+  'ModelRegistryRecordUpdated',
+  'CreditBlameRecorded',
+  'ModelEgressRecorded',
+  'ModelUsageRecorded',
+  'DreamRunStarted',
+  'DreamPhaseCheckpointed',
+  'DreamRunFinished',
+  'DreamRunReconciled',
+  'CandidateVerificationSample',
+  'CandidateVerificationCompleted'
+]);
+
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const clone = (value) => structuredClone(value);
 const text = (value, fallback = '', max = 240) => typeof value === 'string' && value.trim()
   ? value.replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').trim().slice(0, max)
   : fallback;
+
+const verificationChecks = (value) => Array.isArray(value)
+  ? value.slice(0, 24).map((check) => ({
+      id: text(check?.id, 'unknown', 120),
+      status: text(check?.status, 'UNKNOWN', 24),
+      message: text(check?.message, '未提供检查说明', 640),
+      ...(Array.isArray(check?.evidence) ? { evidence: check.evidence.filter((ref) => typeof ref === 'string').slice(0, 8).map((ref) => ref.slice(0, 200)) } : {})
+    }))
+  : [];
 // Decision DAG edges stay bounded and de-duplicated so a corrupt or hostile
 // snapshot cannot inflate the projection or point a node at itself transitively.
 const refIds = (value, max = 64) => {
@@ -115,6 +171,24 @@ const canonical = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (isObject(value)) return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
+};
+// The A-T probability distribution is the only evidence behind a continuous
+// score. It is bounded and token-only so a corrupt or hostile event cannot
+// inflate the projection; no prompt, output or reasoning text passes through.
+const scoreDistribution = (value, max = 20) => {
+  if (!Array.isArray(value)) return undefined;
+  const items = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    const token = text(item.token, '', 4).toUpperCase();
+    if (!/^[A-T]$/u.test(token)) continue;
+    const { probability, value: score } = item;
+    if (!Number.isFinite(probability) || probability < 0 || probability > 1) continue;
+    if (!Number.isFinite(score) || score < 0 || score > 1) continue;
+    items.push({ token, probability, value: score });
+    if (items.length >= max) break;
+  }
+  return items.length ? items : undefined;
 };
 const safeNumber = (value, fallback = 0) => Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback;
 const payloadOf = (event) => isObject(event?.payload) ? event.payload : {};
@@ -216,6 +290,7 @@ const emptyProjection = () => ({
   schemaVersion: SCHEMA_VERSION,
   projectionVersion: PROJECTION_VERSION,
   projectionChecksum: undefined,
+  sourceEventCount: 0,
   lastEventSequence: {},
   runCount: 0,
   runs: [],
@@ -235,6 +310,7 @@ const emptyProjection = () => ({
 });
 
 const addTimeline = (projection, event, run) => {
+  if (NON_CONVERSATIONAL_TIMELINE_KINDS.has(event.kind)) return false;
   if (projection.timeline.length >= MAX_TIMELINE) throw new Error('READ_MODEL_TIMELINE_LIMIT');
   const payload = payloadOf(event);
   const status = eventStatus(event, payload, run);
@@ -248,6 +324,7 @@ const addTimeline = (projection, event, run) => {
     eventId: text(event.eventId, `${event.runId}-${event.sequence}`, 240),
     eventSequence: event.sequence
   });
+  return true;
 };
 
 const applyEvent = (projection, event, runs) => {
@@ -296,8 +373,7 @@ const applyEvent = (projection, event, runs) => {
   if (run.unsupportedEventIds?.length) {
     // Unknown semantics cannot be cleared by a later success/approval event.
     // Preserve chronology without applying more authority-bearing state.
-    addTimeline(projection, event, run);
-    projection.timeline.at(-1).status = 'PAUSED_UNSUPPORTED';
+    if (addTimeline(projection, event, run)) projection.timeline.at(-1).status = 'PAUSED_UNSUPPORTED';
     return;
   }
   if (event.kind === 'TaskRunCreated') {
@@ -340,11 +416,28 @@ const applyEvent = (projection, event, runs) => {
     };
   }
   if (event.kind === 'VerificationCompleted' || event.kind === 'SemanticVerificationCompleted') {
+    // SemanticVerificationCompleted additionally carries the continuous A-T
+    // process score. It is projected through the same bounded token-only
+    // helper as the candidate samples, so no model text can ride along.
+    const distribution = scoreDistribution(payload.distribution);
     projection.verifier = {
       status: text(payload.status, 'ABSTAIN', 40).toUpperCase(),
+      ...(typeof payload.summary === 'string' ? { summary: text(payload.summary, '', 640) } : {}),
+      ...(typeof payload.nextAction === 'string' ? { nextAction: text(payload.nextAction, '', 120) } : {}),
+      ...(Array.isArray(payload.checks) ? { checks: verificationChecks(payload.checks) } : {}),
       failureCodes: Array.isArray(payload.failureCodes) ? payload.failureCodes.filter((code) => typeof code === 'string').map((code) => code.slice(0, 120)).slice(0, 32) : [],
       lastRunId: event.runId,
-      lastEventSequence: event.sequence
+      lastEventSequence: event.sequence,
+      ...(Number.isFinite(payload.score) ? { score: payload.score } : {}),
+      ...(Number.isFinite(payload.variance) ? { variance: payload.variance } : {}),
+      ...(distribution ? { distribution } : {}),
+      ...(typeof payload.method === 'string' ? { method: text(payload.method, '', 60) } : {}),
+      // `source` is the degradation reason: which channel produced the score or
+      // why the host refused to synthesise one.
+      ...(typeof payload.source === 'string' ? { source: text(payload.source, '', 60) } : {}),
+      ...(isObject(payload.thresholds) && Number.isFinite(payload.thresholds.passThreshold) && Number.isFinite(payload.thresholds.failThreshold)
+        ? { thresholds: { passThreshold: payload.thresholds.passThreshold, failThreshold: payload.thresholds.failThreshold } }
+        : {})
     };
   }
   if (event.kind === 'TaskRunCompleted' || event.kind === 'TaskRunFailed') {
@@ -373,7 +466,13 @@ const applyEvent = (projection, event, runs) => {
         leftScore: Number.isFinite(payload.left?.score) ? payload.left.score : undefined,
         rightScore: Number.isFinite(payload.right?.score) ? payload.right.score : undefined,
         leftVariance: Number.isFinite(payload.left?.variance) ? payload.left.variance : undefined,
-        rightVariance: Number.isFinite(payload.right?.variance) ? payload.right.variance : undefined
+        rightVariance: Number.isFinite(payload.right?.variance) ? payload.right.variance : undefined,
+        // The A-T probability distribution is the actual evidence behind a
+        // continuous score. It is bounded and token-only (no text), so the
+        // dashboard can show why a score came out where it did without
+        // exposing model output or reasoning.
+        leftDistribution: scoreDistribution(payload.left?.distribution),
+        rightDistribution: scoreDistribution(payload.right?.distribution)
       } : {
         config: isObject(payload.config) ? clone(payload.config) : undefined,
         comparisonCount: safeNumber(payload.comparisonCount), ranking: Array.isArray(payload.ranking) ? payload.ranking.slice(0, 8) : []
@@ -532,10 +631,32 @@ export const rebuildReadModel = async ({ events, eventStore, storagePath, runId,
   projection.runCount = projection.runs.length;
   projection.timeline.sort((left, right) => left.createdAtMs - right.createdAtMs || left.eventId.localeCompare(right.eventId));
   projection.unknownEventKinds.sort();
+  projection.sourceEventCount = Object.values(projection.lastEventSequence)
+    .reduce((total, sequence) => total + safeNumber(sequence), 0);
   projection.rebuiltAtMs = safeNumber(now(), 0);
   projection.projectionChecksum = digest(projectionUnsigned(projection));
   if (storagePath) await persistJsonFile(storagePath, projection);
   return clone(projection);
+};
+
+export const loadFreshReadModel = async ({ eventStore, storagePath } = {}) => {
+  if (!eventStore || !storagePath) return undefined;
+  await eventStore.load?.();
+  const persisted = await readPersistentJsonFile(storagePath);
+  const summary = eventStore.summary?.();
+  if (!isObject(persisted) || !isObject(summary)
+    || persisted.schemaVersion !== SCHEMA_VERSION
+    || persisted.projectionVersion !== PROJECTION_VERSION
+    || !Array.isArray(persisted.timeline)
+    || !Array.isArray(persisted.runs)
+    || !isObject(persisted.lastEventSequence)
+    || !Number.isInteger(persisted.sourceEventCount)
+    || persisted.sourceEventCount !== summary.eventCount
+    || canonical(persisted.lastEventSequence) !== canonical(summary.lastSequenceByRun)
+    || persisted.projectionChecksum !== digest(projectionUnsigned(persisted))) {
+    return undefined;
+  }
+  return clone(persisted);
 };
 
 export const replayRun = async ({ runId, events, eventStore, storagePath, now = Date.now } = {}) => {
@@ -583,6 +704,7 @@ export const pageProjectionTimeline = (projection, { cursor = 0, limit = 200 } =
 
 export const createReadModelRebuilder = (options = {}) => ({
   rebuild: (input = {}) => rebuildReadModel({ ...options, ...input }),
+  loadFresh: (input = {}) => loadFreshReadModel({ ...options, ...input }),
   replayRun: (input = {}) => replayRun({ ...options, ...input }),
   projectionCheck: (input = {}) => projectionCheck({ ...options, ...input }),
   pageTimeline: (projection, input = {}) => pageProjectionTimeline(projection, input)

@@ -35,6 +35,7 @@ const reference = (recordId, recordType) => {
   return recordId.trim();
 };
 const requestSummary = (request = {}) => ({
+  ...(safeText(request.reason, 240) ? { reason: safeText(request.reason, 240) } : {}),
   ...(safeText(request.command, 4096) ? { command: safeText(request.command, 4096) } : {}),
   ...(Array.isArray(request.args) ? { argsDigest: digest(request.args), argCount: request.args.length } : {}),
   ...(safeText(request.path) ? { path: safeText(request.path) } : {}),
@@ -319,6 +320,26 @@ export class ExecutionStateStore {
     if (lease.state === 'REVOKED' || lease.state === 'EXPIRED') return clone(lease);
     if (!['PROPOSED', 'ACTIVE', 'CONSUMING'].includes(lease.state)) throw new Error(`EXECUTION_LEASE_NOT_REVOCABLE:${lease.state}`);
     return this.transition(recordId, 'REVOKED', { reason });
+  }
+
+  async cancelOrphanedApproval(recordId, { expectedDigest, reason = 'RECOVERY_CANCELLED', isOwnerAlive = defaultOwnerAlive } = {}) {
+    await this.load();
+    const approval = this.#records.get(recordId);
+    if (!approval || approval.recordType !== 'approval') throw new Error('EXECUTION_APPROVAL_NOT_FOUND');
+    if (!['REQUESTED', 'PRESENTED'].includes(approval.state)) throw new Error(`EXECUTION_APPROVAL_NOT_PENDING:${approval.state}`);
+    if (expectedDigest !== undefined && expectedDigest !== approval.recordDigest) throw new Error('EXECUTION_STATE_CONFLICT');
+    if (typeof isOwnerAlive !== 'function') throw new Error('EXECUTION_APPROVAL_OWNER_ALIVE');
+    const ownerAlive = Number.isInteger(approval.ownerPid) && approval.ownerPid >= 1 && isOwnerAlive(approval.ownerPid);
+    if (ownerAlive) throw new Error('EXECUTION_APPROVAL_OWNER_ALIVE');
+    return this.transition(recordId, 'CANCELLED', { reason });
+  }
+
+  async revokeLeaseWithDigest(recordId, { expectedDigest, reason = 'RECOVERY_REVOKED' } = {}) {
+    await this.load();
+    const lease = this.#records.get(recordId);
+    if (!lease || lease.recordType !== 'lease') throw new Error('EXECUTION_LEASE_NOT_FOUND');
+    if (expectedDigest !== undefined && expectedDigest !== lease.recordDigest) throw new Error('EXECUTION_STATE_CONFLICT');
+    return this.revokeLease(recordId, reason);
   }
 
   async expireLeases(now = Date.now()) {

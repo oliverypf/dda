@@ -2,7 +2,9 @@
 
 当前主线：阶段一已完成，进入阶段二 W8 `WINDOWS_PHASE1_5_CONTROLLED` 安全门实施。M0–M5 与 M7 的构建、安装、自动化及真实设备容量证据已齐；M6 的 30 天 retention 日历观察作为发布后运维项继续运行。阶段二细化计划见 [WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md](WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md)。
 
-2026-09-09 阶段二计划已建立：以 W8 `WINDOWS_PHASE1_5_CONTROLLED` 为第一发布门，先完成 Controlled channel、ActionIntent/Safety、Approval、一次性 PolicyLease、Windows Executor、Coordinator/Recovery 和 P0/P1 安全测试；安全门通过后再进入 W9 的 OpenViking、Plugin、Thread、Feedback/Bayesian、Memory/Dream、Evolution 和 Dashboard 完整集成，最后以 W10 长运行、实际使用和 `WINDOWS_FULL_LOCAL` 发布收口。工作包、依赖、agent 分工、并行测试规则和指标见 [WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md](WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md)。
+2026-09-09 阶段二计划已建立：以 W8 `WINDOWS_PHASE1_5_CONTROLLED` 为第一发布门，先完成 Controlled channel、ActionIntent/Safety、Approval、一次性 PolicyLease、Windows Executor、Coordinator/Recovery 和 P0/P1 安全测试；安全门通过后再进入 Jev Decision Plane、Plugin、Thread、Feedback/Bayesian、Memory/Dream、Evolution 和 Dashboard 完整集成，最后以 W10 长运行、实际使用和 `WINDOWS_FULL_LOCAL` 发布收口。工作包、依赖、agent 分工、并行测试规则和指标见 [WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md](WINDOWS_PHASE2_IMPLEMENTATION_PLAN.md)。
+
+> **历史进度说明**：本文件保留旧阶段进度和证据。文中 OpenViking、LLM-as-a-Verifier、semantic verifier、logprobs 或独立 judge 的记录描述历史候选版本，当前设计均由 [Jev Decision Plane 设计](JEV_DECISION_PLANE_DESIGN.md) supersede，不得作为后续实现要求。
 
 2026-09-09 LLM as a Verifier 状态核对：`agent-turns.mjs` 已有独立、无工具权限的 `runSemanticVerifierTurn`，`agentMode=multi` 的任务在每个步骤先执行 RuleVerifier，再调用配置的 semantic verifier provider；输出解析为 `PASS/FAIL/ABSTAIN`，无效或 provider 不可用时安全降级，结果进入 Verification/Decision/Outcome 脱敏链路。当前 `agentMode=single` 不调用该角色，高风险任务的独立模型/provider 要求、完整状态映射、受控副作用验收、P0/P1 对抗测试和完整 UI 展示纳入阶段二 S2-06/S2-08。
 

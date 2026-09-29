@@ -4,9 +4,19 @@ import { scoreTokenExpectation, extractScoreDistribution, compareVerifiedCandida
 
 test('continuous verifier normalizes bounded configuration and rejects unsafe budgets', () => {
   const config = normalizeContinuousVerifierConfig({ criteria: [' quality '], repetitions: 3, maxComparisons: 10, pivots: 1, seed: 's', maxPromptChars: 2048 });
-  assert.deepEqual(config, { criteria: ['quality'], repetitions: 3, maxComparisons: 10, pivots: 1, seed: 's', maxPromptChars: 2048 });
+  assert.deepEqual(config, { criteria: ['quality'], repetitions: 3, maxComparisons: 10, pivots: 1, seed: 's', maxPromptChars: 2048, passThreshold: 0.9, failThreshold: 0.5 });
   assert.throws(() => normalizeContinuousVerifierConfig({ repetitions: 0 }), /REPETITIONS_INVALID/u);
   assert.throws(() => normalizeContinuousVerifierConfig({ maxPromptChars: 10 }), /PROMPT_LIMIT_INVALID/u);
+});
+
+test('process verdict thresholds are operator configuration with a validated window', () => {
+  const custom = normalizeContinuousVerifierConfig({ passThreshold: 0.95, failThreshold: 0.2 });
+  assert.equal(custom.passThreshold, 0.95);
+  assert.equal(custom.failThreshold, 0.2);
+  // An inverted or out-of-range window must fail closed rather than fall back.
+  assert.throws(() => normalizeContinuousVerifierConfig({ passThreshold: 0.4, failThreshold: 0.6 }), /VERIFIER_THRESHOLD_INVALID/u);
+  assert.throws(() => normalizeContinuousVerifierConfig({ passThreshold: 1.2 }), /VERIFIER_THRESHOLD_INVALID/u);
+  assert.throws(() => normalizeContinuousVerifierConfig({ failThreshold: -0.1 }), /VERIFIER_THRESHOLD_INVALID/u);
 });
 
 test('verifier uses probability expectation rather than the selected integer or letter', () => {

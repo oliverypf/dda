@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
 import { Context } from '@deepseek-ai/cordis';
 import { createOpenAICompatiblePlugin } from '../src/plugins/model-openai.mjs';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const tool = {
   name: 'workspace.read',
@@ -42,8 +42,7 @@ test('passes Responses function definitions and assembles argument deltas', asyn
     response.end();
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const root = new Context();
   await root.plugin(createOpenAICompatiblePlugin({
@@ -84,8 +83,7 @@ test('passes Chat Completions function definitions and assembles tool-call delta
     response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const root = new Context();
   await root.plugin(createOpenAICompatiblePlugin({
@@ -117,8 +115,7 @@ test('keeps a valid tool-call id and name when later deltas send null fields', a
     response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const root = new Context();
   await root.plugin(createOpenAICompatiblePlugin({
@@ -153,8 +150,7 @@ test('serializes Responses assistant tool calls and function outputs for a follo
     response.end('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"done"}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\n');
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const root = new Context();
   await root.plugin(createOpenAICompatiblePlugin({
@@ -194,8 +190,7 @@ test('serializes Chat Completions assistant tool calls and tool messages for a f
     response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: 'done' }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   const root = new Context();
   await root.plugin(createOpenAICompatiblePlugin({

@@ -1,3 +1,5 @@
+import { effectivePermissionCeiling, permissionsWithinCeiling } from './plugin-permissions.mjs';
+
 const SERVICE_PERMISSIONS = Object.freeze({
   workspaceReadonly: new Set([
     'workspace.read.metadata',
@@ -47,7 +49,11 @@ const normalizedInject = (plugin) => {
  * plugin cannot invent a service name and turn it into a capability grant.
  */
 export const allowedPluginServices = (manifest) => {
-  const permissions = permissionsOf(manifest);
+  // The service grant is the manifest's declared permissions intersected with
+  // its effective ceiling, so a READ_ONLY contribution can never reach the
+  // executor or tool-registry control surface even if a manifest slips past the
+  // validator.
+  const permissions = new Set(permissionsWithinCeiling(manifest));
   return new Set(Object.entries(SERVICE_PERMISSIONS)
     .filter(([, required]) => [...required].some((permission) => permissions.has(permission)))
     .map(([service]) => service));
@@ -141,7 +147,8 @@ export const createCapabilityScopedPluginContext = (ctx, manifest, plugin) => {
 export const pluginContextGrantSummary = (manifest, plugin) => ({
   pluginId: String(manifest?.id ?? '').slice(0, 128),
   services: [...allowedPluginServices(manifest)].filter((service) => normalizedInject(plugin).includes(service)).sort(),
-  permissions: [...permissionsOf(manifest)].sort()
+  permissions: [...permissionsOf(manifest)].sort(),
+  ceiling: effectivePermissionCeiling(manifest)
 });
 
 export const pluginContextPolicy = () => clone({

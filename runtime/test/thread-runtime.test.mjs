@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -39,8 +40,7 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
     });
   });
   t.after(() => server.close());
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const env = {
@@ -86,6 +86,17 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
   assert.equal(replayedPayload.events.every((event) => event.type === 'runtime_event'), true);
   assert.equal(replayedPayload.events.some((event) => event.payload.persistedKind === 'TaskRunCreated'), true);
   assert.equal(replayedPayload.events.some((event) => event.payload.persistedKind === 'TaskRunCompleted'), true);
+  assert.equal(replayedPayload.events.find((event) => event.runId === firstPayload.runId
+    && event.payload.persistedKind === 'TaskRunCompleted').payload.responseText, firstPayload.text);
+  assert.equal(replayedPayload.events.find((event) => event.runId === secondPayload.runId
+    && event.payload.persistedKind === 'TaskRunCompleted').payload.responseText, secondPayload.text);
+  assert.equal(replayedPayload.events.some((event) => [
+    'RecoveryStarted',
+    'RecoveryCompleted',
+    'ExecutionStateChanged',
+    'DreamRunReconciled',
+    'PluginStateChangeCommitted'
+  ].includes(event.payload.persistedKind)), false);
   assert.equal(replayedPayload.events.some((event) => JSON.stringify(event).includes('检查第一次任务')), false);
 
   const forked = await run([
@@ -97,4 +108,54 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
   assert.equal(forkedPayload.thread.turns.length, 2);
   const persisted = JSON.parse(await readFile(threadStore, 'utf8'));
   assert.equal(persisted.threads.length, 2);
+});
+test('rejects a thread from another workspace without mutating its binding or checkpoint', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-workspace-binding-'));
+  const otherWorkspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-other-workspace-'));
+  const env = {
+    HMCODEX_THREAD_STORE: join(workspace, 'threads.json'),
+    HMCODEX_TRAJECTORY_STORE: join(workspace, 'trajectory.jsonl')
+  };
+  const created = await run(['thread', '--operation', 'create', '--workspace', workspace, '--title', 'Workspace A'], env);
+  assert.equal(created.code, 0, `${created.stderr}\n${created.stdout}`);
+  const original = JSON.parse(created.stdout.trim()).thread;
+  const rejected = await run([
+    'task', '--provider', 'deepseek', '--prompt', 'inspect workspace B',
+    '--workspace', otherWorkspace, '--thread-id', original.id
+  ], env);
+  const result = JSON.parse(rejected.stdout.trim());
+  assert.equal(result.ok, false);
+  assert.match(result.error, /THREAD_WORKSPACE_MISMATCH/);
+  const fetched = await run(['thread', '--operation', 'get', '--thread-id', original.id], env);
+  assert.equal(fetched.code, 0, `${fetched.stderr}\n${fetched.stdout}`);
+  assert.deepEqual(JSON.parse(fetched.stdout.trim()).thread, original);
+});
+
+test('default Harness thread commands read the same durable authority as the dashboard', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-authority-runtime-'));
+  const harnessStore = join(workspace, 'events.db');
+  const env = {
+    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+    HMCODEX_HARNESS_EVENT_STORE: harnessStore,
+    HMCODEX_DATA_DIR: workspace
+  };
+
+  const created = await run([
+    'thread', '--operation', 'create', '--workspace', workspace, '--title', 'authority thread'
+  ], env);
+  assert.equal(created.code, 0, `${created.stderr}\n${created.stdout}`);
+  const createdPayload = JSON.parse(created.stdout.trim());
+  const threadId = createdPayload.thread.id;
+
+  const listed = await run(['thread', '--operation', 'list'], env);
+  assert.equal(listed.code, 0, `${listed.stderr}\n${listed.stdout}`);
+  const listedPayload = JSON.parse(listed.stdout.trim());
+  assert.equal(listedPayload.threads.find((thread) => thread.id === threadId)?.title, 'authority thread');
+
+  const fetched = await run(['thread', '--operation', 'get', '--thread-id', threadId], env);
+  assert.equal(fetched.code, 0, `${fetched.stderr}\n${fetched.stdout}`);
+  const fetchedPayload = JSON.parse(fetched.stdout.trim());
+  assert.equal(fetchedPayload.thread.id, threadId);
+  assert.equal(fetchedPayload.thread.title, 'authority thread');
+  assert.equal(JSON.stringify(fetchedPayload.thread).includes('authority thread'), true);
 });

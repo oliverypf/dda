@@ -1,0 +1,210 @@
+{
+    "schemaVersion":  "1.0",
+    "artifact":  "WINDOWS_PHASE2_INSTALL_LIFECYCLE_STEP",
+    "step":  "migration",
+    "installer":  "NSIS_PER_MACHINE",
+    "evidenceClass":  "REAL_EXECUTION",
+    "hostName":  "USER-SNTTJQ3HLT",
+    "elevated":  true,
+    "finishedAtMs":  1789106978769,
+    "command":  "installed runtime harness-events import|verify|summary + PRAGMA user_version probe (legacy trajectory.jsonl into SQLite)",
+    "exitCode":  0,
+    "log":  {
+                "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911-r2\\logs\\nsis-migration.log",
+                "bytes":  8237,
+                "sha256":  "f209453bf8535d05803c27c717d888c6a9138086b7f277e6e6ccb1b30df79b00",
+                "modifiedAtUtc":  "2026-09-11T06:09:38"
+            },
+    "logs":  [
+                 {
+                     "path":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911-r2\\logs\\nsis-migration.log",
+                     "bytes":  8237,
+                     "sha256":  "f209453bf8535d05803c27c717d888c6a9138086b7f277e6e6ccb1b30df79b00",
+                     "modifiedAtUtc":  "2026-09-11T06:09:38"
+                 }
+             ],
+    "before":  {
+                   "sampledAtMs":  1789106974354,
+                   "installDir":  true,
+                   "desktopExe":  {
+                                      "path":  "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+                                      "bytes":  9757184,
+                                      "sha256":  "1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154",
+                                      "modifiedAtUtc":  "2026-09-11T06:00:40"
+                                  },
+                   "runtimeIndex":  {
+                                        "path":  "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+                                        "bytes":  289060,
+                                        "sha256":  "86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035",
+                                        "modifiedAtUtc":  "2026-09-11T03:20:02"
+                                    },
+                   "uninstaller":  {
+                                       "path":  "C:\\Program Files\\hmCodex\\uninstall.exe",
+                                       "bytes":  82266,
+                                       "sha256":  "5ac1c2ec5a9d4ac9cc5d486539771bfdf2fb05ab9b180ad78f9eb2a909375dc3",
+                                       "modifiedAtUtc":  "2026-09-11T06:08:46"
+                                   },
+                   "registry":  {
+                                    "hive":  "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                                    "key":  "hmCodex",
+                                    "displayName":  "hmCodex",
+                                    "version":  "0.1.0",
+                                    "installLocation":  "\"C:\\Program Files\\hmCodex\"",
+                                    "uninstallString":  "\"C:\\Program Files\\hmCodex\\uninstall.exe\""
+                                }
+               },
+    "after":  {
+                  "sampledAtMs":  1789106978769,
+                  "installDir":  true,
+                  "desktopExe":  {
+                                     "path":  "C:\\Program Files\\hmCodex\\hmcodex-desktop.exe",
+                                     "bytes":  9757184,
+                                     "sha256":  "1a80ebd917a5792599a96ab6e78d428fc29644db9ff512366fa780f8a77db154",
+                                     "modifiedAtUtc":  "2026-09-11T06:00:40"
+                                 },
+                  "runtimeIndex":  {
+                                       "path":  "C:\\Program Files\\hmCodex\\runtime\\src\\index.mjs",
+                                       "bytes":  289060,
+                                       "sha256":  "86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035",
+                                       "modifiedAtUtc":  "2026-09-11T03:20:02"
+                                   },
+                  "uninstaller":  {
+                                      "path":  "C:\\Program Files\\hmCodex\\uninstall.exe",
+                                      "bytes":  82266,
+                                      "sha256":  "5ac1c2ec5a9d4ac9cc5d486539771bfdf2fb05ab9b180ad78f9eb2a909375dc3",
+                                      "modifiedAtUtc":  "2026-09-11T06:08:46"
+                                  },
+                  "registry":  {
+                                   "hive":  "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+                                   "key":  "hmCodex",
+                                   "displayName":  "hmCodex",
+                                   "version":  "0.1.0",
+                                   "installLocation":  "\"C:\\Program Files\\hmCodex\"",
+                                   "uninstallString":  "\"C:\\Program Files\\hmCodex\\uninstall.exe\""
+                               }
+              },
+    "assertions":  [
+                       {
+                           "name":  "exitCodeZero",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "installedRuntimeMatchesBuiltRuntime",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "legacyImportProducedEvents",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "migratedStoreVerifyPassed",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "storeSchemaVersionIsCurrent",
+                           "ok":  true
+                       },
+                       {
+                           "name":  "channelReportedWindowsFullLocal",
+                           "ok":  true
+                       }
+                   ],
+    "importedCount":  2543,
+    "summary":  {
+                    "store":  "PERSISTED",
+                    "schemaVersion":  "1.0",
+                    "eventCount":  2543,
+                    "receiptCount":  2543,
+                    "tombstoneCount":  0,
+                    "lastSequenceByRun":  {
+                                              "run-050bfe89-5d78-4499-83cc-779e139114b9":  37,
+                                              "run-0b4ec2c3-57c2-4119-93bf-f9f65b2ee53d":  37,
+                                              "run-0d6e737e-e7de-4553-bcfc-610c5fe6aee9":  22,
+                                              "run-0edd5d28-370f-4543-a071-4aead09cbff2":  37,
+                                              "run-1119dae2-8bb7-4596-add3-7218ea127eb6":  16,
+                                              "run-1d4735df-1d6f-49fe-845f-f1060d0dcf0b":  37,
+                                              "run-1d8344ad-c6a8-4171-b48d-69fa7bc35725":  22,
+                                              "run-29c2fddd-ac2f-49e9-a9c0-b2ce2637849e":  37,
+                                              "run-29f04243-e92f-4fa7-88b4-a3e6bcf02a83":  37,
+                                              "run-2b443e10-15ab-4712-a564-c1418071a2bc":  37,
+                                              "run-323ff9ee-29e9-4408-9d99-f3583d17f6b0":  37,
+                                              "run-34e2cea6-de0d-4593-a22a-f59c040e8383":  37,
+                                              "run-37b9c9d4-7399-4874-9c63-6724f889bb9b":  37,
+                                              "run-37ff3238-c0b4-41c6-96cd-3d2c9cbe84fd":  37,
+                                              "run-3a6c2c2d-e9f0-4516-acb7-7cb8836946a4":  37,
+                                              "run-3b41e773-3dfe-4037-b9f9-894b334644ec":  37,
+                                              "run-3ed3d917-78e0-444d-b847-967881c1479a":  37,
+                                              "run-4100dc6e-2942-4927-9060-46189ae48bd9":  37,
+                                              "run-41109de1-c9ed-4316-af65-ad408ca76ddc":  37,
+                                              "run-4414d762-64b6-4ec8-bb5f-2407e0af4f0b":  37,
+                                              "run-4489755b-c73f-43b0-ace7-c4461d9a5a91":  37,
+                                              "run-4db53a65-2550-4c4b-92cc-ff1992ba8b43":  37,
+                                              "run-517a717b-ff1f-46ec-92ba-727993ce8d8a":  37,
+                                              "run-5294a8fd-2c7d-46a5-a4e0-45453491282e":  37,
+                                              "run-5475d3a5-dbb4-4cc7-b554-1be8a51fa97f":  37,
+                                              "run-55bacee5-eb04-4414-a6c9-3bc31057ce80":  37,
+                                              "run-5eae89d7-f216-47f6-a9ec-3b645033d235":  37,
+                                              "run-62a068f0-612d-4ffe-bdb4-e79e16be1c32":  37,
+                                              "run-6398db02-c9bd-44fa-ae88-9ece6affd41c":  37,
+                                              "run-640bd1e1-9ac6-4185-b05e-4ebef2c28429":  16,
+                                              "run-65739538-8b35-48ed-9fa3-ca4765acaca8":  22,
+                                              "run-6671fef2-6e98-422a-b2cd-74c9734b8c94":  37,
+                                              "run-66f7a12e-fc14-41ba-9c7f-41f3ecb8d4b5":  37,
+                                              "run-68760c31-b8a6-46bb-a4b8-9627fad64369":  37,
+                                              "run-6e4342f2-8c9b-4166-91e2-651e411badab":  37,
+                                              "run-765a137c-1b3a-4e12-83eb-0c651e3ce710":  37,
+                                              "run-76e1b7a5-aafd-4547-bef6-2050c0ca6e75":  37,
+                                              "run-7a1964da-0ea0-4638-af20-f82f4ea46ecc":  37,
+                                              "run-817e24fc-7fe0-46ca-b923-b4ed0d223369":  37,
+                                              "run-85091c00-292d-4ef2-bbd8-ad42f438be99":  37,
+                                              "run-880bd734-19a8-43f5-94b0-453577286487":  37,
+                                              "run-8975f9e2-a39c-455e-90ef-d80fa5ba0050":  37,
+                                              "run-91d5d845-f0f4-4833-a8f7-edc34e6f3f94":  37,
+                                              "run-924c808c-aebe-4a4e-91a0-a99c8f41e30b":  37,
+                                              "run-9b7b10e4-8f40-48d9-8c42-77c095e16f35":  37,
+                                              "run-a40ca8db-1df9-4567-a460-bff8359e13be":  37,
+                                              "run-a55f810c-7a2e-49ef-9cd7-bd25680b9640":  37,
+                                              "run-a68f0cd6-0e87-467f-bbe5-6da2a4ef581d":  37,
+                                              "run-af0b2717-110e-498c-8d13-ae7e9eeb6868":  37,
+                                              "run-b213daaf-c8f4-4429-9449-33ef3e3416c9":  38,
+                                              "run-b2d04298-60a3-4a56-b861-0b168a755e78":  16,
+                                              "run-be2eb6f4-92ae-411a-8823-e23d02515beb":  37,
+                                              "run-c2cdc54b-dd23-4a81-9cfd-3404e52be058":  37,
+                                              "run-c399800f-f1d4-4c29-b4b1-ff3db6f57386":  37,
+                                              "run-c5224db9-eade-4d55-8583-01085901cc08":  37,
+                                              "run-cbde817c-715e-47f0-a79c-13af8c27b775":  10,
+                                              "run-d1aa3345-8764-47d5-bccf-694ec91505e5":  37,
+                                              "run-d478868b-93ab-49d9-bc0f-82f07be468db":  16,
+                                              "run-d4f71b86-e0a8-43f4-a9df-292850829d55":  37,
+                                              "run-d5d4df05-df6c-46e9-a98c-97bac0ac7964":  37,
+                                              "run-d651f267-6034-4c17-a07f-452343699518":  16,
+                                              "run-d6b1be32-f828-46d5-9f41-cf9fff331454":  37,
+                                              "run-d7021bdb-fce2-46a0-9d09-8f4913f8dfb5":  37,
+                                              "run-d79d3f03-8b59-4b03-b7f3-de5739286c75":  37,
+                                              "run-d7bf0e5b-2019-4bf3-8cb8-32e2ba9d83ad":  37,
+                                              "run-d9193617-28ca-4bd4-8b65-44440681199d":  37,
+                                              "run-dcee6425-a9fb-4d08-928a-2f1ea359c6c8":  37,
+                                              "run-e9caf710-9c43-42ea-a874-41a6e6263d73":  37,
+                                              "run-ea9d7005-e6c7-422b-b107-f7179c34d828":  37,
+                                              "run-ecd4181b-d255-4e6a-8db4-95d49b585794":  37,
+                                              "run-f27a2239-d101-441a-846e-7fe9f99b716b":  18,
+                                              "run-f3a7bc72-bed1-48bb-ba6b-3c1570b74566":  37,
+                                              "run-f52c68e2-57e1-4704-a215-f63f10c9e6b6":  37,
+                                              "run-f53fd321-9c3d-4cf8-a2bd-bdc1dbe0486e":  37
+                                          }
+                },
+    "verification":  {
+                         "ok":  true,
+                         "eventCount":  2543,
+                         "receiptCount":  2543,
+                         "tombstoneCount":  0
+                     },
+    "databaseUserVersion":  1,
+    "storePath":  "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-lifecycle-20260911-r2\\migration-store\\hmcodex-migration.db",
+    "channelUsed":  "WINDOWS_FULL_LOCAL",
+    "legacyTrajectorySha256":  "2d72ec4acf0d33defc05ff0bebe36453659f8cc6832c70595f321644527ab8a1",
+    "installedRuntimeSha256":  "86d3738d8c7ce88f5feb768b69ff63a4e335d74cfeac7f84af3ebda37d813035",
+    "leftoverFilesAfterReset":  0,
+    "note":  "Follow-up drill against the installed per-machine NSIS build. Session A recorded a failing migration attempt because the MSI product installs per-user, so C:\\Program Files\\hmCodex\\runtime did not exist at that time.",
+    "ok":  true
+}

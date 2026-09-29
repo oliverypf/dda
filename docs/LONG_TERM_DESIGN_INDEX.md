@@ -1,6 +1,6 @@
 # hmCodex 多平台长期设计规范索引
 
-版本：v1.1  
+版本：v1.2
 状态：长期开发基线（Baseline）  
 适用范围：HarmonyOS、Windows、Linux 客户端及其本地运行时的 Agent Harness。远程 Gateway 只属于可选连接模式；HarmonyOS 专属约束由 `HARMONYOS_PLATFORM.md` 单独规定。
 
@@ -24,16 +24,19 @@
 
 ## 3. 文档地图
 
+当前 Windows 剩余功能与验收执行入口：[阶段四实施计划](WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)及[验收矩阵](WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。本轮只推进自研 Node/Cordis runtime 的 Windows 版本；App Server 接入已按用户要求取消。本索引中相关历史适配设想和长期多平台规范不构成当前 Windows 的实现任务或发布前置条件。
+
 | 文档 | 负责内容 | 首次阻断阶段 |
 | --- | --- | --- |
 | [PROTOCOL_SPEC.md](PROTOCOL_SPEC.md) | 领域命令、事件、Port、错误、流式语义、Codex wire 映射 | Phase 0.5 |
 | [STATE_MACHINE.md](STATE_MACHINE.md) | TaskRun、Approval、PolicyLease、RoleContext 的状态和恢复 | Phase 1 |
 | [DATA_MODEL.md](DATA_MODEL.md) | relationalStore schema、事务、回放、迁移、保留 | Phase 1 |
-| [DECISION_TRACE_SPEC.md](DECISION_TRACE_SPEC.md) | Agent 决策点、候选/证据/结果、Decision DAG、学习样本与思维链边界 | Phase 1 |
+| [DECISION_TRACE_SPEC.md](DECISION_TRACE_SPEC.md) | Agent/Jev 决策点、候选/证据/结果、Decision DAG、学习样本与思维链边界 | Phase 1 |
 | [SECURITY_MODEL.md](SECURITY_MODEL.md) | 威胁模型、轨迹完整性、策略顺序、租约、路径/命令/网络和事件响应 | Phase 1（轨迹）；Phase 1.5（副作用） |
 | [PLUGIN_SPEC.md](PLUGIN_SPEC.md) | manifest、ABI、权限、签名、生命周期、隔离与升级 | Phase 2 |
 | [DEPLOYMENT_TOPOLOGY.md](DEPLOYMENT_TOPOLOGY.md) | 本地/远端/企业拓扑、身份、TLS、离线和故障转移 | Phase 0.5 |
-| [MULTI_PLATFORM_ARCHITECTURE.md](MULTI_PLATFORM_ARCHITECTURE.md) | Windows/Linux/HarmonyOS 单客户端、本地运行时、OpenViking 与可选远程模式 | Phase 0.5 |
+| [MULTI_PLATFORM_ARCHITECTURE.md](MULTI_PLATFORM_ARCHITECTURE.md) | Windows/Linux/HarmonyOS 单客户端、本地运行时与可选远程模式 | Phase 0.5 |
+| [JEV_DECISION_PLANE_DESIGN.md](JEV_DECISION_PLANE_DESIGN.md) | Jev 证据决策、候选选择、工具门禁、行为判断与渐进迁移 | Phase 1.5 |
 | [HARMONYOS_PLATFORM.md](HARMONYOS_PLATFORM.md) | ArkTS/ArkUI/Kits、并发、后台、文件和设备能力门控 | Phase 0.5 |
 | [EVALUATION_PLAN.md](EVALUATION_PLAN.md) | 基线、数据集、指标、灰度、学习策略和回滚 | Phase 1 |
 | [OPERATIONS_AND_PRIVACY.md](OPERATIONS_AND_PRIVACY.md) | 日志、遥测、容量、加密、保留、导出、删除和支持包 | Phase 1 |
@@ -56,8 +59,8 @@
 
 - Codex App Server、其他模型提供方和 Executor Adapter；
 - relationalStore 的查询优化、索引和投影实现；
-- Planner/Executor/Verifier 的模型与提示；
-- Router 算法、Verifier 插件和 UI 视觉主题；
+- Planner/Executor 的模型与提示、Jev Decision Engine 的 provider 适配；
+- Router 算法、Rule Verifier 插件和 UI 视觉主题；
 - 在平台允许范围内的后台与并发实现。
 
 ## 5. 版本体系

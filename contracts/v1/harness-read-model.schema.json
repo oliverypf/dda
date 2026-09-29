@@ -44,6 +44,12 @@
       "maxItems": 4096,
       "items": { "$ref": "#/$defs/decision" }
     },
+    "continuousVerification": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/continuousVerificationRecord" }
+    },
+    "verifier": { "$ref": "#/$defs/verifierProjection" },
     "feedback": {
       "type": "array",
       "maxItems": 4096,
@@ -138,6 +144,17 @@
         "cwd": { "type": "string", "maxLength": 2000 },
         "turnCount": { "type": "integer", "minimum": 0 },
         "createdAtMs": { "type": "integer", "minimum": 0 },
+        "runId": { "type": "string", "minLength": 1 },
+        "eventId": { "type": "string", "minLength": 1 },
+        "eventSequence": { "type": "integer", "minimum": 0 },
+        "operationId": { "type": "string", "minLength": 1 },
+        "sourceRole": { "type": "string", "maxLength": 120 },
+        "pluginVersion": { "type": "string", "maxLength": 120 },
+        "digest": { "type": "string", "maxLength": 240 },
+        "commandText": { "type": "string", "maxLength": 100000 },
+        "toolName": { "type": "string", "maxLength": 240 },
+        "evidenceKind": { "type": "string", "maxLength": 80 },
+        "truncated": { "type": "boolean" },
         "updatedAtMs": { "type": "integer", "minimum": 0 },
         "forkedFrom": { "type": "string", "minLength": 1, "maxLength": 160 },
         "state": { "enum": ["IDLE", "RUNNING", "PAUSED", "FAILED", "COMPLETED"] },
@@ -203,6 +220,8 @@
         "approvalExpiresAt": { "type": "number", "minimum": 0 },
         "leaseId": { "type": "string", "minLength": 1, "maxLength": 240 },
         "leaseExpiresAt": { "type": "number", "minimum": 0 },
+        "leaseState": { "enum": ["ISSUED", "CLAIMED", "CONSUMED", "FAILED"] },
+        "executionOk": { "type": "boolean" },
         "risk": { "enum": ["LOW", "MEDIUM", "HIGH"] },
         "scope": {
           "type": "object",
@@ -309,6 +328,93 @@
         "expectedCost": { "type": "number", "minimum": 0 },
         "expectedLatencyMs": { "type": "number", "minimum": 0 },
         "rejectionReasonCodes": { "type": "array", "maxItems": 16, "items": { "type": "string", "minLength": 1, "maxLength": 80 } }
+      }
+    },
+    "continuousVerificationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventId", "runId", "kind", "eventSequence"],
+      "properties": {
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "runId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "stepId": { "type": "string", "maxLength": 240 },
+        "kind": { "enum": ["CandidateVerificationSample", "CandidateVerificationCompleted"] },
+        "modelId": { "type": "string", "maxLength": 160 },
+        "eventSequence": { "type": "integer", "minimum": 0 },
+        "leftId": { "type": "string", "maxLength": 240 },
+        "rightId": { "type": "string", "maxLength": 240 },
+        "leftScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rightScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "leftVariance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rightVariance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "leftDistribution": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/verificationDistribution" } },
+        "rightDistribution": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/verificationDistribution" } },
+        "config": { "type": "object", "additionalProperties": true, "maxProperties": 32 },
+        "comparisonCount": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "ranking": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "candidateId": { "type": "string", "maxLength": 240 },
+              "score": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "verificationDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "probability", "value"],
+      "properties": {
+        "token": { "type": "string", "pattern": "^[A-T]$" },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "value": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "verifierProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "summary": { "type": "string", "maxLength": 640 },
+        "nextAction": { "type": "string", "maxLength": 120 },
+        "failureCodes": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "checks": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "message"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "status": { "type": "string", "minLength": 1, "maxLength": 24 },
+              "message": { "type": "string", "maxLength": 640 },
+              "evidence": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 200 } }
+            }
+          }
+        },
+        "lastRunId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "lastEventSequence": { "type": "integer", "minimum": 0 },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "variance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "distribution": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/verificationDistribution" } },
+        "method": { "type": "string", "maxLength": 60 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "thresholds": { "$ref": "#/$defs/verificationThresholds" }
+      }
+    },
+    "verificationThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passThreshold", "failThreshold"],
+      "properties": {
+        "passThreshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "failThreshold": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "feedbackSummary": {

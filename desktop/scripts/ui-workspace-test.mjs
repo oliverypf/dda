@@ -60,6 +60,10 @@ async function fixture({ deferRuntime = false } = {}) {
           state.root = state.selectedRoot;
           return { rootLabel: state.root.split(/[/\\]/).filter(Boolean).at(-1), rootPath: state.root };
         }
+        if (command === 'set_workspace') {
+          state.root = args.path;
+          return { rootLabel: state.root.split(/[/\\]/).filter(Boolean).at(-1), rootPath: state.root };
+        }
         if (command === 'list_workspace') {
           if (state.failList) throw Error('LIST_DENIED');
           return [{ name: 'README.md', relativePath: 'README.md', kind: 'FILE', sizeBytes: 12 }];
@@ -113,12 +117,17 @@ const submit = async (page, prompt = 'workspace task') => {
   await page.locator('.composer .send-button').click();
   await page.waitForFunction((count) => window.__workspaceTest.calls.filter((call) => call.command === 'run_model_task').length > count, count);
 };
+const dismissProjectPicker = async (page) => {
+  const picker = page.locator('.project-picker-card');
+  if (await picker.count()) await picker.locator('.project-picker-none').click();
+};
 const finished = (page) => page.waitForFunction(() => !document.querySelector('textarea[name="prompt"]')?.disabled
   && !document.querySelector('[data-action="open-workspace"]')?.disabled);
 
 try {
   const draft = await fixture({ deferRuntime: true });
   await draft.locator('[data-action="new-task"]').click();
+  await dismissProjectPicker(draft);
   const composer = draft.locator('textarea[name="prompt"]');
   await composer.click();
   await draft.keyboard.type('draft before hydration');
@@ -155,13 +164,20 @@ try {
   console.log('PASS switched root starts a fresh thread; following turn continues it');
 
   await page.locator('[data-thread-id="saved-a"]').click();
-  await page.waitForFunction(() => document.querySelector('[data-history-status]')?.textContent.includes('当前工作区与此历史会话不同'));
+  const historyPicker = page.locator('.project-picker-card');
+  if (await historyPicker.count()) {
+    await historyPicker.waitFor();
+    assert.match(await historyPicker.innerText(), /先切换到会话所属目录/);
+    await historyPicker.locator('[data-action="select-new-task-project"]').filter({ hasText: 'C:\\projects\\A' }).click();
+  }
+  await page.waitForFunction(() => document.querySelector('[data-history-title]')?.textContent === 'Saved A'
+    && !document.querySelector('[data-history-status]')?.textContent.includes('正在加载历史会话'));
   await submit(page, 'cross-workspace history');
   await finished(page);
-  assert.equal((await calls(page, 'run_model_task')).at(-1).args.threadId, undefined);
+  assert.equal((await calls(page, 'run_model_task')).at(-1).args.threadId, 'saved-a');
   assert.equal(await page.locator('body').innerText().then((text) => text.includes('THREAD_WORKSPACE_MISMATCH')), false);
   await page.close();
-  console.log('PASS historical thread cannot leak its workspace or checkpoint into a new task');
+  console.log('PASS historical thread switches to its project before continuing');
 
   for (const cancel of [true, false]) {
     const same = await fixture();

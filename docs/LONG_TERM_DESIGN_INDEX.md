@@ -24,7 +24,7 @@
 
 ## 3. 文档地图
 
-当前 Windows 剩余功能与验收执行入口：[阶段四实施计划](WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)及[验收矩阵](WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。本轮只推进自研 Node/Cordis runtime 的 Windows 版本；App Server 接入已按用户要求取消。本索引中相关历史适配设想和长期多平台规范不构成当前 Windows 的实现任务或发布前置条件。
+当前 Windows 剩余功能与验收执行入口：[阶段四实施计划](WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)及[验收矩阵](WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。Linux 当前采用无界面 CLI 路线，实施入口为[Linux CLI 实施计划](LINUX_CLI_IMPLEMENTATION_PLAN.md)及配套契约文档。本轮 Linux 只规划和实现 CLI 应用层、平台适配层与本地 runtime 接入，不引入 Tauri GUI。App Server 接入已按用户要求取消。本索引中相关历史适配设想不构成当前 Windows 或 Linux CLI 的实现前置条件。
 
 | 文档 | 负责内容 | 首次阻断阶段 |
 | --- | --- | --- |
@@ -36,6 +36,10 @@
 | [PLUGIN_SPEC.md](PLUGIN_SPEC.md) | manifest、ABI、权限、签名、生命周期、隔离与升级 | Phase 2 |
 | [DEPLOYMENT_TOPOLOGY.md](DEPLOYMENT_TOPOLOGY.md) | 本地/远端/企业拓扑、身份、TLS、离线和故障转移 | Phase 0.5 |
 | [MULTI_PLATFORM_ARCHITECTURE.md](MULTI_PLATFORM_ARCHITECTURE.md) | Windows/Linux/HarmonyOS 单客户端、本地运行时与可选远程模式 | Phase 0.5 |
+| [LINUX_CLI_IMPLEMENTATION_PLAN.md](LINUX_CLI_IMPLEMENTATION_PLAN.md) | Linux CLI 分阶段实施、工作包、核心冻结范围与验收矩阵 | Linux L0 |
+| [LINUX_CLI_CONTRACT.md](LINUX_CLI_CONTRACT.md) | Linux CLI 命令、JSONL、退出码、路径、信号和 Approval 契约 | Linux L0 |
+| [LINUX_PLATFORM_ADAPTER_DESIGN.md](LINUX_PLATFORM_ADAPTER_DESIGN.md) | XDG 路径、POSIX 进程、环境、Executor 和平台身份边界 | Linux L2 |
+| [adr/0023-linux-cli-client.md](adr/0023-linux-cli-client.md) | Linux 无界面 CLI 架构决策 | Linux L0 |
 | [JEV_DECISION_PLANE_DESIGN.md](JEV_DECISION_PLANE_DESIGN.md) | Jev 证据决策、候选选择、工具门禁、行为判断与渐进迁移 | Phase 1.5 |
 | [HARMONYOS_PLATFORM.md](HARMONYOS_PLATFORM.md) | ArkTS/ArkUI/Kits、并发、后台、文件和设备能力门控 | Phase 0.5 |
 | [EVALUATION_PLAN.md](EVALUATION_PLAN.md) | 基线、数据集、指标、灰度、学习策略和回滚 | Phase 1 |

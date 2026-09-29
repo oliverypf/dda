@@ -1,4 +1,6 @@
-# hmCodex Windows Cordis Runtime
+# hmCodex Cordis Runtime
+
+本目录最初以 Windows MVP 命名，但 runtime 的任务编排、协议、安全、Memory、Jev 和事件存储是 Linux CLI、Windows Tauri 与后续客户端共用的核心。Linux 应用层、XDG 路径、POSIX 进程组、终端输出和发布方式见：[Linux CLI 实施计划](../docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)、[CLI 契约](../docs/LINUX_CLI_CONTRACT.md)、[Linux 平台适配设计](../docs/LINUX_PLATFORM_ADAPTER_DESIGN.md)。
 
 This is the first local runtime for the Windows MVP. It is a Node process so
 the Tauri core stays provider-neutral. Every contribution is a Cordis plugin:

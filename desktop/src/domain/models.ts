@@ -163,6 +163,8 @@ export interface TimelineItem {
   eventId?: string;
   eventSequence?: number;
   operationId?: string;
+  /** Stable correlation id for a live tool request/result pair. */
+  toolCallId?: string;
   sourceRole?: string;
   pluginVersion?: string;
   digest?: string;

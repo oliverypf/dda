@@ -4,7 +4,7 @@ Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmC
 
 面向 HarmonyOS、Windows 和 Linux 的多平台 Agent 工作台。
 
-当前 Windows 未完成工作集中到 [阶段四：功能补齐、运行时收敛与发布验收](docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)，逐项状态见 [阶段四验收矩阵](docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。阶段四仅推进 Windows 本地版本，使用自研 Node/Cordis runtime 直接调用模型 provider；按用户要求取消 App Server 接入，多平台产品实现暂不纳入。
+当前 Windows 未完成工作集中到 [阶段四：功能补齐、运行时收敛与发布验收](docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)，逐项状态见 [阶段四验收矩阵](docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。阶段四仅推进 Windows 本地版本，使用自研 Node/Cordis runtime 直接调用模型 provider；按用户要求取消 App Server 接入，多平台产品实现暂不纳入。Linux 端已确定为无界面 CLI，详细实施入口见 [Linux CLI 实施计划](docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)、[CLI 契约](docs/LINUX_CLI_CONTRACT.md) 和 [Linux 平台适配设计](docs/LINUX_PLATFORM_ADAPTER_DESIGN.md)。
 
 本项目建设可独立安装、独立运行的 Agent 工作台。当前优先完善 Windows 的 Tauri 桌面客户端与自研 Node/Cordis runtime，由 runtime 管理模型调用、任务编排、受控工具、审批、验证和审计。其他平台保留既有代码与长期设计，暂不开展产品实现。Windows 的核心能力包括：
 
@@ -20,7 +20,7 @@ Windows 客户端启动并管理自研本地运行时，负责模型 provider、
 Agent Harness 总体设计见 [docs/AGENT_HARNESS_DESIGN.md](docs/AGENT_HARNESS_DESIGN.md)，当前 Jev Decision Plane 迁移方案见 [docs/JEV_DECISION_PLANE_DESIGN.md](docs/JEV_DECISION_PLANE_DESIGN.md)；实现级协议、状态机、数据、Agent Decision Trace、安全、插件、部署、HarmonyOS 平台、评价、运维隐私和 UI 规范从 [docs/LONG_TERM_DESIGN_INDEX.md](docs/LONG_TERM_DESIGN_INDEX.md) 进入。v0.6 采用渐进迁移，目标架构与各端当前实现需要区分：
 
 - 目标架构（设计契约）：UI 经 `HarnessFacade` 提交命令并订阅聚合后的 `HarnessReadModel`，Core 只依赖模型调用、执行、工作区和审批四类领域端口，`RoleSessionManager` 管理通用角色上下文，Codex 协议与会话代码收敛到 Codex Adapter 内。
-- Windows/Linux 桌面端当前实现：已使用 `HarnessReadModel` 作为 UI 消费的聚合读模型（契约见 `contracts/v1/harness-read-model.schema.json`）；`HarnessFacade` 这一命令入口尚未作为独立符号落地。
+- Windows 桌面端当前实现：已使用 `HarnessReadModel` 作为 UI 消费的聚合读模型（契约见 `contracts/v1/harness-read-model.schema.json`）；`HarnessFacade` 这一命令入口尚未作为独立符号落地。Linux CLI 不依赖桌面 UI，直接消费 runtime command result 和 `runtime-event` JSONL，契约见 [Linux CLI 命令与输出契约](docs/LINUX_CLI_CONTRACT.md)。
 - HarmonyOS 当前实现（迁移期）：`entry/src/main/ets/pages/Index.ets` 直接持有 `services/CodexSession.ets`，并通过 WebSocket JSON-RPC 直连 App Server；该端尚不存在 `HarnessFacade` / `HarnessReadModel`，Facade 与 read model 分层仍待迁移。
 
 Phase 1 即记录每个关键 Agent 的结构化决策（候选、证据、选择、预期和结果），由 Jev Decision Plane 统一完成需要语义判断的选择，用于审计、归因与后续受约束学习，但不保存隐藏思维链。路线先完成 Phase 0.5 协议合规，再交付 Phase 1 只读闭环；只有 Phase 1.5 的运行时安全、审批、一次性 `PolicyLease`、Rule Verifier 和 Jev Action Gate 闭环通过后才开放写入、命令和网络能力。旧的 LLM-as-a-Verifier、独立 Candidate Judge 和 OpenViking 不属于当前实现。

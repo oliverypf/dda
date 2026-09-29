@@ -51,15 +51,15 @@ try {
   await page.locator('[data-action="navigate"][data-page="diagnostics"]').click();
   await page.getByText('最近恢复检查', { exact: true }).waitFor();
   const text = await page.locator('.page-placeholder').innerText();
-  assert.match(text, /workspace READY/);
+  assert.match(text, /工作区 就绪/);
   assert.match(text, /差异 3（暂存 1 \/ 未暂存 1 \/ 未跟踪 1 \/ 冲突 0）/);
   assert.match(text, /待审批 2/);
-  assert.match(text, /远端状态 LOCAL_ONLY/);
-  assert.match(text, /撤销 Lease 1/);
+  assert.match(text, /远端状态[：:]\s*仅本地/);
+  assert.match(text, /已撤销授权 1/);
   assert.match(text, /approval-fixture/);
   assert.match(text, /待处理审批/);
   assert.match(text, /lease-fixture/);
-  assert.match(text, /OWNER_PROCESS_LOST/);
+  assert.match(text, /原执行进程已退出/);
   await page.locator('[data-action="navigate"][data-page="workbench"]').click();
   if (!(await page.locator('.app-shell').getAttribute('class')).includes('context-open')) await page.locator('.context-toggle').click();
   await page.locator('.council-section').waitFor();
@@ -67,7 +67,7 @@ try {
   assert.equal(await page.locator('[data-council-kind="Proposal"]').count(), 0);
   assert.equal(await page.locator('[data-council-ranking="council-p1"]').count(), 1);
   assert.equal(await page.locator('[data-council-kind="Probe"]').count(), 1);
-  assert.match(await page.locator('.council-section').innerText(), /暂无结构化 Critique 记录/);
+  assert.match(await page.locator('.council-section').innerText(), /暂无结构化审阅记录/);
   await page.locator('[data-action="navigate"][data-page="diagnostics"]').click();
   await page.locator('[data-action="export-data"]').click();
   await page.waitForTimeout(500);

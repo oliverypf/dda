@@ -82,7 +82,7 @@ try {
   assert.ok(metaBox.y >= titleBox.y + titleBox.height, 'metadata below title');
   assert.match(await content.innerText(), /有效期 未设置/);
   assert.match(await content.innerText(), /训练限制：未提供/);
-  assert.match(await content.innerText(), /敏感性 SECURITY_AUDIT/);
+  assert.match(await content.innerText(), /敏感性 安全审计/);
   assert.match(await content.innerText(), /版本 1/);
   assert.match(await content.innerText(), /替代 fixture-PROPOSED/);
   assert.match(await content.innerText(), /冲突 fixture-VERIFIED/);

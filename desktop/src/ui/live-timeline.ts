@@ -33,7 +33,10 @@ export class LiveTimeline {
     for (const item of this.items) {
       let row = this.rows.get(item.itemId);
       if (!row || row.item !== item) {
-        if (changed >= 8 || (changed > 0 && performance.now() - started >= 3)) {
+        // Opening the audit list should settle in a handful of frames even
+        // for a long run.  Streaming text still uses the lightweight patch
+        // path below, so a larger mount batch does not rebuild the app shell.
+        if (changed >= 32 || (changed > 0 && performance.now() - started >= 5)) {
           this.frame = requestAnimationFrame(() => this.flush());
           break;
         }

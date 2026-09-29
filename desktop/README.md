@@ -1,6 +1,6 @@
 # hmCodex Desktop
 
-Windows/Linux 桌面客户端预留目录，目标运行时为 Tauri 2 + TypeScript 前端 + 本地运行时。
+Windows 桌面客户端目录，目标运行时为 Tauri 2 + TypeScript 前端 + 本地运行时。Linux 使用独立的无界面 CLI，实施文档见 [Linux CLI 实施计划](../docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)。
 
 桌面客户端是独立安装、独立启动的本地产品。首期范围是本地 Thread/Turn、流式输出、审批、只读 workspace、本地 Trajectory 和统一 `ContextSummary`；任务、工具、审批、验证、恢复和本地 Memory Journal 由自研 Node/Cordis runtime 承载。Jev Decision Plane 负责候选选择、工具门禁和行为判断。
 
@@ -8,7 +8,7 @@ Windows/Linux 桌面客户端预留目录，目标运行时为 Tauri 2 + TypeScr
 
 自定义指令保存在模型配置的 `customInstructions` 字段，保留既有高级模型和角色绑定。回归：`npm run build` 后执行 `npm run test:ui:settings`（需 Playwright，可用 `NODE_PATH` 指定安装位置）。运行时测试为 `node --test runtime/test/custom-instructions.test.mjs`（从仓库根目录执行）。
 
-本地 shell、任意路径访问和网络调用不会因为是桌面应用就默认开放，必须经过 Tauri capability、工作区 scope、PolicyLease、审批和审计。Windows 不接入 App Server，直接通过自研 runtime 调用模型 provider；远程 Gateway 不在当前开发范围。
+本地 shell、任意路径访问和网络调用不会因为是桌面应用就默认开放，必须经过 Tauri capability、工作区 scope、PolicyLease、审批和审计。Windows 不接入 App Server，直接通过自研 runtime 调用模型 provider；远程 Gateway 不在当前开发范围。Linux CLI 的路径、进程、审批和 JSONL 契约由 [Linux CLI 命令契约](../docs/LINUX_CLI_CONTRACT.md) 和 [Linux 平台适配设计](../docs/LINUX_PLATFORM_ADAPTER_DESIGN.md) 约束。
 
 当前已落地：
 
@@ -88,7 +88,16 @@ Windows 后续工作统一见 [阶段四实施计划](../docs/WINDOWS_PHASE4_IMP
 3. 补齐候选/角色、审批与 Diff、运行记录、反馈归因、治理诊断和恢复交互；
 4. 完成 Git 互验、Bayesian F4/F5、性能、无障碍及真实 Windows 发布观察。
 
-阶段四继续验收本地 runtime、Jev 决策证据、长期运行和最终安装包集成。Linux、HarmonyOS、跨平台协议抽取和远程 Gateway 暂不纳入阶段四。
+阶段四继续验收本地 runtime、Jev 决策证据、长期运行和最终安装包集成。Linux CLI、HarmonyOS、跨平台协议抽取和远程 Gateway 暂不纳入阶段四；Linux CLI 按独立计划推进。
+
+## Linux CLI 入口
+
+Linux 不使用本目录的 Tauri 界面。实现 agent 应从以下文档开始：
+
+1. [Linux CLI 实施计划](../docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)
+2. [Linux CLI 命令与输出契约](../docs/LINUX_CLI_CONTRACT.md)
+3. [Linux 平台适配设计](../docs/LINUX_PLATFORM_ADAPTER_DESIGN.md)
+4. [ADR-0023](../docs/adr/0023-linux-cli-client.md)
 
 ## Windows MVP 构建
 

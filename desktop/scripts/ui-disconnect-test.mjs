@@ -178,7 +178,7 @@ const submitComposer = (client) =>
 
 const waitForReady = async (client) => {
   await waitFor(client, `!document.querySelector('.connection-status')?.innerText.includes('正在启动')`, { timeout: 45000, label: 'runtime ready' });
-  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('READ ONLY') === true`, { timeout: 45000, label: 'read-only execution mode' });
+  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { timeout: 45000, label: 'read-only execution mode' });
 };
 
 const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {

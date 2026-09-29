@@ -43,12 +43,14 @@ ADR 记录长期、难以逆转或跨模块的设计选择。专项规范描述�
 | [0006](0006-multi-platform-clients.md) | HarmonyOS、Windows、Linux 是同一产品的不同客户端构建，共享协议并优先使用本地运行时；Gateway 仅为可选远程适配器 |
 | [0007](0007-windows-dream-maintenance-supervisor.md) | Windows 由 Tauri 托管独立 Dream daemon，动态活动任务计数 fail-closed |
 | [0021](0021-candidate-failed-egress.md) | 候选调用的出域审计不由选择结果决定；失败与取消同样记录有界完成事实，只保留 digest 与固定失败码 |
+| [0022](0022-prompt-cache-stable-prefix.md) | Provider prompt cache 使用稳定前缀和 usage accounting，作为 Windows Phase 4 的缓存治理基线 |
+| [0023](0023-linux-cli-client.md) | Linux 首期采用无界面 CLI，复用 Node/Cordis runtime，通过 Linux 平台适配层接入 |
 
 ## 编号缺口
 
-现存 ADR 为 `0001`–`0007` 和 `0021`，共 8 份。
+现存 ADR 为 `0001`–`0007`、`0021`–`0023`，共 10 份。
 
 - `0008`–`0020` 是**未分配编号（never allocated）**：这些文件从未存在，也没有任何文档、代码或测试引用它们。看到编号跳跃不表示记录丢失或被删除，不需要寻找或补写。
 - `0021` 保持现有编号不变：`WINDOWS_PHASE2_PROGRESS.md` 已按该编号引用它，重编号会打断既有证据链。
-- 编号只增不复用，因此下一份新 ADR 从 `0022` 开始；不要回填 `0008`–`0020`。
+- 编号只增不复用，因此下一份新 ADR 从 `0024` 开始；不要回填 `0008`–`0020`。
 - `0021-candidate-failed-egress.md` 目前未使用本文件的标准模板（缺 `Status` / `Date` / `Deciders` 头，正文为英文契约说明）。内容有效，但后续修订时建议补齐头部字段以便与其他 ADR 一致。

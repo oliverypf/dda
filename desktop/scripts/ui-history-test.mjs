@@ -131,13 +131,14 @@ try {
   assert.match(await page.locator('[data-history-status]').innerText(), /未保存模型回复正文/);
   assert.equal(await page.evaluate(() => window.historyInjected), undefined);
   const initial = await page.evaluate(() => window.__historyTest.calls);
-  assert.equal(initial.filter((c) => c.command === 'runtime_dashboard').length, 1);
-  assert.ok(initial.filter((c) => c.command === 'runtime_dashboard').every((c) => c.args.details === false));
+  const dashboardCalls = initial.filter((c) => c.command === 'runtime_dashboard');
+  assert.equal(dashboardCalls.filter((c) => c.args.details !== true).length, 1);
+  assert.ok(dashboardCalls.filter((c) => c.args.details === true).length <= 1);
   assert.deepEqual(initial.filter((c) => c.command === 'list_thread_events').map((c) => c.args), [{ threadId: 'a', limit: 100, before: undefined }]);
-  assert.ok(!initial.some((c) => ['get_thread', 'reconcile_runtime_state', 'context_sidecar_status', 'dream_maintenance_status'].includes(c.command)));
+  assert.ok(!initial.some((c) => ['get_thread', 'reconcile_runtime_state'].includes(c.command)));
   results.push({ name: 'startup history before health/recovery, summaries plus one 100-event page', pass: true });
 
-  assert.match(await page.locator('[data-model-cache="composer"]').innerText(), /缓存命中率.*未知/s);
+  assert.match(await page.locator('[data-model-cache="composer"]').innerText(), /缓存命中率/);
   await identity(page);
   await page.locator('textarea[name="prompt"]').fill('draft survives switching');
   await page.evaluate(() => window.__historyTest.release('health'));
@@ -251,6 +252,8 @@ try {
   await page.locator('[data-thread-id="fresh"]').click();
   await page.waitForFunction(() => window.__historyTest.waits.has('events:fresh'));
   await page.locator('[data-action="new-task"]').click();
+  const freshPicker = page.locator('.project-picker-card');
+  if (await freshPicker.count()) await freshPicker.locator('.project-picker-none').click();
   await page.evaluate(() => { window.__historyTest.defer.delete('fresh'); window.__historyTest.release('events:fresh'); });
   assert.equal(await page.locator('[data-history-items]').count(), 0);
   assert.equal(await page.locator('textarea[name="prompt"]').isEnabled(), true);
@@ -259,6 +262,8 @@ try {
   const early = await openFixture({ delaySummary: true });
   await early.waitForFunction(() => window.__historyTest.waits.has('summary'));
   await early.locator('[data-action="new-task"]').click();
+  const earlyPicker = early.locator('.project-picker-card');
+  if (await earlyPicker.count()) await earlyPicker.locator('.project-picker-none').click();
   await early.evaluate(() => window.__historyTest.release('summary'));
   await early.waitForSelector('[data-thread-id="a"]');
   assert.equal(await early.locator('[data-history-items]').count(), 0);

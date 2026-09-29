@@ -172,6 +172,19 @@ document.addEventListener('toggle', (event) => {
     if (group.closest('[data-live-workbench]')) scheduleRender();
   }
 }, true);
+document.addEventListener('click', (event) => {
+  const target = event.target as Element | null;
+  const summary = target?.closest('[data-execution-group] > summary');
+  if (!summary) return;
+  const group = summary.closest<HTMLDetailsElement>('[data-execution-group]');
+  if (!group) return;
+  // The native details toggle runs after the click event. Read the final
+  // state on the next task so a background render cannot race it.
+  window.setTimeout(() => {
+    executionGroupExpanded = group.open;
+    scheduleRender();
+  }, 0);
+}, true);
 if (!app) throw new Error('Missing #app root');
 
 let model: HarnessReadModel = createInitialReadModel();
@@ -263,8 +276,8 @@ const primaryPages: Record<string, { title: string; description: string }> = {
   workbench: { title: '工作台', description: '' },
   runs: { title: '运行记录', description: '历史运行、状态和证据将在此处集中查看。' },
   workspace: { title: '工作区', description: '授权工作区、快照和文件证据将在此处集中查看。' },
-  memory: { title: '记忆', description: '已激活记忆和 Dream 状态将在此处集中查看。' },
-  safety: { title: '能力与安全', description: '能力边界、Approval、Safety 与治理快照将在此处集中查看。' },
+  memory: { title: '记忆', description: '已激活记忆和后台整理状态将在此处集中查看。' },
+  safety: { title: '能力与安全', description: '能力边界、审批、安全与治理快照将在此处集中查看。' },
   diagnostics: { title: '设置与诊断', description: '模型、存储、支持包和故障诊断将在此处集中查看。' }
 };
 let settingsVisible = false;
@@ -278,10 +291,10 @@ const settingsSections = {
   connection: { title: '连接与身份', description: '查看当前平台、runtime 健康和配置来源。敏感值只显示状态。', icon: 'heart-pulse' },
   model: { title: '角色与模型', description: '选择模型服务与连接方式。保存后从下一次任务开始生效。', icon: 'cpu' },
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
-  workspace: { title: 'Workspace grants', description: '查看只读工作区授权 root、快照和 Picker 来源。', icon: 'folder-open' },
-  plugins: { title: 'Plugin', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
-  verifier: { title: 'Safety/审批与连续验证', description: '调整验证预算，并查看审批与安全策略的当前状态。', icon: 'shield-check' },
-  memory: { title: 'Memory/Dream', description: '查看记忆状态、Dream 后台和治理数量。', icon: 'heart-pulse' },
+  workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
+  plugins: { title: '插件', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
+  verifier: { title: '安全、审批与连续验证', description: '调整验证预算，并查看审批与安全策略的当前状态。', icon: 'shield-check' },
+  memory: { title: '记忆与后台整理', description: '查看记忆状态、后台整理和治理数量。', icon: 'heart-pulse' },
   personalization: { title: '隐私/保留与个性化', description: '设置回复习惯，并查看敏感数据与保留策略状态。', icon: 'user-round' },
   storage: { title: '存储', description: '查看配置路径、投影版本和持久化状态。', icon: 'file-cog' },
   accessibility: { title: '无障碍', description: '查看键盘、字体、对比度和减少动画支持状态。', icon: 'settings' },
@@ -535,7 +548,7 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
       rows = [
         ['授权状态', model.workspace.granted ? '已授权（只读）' : '尚未授权'],
         ['授权 root', readOnlySettingsValue(model.workspace.rootPath ?? model.workspace.rootLabel)],
-        ['快照状态', model.workspace.stale ? 'stale，需要刷新' : '当前快照'],
+        ['快照状态', model.workspace.stale ? '快照已过期，需要刷新' : '当前快照'],
         ['当前目录', readOnlySettingsValue(model.workspace.currentPath || '.')]
       ];
       break;
@@ -562,7 +575,7 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
     case 'storage':
       rows = [
         ['模型配置路径', readOnlySettingsValue(settingsConfigPath)],
-        ['Projection', `v${model.projectionVersion}`],
+        ['运行投影版本', `v${model.projectionVersion}`],
         ['时间线', `${model.timeline.length} 条当前窗口记录`],
         ['保留策略', '未提供时保持运行时默认值']
       ];
@@ -580,7 +593,7 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
         ['支持包', model.supportBundle ? '已生成状态' : '尚未生成'],
         ['恢复检查', lastRecovery ? `${lastRecovery.reconciled} 条记录 · ${formatTime(lastRecovery.atMs)}` : '尚未运行'],
         ['错误保护', '错误进入时间线并保留当前工作区'],
-        ['Projection', `v${model.projectionVersion}`]
+        ['运行投影版本', `v${model.projectionVersion}`]
       ];
       break;
     default:
@@ -782,7 +795,7 @@ const runStateLabel = (state?: string): string => {
     QUARANTINED: '已隔离',
     PAUSED_UNSUPPORTED: '因不兼容暂停'
   };
-  return state ? labels[state] ?? state : '等待任务';
+  return state ? labels[state] ?? statusDisplayLabel(state) : '等待任务';
 };
 
 const runStateNextStep = (state?: string): string => {
@@ -811,6 +824,122 @@ const runStateNextStep = (state?: string): string => {
   return state ? steps[state] ?? '等待运行时更新。' : '等待任务输入。';
 };
 
+// Runtime contracts intentionally use stable identifiers.  Those identifiers
+// are useful in technical details, but they are poor primary copy for people
+// reading a task as it runs.  Keep one small presentation vocabulary here so
+// live events, historical replay and side panels do not drift apart.
+const humanizeCode = (value: unknown, fallback = '未提供'): string => {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  const source = value.trim();
+  const words = source
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/[._:/-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.map((word) => {
+    const upper = word.toUpperCase();
+    const common: Record<string, string> = {
+      API: '接口', APP: '应用', CLI: '命令行', CPU: '处理器', CWD: '工作目录',
+      DAG: '决策图', ID: '编号', JEV: 'Jev', PID: '进程号', READ: '读取', WRITE: '写入',
+      UNKNOWN: '未知', PASS: '通过', FAIL: '失败', ERROR: '错误', SUCCESS: '成功',
+      SUCCEEDED: '已完成', FAILED: '失败', COMPLETE: '已完成', COMPLETED: '已完成',
+      PENDING: '等待中', STREAMING: '生成中', ACTIVE: '生效中', PROPOSED: '待评估',
+      REJECTED: '已拒绝', DECLINED: '已拒绝', EXPIRED: '已过期', ABSTAIN: '暂不判断',
+      ALLOW: '允许', BLOCK: '阻止', REQUEST: '请求', EVIDENCE: '证据',
+      LOCAL: '本地', WINDOWS: 'Windows', WEB: '网页预览', NATIVE: '原生',
+      SHELL: '命令', FILE: '文件', WORKSPACE: '工作区', NETWORK: '网络', TOOL: '工具',
+      MODEL: '模型', ROUTE: '路线', ROLE: '角色', CONTEXT: '上下文', SAFETY: '安全',
+      VERIFICATION: '验证', EXECUTION: '执行', LEASE: '授权租约', APPROVAL: '审批',
+      POLICY: '策略', OUTPUT: '输出', DIGEST: '摘要', SNAPSHOT: '快照',
+      NOT: '不', ALLOWED: '允许', MODE: '模式', DUPLICATE: '重复', REQUESTED: '请求中',
+      RETRY: '重试', WITH: '使用', COUNCIL: '审议', PROPOSAL: '候选方案', CRITIQUE: '审阅', JUDGE: '比较', PROBE: '探查',
+      REVIEW: '评审', COMMITTED: '已记录', PLANCOMMITTED: '计划已记录', PROBECOMMITTED: '探查已记录',
+      COUNCILACCEPTPLAN: '审议通过计划', JUDGERETURNEDDECISION: '比较阶段返回决定', PROBESELECTED: '已选择探查方案'
+    };
+    return common[upper] ?? (word.length <= 3 ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+  }).join(' ');
+};
+
+const statusDisplayLabel = (value: unknown, fallback = '状态未读取'): string => {
+  const key = typeof value === 'string' ? value.toUpperCase() : '';
+  const labels: Record<string, string> = {
+    CREATED: '已创建', CLASSIFYING: '识别任务中', PRECHECKING: '安全预检中', ROUTING: '选择执行路线中',
+    ALLOCATING_CONTEXTS: '分配角色上下文中', PLANNING: '整理计划中', EXECUTING_READ: '读取工作区中',
+    SAFETY_EVALUATING: '评估动作安全性中', WAITING_APPROVAL: '等待你的批准', EXECUTING: '执行中',
+    VERIFYING: '核对结果中', DIAGNOSING: '诊断中', RECOVERING: '恢复中', PAUSING: '暂停中',
+    PAUSED: '已暂停', SUCCEEDED: '已完成', FAILED: '未完成', CANCELLED: '已取消',
+    QUARANTINED: '已隔离', PAUSED_UNSUPPORTED: '因版本不兼容暂停', UNKNOWN: '未知状态',
+    PASS: '通过', FAIL: '失败', ERROR: '错误', COMPLETE: '已完成', COMPLETED: '已完成', SKIPPED: '已跳过',
+    PENDING: '等待中', STREAMING: '进行中', ACTIVE: '生效中', PROPOSED: '待评估', PRESENTED: '已呈现',
+    REQUESTED: '等待批准', APPROVED: '已批准', CONSUMING: '消费中', CONSUMED: '已使用',
+    REJECTED: '已拒绝', DECLINED: '已拒绝', EXPIRED: '已过期', ABSTAIN: '暂不判断',
+    LOCAL_ONLY: '仅本地', READY: '就绪', REVOKED: '已撤销', UNKNOWN_OUTCOME: '结果不确定',
+    ERROR_CONNECTION: '连接错误', DISABLED: '未启用', UNAVAILABLE: '不可用', MISCONFIGURED: '配置错误',
+    RUNNING: '运行中', STARTING: '准备中', STOPPED: '已停止', DEGRADED: '已降级',
+    VERIFIED: '已验证', RETRACTED: '已撤回', LOADED: '已加载', DISCOVERED: '已发现', COMMITTED: '已记录',
+    VALIDATED: '已校验', SHADOW: '观察中', CANARY: '灰度中', PROMOTED: '已晋级',
+    ROLLED_BACK: '已回滚', INSTALLED: '已安装', ROLLED_BACK_AVAILABLE: '可回滚', BLOCKED: '已阻断'
+  };
+  return labels[key] ?? (key ? humanizeCode(value, fallback) : fallback);
+};
+
+const toolDisplayLabel = (value: unknown): string => {
+  const key = typeof value === 'string' ? value.toLowerCase() : '';
+  const labels: Record<string, string> = {
+    'workspace.list': '查看工作区目录',
+    'workspace.read': '读取工作区文件',
+    'workspace.snapshot': '记录工作区快照',
+    'shell.execute': '执行命令',
+    'file.read': '读取文件',
+    'file.write': '写入文件',
+    'file.patch': '修改文件',
+    'test.execute': '运行测试',
+    'network.request': '发送网络请求',
+    'memory.search': '搜索记忆',
+    'memory.write': '保存记忆'
+  };
+  return labels[key] ?? humanizeCode(value, '受控工具');
+};
+
+const reasonDisplayLabel = (value: unknown): string => {
+  if (typeof value === 'string' && /runtime\s*未配置/iu.test(value)) return '当前运行时未配置远端恢复源';
+  const key = typeof value === 'string' ? value.toUpperCase() : '';
+  const labels: Record<string, string> = {
+    RULE_PATTERN_MISMATCH: '与当前任务不匹配', POLICY_ALLOWED: '当前策略允许其他路线',
+    ROUTE_BLOCKED: '执行路线被安全规则阻止', ROLE_ISOLATION_REQUIRED: '需要隔离角色上下文',
+    BOUNDED_EXECUTION_REQUIRED: '需要限制执行范围', OUTCOME_NOT_VERIFIED_SUCCESS: '上次结果尚未验证成功',
+    EVIDENCE_GAP_REMAINS: '仍缺少必要证据', JEV_ACTION_GATE_NOT_ALLOW: '安全决策未允许该动作',
+    TOOL_NOT_ALLOWED_IN_MODE: '当前模式不允许该工具', TOOL_DUPLICATE_REQUEST: '同一轮重复请求',
+    TOOL_EXECUTION_FAILED: '工具执行失败', FIXTURE_UNKNOWN_OUTCOME: '执行结果无法确认',
+    COUNCIL_ACCEPT_PLAN: '审议通过计划', JUDGE_RETURNED_DECISION: '比较阶段返回决定', PROBE_SELECTED: '已选择探查方案',
+    OWNER_PROCESS_LOST: '原执行进程已退出', CURRENT_RUNTIME_NOT_CONFIGURED: '当前运行时未配置',
+    REMOTE_SOURCE_UNAVAILABLE: '远端恢复源不可用', POLICY_DENIED: '安全策略未允许',
+    INVALID_REQUEST: '请求格式不正确', TIMEOUT: '操作超时'
+  };
+  return labels[key] ?? humanizeCode(value, '未提供原因');
+};
+
+const riskDisplayLabel = (value: unknown): string => ({
+  LOW: '低', MEDIUM: '中', HIGH: '高', CRITICAL: '极高'
+}[typeof value === 'string' ? value.toUpperCase() : ''] ?? humanizeCode(value, '未评估'));
+
+const sensitivityDisplayLabel = (value: unknown): string => ({
+  PUBLIC: '公开', INTERNAL: '内部', SENSITIVE: '敏感', RESTRICTED: '受限', SECURITY_AUDIT: '安全审计'
+}[typeof value === 'string' ? value.toUpperCase() : ''] ?? humanizeCode(value, '未提供'));
+
+const phaseDisplayLabel = (value: unknown): string => {
+  const key = typeof value === 'string' ? value.toUpperCase() : '';
+  const labels: Record<string, string> = {
+    PLANNER: '规划阶段', EXECUTOR: '执行阶段', VERIFIER: '验证阶段', CRITIC: '审阅阶段',
+    COORDINATOR: '协调阶段', COUNCIL: '多候选审议', JUDGE: '候选比较', MODEL: '模型调用'
+  };
+  return labels[key] ?? humanizeCode(value, '当前阶段');
+};
+
+const shortDigest = (value?: string): string => value
+  ? `${value.slice(0, 18)}${value.length > 18 ? '…' : ''}`
+  : '';
+
 const contextSidecarStateLabel = (state?: RuntimeContextSidecarStatus['state']): string => ({
   DISABLED: '未启用',
   MISCONFIGURED: '记忆不可用（配置错误）',
@@ -838,7 +967,7 @@ const subAgentStateLabel = (state: SubAgentReadModel['state']): string => {
     FAILED: '失败',
     CANCELLED: '已取消'
   };
-  return labels[state];
+  return labels[state] ?? statusDisplayLabel(state);
 };
 
 const executionStateLabel = (state: string): string => ({
@@ -857,12 +986,12 @@ const executionStateLabel = (state: string): string => ({
   REJECTED: '已拒绝',
   DECLINED: '已拒绝',
   EXPIRED: '已过期'
-}[state] ?? state);
+}[state] ?? statusDisplayLabel(state));
 
 const executionTypeLabel = (recordType: RuntimeExecutionRecord['recordType']): string => ({
-  intent: 'ActionIntent',
-  approval: 'Approval',
-  lease: 'PolicyLease'
+  intent: '动作请求',
+  approval: '审批请求',
+  lease: '一次性授权'
 }[recordType]);
 
 const governanceStateLabel = (state: string): string => ({
@@ -887,7 +1016,7 @@ const governanceStateLabel = (state: string): string => ({
   ROLLED_BACK_AVAILABLE: '可回滚',
   DEGRADED: '降级',
   REJECTED: '已拒绝'
-}[state] ?? state);
+}[state] ?? statusDisplayLabel(state));
 
 // The dashboard reports version lifecycle facts directly; the plugin list
 // command is the fallback for the manual governance refresh path.
@@ -912,8 +1041,8 @@ const pluginVersionSummaries = (
 };
 
 const decisionStatusLabel = (node: RuntimeDecisionNode): string => node.outcomeStatus
-  ? `${node.status} · ${node.outcomeStatus}`
-  : node.status;
+  ? `${statusDisplayLabel(node.status)} · 结果：${statusDisplayLabel(node.outcomeStatus)}`
+  : statusDisplayLabel(node.status);
 
 const decisionOptionDisplayLabel = (optionId: string): string => ({
   'classify-inspect': '任务类型：检查与阅读',
@@ -928,7 +1057,7 @@ const decisionOptionDisplayLabel = (optionId: string): string => ({
   'plan-abort': '计划：停止执行',
   'memory-proposal-create': '记忆：生成候选',
   'memory-proposal-skip': '记忆：跳过候选'
-}[optionId] ?? `候选方案（${optionId}）`);
+}[optionId] ?? `候选方案（${humanizeCode(optionId, '未命名方案')}）`);
 
 const decisionReasonDisplayLabel = (reasonCode: string): string => ({
   RULE_PATTERN_MISMATCH: '不匹配当前任务',
@@ -937,11 +1066,11 @@ const decisionReasonDisplayLabel = (reasonCode: string): string => ({
   ROLE_ISOLATION_REQUIRED: '需要角色隔离',
   BOUNDED_EXECUTION_REQUIRED: '需要有界执行',
   OUTCOME_NOT_VERIFIED_SUCCESS: '上次结果未验证成功'
-}[reasonCode] ?? reasonCode);
+}[reasonCode] ?? reasonDisplayLabel(reasonCode));
 
 const decisionOptionTechnicalReason = (option: RuntimeDecisionOption): string => option.rejectionReasonCodes.length
-  ? `内部原因码：${option.rejectionReasonCodes.join('、')}`
-  : '系统保留的候选方案；未产生额外淘汰原因';
+  ? `技术原因：${option.rejectionReasonCodes.map(reasonDisplayLabel).join('、')}`
+  : '系统保留的候选方案，未记录额外淘汰原因';
 
 // A candidate fanout decision carries one option per candidate. The label makes
 // the outcome of each candidate explicit: only the selected one executed, the
@@ -976,9 +1105,9 @@ const renderDecisionTrace = (): string => {
     .map((parentId) => ({ parentId, childId: node.decisionId, resolved: visible.has(parentId) || known.has(parentId) })));
   const supersedes = decisions.filter((node) => node.supersedesDecisionId);
   return `
-    <section class="context-section decision-trace-section" aria-label="Decision DAG">
+    <section class="context-section decision-trace-section" aria-label="决策关系">
       <div class="section-heading">
-        <div><span class="section-kicker">Decision DAG</span><h3>决策图</h3></div>
+        <div><span class="section-kicker">决策关系</span><h3>决策图</h3></div>
         <span class="context-count">${allDecisions.length} 个决策 · ${edges.length} 条依赖</span>
       </div>
       ${decisions.length === 0
@@ -986,14 +1115,14 @@ const renderDecisionTrace = (): string => {
         : `<div class="decision-node-list">${decisions.map((node) => `
             <article class="governance-row decision-node" data-decision-id="${escapeHtml(node.decisionId)}" data-decision-status="${escapeHtml(node.status)}">
               <div class="governance-copy">
-                <strong>${escapeHtml(node.decisionType ?? 'decision')} · ${escapeHtml(node.role ?? '未标注角色')}</strong>
-                <span>${escapeHtml(decisionStatusLabel(node))} · ${node.optionCount} 个选项${node.selectedOptionId ? ` · 选中 ${escapeHtml(node.selectedOptionId)}` : ''}${node.stepId ? ` · ${escapeHtml(node.stepId)}` : ''}${node.agentInstanceId ? ` · ${escapeHtml(node.agentInstanceId)}` : ''}</span>
+                <strong>${escapeHtml(humanizeCode(node.decisionType, '决策'))} · ${escapeHtml(humanizeCode(node.role, '未标注角色'))}</strong>
+                <span>${escapeHtml(decisionStatusLabel(node))} · ${node.optionCount} 个方案${node.selectedOptionId ? ` · 已采用：${escapeHtml(decisionOptionDisplayLabel(node.selectedOptionId))}` : ''}${node.stepId ? ` · 步骤：${escapeHtml(humanizeCode(node.stepId, '未标注'))}` : ''}</span>
               </div>
               ${(node.options ?? []).length === 0 ? '' : `<div class="decision-option-list">${(node.options ?? []).map((option) => `<div class="runtime-line" data-decision-option="${escapeHtml(option.optionId)}" title="${escapeHtml(decisionOptionTechnicalReason(option))}"><i data-lucide="file"></i><span>${escapeHtml(decisionOptionLabel(node, option))}</span></div>`).join('')}</div>`}
-              ${(node.reasonCodes ?? []).length === 0 ? '' : `<div class="decision-reason-list"><div class="runtime-line" data-decision-reason="selection"><i data-lucide="list-tree"></i><span>选择理由 ${escapeHtml((node.reasonCodes ?? []).join(' · '))}</span></div>${(node.selectionCriteria ?? []).length ? `<div class="runtime-line" data-decision-reason="criteria"><i data-lucide="file-cog"></i><span>评分口径 ${escapeHtml((node.selectionCriteria ?? []).join(' · '))}</span></div>` : ''}</div>`}
+              ${(node.reasonCodes ?? []).length === 0 ? '' : `<div class="decision-reason-list"><div class="runtime-line" data-decision-reason="selection"><i data-lucide="list-tree"></i><span>选择理由：${escapeHtml((node.reasonCodes ?? []).map(reasonDisplayLabel).join('、'))}</span></div>${(node.selectionCriteria ?? []).length ? `<div class="runtime-line" data-decision-reason="criteria"><i data-lucide="file-cog"></i><span>评分依据：${escapeHtml((node.selectionCriteria ?? []).map((value) => humanizeCode(value, '未提供')).join('、'))}</span></div>` : ''}</div>`}
             </article>`).join('')}</div>`}
-      ${edges.length === 0 ? '' : `<div class="decision-edge-list">${edges.map((edge) => `<div class="runtime-line" data-decision-edge="parent"><i data-lucide="list-tree"></i><span>${escapeHtml(edge.parentId)} → ${escapeHtml(edge.childId)}${edge.resolved ? '' : ' · 父节点不在当前窗口'}</span></div>`).join('')}</div>`}
-      ${supersedes.length === 0 ? '' : `<div class="decision-edge-list">${supersedes.map((node) => `<div class="runtime-line" data-decision-edge="supersede"><i data-lucide="list-tree"></i><span>${escapeHtml(node.supersedesDecisionId ?? '')} ⊘ ${escapeHtml(node.decisionId)}</span></div>`).join('')}</div>`}
+      ${edges.length === 0 ? '' : `<div class="decision-edge-list"><span class="technical-label">技术关系</span>${edges.map((edge) => `<div class="runtime-line" data-decision-edge="parent"><i data-lucide="list-tree"></i><span>前置决策 ${escapeHtml(shortDigest(edge.parentId))} → 当前决策 ${escapeHtml(shortDigest(edge.childId))}${edge.resolved ? '' : ' · 前置节点不在当前窗口'}</span></div>`).join('')}</div>`}
+      ${supersedes.length === 0 ? '' : `<div class="decision-edge-list"><span class="technical-label">替代关系</span>${supersedes.map((node) => `<div class="runtime-line" data-decision-edge="supersede"><i data-lucide="list-tree"></i><span>新决策已替代旧决策（${escapeHtml(shortDigest(node.supersedesDecisionId))} → ${escapeHtml(shortDigest(node.decisionId))}）</span></div>`).join('')}</div>`}
     </section>`;
 };
 
@@ -1019,16 +1148,19 @@ const renderCouncilPanel = (): string => {
   const ranking = (node: RuntimeDecisionNode): string => {
     const options = node.options ?? [];
     if (!options.length) return '<div class="empty-note">暂无候选排序</div>';
-    return `<div class="council-ranking" aria-label="Judge 候选排序">${options.map((option, index) => {
+    return `<div class="council-ranking" aria-label="候选排序">${options.map((option, index) => {
       const selected = option.optionId === node.selectedOptionId;
-      const reason = option.rejectionReasonCodes.length ? ` · ${option.rejectionReasonCodes.join(' · ')}` : '';
-      return `<div class="runtime-line" data-council-ranking="${escapeHtml(option.optionId)}"><i data-lucide="${selected ? 'circle-check' : 'list-ordered'}"></i><span>${index + 1}. ${escapeHtml(option.optionId)} · ${selected ? '已选中' : '未执行'}${option.actionKind ? ` · ${escapeHtml(option.actionKind)}` : ''}${escapeHtml(reason)}</span></div>`;
+      const reason = option.rejectionReasonCodes.length ? ` · ${option.rejectionReasonCodes.map(reasonDisplayLabel).join('、')}` : '';
+      return `<div class="runtime-line" data-council-ranking="${escapeHtml(option.optionId)}"><i data-lucide="${selected ? 'circle-check' : 'list-ordered'}"></i><span>${index + 1}. ${escapeHtml(decisionOptionDisplayLabel(option.optionId))} · ${selected ? '已采用' : '未执行'}${option.actionKind ? ` · ${escapeHtml(toolDisplayLabel(option.actionKind))}` : ''}${escapeHtml(reason)}</span></div>`;
     }).join('')}</div>`;
   };
-  const section = (label: string, items: RuntimeDecisionNode[], empty: string, extra?: (node: RuntimeDecisionNode) => string): string => items.length === 0
-    ? `<div class="council-column"><strong>${label}</strong><span class="empty-note">${empty}</span></div>`
-    : `<div class="council-column"><strong>${label}</strong>${items.map((node) => `<div class="council-item" data-council-kind="${label}"><span>${escapeHtml(node.decisionType ?? node.role ?? '未标注')}</span><small>${escapeHtml(decisionStatusLabel(node))}${node.selectedOptionId ? ` · 选中 ${escapeHtml(node.selectedOptionId)}` : ''}${node.reasonCodes?.length ? ` · ${escapeHtml(node.reasonCodes.join(' · '))}` : ''}</small>${extra ? extra(node) : ''}</div>`).join('')}</div>`;
-  return `<section class="context-section council-section" aria-label="Council 审议"><div class="section-heading"><div><span class="section-kicker">Council</span><h3>多候选审议</h3></div><span class="context-count">${council.length} 条持久化事实</span></div><div class="council-grid">${section('Proposal', proposals, '暂无独立 Proposal 记录')}${section('Critique', critiques, '暂无结构化 Critique 记录')}${section('Judge', judges, '暂无 Judge 记录', ranking)}${section('Probe', probes, '暂无 Probe 选择或执行记录')}</div><div class="runtime-line"><i data-lucide="shield-check"></i><span>当前投影只展示已持久化的决策和候选排序；缺少的 claim/evidence、Critique、Probe、预算和轮数不会被推断为已完成。</span></div></section>`;
+  const section = (label: string, items: RuntimeDecisionNode[], empty: string, extra?: (node: RuntimeDecisionNode) => string): string => {
+    const display = ({ Proposal: '候选方案', Critique: '审阅意见', Judge: '候选比较', Probe: '探查' } as Record<string, string>)[label] ?? label;
+    return items.length === 0
+      ? `<div class="council-column"><strong>${display}</strong><span class="empty-note">${empty}</span></div>`
+      : `<div class="council-column"><strong>${display}</strong>${items.map((node) => `<div class="council-item" data-council-kind="${label}"><span>${escapeHtml(humanizeCode(node.decisionType ?? node.role, '未标注'))}</span><small>${escapeHtml(decisionStatusLabel(node))}${node.selectedOptionId ? ` · 已采用：${escapeHtml(decisionOptionDisplayLabel(node.selectedOptionId))}` : ''}${node.reasonCodes?.length ? ` · ${escapeHtml(node.reasonCodes.map(reasonDisplayLabel).join('、'))}` : ''}</small>${extra ? extra(node) : ''}</div>`).join('')}</div>`;
+  };
+  return `<section class="context-section council-section" aria-label="多候选审议"><div class="section-heading"><div><span class="section-kicker">多候选审议</span><h3>多候选审议</h3></div><span class="context-count">${council.length} 条持久化事实</span></div><div class="council-grid">${section('Proposal', proposals, '暂无独立候选方案记录')}${section('Critique', critiques, '暂无结构化审阅记录')}${section('Judge', judges, '暂无候选比较记录', ranking)}${section('Probe', probes, '暂无探查记录')}</div><div class="runtime-line"><i data-lucide="shield-check"></i><span>当前投影只展示已保存的决策和候选排序；缺少的主张、证据、审阅、探查、预算和轮数不会被推断为已完成。</span></div></section>`;
 };
 
 // The A-T distribution is the only evidence behind a continuous score, so it
@@ -1062,7 +1194,7 @@ const appendVerificationChecks = (current: HarnessReadModel, checks: unknown, ru
     const evidence = Array.isArray(check.evidence) ? check.evidence.filter((ref): ref is string => typeof ref === 'string') : [];
     next = appendTimelineItem(next, {
       kind: 'STATUS', evidenceKind: 'rule-verification-check', sourceRole: 'runtime-rule-verifier', runId,
-      title: status + ' · ' + (typeof check.id === 'string' ? check.id : '未提供检查标识'),
+      title: statusDisplayLabel(status) + ' · ' + (typeof check.id === 'string' ? check.id : '未提供检查标识'),
       body: [typeof check.message === 'string' ? check.message : '未提供检查说明',
         status === 'SKIPPED' ? '此项未执行，不代表检查通过。' : status === 'UNKNOWN' ? '此项证据不足，不能视为通过。' : undefined,
         evidence.length ? '证据引用：\n' + evidence.join('\n') : '未提供证据引用'
@@ -1096,7 +1228,7 @@ const renderFinalVerificationChecks = (): string => {
   if (!checks.length) return '';
   return `<section class="verification-checks" aria-label="确定性验收检查">
     <h2>确定性验收检查</h2>
-    <p>来源：运行时规则 Verifier 报告。以下时间为界面收到报告的时间；运行时未提供逐项检查时间和影响等级。</p>
+    <p>来源：运行时规则核对报告。以下时间为界面收到报告的时间；运行时未提供逐项检查时间和影响等级。</p>
     <div class="verification-check-list">${checks.map(item => `
       <article class="verification-check" data-status="${item.status}">
         <h3>${escapeHtml(item.title)}</h3>
@@ -1118,10 +1250,10 @@ const renderContinuousVerification = (): string => {
   // The process row is the only place a step-level score appears, and it is
   // always the host-derived expectation rather than model-authored text.
   const processRow = hasProcess
-    ? `<div class="runtime-line" data-verification-unknown="${process?.status === 'UNKNOWN' || process?.status === 'ABSTAIN' ? 'true' : ''}" data-process-verification="${escapeHtml(process?.status ?? 'ABSTAIN')}"><i data-lucide="shield-check"></i><span>过程验证 ${escapeHtml(process?.status ?? 'ABSTAIN')} · 分数 ${typeof process?.score === 'number' ? process.score.toFixed(3) : '—'} · 方差 ${typeof process?.variance === 'number' ? process.variance.toFixed(4) : '—'}${processDistribution ? ` [${escapeHtml(processDistribution)}]` : ''}${process?.thresholds ? ` · 阈值 ${process.thresholds.passThreshold}/${process.thresholds.failThreshold}` : ''}${processSourceLabel(process?.source) ? ` · 来源 ${escapeHtml(processSourceLabel(process?.source))}` : ''}</span></div>`
+    ? `<div class="runtime-line" data-verification-unknown="${process?.status === 'UNKNOWN' || process?.status === 'ABSTAIN' ? 'true' : ''}" data-process-verification="${escapeHtml(process?.status ?? 'ABSTAIN')}"><i data-lucide="shield-check"></i><span>过程验证：${escapeHtml(statusDisplayLabel(process?.status, '暂不判断'))} · 分数 ${typeof process?.score === 'number' ? process.score.toFixed(3) : '—'} · 波动 ${typeof process?.variance === 'number' ? process.variance.toFixed(4) : '—'}${processDistribution ? ` · 概率 ${escapeHtml(processDistribution)}` : ''}${process?.thresholds ? ` · 通过阈值 ${process.thresholds.passThreshold}，失败阈值 ${process.thresholds.failThreshold}` : ''}${processSourceLabel(process?.source) ? ` · 来源 ${escapeHtml(processSourceLabel(process?.source))}` : ''}</span></div>`
     : '';
-  return `<section class="context-section continuous-verification-section" aria-label="Continuous verification">
-    <div class="section-heading"><div><span class="section-kicker">Continuous verification</span><h3>连续验证</h3></div><span class="context-count">${completed.length} 次汇总 · ${records.length} 条样本</span></div>
+  return `<section class="context-section continuous-verification-section" aria-label="连续验证">
+    <div class="section-heading"><div><span class="section-kicker">连续验证</span><h3>连续验证</h3></div><span class="context-count">${completed.length} 次汇总 · ${records.length} 条样本</span></div>
     ${processRow}
     ${completed.map((record) => {
       const ranking = (record.ranking ?? []).map((item) => `${item.candidateId ?? '?'} ${typeof item.score === 'number' ? item.score.toFixed(2) : '—'}`).join(' · ');
@@ -1147,7 +1279,7 @@ const renderComposerCache = (): string => {
     ? '暂无记录'
     : usage.status !== 'REPORTED'
       ? '服务商未返回缓存统计'
-      : `命中 ${usage.cachedInputTokens.toLocaleString()} / 可统计输入 ${usage.cacheEligibleInputTokens.toLocaleString()} tokens · 覆盖 ${usage.cacheReportedCalls}/${usage.calls} 次调用`;
+      : `命中 ${usage.cachedInputTokens.toLocaleString()} / 可统计输入 ${usage.cacheEligibleInputTokens.toLocaleString()} 个令牌 · 覆盖 ${usage.cacheReportedCalls}/${usage.calls} 次调用`;
   return `<span class="cache-metric"><i data-lucide="gauge"></i>缓存命中率 <strong>${rate}</strong></span><span class="cache-detail">${escapeHtml(detail)}</span><span class="cache-scope" title="累计已记录的模型调用；历史缺失数据不按零计算。">调用累计</span>`;
 };
 const refreshComposerCache = (): void => {
@@ -1175,18 +1307,18 @@ const renderSupportBundle = (): string => {
   const egressCandidates = Object.entries(egress?.byCandidate ?? {})
     .map(([candidateId, bucket]) => `${candidateId} · ${bucket.calls} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}（已知 ${bucket.expectedCostKnown}/${bucket.calls}） · 实际成本 ${bucket.actualCost ?? '未知'}（已知 ${bucket.actualCostKnown}/${bucket.calls}） · 失败 ${bucket.failures}`);
   return `
-    <section class="context-section support-bundle-section" aria-label="Support Bundle">
+    <section class="context-section support-bundle-section" aria-label="诊断导出">
       <div class="section-heading">
-        <div><span class="section-kicker">Support Bundle</span><h3>诊断导出就绪度</h3></div>
+        <div><span class="section-kicker">诊断导出</span><h3>诊断导出就绪度</h3></div>
         <span class="governance-state governance-state-${scan.ok ? 'active' : 'failed'}">${scan.ok ? '脱敏检查通过' : '脱敏检查失败'}</span>
       </div>
-      <div class="runtime-line" data-support-bundle-scan="${scan.ok ? 'pass' : 'fail'}"><i data-lucide="shield-check"></i><span>隐私扫描 ${scan.ok ? 'PASS' : 'FAIL'} · ${scan.violations.length} 个违规</span></div>
+      <div class="runtime-line" data-support-bundle-scan="${scan.ok ? 'pass' : 'fail'}"><i data-lucide="shield-check"></i><span>隐私扫描 ${scan.ok ? '通过' : '失败'} · ${scan.violations.length} 个违规</span></div>
       <div class="runtime-line"><i data-lucide="history"></i><span>${escapeHtml(bundle.evidenceSource)}</span></div>
       <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${escapeHtml(bundle.exportInvocation)}</span></div>
       <div class="decision-edge-list">${counts.map((line) => `<div class="runtime-line"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>
       ${egress === undefined ? '' : `<div class="runtime-line" data-model-egress="total"><i data-lucide="list-tree"></i><span>出域 ${egress.recordCount} 条 · 调用 ${egress.totals.calls} · 失败 ${egress.totals.failures} · 预估成本 ${egress.totals.expectedCost ?? '未知'}（已知 ${egress.totals.expectedCostKnown}/${egress.totals.calls}） · 实际成本 ${egress.totals.actualCost ?? '未知'}（已知 ${egress.totals.actualCostKnown}/${egress.totals.calls}）</span></div>
       <div class="decision-edge-list">${egressCandidates.map((line) => `<div class="runtime-line" data-model-egress="candidate"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
-      ${usage === undefined ? '' : `<div class="runtime-line" data-model-cache="summary"><i data-lucide="database"></i><span>Prompt Cache 命中率 ${cacheRate} · 统计覆盖 ${cacheCoverage} · 输入 ${usage.inputTokens} · 命中 ${cachedTokens} · 未命中 ${uncachedTokens}</span></div>`}
+      ${usage === undefined ? '' : `<div class="runtime-line" data-model-cache="summary"><i data-lucide="database"></i><span>提示缓存命中率 ${cacheRate} · 统计覆盖 ${cacheCoverage} · 输入 ${usage.inputTokens} 个令牌 · 命中 ${cachedTokens} · 未命中 ${uncachedTokens}</span></div>`}
     </section>`;
 };
 
@@ -1275,21 +1407,21 @@ const renderGovernance = (): string => {
   return `
     <section class="context-section governance-section" aria-label="治理状态">
       <div class="section-heading">
-        <div><span class="section-kicker">Governance</span><h3>Memory · Dream · Plugins · Evolution</h3></div>
+        <div><span class="section-kicker">治理状态</span><h3>记忆 · 后台整理 · 插件 · 演进</h3></div>
         <button class="icon-button small" data-action="refresh-governance" title="刷新治理状态" aria-label="刷新治理状态"><i data-lucide="rotate-ccw-clock"></i></button>
       </div>
       <div class="governance-group">
-        <div class="governance-group-heading"><strong>Feedback</strong><span>${model.feedback.length} 条</span></div>
+        <div class="governance-group-heading"><strong>反馈</strong><span>${model.feedback.length} 条</span></div>
         ${model.feedback.length === 0
           ? '<div class="empty-note">暂无已提交反馈</div>'
           : model.feedback.slice().sort((left, right) => (right.eventSequence ?? 0) - (left.eventSequence ?? 0)).slice(0, 8).map((item) => {
             const status = typeof item.outcomeStatus === 'string' ? item.outcomeStatus : 'UNKNOWN';
             const key = typeof item.scenarioKey === 'string' ? item.scenarioKey : item.feedbackId ?? item.eventId ?? '脱敏反馈';
-            return '<article class="governance-row"><div class="governance-copy"><strong>' + escapeHtml(key) + '</strong><span>' + escapeHtml(status) + (item.runId ? ' · ' + escapeHtml(item.runId) : '') + '</span></div><span class="governance-state governance-state-' + escapeHtml(status.toLowerCase()) + '">' + escapeHtml(status) + '</span></article>';
+            return '<article class="governance-row"><div class="governance-copy"><strong>' + escapeHtml(key) + '</strong><span>' + escapeHtml(statusDisplayLabel(status)) + (item.runId ? ' · 运行 ' + escapeHtml(shortDigest(item.runId)) : '') + '</span></div><span class="governance-state governance-state-' + escapeHtml(status.toLowerCase()) + '">' + escapeHtml(statusDisplayLabel(status)) + '</span></article>';
           }).join('')}
       </div>
       <div class="governance-group">
-        <div class="governance-group-heading"><strong>Memory</strong><span>${memories.length} 条</span></div>
+        <div class="governance-group-heading"><strong>记忆</strong><span>${memories.length} 条</span></div>
         ${memories.length === 0
           ? '<div class="empty-note">暂无记忆候选或已激活记忆</div>'
           : memories.map((memory) => `
@@ -1300,18 +1432,18 @@ const renderGovernance = (): string => {
             </article>`).join('')}
       </div>
       <div class="governance-group">
-        <div class="governance-group-heading"><strong>Dreaming</strong><span>${dreams.length} 次</span><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>运行一次</button>${maintenanceRunning ? `<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>` : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>启动后台</button>`}</div></div>
+        <div class="governance-group-heading"><strong>后台整理</strong><span>${dreams.length} 次</span><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>运行一次</button>${maintenanceRunning ? `<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>` : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>启动后台</button>`}</div></div>
         <div class="governance-row"><div class="governance-copy"><strong>后台维护 · ${escapeHtml(maintenanceState)}</strong><span>${escapeHtml(maintenance?.projectId ?? model.workspace.rootLabel)}${escapeHtml(maintenanceDetail)}</span></div><span class="governance-state governance-state-${escapeHtml((maintenance?.state ?? 'DISABLED').toLowerCase())}">${escapeHtml(maintenanceState)}</span></div>
         ${dreams.length === 0
-          ? '<div class="empty-note">暂无 Dream run</div>'
+          ? '<div class="empty-note">暂无后台整理记录</div>'
           : dreams.map((dream) => `
             <article class="governance-row">
-              <div class="governance-copy"><strong>${escapeHtml(dream.projectId)}</strong><span>${escapeHtml(dream.phase ?? '等待阶段')} · ${escapeHtml(formatTime(dream.startedAtMs))}</span></div>
+              <div class="governance-copy"><strong>${escapeHtml(dream.projectId)}</strong><span>${escapeHtml(humanizeCode(dream.phase, '等待阶段'))} · ${escapeHtml(formatTime(dream.startedAtMs))}</span></div>
               <span class="governance-state governance-state-${escapeHtml(dream.state.toLowerCase())}">${escapeHtml(governanceStateLabel(dream.state))}</span>
             </article>`).join('')}
       </div>
       <div class="governance-group">
-        <div class="governance-group-heading"><strong>Plugins</strong><span>${plugins.length} 个</span></div>
+        <div class="governance-group-heading"><strong>插件</strong><span>${plugins.length} 个</span></div>
         ${plugins.length === 0
           ? '<div class="empty-note">暂无插件治理记录</div>'
           : plugins.map((plugin) => `
@@ -1324,9 +1456,9 @@ const renderGovernance = (): string => {
             </article>`).join('')}
       </div>
       <div class="governance-group">
-        <div class="governance-group-heading"><strong>Evolution</strong><span>${proposals.length} 个候选</span></div>
+        <div class="governance-group-heading"><strong>演进</strong><span>${proposals.length} 个候选</span></div>
         <article class="governance-row">
-          <div class="governance-copy"><strong>全局 Kill Switch</strong><span>${model.evolutionControl?.reason ? escapeHtml(model.evolutionControl.reason) : '未阻断'}</span></div>
+          <div class="governance-copy"><strong>全局停止开关</strong><span>${model.evolutionControl?.reason ? escapeHtml(reasonDisplayLabel(model.evolutionControl.reason)) : '未阻断'}</span></div>
           <span class="governance-state governance-state-${model.evolutionControl?.enabled === false ? 'failed' : 'active'}">${model.evolutionControl?.enabled === false ? '已阻断' : '允许'}</span>
         </article>
         ${proposals.length === 0
@@ -1351,11 +1483,11 @@ const renderEvidencePanel = (): string => {
   const items = model.timeline.filter((item) => item.evidenceKind === 'terminal' && item.commandText).slice(-6);
   if (items.length === 0) return '';
   return `
-    <section class="evidence-panel" aria-label="Terminal 证据">
-      <div class="route-heading"><div><span class="eyebrow">Terminal</span><h2>命令证据</h2></div><span class="route-count">${items.length} 条</span></div>
+    <section class="evidence-panel" aria-label="命令证据">
+      <div class="route-heading"><div><span class="eyebrow">命令</span><h2>命令证据</h2></div><span class="route-count">${items.length} 条</span></div>
       <p class="evidence-note">命令证据为受控摘要；截断或脱敏输出不会伪装成完整原始流。</p>
       ${items.map((item) => `
-        <div class="evidence-command" data-timeline-item="${escapeHtml(item.itemId)}"><code>${escapeHtml(item.toolName ?? 'tool')}</code><pre>${escapeHtml(item.commandText ?? '')}</pre>${item.digest ? `<small>${escapeHtml(item.digest)}${item.truncated ? ' · 已截断' : ''}</small>` : ''}</div>
+        <div class="evidence-command" data-timeline-item="${escapeHtml(item.itemId)}"><strong>${escapeHtml(toolDisplayLabel(item.toolName ?? 'tool'))}</strong><pre>${escapeHtml(item.commandText ?? '')}</pre>${item.digest ? `<small>输出摘要 ${escapeHtml(shortDigest(item.digest))}${item.truncated ? ' · 输出已截断' : ''}</small>` : ''}</div>
       `).join('')}
     </section>`;
 };
@@ -1366,14 +1498,14 @@ const renderRoutePanel = (): string => {
   const candidates = decisions.flatMap((node) => (node.options ?? []).map((option) => ({ node, option })));
   const selected = candidates.filter(({ node, option }) => option.optionId === node.selectedOptionId).length;
   const rejected = candidates.filter(({ node, option }) => option.optionId !== node.selectedOptionId && option.rejectionReasonCodes.length > 0).length;
-  const egressLines = egress ? Object.entries(egress.byCandidate ?? {}).map(([candidateId, bucket]) => `${candidateId} · ${bucket.calls} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
-  const roleLines = egress ? Object.entries(egress.byPhase ?? {}).map(([phase, bucket]) => `${phase} · ${bucket.calls} 次 · 失败 ${bucket.failures} · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
+  const egressLines = egress ? Object.entries(egress.byCandidate ?? {}).map(([candidateId, bucket]) => `${humanizeCode(candidateId, '候选方案')} · 调用 ${bucket.calls} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
+  const roleLines = egress ? Object.entries(egress.byPhase ?? {}).map(([phase, bucket]) => `${phaseDisplayLabel(phase)} · 调用 ${bucket.calls} 次 · 失败 ${bucket.failures} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
   if (candidates.length === 0 && !egress) return '';
   return `
-    <section class="route-panel" aria-label="Route 与候选">
+    <section class="route-panel" aria-label="执行路线与候选">
       <div class="route-heading">
-        <div><span class="eyebrow">Decision</span><h2>模型选择与执行路径</h2></div>
-        <span class="route-count">本次比较 ${candidates.length} 个方案 · 采用 ${selected} 个 · 未采用 ${rejected} 个</span>
+        <div><span class="eyebrow">执行路线</span><h2>模型选择与执行路径</h2></div>
+        <span class="route-count">比较 ${candidates.length} 个方案 · 采用 ${selected} 个 · 未采用 ${rejected} 个</span>
         <label class="route-fixed-model" title="只影响新任务">模型偏好
           <select data-action="pinned-model" ${model.runtime.model ? '' : 'disabled'}>
             <option value="">自动选择</option>
@@ -1381,8 +1513,8 @@ const renderRoutePanel = (): string => {
           </select>
         </label>
       </div>
-      <p class="route-explanation">系统先筛掉不符合当前任务或安全规则的方案，再采用保留下来的方案继续执行。</p>
-      ${egressLines.length === 0 ? '' : `<div class="route-egress"><strong>模型调用记录</strong><div class="runtime-line"><i data-lucide="file"></i><span>${escapeHtml(egressLines.join(' · '))}</span></div></div>`}
+      <p class="route-explanation">系统先排除与任务或安全规则不匹配的方案，再继续执行保留下来的方案。</p>
+      ${egressLines.length === 0 ? '' : `<div class="route-egress"><strong>模型调用记录</strong>${egressLines.map((line) => `<div class="runtime-line"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
       ${roleLines.length === 0 ? '' : `<div class="route-role"><strong>角色/阶段模型摘要</strong>${roleLines.map((line) => `<div class="runtime-line"><i data-lucide="cpu"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
       <details class="route-candidates">
         <summary>查看候选方案与未采用原因</summary>
@@ -1406,9 +1538,9 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
   return `
     <article class="approval-card" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
-      <div class="approval-detail">${escapeHtml(approval.capability)}${approval.command ? ` · ${escapeHtml(approval.command)}` : ''}${approval.path ? ` · ${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · cwd=${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
+      <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
       <div class="approval-meta">
-        ${approval.risk ? `<span class="approval-risk approval-risk-${approval.risk.toLowerCase()}">${escapeHtml(approval.risk)} 风险</span>` : ''}
+        ${approval.risk ? `<span class="approval-risk approval-risk-${approval.risk.toLowerCase()}">${escapeHtml(riskDisplayLabel(approval.risk))}风险</span>` : ''}
         ${approval.policyVersion ? `<span>策略 ${escapeHtml(approval.policyVersion)}</span>` : ''}
         ${approval.approvalExpiresAt ? `<span>有效至 ${escapeHtml(formatTime(approval.approvalExpiresAt))}</span>` : ''}
         <span>仅本次 · Windows 受限执行器</span>
@@ -1529,20 +1661,66 @@ const NON_CONVERSATIONAL_TIMELINE_KINDS = new Set([
   'CandidateVerificationCompleted'
 ]);
 
+const timelineTitleDisplay = (title: string): string => {
+  const labels: Record<string, string> = {
+    'ActionIntent': '动作请求',
+    'PolicyLease 已签发': '已获得一次性授权',
+    'PolicyLease 已领取': '执行器已领取授权',
+    'PolicyLease 已消费': '一次性授权已使用',
+    'PolicyLease 执行结果不确定': '执行结果暂时无法确认',
+    '工具调用': '正在调用工具',
+    '工具结果': '工具执行结果',
+    '模型路由': '执行路线已确定',
+    '角色上下文': '已准备角色上下文',
+    '运行状态': '任务进度',
+    '计划步骤': '计划进度',
+    'Council 审议': '多方案审议',
+    '验证结果': '结果核对',
+    '任务失败': '任务未完成',
+    '任务完成': '任务已完成'
+  };
+  return labels[title] ?? title;
+};
+
+const timelineBodyDisplay = (item: TimelineItem): string => {
+  if (item.toolName) {
+    const tool = toolDisplayLabel(item.toolName);
+    if (item.status === 'STREAMING' || item.status === 'PENDING') return `正在${tool.replace(/^查看|^读取|^执行|^运行|^发送/, '')}`;
+  }
+  if (/^[A-Z][A-Z0-9_]+$/.test(item.body.trim())) return statusDisplayLabel(item.body);
+  return item.body;
+};
+
+const timelineTechnicalDetails = (item: TimelineItem): string => {
+  const rows: Array<[string, string | number | undefined]> = [
+    ['事件编号', item.eventId],
+    ['事件序号', item.eventSequence],
+    ['操作编号', item.operationId],
+    ['工具请求', item.toolCallId],
+    ['来源角色', item.sourceRole ? humanizeCode(item.sourceRole, '未标注') : undefined],
+    ['插件版本', item.pluginVersion],
+    ['输出摘要', item.digest ? shortDigest(item.digest) : undefined]
+  ];
+  const visible = rows.filter(([, value]) => value !== undefined && value !== null && String(value) !== '');
+  if (visible.length === 0 && !item.truncated && item.kind !== 'AGENT') return '';
+  if (visible.length === 0 && !item.truncated) return '<details class="timeline-details timeline-technical-details"><summary>技术详情</summary></details>';
+  return `<details class="timeline-details timeline-technical-details"><summary>技术详情</summary><dl>${visible.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}${item.truncated ? '<div><dt>输出状态</dt><dd>内容已截断或脱敏</dd></div>' : ''}</dl></details>`;
+};
+
 const timelineItemHtml = (item: TimelineItem): string => `
-        <article class="timeline-item timeline-${item.kind.toLowerCase()}" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}">
+        <article class="timeline-item timeline-${item.kind.toLowerCase()}" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}"${item.toolName ? ` data-tool-name="${escapeHtml(item.toolName)}"` : ''}>
           <div class="timeline-marker" aria-hidden="true">
             <i data-lucide="${timelineIcon(item)}"></i>
           </div>
           <div class="timeline-content">
             <div class="timeline-meta">
-              <span>${escapeHtml(item.title)}</span>
+              <span>${escapeHtml(timelineTitleDisplay(item.title))}</span>
               <time>${formatTime(item.createdAtMs)}</time>
+              <span class="timeline-status timeline-status-${item.status.toLowerCase()}">${escapeHtml(statusDisplayLabel(item.status))}</span>
             </div>
-            <details class="timeline-details timeline-body-details">
-              <summary class="timeline-body">${escapeHtml(item.body)}</summary>
-              ${[item.eventId, item.eventSequence, item.operationId, item.sourceRole, item.pluginVersion, item.digest].filter((value) => (typeof value === "string" && value.length) || typeof value === "number").length ? `<dl>${[["Event", item.eventId], ["EventSeq", item.eventSequence], ["Operation", item.operationId], ["来源角色", item.sourceRole], ["Plugin", item.pluginVersion], ["Digest", item.digest]].filter(([, value]) => value !== undefined && value !== null && String(value) !== "").map(([label, value]) => `<div><dt>${escapeHtml(String(label))}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join("")}</dl>` : ''}
-            </details>
+            <p class="timeline-body">${escapeHtml(timelineBodyDisplay(item))}</p>
+            ${item.commandText ? `<pre class="timeline-command"><code>${escapeHtml(item.commandText)}</code></pre>` : ''}
+            ${timelineTechnicalDetails(item)}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
         </article>`;
@@ -1613,7 +1791,7 @@ const renderContextContent = (): string => {
   const workspacePath = workspaceDisplayPath(model.workspace.rootPath, workspaceTitle, model.workspace.currentPath);
   const controlled = model.composer.mode === 'CONTROLLED';
   const runtimeRoute = model.runtime.model
-    ? `${model.runtime.model.provider} · ${model.runtime.model.protocol} · ${model.runtime.model.model}`
+    ? `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`
     : model.runtime.platform === 'WINDOWS' ? '模型路由未读取' : 'Web 预览无本地模型';
   const runtimeHealth = model.runtime.runtimeReady === true ? '健康检查通过'
     : model.runtime.platform === 'WINDOWS' ? '等待健康检查' : '演示运行时';
@@ -1622,13 +1800,13 @@ const renderContextContent = (): string => {
     : '不读取本地模型配置';
   const contextSidecar = model.runtime.contextSidecar;
   const contextSidecarState = contextSidecarStateLabel(contextSidecar?.state);
-  const contextSidecarDetail = contextSidecar?.errorCode ? ` · ${contextSidecar.errorCode}`
-    : contextSidecar?.managed && contextSidecar.pid ? ` · PID ${contextSidecar.pid}` : '';
+  const contextSidecarDetail = contextSidecar?.errorCode ? ` · ${reasonDisplayLabel(contextSidecar.errorCode)}`
+    : contextSidecar?.managed && contextSidecar.pid ? ` · 进程号 ${contextSidecar.pid}` : '';
   return `
         ${renderPrimaryNavigation()}
         <div class="context-header">
           <div>
-            <span class="eyebrow">Context</span>
+            <span class="eyebrow">上下文</span>
             <h2>任务上下文</h2>
           </div>
           <button class="icon-button mobile-context-close" data-action="toggle-context" title="关闭" aria-label="关闭上下文面板"><i data-lucide="x-circle"></i></button>
@@ -1637,7 +1815,7 @@ const renderContextContent = (): string => {
         <section class="context-section workspace-section">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">Workspace</span>
+              <span class="section-kicker">工作区</span>
               <h3 title="${escapeHtml(workspacePath)}">${escapeHtml(model.workspace.rootLabel)}</h3>
             </div>
             ${model.workspace.granted && model.workspace.currentPath
@@ -1652,10 +1830,10 @@ const renderContextContent = (): string => {
 
         <section class="context-section capability-section">
           <div class="section-heading">
-            <div><span class="section-kicker">Safety</span><h3>能力边界</h3></div>
+            <div><span class="section-kicker">安全边界</span><h3>能力边界</h3></div>
           </div>
           <dl class="capability-list">
-            <div><dt>发布渠道</dt><dd>${escapeHtml(model.runtime.releaseChannel ?? '尚未确认')}</dd></div>
+            <div><dt>发布渠道</dt><dd>${escapeHtml(model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? 'Windows 只读版' : model.runtime.releaseChannel === 'WINDOWS_PHASE1_5_CONTROLLED' ? 'Windows 受控版' : model.runtime.releaseChannel ?? '尚未确认')}</dd></div>
             <div><dt>工作区读取</dt><dd class="capability-on"><i data-lucide="check-circle-2"></i>允许</dd></div>
             <div><dt>命令执行</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
             <div><dt>文件写入</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
@@ -1663,7 +1841,7 @@ const renderContextContent = (): string => {
           </dl>
           ${controlled ? `
             <div class="network-target-editor">
-              <label for="network-targets-input">网络目标 allowlist（JSON，留空禁用）</label>
+              <label for="network-targets-input">网络目标列表（JSON，留空表示关闭）</label>
               <input id="network-targets-input" data-role="network-targets" type="text" spellcheck="false"
                 placeholder='[{"host":"api.example.com","port":443,"scheme":"https","methods":["GET"]}]'
                 value="${escapeHtml(controlledNetworkTargets.text)}" />
@@ -1674,11 +1852,11 @@ const renderContextContent = (): string => {
 
         <section class="context-section execution-state-section">
           <div class="section-heading">
-            <div><span class="section-kicker">Execution State</span><h3>受控状态</h3></div>
+            <div><span class="section-kicker">执行状态</span><h3>受控状态</h3></div>
             <button class="icon-button small" data-action="refresh-execution-state" title="刷新执行状态" aria-label="刷新执行状态"><i data-lucide="rotate-ccw-clock"></i></button>
           </div>
           ${executionRecords.length === 0
-            ? '<div class="empty-note">暂无持久化 Intent、Approval 或 Lease</div>'
+            ? '<div class="empty-note">暂无已保存的动作请求、审批或一次性授权</div>'
             : `<div class="execution-record-list">${executionRecords.slice(-12).reverse().map((record) => `
               <div class="execution-record">
                 <div class="execution-record-heading"><strong>${executionTypeLabel(record.recordType)}</strong><span>${escapeHtml(executionStateLabel(record.state))}</span></div>
@@ -1695,13 +1873,13 @@ const renderContextContent = (): string => {
         ${renderSupportBundle()}
 
         <section class="context-section runtime-section">
-          <div class="section-heading"><div><span class="section-kicker">Runtime</span><h3>运行时</h3></div></div>
-          <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${model.runtime.platform === 'WINDOWS' ? 'Windows native' : 'Web preview'}</span></div>
+          <div class="section-heading"><div><span class="section-kicker">运行时</span><h3>运行时</h3></div></div>
+          <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览'}</span></div>
           <div class="runtime-line"><i data-lucide="heart-pulse"></i><span>${escapeHtml(runtimeHealth)}</span></div>
           <div class="runtime-line"><i data-lucide="cpu"></i><span title="${escapeHtml(runtimeRoute)}">${escapeHtml(runtimeRoute)}</span></div>
           <div class="runtime-line"><i data-lucide="file-cog"></i><span>${escapeHtml(runtimeConfig)}</span></div>
-          <div class="runtime-line"><i data-lucide="database"></i><span title="${escapeHtml(contextSidecar?.state ?? 'LOCAL')} ">Local Memory Journal · ${escapeHtml(contextSidecarState)}${escapeHtml(contextSidecarDetail)}</span></div>
-          <div class="runtime-line"><i data-lucide="gauge"></i><span data-projection-version>Projection ${model.projectionVersion}</span></div>
+          <div class="runtime-line"><i data-lucide="database"></i><span title="${escapeHtml(contextSidecar?.state ?? 'LOCAL')} ">本地记忆日志 · ${escapeHtml(contextSidecarState)}${escapeHtml(contextSidecarDetail)}</span></div>
+          <div class="runtime-line"><i data-lucide="gauge"></i><span data-projection-version>运行投影 v${model.projectionVersion}</span></div>
         </section>
 `;
 };
@@ -1719,7 +1897,7 @@ const refreshModeControls = (): void => {
     mode.disabled = running || !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
     mode.classList.toggle('mode-controlled', controlled);
     const label = mode.lastChild;
-    if (label?.nodeType === Node.TEXT_NODE) setTextIfChanged(label, controlled ? 'CONTROLLED' : 'READ ONLY');
+    if (label?.nodeType === Node.TEXT_NODE) setTextIfChanged(label, controlled ? '受控模式' : '只读模式');
   }
   const version = app.querySelector<HTMLElement>('.version-label');
   setTextIfChanged(version, `v${model.runtime.version} · ${controlled ? '受控模式' : '只读模式'}`);
@@ -1791,7 +1969,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     if (label?.nodeType === Node.TEXT_NODE) label.textContent = model.connection.label;
   }
   const brand = app.querySelector<HTMLElement>('.brand-row strong + span');
-  if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows Native' : 'Web Preview';
+  if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览';
   const mode = app.querySelector<HTMLButtonElement>('[data-action="toggle-mode"]');
   if (mode) {
     mode.title = desktopBridge.isNative()
@@ -1800,7 +1978,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     mode.disabled = !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
     mode.classList.toggle('mode-controlled', model.composer.mode === 'CONTROLLED');
     const label = mode.lastChild;
-    if (label?.nodeType === Node.TEXT_NODE) label.textContent = model.composer.mode === 'CONTROLLED' ? 'CONTROLLED' : 'READ ONLY';
+    if (label?.nodeType === Node.TEXT_NODE) label.textContent = model.composer.mode === 'CONTROLLED' ? '受控模式' : '只读模式';
   }
   const workspaceTitle = model.workspace.rootLabel || '默认工作区';
   const workspace = app.querySelector<HTMLElement>('.workspace-identity strong');
@@ -1809,7 +1987,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   if (project) project.textContent = workspaceTitle;
   const route = app.querySelector<HTMLElement>('.composer-summary');
   if (route && model.runtime.model) {
-    const value = `${model.runtime.model.provider} · ${model.runtime.model.protocol} · ${model.runtime.model.model}`;
+    const value = `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`;
     route.title = value;
     if (route.lastChild?.nodeType === Node.TEXT_NODE) route.lastChild.textContent = value;
   }
@@ -1952,21 +2130,21 @@ const runRecoveryRecordAction = async (element: HTMLElement): Promise<void> => {
 const renderWorkspaceDiff = (): string => {
   const intents = executionRecords.filter((record) => record.recordType === 'intent');
   const leases = executionRecords.filter((record) => record.recordType === 'lease');
-  const proposed = intents.map((record) => ({ id: record.operationId ?? record.recordId, detail: `${record.capability ?? '受控操作'} · ${record.state}` }));
-  const executed = leases.filter((record) => ['CONSUMED', 'REVOKED', 'EXPIRED'].includes(String(record.state).toUpperCase())).map((record) => ({ id: record.operationId ?? record.recordId, detail: `${record.capability ?? '受控操作'} · ${record.state}` }));
+  const proposed = intents.map((record) => ({ id: record.operationId ?? record.recordId, detail: `${toolDisplayLabel(record.capability ?? '受控操作')} · ${executionStateLabel(record.state)}` }));
+  const executed = leases.filter((record) => ['CONSUMED', 'REVOKED', 'EXPIRED'].includes(String(record.state).toUpperCase())).map((record) => ({ id: record.operationId ?? record.recordId, detail: `${toolDisplayLabel(record.capability ?? '受控操作')} · ${executionStateLabel(record.state)}` }));
   const verifier = model.processVerification;
-  const verified = verifier?.status ? [{ id: verifier.lastRunId ?? '当前验证', detail: `${verifier.status}${verifier.source ? ` · ${verifier.source}` : ''}` }] : [];
+  const verified = verifier?.status ? [{ id: verifier.lastRunId ?? '当前验证', detail: `${statusDisplayLabel(verifier.status, '暂不判断')}${verifier.source ? ` · ${processSourceLabel(verifier.source)}` : ''}` }] : [];
   const sections = [
-    { state: 'PROPOSED', label: '建议变更', rows: proposed, empty: '暂无已持久化的 ActionIntent；模型建议不会被视为已写入。' },
+    { state: 'PROPOSED', label: '建议变更', rows: proposed, empty: '暂无已保存的动作请求；模型建议不会被视为已写入。' },
     { state: 'EXECUTED', label: '已执行变更', rows: executed, empty: '暂无已确认的执行结果。' },
     { state: 'VERIFIED', label: '已验证变更', rows: verified, empty: '暂无通过验证的变更证据。' }
   ];
   const workspace = lastRecovery?.workspace;
   return `<section class="context-section workspace-diff-section" aria-label="工作区变更证据" data-diff-panel="workspace">
-    <div class="section-heading"><div><span class="section-kicker">Workspace Diff</span><h3>变更证据</h3></div><span class="context-count">建议 / 执行 / 验证</span></div>
-    <div class="runtime-line"><i data-lucide="git-compare"></i><span>${workspace ? `当前观察 ${workspace.status ?? '未知'} · ${workspace.changedFiles ?? 0} 个路径 · 路径摘要 ${(workspace.pathDigests ?? []).length} 条` : '尚未生成 workspace 观察'}</span></div>
+    <div class="section-heading"><div><span class="section-kicker">工作区差异</span><h3>变更证据</h3></div><span class="context-count">建议 / 执行 / 验证</span></div>
+    <div class="runtime-line"><i data-lucide="git-compare"></i><span>${workspace ? `当前观察 ${statusDisplayLabel(workspace.status, '未知')} · ${workspace.changedFiles ?? 0} 个路径 · 路径摘要 ${(workspace.pathDigests ?? []).length} 条` : '尚未生成工作区观察'}</span></div>
     <div class="workspace-diff-grid">${sections.map((section) => `<div class="workspace-diff-column" data-diff-state="${section.state.toLowerCase()}"><strong>${section.label}</strong>${section.rows.length ? section.rows.map((row) => `<div class="runtime-line" data-diff-row="${escapeHtml(row.id)}"><i data-lucide="file-diff"></i><span>${escapeHtml(row.id)} · ${escapeHtml(row.detail)}</span></div>`).join('') : `<span class="empty-note">${section.empty}</span>`}</div>`).join('')}</div>
-    <div class="runtime-line"><i data-lucide="shield-check"></i><span>三种状态分别来自 ActionIntent、执行 Lease 和 Verifier；缺少证据时保持空态。</span></div>
+    <div class="runtime-line"><i data-lucide="shield-check"></i><span>三种状态分别来自动作请求、一次性授权和结果核对；缺少证据时保持空态。</span></div>
   </section>`;
 };
 
@@ -2020,10 +2198,10 @@ const renderMemoryPage = (): string => {
     return '<form class="memory-edit-form" data-form="memory-edit" data-memory-id="' + escapeHtml(memory.memoryId) + '" novalidate>'
       + '<div class="memory-edit-heading"><strong>编辑新版本</strong><span>保存后生成版本 ' + escapeHtml(String(Number(memory.version ?? 1) + 1)) + '，旧记录仍保留审计关系。</span></div>'
       + '<label class="settings-field settings-field-multiline"><span>结论</span><textarea name="statement" rows="3" maxlength="2000" required>' + escapeHtml(draft.statement) + '</textarea></label>'
-      + '<div class="settings-grid"><label class="settings-field"><span>适用 scope</span><input name="scope" maxlength="256" required value="' + escapeHtml(draft.scope) + '"></label>'
+      + '<div class="settings-grid"><label class="settings-field"><span>适用范围</span><input name="scope" maxlength="256" required value="' + escapeHtml(draft.scope) + '"></label>'
       + '<label class="settings-field"><span>置信度（0-1）</span><input name="confidence" type="number" min="0" max="1" step="0.01" required value="' + escapeHtml(draft.confidence) + '"></label></div>'
-      + '<div class="settings-grid"><label class="settings-field"><span>敏感性</span><select name="sensitivity"><option value="PUBLIC" ' + (draft.sensitivity === 'PUBLIC' ? 'selected' : '') + '>PUBLIC</option><option value="INTERNAL" ' + (draft.sensitivity === 'INTERNAL' ? 'selected' : '') + '>INTERNAL</option><option value="SENSITIVE" ' + (draft.sensitivity === 'SENSITIVE' ? 'selected' : '') + '>SENSITIVE</option><option value="RESTRICTED" ' + (draft.sensitivity === 'RESTRICTED' ? 'selected' : '') + '>RESTRICTED</option></select></label>'
-      + '<label class="settings-field"><span>来源 event IDs</span><input name="sourceEventIds" maxlength="8000" required value="' + escapeHtml(draft.sourceEventIds) + '"></label></div>'
+      + '<div class="settings-grid"><label class="settings-field"><span>敏感性</span><select name="sensitivity"><option value="PUBLIC" ' + (draft.sensitivity === 'PUBLIC' ? 'selected' : '') + '>公开</option><option value="INTERNAL" ' + (draft.sensitivity === 'INTERNAL' ? 'selected' : '') + '>内部</option><option value="SENSITIVE" ' + (draft.sensitivity === 'SENSITIVE' ? 'selected' : '') + '>敏感</option><option value="RESTRICTED" ' + (draft.sensitivity === 'RESTRICTED' ? 'selected' : '') + '>受限</option></select></label>'
+      + '<label class="settings-field"><span>来源事件编号</span><input name="sourceEventIds" maxlength="8000" required value="' + escapeHtml(draft.sourceEventIds) + '"></label></div>'
       + (memoryEditError ? '<div class="settings-message settings-message-error" role="alert">' + escapeHtml(memoryEditError) + '</div>' : '')
       + '<div class="governance-actions"><button type="button" class="secondary-button" data-action="memory-edit-cancel">取消</button><button type="submit" class="governance-button governance-button-primary">保存为新版本</button></div></form>';
   };
@@ -2037,11 +2215,11 @@ const renderMemoryPage = (): string => {
     const details = '来源 ' + ((memory.sourceEventIds ?? []).join(', ') || '未知')
       + ' · 有效期 ' + (memory.expiresAtMs === undefined ? '未设置' : new Date(memory.expiresAtMs).toLocaleString('zh-CN', { timeZoneName: 'short' }))
       + ' · ' + (memory.untrainable === true ? '禁止训练标记：是' : memory.untrainable === false ? '禁止训练标记：否（不代表已获训练授权）' : '训练限制：未提供')
-      + (memory.sensitivity ? ' · 敏感性 ' + memory.sensitivity : '')
+      + (memory.sensitivity ? ' · 敏感性 ' + sensitivityDisplayLabel(memory.sensitivity) : '')
       + (memory.version !== undefined ? ' · 版本 ' + memory.version : '')
       + (relations ? ' · ' + relations : '');
     const editing = memoryEditState?.memoryId === memory.memoryId;
-    return '<article class="run-history-row memory-row" data-memory-id="' + escapeHtml(memory.memoryId) + '"><div class="run-history-copy"><strong>' + escapeHtml(memory.statement) + '</strong><span>' + escapeHtml(memory.scope) + ' · 置信度 ' + Math.round(memory.confidence * 100) + '% · ' + escapeHtml(memory.status) + '</span><small>' + escapeHtml(details) + '</small></div>' + (editing ? renderEditForm(memory) : renderMemoryActions(memory)) + '</article>';
+    return '<article class="run-history-row memory-row" data-memory-id="' + escapeHtml(memory.memoryId) + '"><div class="run-history-copy"><strong>' + escapeHtml(memory.statement) + '</strong><span>' + escapeHtml(memory.scope) + ' · 置信度 ' + Math.round(memory.confidence * 100) + '% · ' + escapeHtml(governanceStateLabel(memory.status)) + '</span><small>' + escapeHtml(details) + '</small></div>' + (editing ? renderEditForm(memory) : renderMemoryActions(memory)) + '</article>';
   }).join('');
   const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待确认 ' + counts.proposed + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
   const editHint = memoryEditState ? '<div class="page-status memory-edit-hint"><strong>正在编辑 ' + escapeHtml(memoryEditState.memoryId) + '</strong><span>编辑会创建新版本，提交前请核对来源和敏感性。</span></div>' : '';
@@ -2051,8 +2229,8 @@ const renderMemoryPage = (): string => {
     + statusSummary + editHint
     + '<div class="run-history-list">' + (memoryRows || '<div class="page-status page-status-empty"><strong>暂无记忆</strong><span>当前没有已提交记忆。</span></div>') + '</div>'
     + (pageCount > 1 ? '<nav aria-label="记忆分页" class="route-heading"><button class="secondary-button" data-action="memory-page" data-delta="-1" ' + (memoryPage === 1 ? 'disabled' : '') + '>上一页</button><span>第 ' + memoryPage + ' / ' + pageCount + ' 页 · 共 ' + allMemories.length + ' 条</span><button class="secondary-button" data-action="memory-page" data-delta="1" ' + (memoryPage === pageCount ? 'disabled' : '') + '>下一页</button></nav>' : '')
-    + '<div class="route-heading"><div><span class="eyebrow">Dreaming</span><h2>Dream 状态</h2></div><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>运行一次</button>' + (model.runtime.dreamMaintenance?.running === true ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>' : '<button class="governance-button" data-action="start-dream-maintenance" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>启动后台</button>') + '</div></div>'
-    + '<div class="run-history-list">' + (dreams.map((dream) => '<div class="run-history-row"><div class="run-history-copy"><strong>Dream ' + escapeHtml(dream.runId) + '</strong><span>' + escapeHtml(dream.state) + ' · ' + escapeHtml(formatTime(dream.startedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(dream.errorCode ?? (dream.finishedAtMs ? '已完成' : '运行中')) + '</span></div>').join('') || '<div class="page-status page-status-empty"><strong>暂无 Dream</strong><span>当前没有 Dream 运行记录。</span></div>') + '</div>'
+    + '<div class="route-heading"><div><span class="eyebrow">后台整理</span><h2>后台整理状态</h2></div><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>运行一次</button>' + (model.runtime.dreamMaintenance?.running === true ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>' : '<button class="governance-button" data-action="start-dream-maintenance" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>启动后台</button>') + '</div></div>'
+    + '<div class="run-history-list">' + (dreams.map((dream) => '<div class="run-history-row"><div class="run-history-copy"><strong>后台记忆整理 · ' + escapeHtml(shortDigest(dream.runId)) + '</strong><span>' + escapeHtml(statusDisplayLabel(dream.state)) + ' · ' + escapeHtml(formatTime(dream.startedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(dream.errorCode ? reasonDisplayLabel(dream.errorCode) : (dream.finishedAtMs ? '已完成' : '运行中')) + '</span></div>').join('') || '<div class="page-status page-status-empty"><strong>暂无后台整理记录</strong><span>当前没有后台记忆整理运行记录。</span></div>') + '</div>'
     + '<button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>';
 };
 const renderSafetyPage = (): string => {
@@ -2067,8 +2245,8 @@ const renderSafetyPage = (): string => {
     ['策略判定', '未提供'],
     ['风险等级', latestApproval.risk ?? '未提供'],
     ['required controls', '未提供'],
-    ['scope', latestApproval.scope?.snapshotDigest ? `snapshot ${latestApproval.scope.snapshotDigest.slice(0, 20)}…` : '未提供'],
-    ['policy version', latestApproval.policyVersion ?? '未提供'],
+    ['适用范围', latestApproval.scope?.snapshotDigest ? `快照 ${latestApproval.scope.snapshotDigest.slice(0, 20)}…` : '未提供'],
+    ['策略版本', latestApproval.policyVersion ?? '未提供'],
     ['权限上限来源', '未提供']
   ] : [];
   const rows = [
@@ -2080,11 +2258,11 @@ const renderSafetyPage = (): string => {
   const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(record.capability ?? '受控能力') + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
   return `<div class="page-placeholder"><span class="eyebrow">能力与安全</span><h1>能力与安全</h1>
     <div class="run-history-list">${rows}</div>
-    <div class="route-heading"><div><span class="eyebrow">Action Decision</span><h2>待审批动作信息</h2></div><span class="route-count">${actionRows.length ? '已记录' : '暂无'}</span></div>
+    <div class="route-heading"><div><span class="eyebrow">动作审批</span><h2>待审批动作信息</h2></div><span class="route-count">${actionRows.length ? '已记录' : '暂无'}</span></div>
     ${actionRows.length ? `<div class="run-history-list">${actionRows.map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('')}</div>` : '<div class="page-status page-status-empty"><strong>暂无待审批动作</strong><span>收到审批请求后显示已记录字段；未提供的策略信息保持未知。</span></div>'}
-    <div class="route-heading"><div><span class="eyebrow">Execution State</span><h2>受控记录</h2></div><span class="route-count">${records.length} 条</span></div>
-    ${recordRows ? `<div class="run-history-list">${recordRows}</div>` : '<div class="page-status page-status-empty"><strong>暂无受控记录</strong><span>当前没有持久化 Intent、Approval 或 Lease。</span></div>'}
-    ${approvals.length ? `<section class="workbench-approvals" aria-label="审批与授权状态"><div class="transcript-heading"><div><span class="eyebrow">Approval</span><h2>审批与授权状态</h2></div></div>${approvals.map(renderApprovalCard).join('')}</section>` : ''}
+    <div class="route-heading"><div><span class="eyebrow">执行状态</span><h2>受控记录</h2></div><span class="route-count">${records.length} 条</span></div>
+    ${recordRows ? `<div class="run-history-list">${recordRows}</div>` : '<div class="page-status page-status-empty"><strong>暂无受控记录</strong><span>当前没有已保存的动作请求、审批或一次性授权。</span></div>'}
+    ${approvals.length ? `<section class="workbench-approvals" aria-label="审批与授权状态"><div class="transcript-heading"><div><span class="eyebrow">审批</span><h2>审批与授权状态</h2></div></div>${approvals.map(renderApprovalCard).join('')}</section>` : ''}
     <button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button>
   </div>`;
 };
@@ -2103,27 +2281,27 @@ const renderRecoveryDetails = (recovery: NonNullable<typeof lastRecovery>): stri
     const approvalAction = label === '待处理审批' && ['REQUESTED', 'PRESENTED'].includes(state)
       ? '<button class="governance-button governance-button-warning" data-action="cancel-recovery-approval" data-record-id="' + escapeHtml(recordId) + '"' + digestAttr + '>安全取消</button>'
       : '';
-    const leaseAction = label === 'Lease' && ['PROPOSED', 'ACTIVE', 'CONSUMING'].includes(state)
-      ? '<button class="governance-button governance-button-danger" data-action="revoke-recovery-lease" data-record-id="' + escapeHtml(recordId) + '"' + digestAttr + '>撤销 Lease</button>'
+    const leaseAction = label === '一次性授权' && ['PROPOSED', 'ACTIVE', 'CONSUMING'].includes(state)
+      ? '<button class="governance-button governance-button-danger" data-action="revoke-recovery-lease" data-record-id="' + escapeHtml(recordId) + '"' + digestAttr + '>撤销授权</button>'
       : '';
-    return '<div class="run-history-row" data-recovery-record="' + escapeHtml(recordId) + '"><div class="run-history-copy"><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(recordId) + (operationId ? ' · operation ' + escapeHtml(operationId) : '') + '</span><small>状态 ' + escapeHtml(state) + (runId ? ' · run ' + escapeHtml(runId) : '') + (reason ? ' · 原因 ' + escapeHtml(reason) : '') + (recordDigest ? ' · digest ' + escapeHtml(recordDigest.slice(0, 20)) + '…' : '') + '</small></div><span class="run-history-state">' + escapeHtml(state) + '</span><div class="governance-actions">' + view + approvalAction + leaseAction + '</div></div>';
+    return '<div class="run-history-row" data-recovery-record="' + escapeHtml(recordId) + '"><div class="run-history-copy"><strong>' + escapeHtml(label) + '</strong><span>记录 ' + escapeHtml(shortDigest(recordId)) + (operationId ? ' · 操作 ' + escapeHtml(shortDigest(operationId)) : '') + '</span><small>状态 ' + escapeHtml(executionStateLabel(state)) + (runId ? ' · 运行 ' + escapeHtml(shortDigest(runId)) : '') + (reason ? ' · 原因 ' + escapeHtml(reasonDisplayLabel(reason)) : '') + (recordDigest ? ' · 校验摘要 ' + escapeHtml(shortDigest(recordDigest)) : '') + '</small></div><span class="run-history-state">' + escapeHtml(executionStateLabel(state)) + '</span><div class="governance-actions">' + view + approvalAction + leaseAction + '</div></div>';
   };
   const approvalRows = recovery.pendingApprovalRecords.map((record) => recoveryRecordRow(record, '待处理审批'));
-  const leaseRows = recovery.leaseRecords.map((record) => recoveryRecordRow(record as unknown as Record<string, unknown>, 'Lease'));
-  const executionRows = recovery.executionRecords.slice(-12).reverse().map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(record.recordId) + ' · ' + escapeHtml(record.capability ?? '受控能力') + '</span><small>状态 ' + escapeHtml(executionStateLabel(record.state)) + ' · 更新时间 ' + escapeHtml(formatTime(record.updatedAtMs)) + (record.recordDigest ? ' · digest ' + escapeHtml(record.recordDigest.slice(0, 20)) + '…' : '') + '</small></div><span class="run-history-state">' + escapeHtml(record.state) + '</span><button class="governance-button" data-action="view-recovery-record" data-record-id="' + escapeHtml(record.recordId) + '">查看状态</button></div>');
+  const leaseRows = recovery.leaseRecords.map((record) => recoveryRecordRow(record as unknown as Record<string, unknown>, '一次性授权'));
+  const executionRows = recovery.executionRecords.slice(-12).reverse().map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>记录 ' + escapeHtml(shortDigest(record.recordId)) + ' · ' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + '</span><small>状态 ' + escapeHtml(executionStateLabel(record.state)) + ' · 更新时间 ' + escapeHtml(formatTime(record.updatedAtMs)) + (record.recordDigest ? ' · 校验摘要 ' + escapeHtml(shortDigest(record.recordDigest)) : '') + '</small></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span><button class="governance-button" data-action="view-recovery-record" data-record-id="' + escapeHtml(record.recordId) + '">查看状态</button></div>');
   const workspaceLine = recovery.workspace
-    ? '<div class="runtime-line"><i data-lucide="git-branch"></i><span>workspace 状态码 ' + escapeHtml((recovery.workspace.statusCodes ?? []).join(', ') || '无') + ' · 路径摘要 ' + String((recovery.workspace.pathDigests ?? []).length) + ' 条' + (recovery.workspace.pathDigestTruncated ? '（已截断）' : '') + '</span></div>'
+    ? '<div class="runtime-line"><i data-lucide="git-branch"></i><span>工作区检查：' + escapeHtml((recovery.workspace.statusCodes ?? []).join(', ') || '未发现状态码') + ' · 路径摘要 ' + String((recovery.workspace.pathDigests ?? []).length) + ' 条' + (recovery.workspace.pathDigestTruncated ? '（已截断）' : '') + '</span></div>'
     : '';
   const remote = recovery.remote ?? { state: 'LOCAL_ONLY' as const, reason: '当前只使用本地恢复存储' };
-  const remoteLine = '<div class="runtime-line" data-recovery-remote-state="' + escapeHtml(remote.state) + '"><i data-lucide="cloud"></i><span>远端状态 ' + escapeHtml(remote.state) + (remote.endpoint ? ' · ' + escapeHtml(remote.endpoint) : '') + (remote.reason ? ' · ' + escapeHtml(remote.reason) : '') + '</span></div>';
+  const remoteLine = '<div class="runtime-line" data-recovery-remote-state="' + escapeHtml(remote.state) + '"><i data-lucide="cloud"></i><span>远端状态：' + escapeHtml(statusDisplayLabel(remote.state, '未读取')) + (remote.endpoint ? ' · ' + escapeHtml(remote.endpoint) : '') + (remote.reason ? ' · ' + escapeHtml(reasonDisplayLabel(remote.reason)) : '') + '</span></div>';
   const count = recovery.executionRecords.length + recovery.pendingApprovalRecords.length + recovery.leaseRecords.length;
   const executionBlock = executionRows.length ? '<div class="run-history-list" aria-label="执行记录">' + executionRows.join('') + '</div>' : '<div class="empty-note">暂无可恢复执行记录</div>';
   const approvalBlock = approvalRows.length ? '<div class="run-history-list" aria-label="待处理审批">' + approvalRows.join('') + '</div>' : '<div class="empty-note">暂无待处理审批</div>';
-  const leaseBlock = leaseRows.length ? '<div class="run-history-list" aria-label="Lease 记录">' + leaseRows.join('') + '</div>' : '<div class="empty-note">暂无 Lease 记录</div>';
+  const leaseBlock = leaseRows.length ? '<div class="run-history-list" aria-label="一次性授权记录">' + leaseRows.join('') + '</div>' : '<div class="empty-note">暂无一次性授权记录</div>';
   const workspaceSummary = recovery.workspace
-    ? ' · workspace ' + escapeHtml(recovery.workspace.status ?? '未知') + ' · 差异 ' + String(recovery.workspace.changedFiles ?? 0) + '（暂存 ' + String(recovery.workspace.staged ?? 0) + ' / 未暂存 ' + String(recovery.workspace.unstaged ?? 0) + ' / 未跟踪 ' + String(recovery.workspace.untracked ?? 0) + ' / 冲突 ' + String(recovery.workspace.conflicted ?? 0) + '）'
+    ? ' · 工作区 ' + escapeHtml(statusDisplayLabel(recovery.workspace.status, '未知')) + ' · 差异 ' + String(recovery.workspace.changedFiles ?? 0) + '（暂存 ' + String(recovery.workspace.staged ?? 0) + ' / 未暂存 ' + String(recovery.workspace.unstaged ?? 0) + ' / 未跟踪 ' + String(recovery.workspace.untracked ?? 0) + ' / 冲突 ' + String(recovery.workspace.conflicted ?? 0) + '）'
     : '';
-  return '<div class="run-history-row"><div class="run-history-copy"><strong>最近恢复检查</strong><span>' + String(recovery.reconciled) + ' 条待恢复记录 · ' + escapeHtml(formatTime(recovery.atMs)) + '</span><small>执行 ' + String(recovery.execution) + ' · 角色 ' + String(recovery.roles) + ' · Dream ' + String(recovery.dream) + ' · 待审批 ' + String(recovery.pendingApprovals) + ' · 撤销 Lease ' + String(recovery.revokedLeases) + workspaceSummary + '</small></div><span class="run-history-state">已核对</span></div><section class="recovery-details" aria-label="恢复逐项详情"><div class="section-heading"><div><span class="section-kicker">Recovery Details</span><h3>逐项恢复事实</h3></div><span class="context-count">' + String(count) + ' 条记录</span></div>' + executionBlock + approvalBlock + leaseBlock + workspaceLine + remoteLine + '</section>';
+  return '<div class="run-history-row"><div class="run-history-copy"><strong>最近恢复检查</strong><span>' + String(recovery.reconciled) + ' 条待恢复记录 · ' + escapeHtml(formatTime(recovery.atMs)) + '</span><small>执行 ' + String(recovery.execution) + ' · 角色 ' + String(recovery.roles) + ' · 后台记忆整理 ' + String(recovery.dream) + ' · 待审批 ' + String(recovery.pendingApprovals) + ' · 已撤销授权 ' + String(recovery.revokedLeases) + workspaceSummary + '</small></div><span class="run-history-state">已核对</span></div><section class="recovery-details" aria-label="恢复逐项详情"><div class="section-heading"><div><span class="section-kicker">恢复详情</span><h3>逐项恢复事实</h3></div><span class="context-count">' + String(count) + ' 条记录</span></div>' + executionBlock + approvalBlock + leaseBlock + workspaceLine + remoteLine + '</section>';
 };
 
 const renderDiagnosticsPage = (): string => {
@@ -2131,8 +2309,8 @@ const renderDiagnosticsPage = (): string => {
   const connection = model.connection.mode === 'LOCAL_RUNTIME' ? '本地运行时' : 'Web 预览';
   const support = model.supportBundle;
   const supportLine = support
-    ? `隐私扫描 ${support.privacy.scan.ok ? 'PASS' : 'FAIL'} · ${support.privacy.scan.violations.length} 个违规`
-    : 'support bundle 尚未生成';
+    ? `隐私扫描 ${support.privacy.scan.ok ? '通过' : '失败'} · ${support.privacy.scan.violations.length} 个违规`
+    : '诊断包尚未生成';
   const usage = model.modelUsage;
   const cacheRate = usage?.status === 'REPORTED' && usage.cacheHitRate !== null
     ? `${(usage.cacheHitRate * 100).toFixed(1)}%`
@@ -2143,14 +2321,14 @@ const renderDiagnosticsPage = (): string => {
   const cachedTokens = usage?.status === 'REPORTED' ? String(usage.cachedInputTokens) : '未知';
   const uncachedTokens = usage?.status === 'REPORTED' ? String(usage.uncachedInputTokens) : '未知';
   const cacheLine = usage
-    ? `命中率 ${cacheRate} · coverage ${cacheCoverage} · cached ${cachedTokens} · uncached ${uncachedTokens} · input ${usage.inputTokens}`
-    : '尚无模型 usage 记录';
+    ? `命中率 ${cacheRate} · 覆盖率 ${cacheCoverage} · 已复用 ${cachedTokens} 个令牌 · 未复用 ${uncachedTokens} 个令牌 · 输入 ${usage.inputTokens} 个令牌`
+    : '尚无模型用量记录';
   return `
     <div class="page-placeholder"><span class="eyebrow">设置与诊断</span><h1>设置与诊断</h1>
       <div class="run-history-list">
-        <div class="run-history-row"><div class="run-history-copy"><strong>运行时状态</strong><span>${escapeHtml(connection)} · ${escapeHtml(health)}</span></div><span class="run-history-state">${model.runtime.runtimeReady === true ? '就绪' : '未就绪'}</span></div>
-        <div class="run-history-row"><div class="run-history-copy"><strong>Support Bundle</strong><span>${escapeHtml(supportLine)}</span></div><span class="run-history-state">${support ? '可用' : '未生成'}</span></div>
-        <div class="run-history-row" data-model-cache="diagnostics"><div class="run-history-copy"><strong>Prompt Cache</strong><span>${escapeHtml(cacheLine)}</span></div><span class="run-history-state">${usage?.status === 'REPORTED' ? '已观测' : '未知'}</span></div>
+      <div class="run-history-row"><div class="run-history-copy"><strong>运行时状态</strong><span>${escapeHtml(connection)} · ${escapeHtml(health)}</span></div><span class="run-history-state">${model.runtime.runtimeReady === true ? '就绪' : '未就绪'}</span></div>
+        <div class="run-history-row"><div class="run-history-copy"><strong>诊断导出</strong><span>${escapeHtml(supportLine)}</span></div><span class="run-history-state">${support ? '可用' : '未生成'}</span></div>
+        <div class="run-history-row" data-model-cache="diagnostics"><div class="run-history-copy"><strong>提示缓存</strong><span>${escapeHtml(cacheLine)}</span></div><span class="run-history-state">${usage?.status === 'REPORTED' ? '已观测' : '未知'}</span></div>
       </div>
       ${lastRecovery ? renderRecoveryDetails(lastRecovery) : ''}
       ${exportNotice ? `<div class="page-status" role="status">${escapeHtml(exportNotice)}</div>` : ''}
@@ -2166,8 +2344,8 @@ const renderRunsPage = (): string => {
   const runs = allRuns.slice((runsPage - 1) * perPage, runsPage * perPage);
   const summary = allRuns.length > 0 ? allRuns.length + " 次运行" : "暂无运行记录";
   return `<div class="page-placeholder"><span class="eyebrow">运行记录</span><h1>运行记录</h1>
-    <div class="route-heading"><div><span class="eyebrow">Projection</span><h2>${escapeHtml(summary)}</h2></div><span class="route-count">${runs.length} 条已载入</span></div>
-    ${runs.length === 0 ? `<div class="page-status page-status-empty"><strong>暂无运行记录</strong><span>当前投影还没有持久化运行记录。</span></div>` : `<div class="run-history-list">${runs.map((run) => `<div class="run-history-row" data-run-id="${escapeHtml(run.runId)}"><div class="run-history-copy"><strong>${escapeHtml(run.title)}</strong><span>${escapeHtml(run.state)} · ${escapeHtml(formatTime(run.startedAtMs))} · 事件 ${run.lastEventSequence}</span></div><span class="run-history-state">${escapeHtml(run.terminal ? "已终态" : "进行中")}</span><button class="secondary-button" data-action="focus-run" data-run-id="${escapeHtml(run.runId)}">查看</button></div>`).join("")}</div>`}
+    <div class="route-heading"><div><span class="eyebrow">运行投影</span><h2>${escapeHtml(summary)}</h2></div><span class="route-count">${runs.length} 条已载入</span></div>
+    ${runs.length === 0 ? `<div class="page-status page-status-empty"><strong>暂无运行记录</strong><span>当前投影还没有持久化运行记录。</span></div>` : `<div class="run-history-list">${runs.map((run) => `<div class="run-history-row" data-run-id="${escapeHtml(run.runId)}"><div class="run-history-copy"><strong>${escapeHtml(run.title)}</strong><span>${escapeHtml(statusDisplayLabel(run.state, '状态未读取'))} · ${escapeHtml(formatTime(run.startedAtMs))} · 已记录 ${run.lastEventSequence} 项事件</span></div><span class="run-history-state">${escapeHtml(run.terminal ? "已结束" : "进行中")}</span><button class="secondary-button" data-action="focus-run" data-run-id="${escapeHtml(run.runId)}">查看</button></div>`).join("")}</div>`}
     ${allRuns.length > perPage ? '<div class="route-heading"><button class="secondary-button" data-action="runs-page" data-delta="-1" ' + (runsPage <= 1 ? 'disabled' : '') + '>上一页</button><span class="route-count">第 ' + runsPage + ' / ' + pageCount + ' 页</span><button class="secondary-button" data-action="runs-page" data-delta="1" ' + (runsPage >= pageCount ? 'disabled' : '') + '>下一页</button></div>' : ''}
     <button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>`;
 };
@@ -2276,7 +2454,7 @@ const renderRunControls = (): void => {
   if (stop) { stop.disabled = !liveTaskRunning(); stop.title = liveTaskRunning() ? '取消任务' : '当前没有运行中的任务'; }
   const send = app.querySelector<HTMLButtonElement>('.send-button');
   if (send) {
-    send.disabled = running || liveTaskRunning() || !model.composer.enabled;
+    send.disabled = running || liveTaskRunning() || !model.composer.enabled || workspaceChanging;
     send.title = workspaceChanging ? '目录切换中，请稍候' : running || liveTaskRunning() ? '任务运行中，请先取消' : '发送任务';
   }
   app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"]').forEach((button) => {
@@ -2324,12 +2502,17 @@ const renderLiveView = (): void => {
   if (lists.source !== model.timeline || lists.focus !== focusedRunId || lists.expanded !== executionGroupExpanded) {
     const all = focusedRunId ? model.timeline.filter((item) => item.runId === focusedRunId) : model.timeline;
     const tools = all.filter((item) => item.kind === 'STATUS' || item.kind === 'WORKSPACE');
-    lists.human.update(all.filter((item) => item.kind !== 'STATUS' && item.kind !== 'WORKSPACE'));
+    // Tool cards stay in the main conversation so a reader can follow the
+    // active task without opening a secondary audit disclosure.  The group
+    // below still contains the complete structured execution history.
+    lists.human.update(all.filter((item) => item.kind !== 'STATUS' && item.kind !== 'WORKSPACE' || Boolean(item.toolName)));
     const group = container.querySelector<HTMLDetailsElement>('[data-execution-group]')!;
     group.hidden = tools.length === 0;
+    const activeToolCount = tools.filter((item) => Boolean(item.toolName)).length;
     group.open = executionGroupExpanded;
-    setTextIfChanged(group.querySelector('summary'), `执行过程（${tools.length} 条事件）`);
-    // Collapsed audit details need only a count. Mount their rows on demand.
+    setTextIfChanged(group.querySelector('summary'), `工具执行过程${activeToolCount ? `（${activeToolCount} 个工具步骤）` : `（${tools.length} 条事件）`}`);
+    // The full audit list remains on-demand; the human-facing tool cards above
+    // are mounted immediately and do not require a click.
     if (executionGroupExpanded) lists.tools.update(tools);
     else lists.tools.pause();
     lists.source = model.timeline; lists.focus = focusedRunId; lists.expanded = executionGroupExpanded;
@@ -2344,7 +2527,7 @@ const renderLiveView = (): void => {
   // subtree on every streaming delta; it is refreshed when opened and while visible.
   if (contextVisible) patchContextPanel(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
   const projection = app.querySelector('[data-projection-version]');
-  if (projection) projection.textContent = `Projection ${model.projectionVersion}`;
+  if (projection) projection.textContent = `运行投影 v${model.projectionVersion}`;
   syncMemoryActionControls();
   followLiveTranscript();
 };
@@ -2383,7 +2566,7 @@ const render = (): void => {
   const taskRunning = Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
   const controlled = model.composer.mode === 'CONTROLLED';
   const runtimeRoute = model.runtime.model
-    ? `${model.runtime.model.provider} · ${model.runtime.model.protocol} · ${model.runtime.model.model}`
+    ? `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`
     : model.runtime.platform === 'WINDOWS' ? '模型路由未读取' : 'Web 预览无本地模型';
 
   app.innerHTML = `
@@ -2393,7 +2576,7 @@ const render = (): void => {
           <div class="brand-mark">hm</div>
           <div>
             <strong>dda</strong>
-            <span>${model.runtime.platform === 'WINDOWS' ? 'Windows Native' : 'Web Preview'}</span>
+            <span>${model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览'}</span>
           </div>
         </div>
 
@@ -2438,7 +2621,7 @@ const render = (): void => {
             <span>${escapeHtml(runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(runStateNextStep(model.activeRun?.state))}</small>
           </div>
           <button class="mode-pill ${controlled ? 'mode-controlled' : ''}" data-action="toggle-mode" title="${escapeHtml(desktopBridge.isNative() ? (model.runtime.releaseChannel ?? '发布渠道尚未确认') : 'Web 预览仅支持只读模式')}" ${!desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? 'disabled' : ''}>
-            <i data-lucide="shield-check"></i>${controlled ? 'CONTROLLED' : 'READ ONLY'}
+            <i data-lucide="shield-check"></i>${controlled ? '受控模式' : '只读模式'}
           </button>
         </section>
 
@@ -2861,16 +3044,16 @@ const runtimeEventText = (event: RuntimeEvent): string => {
   if (payload.ok === false) {
     const reason = typeof payload.error === 'string' ? payload.error : typeof payload.message === 'string' ? payload.message : typeof payload.reason === 'string' ? payload.reason : '';
     const code = typeof payload.errorCode === 'string' ? payload.errorCode : '';
-    const detail = [code, reason].filter(Boolean).join('：');
-    if (typeof payload.name === 'string') return detail ? `${payload.name} 失败：${detail}` : `${payload.name} 失败`;
+    const detail = [code ? reasonDisplayLabel(code) : '', reason].filter(Boolean).join('：');
+    if (typeof payload.name === 'string') return detail ? `${toolDisplayLabel(payload.name)}失败：${detail}` : `${toolDisplayLabel(payload.name)}失败`;
     if (detail) return detail;
   }
   if (typeof payload.name === 'string') {
-    if (payload.kind === 'tool.call_requested') return `${payload.name} 执行中`;
-    return payload.name;
+    if (payload.kind === 'tool.call_requested') return `正在${toolDisplayLabel(payload.name).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`;
+    return toolDisplayLabel(payload.name);
   }
-  if (typeof payload.errorCode === 'string') return payload.errorCode;
-  return event.kind;
+  if (typeof payload.errorCode === 'string') return reasonDisplayLabel(payload.errorCode);
+  return humanizeCode(event.kind, '运行时事件');
 };
 
 const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined => {
@@ -2880,6 +3063,9 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
   const digestSuffix = (value: unknown) => typeof value === 'string' && value.length > 18 ? ` · ${value.slice(0, 18)}...` : '';
   const persistedKind = typeof payload.persistedKind === 'string' ? payload.persistedKind : event.kind;
   if (NON_CONVERSATIONAL_TIMELINE_KINDS.has(persistedKind)) return undefined;
+  // Historical pages persist the completed tool fact.  Live pages also show
+  // the request itself, but replay should not invent a request that was never
+  // durably stored.
   if (persistedKind === 'ToolCallRequested') return undefined;
   if (persistedKind === 'ToolInvocationCompleted'
     && payload.ok !== false
@@ -2903,7 +3089,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: 'STATUS',
         title: '运行状态',
-        body: `${text(payload.from, 'UNKNOWN')} -> ${text(payload.to, 'UNKNOWN')}`,
+        body: `${statusDisplayLabel(payload.from, '未读取')} → ${statusDisplayLabel(payload.to, '未读取')}`,
         status: 'COMPLETE'
       };
     case 'ModelRouteResolved':
@@ -2911,7 +3097,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: 'STATUS',
         title: '模型路由',
-        body: [text(payload.provider, 'unknown'), text(payload.protocol, 'unknown'), text(payload.model, 'unknown')].join(' · '),
+        body: `已连接 ${text(payload.provider, '默认服务')} · ${text(payload.model, '未指定模型')}`,
         status: 'COMPLETE'
       };
     case 'RoleContextsAllocated':
@@ -2935,7 +3121,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: 'STATUS',
         title: '计划步骤',
-        body: `${text(payload.stepId, 'unknown')} · ${text(payload.to, text(payload.status, 'UPDATED'))}`,
+        body: `${humanizeCode(payload.stepId, '未命名步骤')} · ${statusDisplayLabel(payload.to ?? payload.status, '已更新')}`,
         status: 'COMPLETE'
       };
     case 'ToolCallRequested':
@@ -2943,22 +3129,26 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: 'STATUS',
         title: '工具调用',
-        body: text(payload.toolName, text(payload.name, '受控工具')),
+        body: `正在${toolDisplayLabel(text(payload.toolName, text(payload.name, '受控工具'))).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`,
         status: 'COMPLETE'
       };
     case 'ToolInvocationCompleted': {
-      const toolName = text(payload.toolName, text(payload.name, '受控工具'));
+      const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
+      const toolName = toolDisplayLabel(rawToolName);
       const failure = payload.ok === false || text(payload.status, '').toUpperCase() === 'FAILED';
       const errorCode = text(payload.errorCode, '');
       const message = text(payload.message, '');
-      const detail = [failure ? '失败' : text(payload.status, '已完成'), errorCode, message].filter(Boolean).join('：');
+      const outputChars = number(payload.outputChars);
+      const detail = failure
+        ? ['失败', errorCode ? reasonDisplayLabel(errorCode) : '', message].filter(Boolean).join('：')
+        : ['已完成', outputChars === undefined ? '' : `输出 ${outputChars.toLocaleString('zh-CN')} 字符`].filter(Boolean).join(' · ');
       return {
         ...common,
         kind: failure ? 'ERROR' : 'STATUS',
         title: '工具结果',
-        body: `${toolName} · ${detail}`,
+        body: `${failure ? '无法完成' : '已完成'}：${toolName}${detail ? ` · ${detail}` : ''}`,
         status: failure ? 'ERROR' : 'COMPLETE',
-        toolName,
+        toolName: rawToolName,
         commandText: typeof payload.command === 'string' ? payload.command : undefined,
         evidenceKind: 'terminal',
         truncated: payload.truncated === true
@@ -3052,6 +3242,53 @@ const replayThreadEvents = (base: HarnessReadModel, events: RuntimeEvent[]): Har
   return { ...base, projectionVersion: base.projectionVersion + 1, timeline };
 };
 
+const replaceTimelineItem = (current: HarnessReadModel, itemId: string, patch: Partial<TimelineItem>): HarnessReadModel => {
+  const index = current.timeline.findIndex((item) => item.itemId === itemId);
+  if (index < 0) return current;
+  const timeline = current.timeline.slice();
+  timeline[index] = { ...timeline[index], ...patch };
+  return { ...current, projectionVersion: current.projectionVersion + 1, timeline };
+};
+
+const toolTimelineItemId = (event: RuntimeEvent, callId: string): string => `tool-${event.runId}-${callId}`;
+
+const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined => {
+  const payload = event.payload ?? {};
+  const callId = typeof payload.id === 'string' ? payload.id : '';
+  const rawName = typeof payload.name === 'string' ? payload.name : typeof payload.toolName === 'string' ? payload.toolName : '';
+  if (!callId && !rawName) return undefined;
+  const toolName = toolDisplayLabel(rawName);
+  const isResult = event.kind === 'tool.result';
+  const failed = isResult && payload.ok === false;
+  const outputChars = typeof payload.outputChars === 'number' && Number.isFinite(payload.outputChars) ? payload.outputChars : undefined;
+  const message = typeof payload.message === 'string' ? payload.message : '';
+  const errorCode = typeof payload.errorCode === 'string' ? payload.errorCode : '';
+  const digest = typeof payload.outputDigest === 'string' ? payload.outputDigest : undefined;
+  const body = !isResult
+    ? `正在${toolName.replace(/^查看|^读取|^执行|^运行|^发送/, '')}`
+    : failed
+      ? `无法完成：${toolName}${errorCode ? ` · ${reasonDisplayLabel(errorCode)}` : ''}${message ? ` · ${message}` : ''}`
+      : `已完成：${toolName}${outputChars !== undefined ? ` · 输出 ${outputChars.toLocaleString('zh-CN')} 字符` : ''}`;
+  return {
+    itemId: toolTimelineItemId(event, callId || rawName),
+    eventId: event.eventId,
+    eventSequence: event.sequence,
+    runId: event.runId,
+    operationId: callId || undefined,
+    toolCallId: callId || undefined,
+    kind: failed ? 'ERROR' : 'STATUS',
+    title: failed ? '工具执行失败' : isResult ? '工具执行完成' : '正在调用工具',
+    body,
+    status: failed ? 'ERROR' : isResult ? 'COMPLETE' : 'STREAMING',
+    createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
+    toolName: rawName || undefined,
+    digest,
+    evidenceKind: isResult ? 'terminal' : undefined,
+    truncated: payload.truncated === true,
+    commandText: typeof payload.command === 'string' ? payload.command : undefined
+  };
+};
+
 const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (!event || event.schemaVersion !== '1.0' || !Number.isInteger(event.sequence) || event.sequence < 1 || !Number.isFinite(event.emittedAtMs)) return;
   // A child can flush a few lines after cancellation, and an earlier run can
@@ -3118,11 +3355,11 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
           ? '执行路由'
           : '角色上下文';
     const body = event.kind === 'task.classified'
-      ? String(payload.taskClass ?? 'unknown')
+      ? `任务类型：${humanizeCode(payload.taskClass, '暂未识别')}`
       : event.kind === 'task.prechecked'
-        ? `${String(payload.status ?? 'UNKNOWN')} · ${String(payload.reason ?? '')}`
+        ? `${statusDisplayLabel(payload.status, '未读取')}${payload.reason ? ` · ${reasonDisplayLabel(payload.reason)}` : ''}`
         : event.kind === 'route.selected'
-          ? `${String(payload.taskClass ?? 'unknown')} · ${String(payload.reason ?? '')}`
+          ? `${humanizeCode(payload.taskClass, '当前任务')} · ${payload.reason ? reasonDisplayLabel(payload.reason) : '已通过安全检查'}`
           : `已分配 ${Array.isArray(payload.contexts) ? payload.contexts.length : 0} 个独立上下文`;
     const projected = event.kind === 'role.contexts_allocated'
       ? applyRuntimeSubAgentEvent(model, event)
@@ -3176,7 +3413,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: '等待审批',
-      body: `${typeof payload.capability === 'string' ? payload.capability : '受控操作'} 请求一次性授权`,
+      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} 请求一次性授权`,
       status: 'PENDING'
     }));
     void refreshExecutionState();
@@ -3215,7 +3452,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: 'PolicyLease 已签发',
-      body: `${typeof payload.capability === 'string' ? payload.capability : '受控操作'} · 仅本次`,
+      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} · 仅本次`,
       status: 'COMPLETE'
     }));
     void refreshExecutionState();
@@ -3257,7 +3494,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: 'ActionIntent',
-      body: `${typeof payload.capability === 'string' ? payload.capability : '受控操作'} 已进入审批状态`,
+      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} 已进入审批状态`,
       status: 'COMPLETE'
     }));
     return;
@@ -3282,7 +3519,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: labels[event.kind],
-      body: `${typeof payload.capability === 'string' ? payload.capability : '受控操作'}${payload.ok === false ? ' · 失败' : ''}`,
+      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')}${payload.ok === false ? ' · 失败' : ''}`,
       status: event.kind === 'lease.failed' || payload.ok === false ? 'ERROR' : 'COMPLETE'
     }));
     return;
@@ -3292,24 +3529,29 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: '模型路由',
-      body: [payload.provider, payload.protocol, payload.model].filter((value): value is string => typeof value === 'string').join(' · ') || '模型路由已解析',
+      body: `已连接 ${typeof payload.provider === 'string' ? payload.provider : '默认服务'} · ${typeof payload.model === 'string' ? payload.model : '未指定模型'}`,
       status: 'COMPLETE'
     }));
     return;
   }
   if (event.kind === 'tool.call_requested' || event.kind === 'tool.result' || event.kind === 'workspace.snapshot') {
-    const title = event.kind === 'tool.call_requested' ? '工具调用' : event.kind === 'tool.result' ? '工具结果' : '工作区快照';
-    if (event.kind === 'tool.result' && payload.ok === false) {
-      logRuntimeFailure(event, 'tool.result');
-      update(appendErrorTimelineItem(model, title, runtimeEventText(event)));
-    } else if (event.kind === 'workspace.snapshot') {
+    if (event.kind === 'tool.call_requested' || event.kind === 'tool.result') {
+      const item = toolEventTimelineItem(event);
+      if (!item) return;
+      const existing = model.timeline.find((candidate) => candidate.toolCallId === item.toolCallId
+        || (item.operationId !== undefined && candidate.operationId === item.operationId && candidate.toolName === item.toolName));
+      if (event.kind === 'tool.result' && payload.ok === false) logRuntimeFailure(event, 'tool.result');
+      update(existing
+        ? replaceTimelineItem(model, existing.itemId, item)
+        : appendTimelineItem(model, item));
+    } else {
       update(appendTimelineItem(model, {
         itemId: `runtime-${eventKey}`,
         eventId: event.eventId,
         eventSequence: event.sequence,
         runId: event.runId,
         kind: 'WORKSPACE',
-        title,
+        title: '工作区快照',
         body: runtimeEventText(event),
         status: 'COMPLETE'
       }));
@@ -3337,6 +3579,7 @@ const applyWorkspaceGrant = (grant: WorkspaceGrant): boolean => {
 
 const resetToNewTask = (): void => {
   running = false;
+  executionGroupExpanded = false;
   historyView = undefined;
   historyRenderSerial++;
   historyPageCache.clear();
@@ -3938,7 +4181,7 @@ const runCordisTask = async (prompt: string): Promise<void> => {
     next = setActiveThread(next, result.threadId);
     next = setThreads(next, [result.thread, ...next.threads.filter((thread) => thread.id !== result.thread.id)]);
     const modelSummary = result.model
-      ? `${result.model.provider} · ${result.model.protocol} · ${result.model.model}`
+      ? `${result.model.provider} 服务 · ${result.model.model}`
       : '模型配置未返回';
     next = upsertSubAgent(next, { agentId: modelAgentId, task: `流式响应已完成（${modelSummary}）`, state: 'SUCCEEDED' });
     next = upsertSubAgent(next, { agentId: summaryAgentId, task: '整理模型结果', state: 'RUNNING' });

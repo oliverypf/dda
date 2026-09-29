@@ -228,7 +228,7 @@ W10 完成前禁止：
 `WINDOWS_FULL_LOCAL` 发布并完成实际使用观察期后，才开始：
 
 1. 抽取 Windows 已验收的 contracts fixture、Harness Event、ReadModel replay、Decision Trace、安全和运维验收为跨平台行为测试；
-2. 实现 Linux 本地存储、Executor、Tauri 和运维适配；
+2. 实现 Linux CLI 本地存储、Executor、终端 bridge 和运维适配；
 3. 实现 HarmonyOS relationalStore、ArkUI ReadModel、设备能力门控和生命周期适配；
 4. 最后接入 Gateway、跨设备接续和企业策略场景。
 

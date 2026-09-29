@@ -290,7 +290,7 @@ const suite = async (client) => {
     if (controlled) {
       assert((await attr(client, '.mode-pill', 'disabled')) === null, 'mode pill enabled');
     } else {
-      assert((await text(client, '.mode-pill')).includes('READ ONLY'), 'mode pill READ ONLY');
+      assert((await text(client, '.mode-pill')).includes('只读模式'), 'mode pill 只读模式');
       assert((await attr(client, '.mode-pill', 'disabled')) !== null, 'mode pill disabled');
     }
     assert(await exists(client, 'textarea[name="prompt"]'), 'composer textarea');
@@ -391,22 +391,22 @@ const suite = async (client) => {
     const before = await text(client, '.mode-pill');
     if (await isControlledChannel(client)) {
       assert((await attr(client, '.mode-pill', 'disabled')) === null, 'mode pill enabled');
-      if (!before.includes('CONTROLLED')) {
+      if (!before.includes('受控模式')) {
         assert((await click(client, '.mode-pill')) === 'CLICKED', 'enter CONTROLLED');
-        await waitFor(client, `/CONTROLLED/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode entered' });
+        await waitFor(client, `/受控模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode entered' });
       }
       assert((await click(client, '.mode-pill')) === 'CLICKED', 'toggle to READ ONLY');
-      await waitFor(client, `/READ ONLY/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'read-only mode reached' });
+      await waitFor(client, `/只读模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'read-only mode reached' });
       assert((await click(client, '.mode-pill')) === 'CLICKED', 'toggle back to CONTROLLED');
-      await waitFor(client, `/CONTROLLED/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode restored' });
-      return 'CONTROLLED ⇄ READ ONLY';
+      await waitFor(client, `/受控模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode restored' });
+      return '受控模式 ⇄ 只读模式';
     }
-    assert(before.includes('READ ONLY'), 'READ ONLY label');
+    assert(before.includes('只读模式'), '只读模式 label');
     assert((await attr(client, '.mode-pill', 'disabled')) !== null, 'mode pill disabled');
     const clickResult = await click(client, '.mode-pill');
     assert(clickResult === 'DISABLED' || clickResult === 'NOT_FOUND', `mode pill click blocked (${clickResult})`);
     assert((await text(client, '.mode-pill')) === before, 'mode label unchanged');
-    return 'READ ONLY 门控生效';
+    return '只读模式门控生效';
   });
 
   await runTest('T06 新建任务重置', async () => {

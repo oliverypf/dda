@@ -1,7 +1,7 @@
 # hmCodex 多平台单客户端架构基线
 
-版本：v0.2  
-状态：迁移基线
+版本：v0.3
+状态：迁移基线；Linux CLI 形态已确定
 
 ## 1. 产品定位
 
@@ -17,10 +17,10 @@ HarmonyOS、Windows 和 Linux 是同一个产品的不同平台构建，不是�
 | --- | --- | --- |
 | HarmonyOS | ArkUI 原生客户端 | UI、会话、本地数据；本地运行时能力按设备 API 验证后启用 |
 | Windows | Tauri 2 桌面客户端 | 完整本地 Agent、工作区、受控进程、Memory Journal、Jev |
-| Linux | Tauri 2 桌面客户端 | 完整本地 Agent、工作区、受控进程、Memory Journal、Jev |
+| Linux | 无界面 CLI 客户端 | 终端命令、JSONL、完整本地 Agent、工作区、受控进程、Memory Journal、Jev |
 | macOS | 预留 | 沿用桌面运行时，暂不作为首期验收平台 |
 
-Windows/Linux 不直接复用 ArkUI 页面。它们复用同一套领域 DTO、事件 envelope、协议契约、read model 和行为 fixture；视觉组件按平台前端实现。跨平台首先保证语义一致，不强求 UI 或二进制完全相同。
+Windows/Linux 不直接复用 ArkUI 页面。Windows 使用 Tauri，Linux 使用终端 CLI；两端复用同一套领域 DTO、事件 envelope、协议契约、read model 和行为 fixture。Linux 的终端渲染属于应用层，不能复制 Harness 核心。跨平台首先保证语义一致，不强求 UI 或二进制完全相同。
 
 ## 3. 推荐拓扑：一个客户端内的本地运行时
 
@@ -28,8 +28,8 @@ Windows/Linux 不直接复用 ArkUI 页面。它们复用同一套领域 DTO、�
 ┌─────────────────────────────────────────────────────────────┐
 │ hmCodex Client                                               │
 │                                                             │
-│  Platform UI       Harness Core / Coordinator                │
-│  ArkUI/Tauri  ───▶ Session / Agent / Safety / ReadModel      │
+│  Platform App      Harness Core / Coordinator                │
+│  ArkUI/Tauri/CLI ─▶ Session / Agent / Safety / ReadModel      │
 │                         │                                   │
 │                         ├── Local Model/Codex Adapter        │
 │                         ├── Local Workspace + Executor       │
@@ -58,10 +58,11 @@ hmCodex/
 │   ├── codex/                 # Codex/App Server 本地适配
 │   ├── decision/               # Jev Decision Plane 适配
 │   └── workspace/             # 工作区、进程、权限和审计
-├── desktop/                   # Tauri 2 + TypeScript Windows/Linux 客户端
+├── desktop/                   # Tauri 2 + TypeScript Windows 客户端
 │   ├── src/                   # 桌面 UI
 │   └── src-tauri/             # 系统集成与本地运行时启动
 ├── entry/                     # HarmonyOS ArkUI 客户端
+├── linux-cli/                  # Linux 无界面 CLI 应用层
 ├── gateway/                   # 可选远程/企业适配器，不是本地客户端必需项
 └── docs/
 ```
@@ -79,7 +80,8 @@ Jev 不可用时采用保守降级：只读能力可继续，副作用能力需�
 ## 6. 平台边界与安全
 
 - UI 不执行模型返回的命令；命令由同一客户端内受控的 `ExecutorPort` 执行。
-- Windows/Linux 的本地文件和终端能力必须经过 Tauri capability、路径 scope、PolicyLease 和审计；桌面平台不等于自动放权。
+- Windows 的本地文件和终端能力必须经过 Tauri capability、路径 scope、PolicyLease 和审计。
+- Linux CLI 的本地文件和终端能力必须经过 Linux platform adapter、路径 scope、PolicyLease 和审计；CLI 终端不等于自动放权。
 - HarmonyOS 只有在目标设备 API 具备可靠进程、文件、沙箱和后台能力后，才启用完整本地 Executor；未验证设备先降级为 UI、只读工作区或可配置的 App Server 连接。
 - Memory Journal 的存储细节只存在于本地 Adapter；Core 只依赖 `ContextPort`，Jev 只依赖 `DecisionEngine`。
 - 远程模型、App Server 或 Gateway 是可选 Adapter，不能改变本地状态机、审批和安全语义。
@@ -90,9 +92,9 @@ Jev 不可用时采用保守降级：只读能力可继续，副作用能力需�
 
 从 `CodexTypes.ets` 和 `CodexProtocol.ets` 抽取平台无关契约，保留现有 ArkTS 兼容层，并补齐版本号、错误和未知事件处理。
 
-### Phase B：Windows/Linux 本地客户端
+### Phase B：Windows 本地客户端与 Linux CLI
 
-建立 Tauri 2 桌面壳和本地运行时监督器，先实现本地 Thread/Turn、流式输出、只读 workspace、审批展示和本地 Trajectory。Codex/App Server 优先由客户端本机启动并通过 stdio 或 loopback 连接。
+Windows 建立 Tauri 2 桌面壳和本地运行时监督器；Linux 建立无界面 CLI bridge 和本地运行时监督器。两端先实现本地 Thread/Turn、流式输出、只读 workspace、审批展示/终端审批和本地 Trajectory。Linux 首期使用 XDG 路径、JSONL 事件和 POSIX process group，不引入桌面窗口。
 
 ### Phase C：本地证据与 Jev Decision Plane
 
@@ -108,7 +110,7 @@ Jev 不可用时采用保守降级：只读能力可继续，副作用能力需�
 
 ## 8. 验收标准
 
-- Windows/Linux 安装后无需先部署 Gateway 即可创建会话、读取工作区并运行已批准的本地能力；
+- Windows 安装后、Linux CLI 安装后，无需先部署 Gateway 即可创建会话、读取工作区并运行已批准的本地能力；
 - 同一协议 fixture 在 HarmonyOS、Windows、Linux 三端得到一致的事件和状态结果；
 - Memory Journal 与 Decision Trace 默认留在本机应用数据目录；Jev 请求只发送必要的脱敏证据；
 - Jev 不可用时任务明确降级，不影响审批和安全策略；

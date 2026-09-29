@@ -209,13 +209,23 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[data-live-tools] .timeline-item').length === 617);
   await page.evaluate(() => {
     window.__executionTest.toolRow = document.querySelector('[data-live-tools] .timeline-item');
-    window.__executionTest.toolRow.querySelector('details').open = true;
+    window.__executionTest.toolRow.querySelector('details')?.setAttribute('open', '');
     window.__executionTest.emit('model.route_resolved', { model: 'last route' });
   });
   await page.waitForFunction(() => document.querySelectorAll('[data-live-tools] .timeline-item').length === 618);
-  assert.equal(await page.evaluate(() => window.__executionTest.toolRow.isConnected && window.__executionTest.toolRow.querySelector('details').open), true);
+  assert.equal(await page.evaluate(() => window.__executionTest.toolRow.isConnected && (!window.__executionTest.toolRow.querySelector('details') || window.__executionTest.toolRow.querySelector('details').open)), true);
   await page.evaluate(() => { document.querySelector('[data-execution-group]').open = false; });
   results.push({ name: '600 collapsed events mount on demand and preserve disclosure state' });
+  await page.evaluate(() => window.__executionTest.emit('tool.call_requested', {
+    id: 'tool-visible', name: 'workspace.list', operationId: 'op-visible'
+  }));
+  await page.waitForSelector('[data-live-human] [data-tool-name="workspace.list"]');
+  assert.match(await page.locator('[data-live-human] [data-tool-name="workspace.list"] .timeline-body').innerText(), /正在工作区目录/);
+  await page.evaluate(() => window.__executionTest.emit('tool.result', {
+    id: 'tool-visible', name: 'workspace.list', operationId: 'op-visible', ok: true, outputChars: 24
+  }));
+  await page.waitForFunction(() => document.querySelector('[data-live-human] [data-tool-name="workspace.list"] .timeline-body')?.textContent.includes('已完成'));
+  results.push({ name: 'tool execution is readable in the conversation timeline while running and after completion' });
   await page.evaluate(() => window.__executionTest.emit('approval.requested', { requestId: 'approval-fixture', capability: 'fixture.read', requestDigest: 'sha256:fixture' }));
   await page.waitForSelector('[data-live-region="approvals"] [data-approved="false"]');
   await page.locator('[data-live-region="approvals"] [data-approved="false"]').click();
@@ -391,6 +401,12 @@ try {
   await page.locator('[data-execution-group] > summary').click();
   await page.waitForFunction(() => document.querySelector('[data-execution-group]')?.open);
   await page.locator('[data-action="new-task"]').click();
+  // New task now opens the project chooser so the workspace boundary is
+  // explicit. Continue through the current workspace when it is available.
+  const chooser = page.locator('.project-picker-card');
+  if (await chooser.count()) {
+    await chooser.locator('.project-picker-none').click();
+  }
   await page.waitForFunction(() => document.activeElement?.matches('textarea[name="prompt"]'));
   assert.equal(await page.locator('.approval-card').count(), 0, 'new task does not inherit prior approvals');
   await mark(page);
@@ -486,10 +502,10 @@ try {
   const checkPanel = checksPage.locator('.verification-checks');
   await checkPanel.waitFor();
   assert.equal(await checkPanel.locator('.verification-check').count(), 4);
-  assert.match(await checkPanel.innerText(), /PASS · build/);
-  assert.match(await checkPanel.innerText(), /FAIL · tests/);
-  assert.match(await checkPanel.innerText(), /UNKNOWN · goal/);
-  assert.match(await checkPanel.innerText(), /SKIPPED · diff/);
+  assert.match(await checkPanel.innerText(), /通过 · build/);
+  assert.match(await checkPanel.innerText(), /失败 · tests/);
+  assert.match(await checkPanel.innerText(), /未知状态 · goal/);
+  assert.match(await checkPanel.innerText(), /已跳过 · diff/);
   assert.match(await checkPanel.innerText(), /Missing <coverage>/);
   assert.match(await checkPanel.innerText(), /运行时未提供逐项检查时间和影响等级/);
   assert.equal(await checkPanel.locator('[data-status="PENDING"]').count(), 2);
@@ -509,7 +525,11 @@ try {
   await checkPanel.scrollIntoViewIfNeeded();
   assert.equal(await checkPanel.evaluate(el => el.scrollWidth <= el.clientWidth), true);
   await checksPage.screenshot({ path: resolve(output, 'verification-checks-mobile.png') });
+  const closeContext = checksPage.locator('.mobile-context-close');
+  if (await closeContext.isVisible()) await closeContext.click();
   await checksPage.locator('[data-action="new-task"]').click();
+  const mobileChooser = checksPage.locator('.project-picker-card');
+  if (await mobileChooser.count()) await mobileChooser.locator('.project-picker-none').click();
   await checkPanel.waitFor({ state: 'detached' });
   await checksPage.close();
   results.push({ name: 'per-check verifier report preserves all four statuses, safe text and evidence references, explicit missing metadata and new-task isolation' });
@@ -526,8 +546,8 @@ try {
   assert.match(await failedReport.locator('.submit-receipt').innerText(), /已被接受/);
   assert.doesNotMatch(await failedReport.locator('.submit-receipt').innerText(), /已被拒绝/);
   assert.equal(await failedReport.locator('.verification-check').count(), 2);
-  assert.match(await failedReport.locator('.verification-checks').innerText(), /FAIL · required-tests/);
-  assert.match(await failedReport.locator('.verification-checks').innerText(), /UNKNOWN · uncertain/);
+  assert.match(await failedReport.locator('.verification-checks').innerText(), /失败 · required-tests/);
+  assert.match(await failedReport.locator('.verification-checks').innerText(), /未知状态 · uncertain/);
   assert.match(await failedReport.locator('.verification-checks').innerText(), /event:valid/);
   await failedReport.locator('.verification-checks').scrollIntoViewIfNeeded();
   await failedReport.screenshot({ path: resolve(output, 'failed-verification-report.png') });

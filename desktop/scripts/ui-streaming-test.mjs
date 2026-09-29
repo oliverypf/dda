@@ -126,7 +126,7 @@ const main = async () => {
   const client = await connect();
   try {
     await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { label: 'runtime ready' });
-    await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('READ ONLY') === true`, { label: 'read-only execution mode' });
+    await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { label: 'read-only execution mode' });
     await client.evaluate(`(() => {
       const textarea = document.querySelector('textarea[name="prompt"]');
       textarea.value = ${JSON.stringify(prompt)};

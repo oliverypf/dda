@@ -313,9 +313,9 @@ const setWorkspace = async (client, root) => {
 
 const setControlledMode = async (client) => {
   await ready(client);
-  if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('CONTROLLED')`)) return;
+  if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式')`)) return;
   assert((await click(client, '.mode-pill')) === 'CLICKED', 'switch to controlled mode');
-  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('CONTROLLED')`, { label: 'controlled mode selected' });
+  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('受控模式')`, { label: 'controlled mode selected' });
 };
 
 const runTask = async (client, prompt) => {
@@ -347,7 +347,7 @@ const main = async () => {
       await setControlledMode(client);
       const mode = await text(client, '.mode-pill');
       const note = await text(client, '.composer-note');
-      assert(mode.includes('CONTROLLED'), `mode=${mode}`);
+      assert(mode.includes('受控模式'), `mode=${mode}`);
       assert((await text(client, '.version-label')).includes('受控模式'), 'footer mode agrees with controlled selection');
       assert(note.includes('受控模式'), `note=${note}`);
       return mode;
@@ -431,7 +431,7 @@ const main = async () => {
       await approveAll(client);
       await waitForFile(join(workspace, 'approved-by-ui.txt'), { timeout: 60000, label: 'approved file' });
       await expandExecution(client);
-      await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('PolicyLease 已消费')`, { timeout: 30000, label: 'lease consumed' });
+      await waitFor(client, `document.querySelector('.timeline')?.innerText.includes('一次性授权已使用')`, { timeout: 30000, label: 'lease consumed' });
       await waitFor(client, `[...document.querySelectorAll('.approval-card')].some(card => card.innerText.includes('授权已使用'))`, { label: 'consumed lease reflected in approval card' });
       assert(!(await exists(client, '.approval-card [data-action="resolve-approval"]:enabled')), 'consumed approval cannot be replayed');
       if (output) {

@@ -295,7 +295,7 @@ Decision capture 要求：
 Windows Phase 1 通过后继续完成全功能计划 W8–W10；只有 `WINDOWS_FULL_LOCAL` 发布并完成实际使用观察期后，再按以下顺序推进：
 
 1. 将 contracts fixture、Harness Event、ReadModel replay 和 Decision Trace 验收抽取为跨平台行为测试；
-2. 实现 Linux 的本地存储、Executor 和 Tauri 适配；
+2. 实现 Linux CLI 的本地存储、Executor、终端 bridge 和运维适配；
 3. 实现 HarmonyOS 的 relationalStore、ArkUI ReadModel 和平台能力门控；
 4. 最后接入远程 Gateway、跨设备接续和企业策略场景。
 

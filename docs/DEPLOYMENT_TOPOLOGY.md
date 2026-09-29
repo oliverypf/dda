@@ -5,13 +5,13 @@
 
 ## 1. 设计结论
 
-本规范首先描述“一个客户端内的本地运行时”拓扑，再描述可选的远程 Executor/Gateway 模式。HarmonyOS 的设备能力、后台和本地文件约束由 [HARMONYOS_PLATFORM.md](HARMONYOS_PLATFORM.md) 补充；Windows/Linux 的桌面能力由对应客户端 Adapter 和 capability 配置补充。
+本规范首先描述“一个客户端内的本地运行时”拓扑，再描述可选的远程 Executor/Gateway 模式。HarmonyOS 的设备能力、后台和本地文件约束由 [HARMONYOS_PLATFORM.md](HARMONYOS_PLATFORM.md) 补充；Windows 的桌面能力和 Linux CLI 的终端/进程能力由对应 Adapter 和 capability 配置补充。
 
 客户端是完整的本地 Agent 工作台，不只是控制面。真实代码执行、工作区访问、审批、轨迹、本地 Memory Journal 和 Jev Decision Plane 默认由客户端启动或管理的本地运行时完成。远程能力按设备、产品形态和安全策略协商，不能反向成为本地客户端的启动依赖。
 
 推荐顺序：
 
-1. 本地客户端运行时，启动本机 App Server 和受控 Executor；上下文使用本地 Memory Journal，Jev 通过受控决策端口接收证据；
+1. 本地客户端运行时，启动本地模型/Codex Adapter 和受控 Executor；上下文使用本地 Memory Journal，Jev 通过受控决策端口接收证据；App Server 只作为可选兼容 Adapter；
 2. 本地运行时通过 stdio、Unix socket 或 loopback 连接子进程；
 3. 可选的单用户远程 Gateway/Executor，用于跨设备接续或高算力；
 4. 可选的企业 Gateway，用于身份、策略、审计和多用户隔离。
@@ -20,7 +20,7 @@
 
 ```text
 hmCodex Client
-  ├── ArkUI/Tauri UI + HarnessFacade / ReadModel
+  ├── ArkUI/Tauri UI 或 Linux CLI + HarnessFacade / ReadModel
   ├── Coordinator / AgentCore / Safety / Rule Verifier / Jev Decision Plane
   ├── Local Trajectory / Profiles / Policy
   └── Local Runtime
@@ -34,9 +34,9 @@ UI、SafetyDecision、用户审批和本地审计属于客户端；本地 Execut
 
 ## 3. 拓扑 A：本地单客户端
 
-适用：Windows/Linux 桌面客户端，以及通过设备能力验证的 HarmonyOS 客户端。
+适用：Windows Tauri 客户端、Linux CLI，以及通过设备能力验证的 HarmonyOS 客户端。
 
-- 客户端启动并监督本地运行时、Codex/App Server 和受控 Executor；
+- 客户端启动并监督本地运行时、模型/协议 Adapter 和受控 Executor；Linux CLI 通过 bridge 管理 runtime 子进程；
 - 子进程优先使用 stdio/Unix socket，或只监听 `127.0.0.1` 的随机端口；
 - 工作区、Trajectory、上下文索引和凭据引用默认留在当前 OS 用户的数据目录；
 - 每个子进程使用最小环境变量、最小路径 scope 和独立临时目录；

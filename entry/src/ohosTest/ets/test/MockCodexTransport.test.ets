@@ -15,7 +15,7 @@ export default function mockCodexTransportTest() {
       expect(entries.length).assertEqual(4);
       expect(entries[1].fileName).assertEqual('entry');
       const content: string = await transport.readFile('/README.md');
-      expect(content).assertContain('hmCodex');
+      expect(content).assertContain('# dda');
       await transport.disconnect();
     });
 

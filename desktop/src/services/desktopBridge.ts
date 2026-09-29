@@ -113,7 +113,7 @@ export const desktopBridge = {
   },
 
   async chooseWorkspace(): Promise<WorkspaceGrant> {
-    if (!isTauriRuntime()) return { rootLabel: 'hmCodex 演示工作区', rootPath: '/demo/hmCodex' };
+    if (!isTauriRuntime()) return { rootLabel: 'dda 演示工作区', rootPath: '/demo/hmCodex' };
     return invoke<WorkspaceGrant>('choose_workspace');
   },
 

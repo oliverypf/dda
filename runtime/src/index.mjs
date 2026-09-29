@@ -827,7 +827,7 @@ async function runTask() {
     throw new Error('THREAD_WORKSPACE_MISMATCH');
   }
   if (!thread) {
-    thread = await threads.create({ cwd: workspaceRoot, title: prompt || 'hmCodex task' });
+    thread = await threads.create({ cwd: workspaceRoot, title: prompt || 'dda task' });
     emitEvent('thread.created', { threadId: thread.id, title: thread.title });
   } else {
     emitEvent('thread.resumed', { threadId: thread.id, title: thread.title, turnCount: thread.turns.length });

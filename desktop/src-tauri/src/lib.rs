@@ -2536,7 +2536,7 @@ pub fn run() {
             resolve_runtime_approval
         ])
         .build(tauri::generate_context!())
-        .expect("error while building hmCodex");
+        .expect("error while building dda");
     app.run(|app_handle, event| {
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
             let state = app_handle.state::<AppState>();

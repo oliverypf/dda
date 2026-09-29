@@ -433,7 +433,7 @@ const renderProjectNameDialog = (): string => {
   return `<div class="project-picker-backdrop" role="presentation">
     <section class="project-name-card" role="dialog" aria-modal="true" aria-labelledby="project-name-title" aria-describedby="project-name-description">
       <header class="project-name-header"><div><span class="eyebrow">新建项目</span><h2 id="project-name-title">给项目起个名字</h2></div><button class="icon-button" type="button" data-action="cancel-project-name" aria-label="取消"><i data-lucide="x-circle"></i></button></header>
-      <p id="project-name-description">这个名称只用于 hmCodex 中识别项目，不会修改文件夹名称。</p>
+      <p id="project-name-description">这个名称只用于 dda 中识别项目，不会修改文件夹名称。</p>
       <label class="project-name-field"><span>项目名称</span><input data-role="project-name" type="text" maxlength="80" value="${escapeHtml(flow.draftName)}" placeholder="例如：我的 Agent 项目" autocomplete="off"></label>
       ${projectNameError ? `<p class="project-name-error" role="alert">${escapeHtml(projectNameError)}</p>` : ''}
       <div class="project-name-path" title="${escapeHtml(flow.path)}"><i data-lucide="folder-open"></i><span>${escapeHtml(flow.path)}</span></div>
@@ -627,7 +627,7 @@ const renderSettingsModal = (): string => {
           <label class="settings-search-wrap"><i data-lucide="search"></i><input name="settingsSearch" class="settings-search" type="search" value="${escapeHtml(settingsSearch)}" placeholder="搜索设置…" aria-label="搜索设置"></label>
           <span class="settings-sidebar-heading">个人</span>
           <div class="settings-nav-list">${(Object.entries(settingsSections) as [SettingsSection, typeof settingsSections[SettingsSection]][]).map(([key, section]) => `<button type="button" class="settings-nav ${settingsSection === key ? 'active' : ''}" data-action="settings-section" data-section="${key}" aria-controls="settings-panel-${key}"><i data-lucide="${section.icon}"></i><span>${section.title}</span></button>`).join('')}</div>
-          <p class="settings-sidebar-note">hmCodex · 设置</p>
+          <p class="settings-sidebar-note">dda · 设置</p>
         </nav>
         <div class="settings-main"><header class="settings-header">
           <div><h2 id="settings-title">${settingsSections[settingsSection].title}</h2><p data-settings-description>${settingsSections[settingsSection].description}</p></div>
@@ -2392,7 +2392,7 @@ const render = (): void => {
         <div class="brand-row">
           <div class="brand-mark">hm</div>
           <div>
-            <strong>hmCodex</strong>
+            <strong>dda</strong>
             <span>${model.runtime.platform === 'WINDOWS' ? 'Windows Native' : 'Web Preview'}</span>
           </div>
         </div>
@@ -3007,7 +3007,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       };
     case 'TaskRunCompleted':
       if (typeof payload.responseText === 'string' && payload.responseText.trim()) {
-        return { ...common, kind: 'AGENT', title: 'hmCodex', body: payload.responseText, status: 'COMPLETE' };
+        return { ...common, kind: 'AGENT', title: 'dda', body: payload.responseText, status: 'COMPLETE' };
       }
       return {
         ...common,
@@ -3044,7 +3044,7 @@ const replayThreadEvents = (base: HarnessReadModel, events: RuntimeEvent[]): Har
     if (event.payload?.persistedKind === 'TaskRunFailed'
       && typeof event.payload.responseText === 'string' && event.payload.responseText.trim()) {
       timeline.push({ ...item, itemId: `${item.itemId}-response`, kind: 'AGENT',
-        title: 'hmCodex（中断前的回复）', body: event.payload.responseText, status: 'COMPLETE' });
+        title: 'dda（中断前的回复）', body: event.payload.responseText, status: 'COMPLETE' });
     }
     seen.add(item.itemId);
     timeline.push(item);

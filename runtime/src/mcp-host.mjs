@@ -117,7 +117,7 @@ export class McpReadOnlyHost {
 
   async connectAndRegister(registry) {
     for (const config of this.#configs.servers) {
-      const client = new Client({ name: 'hmCodex', version: '0.1.0' });
+      const client = new Client({ name: 'dda', version: '0.1.0' });
       let transport;
       if (config.transport === 'stdio') {
         transport = new StdioClientTransport({ command: config.command, args: config.args, cwd: config.cwd, env: safeStdioEnv(config.env), stderr: 'pipe' });

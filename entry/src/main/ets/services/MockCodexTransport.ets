@@ -195,7 +195,7 @@ export class MockCodexTransport implements CodexTransport {
       return Promise.reject(new Error('传输层尚未连接'));
     }
     if (path === '/README.md') {
-      return Promise.resolve('# hmCodex\n\nHarmonyOS 原生 Codex 工作台演示文件。');
+      return Promise.resolve('# dda\n\nHarmonyOS 原生 Codex 工作台演示文件。');
     }
     if (path === '/build-profile.json5') {
       return Promise.resolve('{\n  "app": {\n    "targetSdkVersion": "6.1.1(24)"\n  }\n}');

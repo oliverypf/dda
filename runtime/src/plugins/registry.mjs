@@ -54,7 +54,7 @@ export const pluginManifest = (id, name, type, capabilities, permissions = []) =
   id,
   name,
   version: '0.1.0',
-  publisher: { id: 'com.hmcodex', displayName: 'hmCodex' },
+  publisher: { id: 'com.hmcodex', displayName: 'dda' },
   pluginApi: '>=1.0 <2.0',
   harnessProtocol: '>=1.0 <2.0',
   platform: { kind: 'node-cordis', os: ['windows'] },

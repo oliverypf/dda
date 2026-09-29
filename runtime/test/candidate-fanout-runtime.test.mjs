@@ -55,7 +55,7 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
       response.end(JSON.stringify({ answers }));
       return;
     }
-    if (scenario === 'drafts-failed' && /\/candidate-[ab]$/u.test(request.url) && /isolated hmCodex role/iu.test(system)) {
+    if (scenario === 'drafts-failed' && /\/candidate-[ab]$/u.test(request.url) && /isolated dda role/iu.test(system)) {
       sse(response, '');
       return;
     }
@@ -160,12 +160,12 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
 
   // Both candidate bindings were really invoked, one physical draft call each,
   // each on its own provider.
-  const roleTurn = (item) => /isolated hmCodex role/iu.test(String(item.body.instructions ?? ''));
+  const roleTurn = (item) => /isolated dda role/iu.test(String(item.body.instructions ?? ''));
   const candidateCalls = requests.filter((item) => roleTurn(item) && (item.url === '/candidate-a' || item.url === '/candidate-b'));
   assert.deepEqual(candidateCalls.map((item) => item.url).sort(), ['/candidate-a', '/candidate-b']);
   // Candidate drafts are isolated no-tool turns.
   for (const call of candidateCalls) {
-    assert.match(String(call.body.instructions ?? ''), /isolated hmCodex role/iu);
+    assert.match(String(call.body.instructions ?? ''), /isolated dda role/iu);
     assert.deepEqual(call.body.tools, []);
   }
 
@@ -213,7 +213,7 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
 
   // The single tool-executing turn received the selected draft and never saw
   // the losing candidate's draft.
-  const executorCalls = requests.filter((item) => !/isolated hmCodex role|Planner role|Council member or Judge|Independently verify|Semantic Verifier role/iu.test(String(item.body.instructions ?? '')));
+  const executorCalls = requests.filter((item) => !/isolated dda role|Planner role|Council member or Judge|Independently verify|Semantic Verifier role/iu.test(String(item.body.instructions ?? '')));
   assert.ok(executorCalls.length >= 1);
   const executorText = JSON.stringify(executorCalls.map((item) => item.body));
   assert.ok(executorText.includes('draft from candidate-b'));

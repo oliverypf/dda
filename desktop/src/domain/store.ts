@@ -74,8 +74,8 @@ export const createInitialReadModel = (): HarnessReadModel => ({
     {
       itemId: 'welcome',
       kind: 'AGENT',
-      title: 'hmCodex',
-      body: 'Windows 只读工作台已启动。你可以授权一个项目目录，然后让 hmCodex 检查结构、阅读文件或整理实现计划。',
+      title: 'dda',
+      body: 'Windows 只读工作台已启动。你可以授权一个项目目录，然后让 dda 检查结构、阅读文件或整理实现计划。',
       status: 'COMPLETE',
       createdAtMs: Date.now()
     }
@@ -447,7 +447,7 @@ export const upsertStreamingAgent = (
       itemId,
       ...(runId ? { runId } : {}),
       kind: 'AGENT',
-      title: 'hmCodex',
+      title: 'dda',
       body: delta,
       status: complete ? 'COMPLETE' : 'STREAMING',
       createdAtMs: Date.now()

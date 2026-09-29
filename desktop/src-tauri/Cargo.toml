@@ -1,8 +1,8 @@
 [package]
 name = "hmcodex-desktop"
 version = "0.1.0"
-description = "Windows-first read-only desktop harness for hmCodex"
-authors = ["hmCodex contributors"]
+description = "Windows-first read-only desktop harness for dda"
+authors = ["dda contributors"]
 edition = "2021"
 default-run = "hmcodex-desktop"
 

@@ -222,7 +222,7 @@ test('restores a bounded prior-run context on the next task', async (t) => {
     .flatMap((message) => message.content ?? [])
     .map((content) => content.text ?? '')
     .join('\n');
-  assert.match(secondInput, /Previous hmCodex run summaries/);
+  assert.match(secondInput, /Previous dda run summaries/);
   assert.match(secondInput, /state=SUCCEEDED/);
   assert.equal(secondInput.includes('第一轮任务'), false);
   const secondTrajectory = JSON.parse(second.stdout.trim()).trajectory;

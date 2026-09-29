@@ -1954,7 +1954,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     composer.placeholder = model.composer.placeholder;
   }
   const send = app.querySelector<HTMLButtonElement>('.composer .send-button');
-  if (send) send.disabled = !model.composer.enabled;
+  if (send) send.disabled = !model.composer.enabled || workspaceChanging;
   app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"]').forEach((button) => {
     button.disabled = running || workspaceChanging;
   });
@@ -2562,7 +2562,7 @@ const render = (): void => {
   // editable while the native runtime hydrates; a submitted prompt waits for
   // that one-time read to finish before the task child is spawned.
   const canCompose = model.composer.enabled;
-  const canSend = canCompose;
+  const canSend = canCompose && !workspaceChanging;
   const taskRunning = Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
   const controlled = model.composer.mode === 'CONTROLLED';
   const runtimeRoute = model.runtime.model

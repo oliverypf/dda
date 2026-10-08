@@ -14,6 +14,43 @@ const workspace = {
   sections: []
 };
 
+for (const sample of [
+  { name: 'test.execute', output: { ok: false, exitCode: 1, stdout: 'assertion failed', stderr: '', timedOut: false, aborted: false }, code: 'TEST_CHECK_FAILED', verifierStatus: 'CONTINUE' },
+  { name: 'test.execute', output: { ok: false, exitCode: null, stdout: '', stderr: '', timedOut: true, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },
+  { name: 'shell.execute', output: { ok: false, exitCode: 1, stdout: '', stderr: 'command failed', timedOut: false, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' }
+]) {
+  test(`an unsuccessful ${sample.name} result is a failure (${sample.code}) despite a completed invocation`, async () => {
+    const registry = new ToolRegistry({ allowSideEffects: true });
+    registry.register({ name: sample.name, description: 'Process fixture', readOnly: false,
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false }, handler: () => sample.output });
+    const events = [], requests = [];
+    const providerPlugin = cordisPlugin(ctx => ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'process-result-fixture',
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) yield { type: 'tool-call', id: 'process-call', name: sample.name, arguments: '{}' };
+        else yield { type: 'text-delta', text: 'The process failed; more work is required.' };
+        yield { type: 'finish', reason: { kind: requests.length === 1 ? 'tool-calls' : 'stop' } };
+      }
+    }), 'process-result-fixture');
+    const root = new Context();
+    await root.plugin(toolRegistryPlugin(registry));
+    await root.plugin(providerPlugin);
+    await root.plugin(taskRunnerPlugin);
+    try {
+      await root.taskRunner.run({ prompt: 'verify the actual process result', workspace, mode: 'CONTROLLED', onEvent: event => events.push(event) });
+      const result = events.find(event => event.kind === 'tool.result');
+      assert.equal(result.ok, false);
+      assert.equal(result.errorCode, sample.code);
+      const tool = requests[1].messages.find(message => message.source?.kind === 'tool');
+      assert.deepEqual(JSON.parse(tool.content[0].content[0].text), sample.output, 'native output stays unchanged for digest verification');
+      const report = createRuleVerifier().verify({ prompt: 'verify', output: 'More evidence required', workspace,
+        executionMode: 'CONTROLLED', actions: [{ name: sample.name, state: 'FAILED', errorCode: result.errorCode }] });
+      assert.equal(report.status, sample.verifierStatus);
+    } finally { await root.fiber.dispose(); }
+  });
+}
+
 test('runs a model-requested tool and sends its result into the next round', async () => {
   const registry = new ToolRegistry();
   registry.register({

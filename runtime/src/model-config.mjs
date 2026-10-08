@@ -50,7 +50,7 @@ export const DEFAULT_MODEL_CONFIG = Object.freeze({
 });
 
 // OpenCode Go removed the short `mimo-v2.6` alias while retaining the
-// explicitly versioned variants. Keep old hmCodex installations usable by
+// explicitly versioned variants. Keep old dda installations usable by
 // normalising that alias only on the OpenCode Go route; other providers and
 // user-selected model ids remain untouched.
 const normalizeOpenCodeRoute = (value) => {
@@ -523,7 +523,7 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
   // removed LLM verifier path.
   const enabled = parseBoolean(envValue('HMCODEX_JEV_ENABLED')) ?? configured.enabled ?? true;
   const enforce = parseBoolean(envValue('HMCODEX_JEV_ENFORCE')) ?? configured.enforce ?? enabled;
-  const endpoint = configured.endpoint ?? envValue('HMCODEX_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/system_one';
+  const endpoint = configured.endpoint ?? envValue('HMCODEX_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/systemone';
   const apiKeyEnv = configured.apiKeyEnv ?? envValue('HMCODEX_JEV_API_KEY_ENV') ?? 'JEV_API_KEY';
   const model = configured.model ?? envValue('HMCODEX_JEV_MODEL') ?? 'jev-latest';
   const timeoutMs = configured.timeoutMs ?? Number(envValue('HMCODEX_JEV_TIMEOUT_MS') ?? 1200);

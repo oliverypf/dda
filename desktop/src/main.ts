@@ -1,3 +1,4 @@
+import Archive from 'lucide/dist/esm/icons/archive.mjs';
 import ArrowLeft from 'lucide/dist/esm/icons/arrow-left.mjs';
 import Bot from 'lucide/dist/esm/icons/bot.mjs';
 import CheckCircle2 from 'lucide/dist/esm/icons/circle-check.mjs';
@@ -31,7 +32,7 @@ import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
-import { sameWorkspaceRoot, workspaceThreadOptions } from './domain/workspace';
+import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
 import type { ContinuousVerificationRecord, HarnessReadModel, ModelConfig, ApprovalReadModel,
   ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
 import {
@@ -59,13 +60,14 @@ import {
 import { desktopBridge, type ThreadEventPage } from './services/desktopBridge';
 import type { RuntimeEvent, WorkspaceGrant } from './domain/models';
 import { formatVerifierFormValues, parseVerifierFormValues } from './domain/verifier-config';
-import { syncKeyedList, syncKeyedListIncrementally } from './ui/keyed-list';
+import { syncKeyedList, syncKeyedListIncrementally, syncRegionContent } from './ui/keyed-list';
 import { LiveTimeline } from './ui/live-timeline';
+import { renderMarkdown } from './ui/markdown';
 
 type IconNode = [tag: string, attrs: Record<string, string>][];
 
 const createIcons = ({ icons }: { icons: Record<string, IconNode> }, root: ParentNode = document): void => {
-  root.querySelectorAll<HTMLElement>('[data-lucide]').forEach((element) => {
+  root.querySelectorAll<HTMLElement>('[data-lucide]:not(svg)').forEach((element) => {
     replaceElement(element, { nameAttr: 'data-lucide', icons, attrs: {} });
   });
 };
@@ -77,6 +79,11 @@ const app = document.querySelector<HTMLDivElement>('#app');
 let transcriptStick = true;
 let transcriptScrollTop = 0;
 let contextScrollTop = 0;
+let navigationRailScrollTop = 0;
+// Programmatic restoration also emits a native scroll event. Keep that event
+// from changing the user's follow/reading preference while a render restores
+// the previous viewport.
+let restoringScroll = false;
 // Preserve the user's choice while live runtime events trigger rerenders.
 let executionGroupExpanded = false;
 // Prevent overlapping history reads/replays when the user clicks rows rapidly.
@@ -101,11 +108,12 @@ const historyPageCache = new Map<string, {
   page?: ThreadEventPage;
   request: Promise<ThreadEventPage>;
   summaryKey?: string;
+  timeline?: HarnessReadModel['timeline'];
 }>();
 const historySummaryKey = (thread: ThreadEventPage['thread']): string | undefined => {
   if (!thread) return undefined;
   return JSON.stringify([thread.id, thread.updatedAtMs, thread.turnCount,
-    thread.state, thread.resumable, thread.checkpoint?.runId ?? null]);
+    thread.state, thread.resumable, thread.resumeMode, thread.checkpoint?.runId ?? null]);
 };
 const reconcileHistoryPageCache = (threads: ThreadEventPage['thread'][]): void => {
   const summaries = new Map(threads.filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
@@ -143,6 +151,21 @@ const loadInitialHistoryPage = (threadId: string): Promise<ThreadEventPage> => {
   }
   return request;
 };
+// Start reading a thread as soon as the user points at it.  The sidebar is
+// already the user's navigation affordance, so this hides the local
+// Node/SQLite round trip behind the short pointer-to-click interval without
+// changing the selected thread or its workspace.
+const prefetchHistoryPage = (threadId: string): void => {
+  if (!threadId || running || workspaceChanging) return;
+  const thread = model.threads.find((candidate) => candidate.id === threadId);
+  if (!thread || !hasPersistedTurn(thread)) return;
+  // Keep an immediate click indistinguishable from the old path (useful for
+  // keyboard users and for transient rows), while a normal hover gets a head
+  // start before the click lands.
+  setTimeout(() => {
+    if (!running && !workspaceChanging) void loadInitialHistoryPage(threadId).catch(() => undefined);
+  }, 150);
+};
 const savedNavigationThreadId = (): string | undefined => {
   try {
     const saved = JSON.parse(savedNavigation ?? '') as { threadId?: unknown };
@@ -156,9 +179,13 @@ document.addEventListener('scroll', (event) => {
   if (!target) return;
   if (target.classList?.contains('transcript')) {
     transcriptScrollTop = target.scrollTop;
-    transcriptStick = target.scrollTop + target.clientHeight >= target.scrollHeight - 64;
+    if (!restoringScroll) {
+      transcriptStick = target.scrollTop + target.clientHeight >= target.scrollHeight - 64;
+    }
   } else if (target.classList?.contains('context-panel')) {
     contextScrollTop = target.scrollTop;
+  } else if (target.classList?.contains('navigation-rail')) {
+    navigationRailScrollTop = target.scrollTop;
   }
 }, { capture: true, passive: true });
 document.addEventListener('toggle', (event) => {
@@ -190,6 +217,8 @@ if (!app) throw new Error('Missing #app root');
 let model: HarnessReadModel = createInitialReadModel();
 let contextVisible = window.matchMedia('(min-width: 1121px)').matches;
 let running = false;
+let taskProgressMessage = '';
+let backgroundDetailsTimer: number | undefined;
 let pendingCancellationRunId: string | undefined;
 let workspaceChanging = false;
 let workspaceReady: Promise<void> = Promise.resolve();
@@ -238,10 +267,28 @@ interface SubmitReceipt { id: string; prompt: string; status: SubmitReceiptStatu
 let lastSubmitReceipt: SubmitReceipt | undefined;
 let memoryActionError = '';
 let governanceReadFailed = false;
+let governanceActionNotice: { key: string; text: string; error: boolean } | undefined;
+const pendingGovernanceActions = new Set<string>();
+const governanceBusyKey = (element: HTMLElement): string => element.dataset.memoryId ? `memory:${element.dataset.memoryId}`
+  : element.dataset.pluginId ? `plugin:${element.dataset.pluginId}` : element.dataset.proposalId ? `evolution:${element.dataset.proposalId}` : 'dream';
 const pendingMemoryActions = new Set<string>();
 const memoryActionsAwaitingRefresh = new Set<string>();
 const syncMemoryActionControls = (): void => {
-  app.querySelectorAll<HTMLButtonElement>('[data-action="memory-action"]').forEach((button) => {
+  app.querySelectorAll<HTMLButtonElement>('[data-action="plugin-action"], [data-action="evolution-action"], [data-action="run-dream"], [data-action="start-dream-maintenance"], [data-action="stop-dream-maintenance"]').forEach(button => {
+    const busy = pendingGovernanceActions.has(governanceBusyKey(button));
+    if (busy) {
+      button.dataset.idleLabel ??= button.textContent ?? '';
+      button.textContent = '处理中…';
+      button.setAttribute('aria-busy', 'true');
+    } else if (button.dataset.idleLabel !== undefined) {
+      button.textContent = button.dataset.idleLabel;
+      delete button.dataset.idleLabel;
+      button.removeAttribute('aria-busy');
+    }
+    button.disabled = busy || !desktopBridge.isNative();
+    if (!desktopBridge.isNative()) button.title = '请在桌面应用中操作';
+  });
+  app.querySelectorAll<HTMLButtonElement>('[data-action="memory-action"], [data-action="memory-edit"]').forEach((button) => {
     const pending = pendingMemoryActions.has(button.dataset.memoryId ?? '') || memoryActionsAwaitingRefresh.has(button.dataset.memoryId ?? '');
     if (pending) {
       button.dataset.idleLabel ??= button.textContent ?? '';
@@ -258,9 +305,12 @@ const syncMemoryActionControls = (): void => {
 };
 let lastRecovery: { reconciled: number; atMs: number; execution: number; roles: number; dream: number; pendingApprovals: number; pendingApprovalRecords: Array<Record<string, unknown>>; leaseRecords: RuntimeExecutionRecord[]; revokedLeases: number; revokedLeaseRecords: Array<Record<string, unknown>>; executionRecords: RuntimeExecutionRecord[]; workspace?: { status?: string; head?: string | null; observationDigest?: string | null; changedFiles?: number; staged?: number; unstaged?: number; untracked?: number; conflicted?: number; statusCodes?: string[]; pathDigests?: string[]; pathDigestTruncated?: boolean }; remote?: RuntimeRemoteRecoveryStatus } | undefined;
 let exportNotice: string | undefined;
+let taskExportBusy = false;
+let taskExportNotice: { text: string; error: boolean } | undefined;
 let focusedRunId: string | null = null;
 let runsPage = 1;
 let memoryPage = 1;
+let memoryRecordPage = 1;
 interface MemoryEditState {
   memoryId: string;
   statement: string;
@@ -272,7 +322,27 @@ interface MemoryEditState {
 let memoryEditState: MemoryEditState | undefined;
 let memoryEditError = '';
 let pinnedModel: string | null = localStorage.getItem('hmcodex.pinnedModel') || null;
+interface TaskBudget {
+  maxTokens?: number;
+  maxToolRounds?: number;
+  maxCost?: number;
+}
+let taskBudget: TaskBudget = (() => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('hmcodex.taskBudget') ?? '{}') as TaskBudget;
+    const parsedTokens = parsed.maxTokens;
+    const parsedRounds = parsed.maxToolRounds;
+    const parsedCost = parsed.maxCost;
+    return {
+      ...(typeof parsedTokens === 'number' && Number.isInteger(parsedTokens) && parsedTokens > 0 ? { maxTokens: parsedTokens } : {}),
+      ...(typeof parsedRounds === 'number' && Number.isInteger(parsedRounds) && parsedRounds > 0 ? { maxToolRounds: parsedRounds } : {}),
+      ...(typeof parsedCost === 'number' && Number.isFinite(parsedCost) && parsedCost >= 0 ? { maxCost: parsedCost } : {})
+    };
+  } catch { return {}; }
+})();
+let taskActionNotice = '';
 const primaryPages: Record<string, { title: string; description: string }> = {
+  archived: { title: '已归档会话', description: '查看或恢复已归档的会话，历史内容仍保留。' },
   workbench: { title: '工作台', description: '' },
   runs: { title: '运行记录', description: '历史运行、状态和证据将在此处集中查看。' },
   workspace: { title: '工作区', description: '授权工作区、快照和文件证据将在此处集中查看。' },
@@ -323,6 +393,38 @@ interface ProjectGroup {
 
 const PROJECTS_STORAGE_KEY = 'hmcodex.projects.v1';
 const LAST_PROJECT_STORAGE_KEY = 'hmcodex.lastProjectId';
+const PROJECT_ORDER_STORAGE_KEY = 'hmcodex.projectOrder.v1';
+const THREAD_ARCHIVE_STORAGE_KEY = 'hmcodex.threadArchives.v1';
+let threadArchiveNotice: { text: string; error?: boolean; undoId?: string } | undefined;
+const readThreadArchives = (): Record<string, number> => {
+  const value: unknown = JSON.parse(localStorage.getItem(THREAD_ARCHIVE_STORAGE_KEY) ?? '{}');
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.entries(value).some(([id, at]) => !id || typeof at !== 'number' || !Number.isFinite(at) || at < 0)) {
+    throw new Error('INVALID_THREAD_ARCHIVES');
+  }
+  return Object.fromEntries(Object.entries(value)) as Record<string, number>;
+};
+let threadArchives: Record<string, number> = (() => {
+  try { return readThreadArchives(); }
+  catch { threadArchiveNotice = { text: '无法读取本机归档状态，请检查本地存储后重试。', error: true }; return {}; }
+})();
+const isThreadArchived = (id?: string): boolean => Boolean(id && Object.hasOwn(threadArchives, id));
+// Archive is local list metadata, like project bookmarks. Runtime history and
+// checkpoints stay untouched; dashboard refreshes cannot reset these flags.
+const writeThreadArchive = (id: string, archived: boolean): boolean => {
+  try {
+    const next = readThreadArchives();
+    if (archived) next[id] = next[id] ?? Date.now();
+    else delete next[id];
+    localStorage.setItem(THREAD_ARCHIVE_STORAGE_KEY, JSON.stringify(next));
+    threadArchives = next;
+    return true;
+  } catch {
+    threadArchiveNotice = { text: '归档状态保存失败，未更改会话。请检查本地存储后重试。', error: true };
+    return false;
+  }
+};
+const threadArchiveBlocked = (id: string): boolean => model.activeThreadId === id && (running || liveTaskRunning());
 const PROJECTLESS_ID = '__projectless__';
 let projectCatalog: ProjectBookmark[] = (() => {
   try {
@@ -332,8 +434,15 @@ let projectCatalog: ProjectBookmark[] = (() => {
       && typeof (item as ProjectBookmark).id === 'string'
       && typeof (item as ProjectBookmark).name === 'string'
       && typeof (item as ProjectBookmark).path === 'string')
-      .map((item) => ({ ...item, paths: Array.isArray(item.paths) && item.paths.length ? [...new Set([item.path, ...item.paths].filter(Boolean))] : [item.path], lastUsedAtMs: Number(item.lastUsedAtMs) || 0 }));
+      .map((item) => ({ ...item, paths: deduplicateWorkspaceRoots([item.path, ...(Array.isArray(item.paths) ? item.paths : [])]), lastUsedAtMs: Number(item.lastUsedAtMs) || 0 }));
   } catch { return []; }
+})();
+const projectOrderIds: string[] = (() => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PROJECT_ORDER_STORAGE_KEY) ?? 'null');
+    if (Array.isArray(value)) return [...new Set(value.filter((id): id is string => typeof id === 'string' && id !== PROJECTLESS_ID))];
+  } catch { /* fall back to the existing catalog order */ }
+  return projectCatalog.map((project) => project.id);
 })();
 let lastProjectId = localStorage.getItem(LAST_PROJECT_STORAGE_KEY) ?? '';
 let projectPickerVisible = false;
@@ -353,7 +462,7 @@ const projectIdForPath = (path: string): string => {
   return normalized ? `project:${normalized}` : PROJECTLESS_ID;
 };
 const projectNameForPath = (path: string): string => path.trim().split(/[\\/]/).filter(Boolean).pop() || '未命名项目';
-const projectTargetPaths = (project: ProjectBookmark): string[] => [...new Set([project.path, ...project.paths].filter(Boolean))];
+const projectTargetPaths = (project: ProjectBookmark): string[] => deduplicateWorkspaceRoots([project.path, ...project.paths]);
 const persistProjectCatalog = (): void => {
   try { localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projectCatalog)); } catch { /* storage may be unavailable */ }
 };
@@ -362,7 +471,8 @@ const rememberProject = (path: string, name?: string): ProjectBookmark | undefin
   if (!trimmed) return undefined;
   const id = projectIdForPath(trimmed);
   const existing = projectCatalog.find((project) => project.id === id || projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, trimmed)));
-  const project = { id: existing?.id ?? id, name: name?.trim() || existing?.name || projectNameForPath(trimmed), path: trimmed, paths: existing ? projectTargetPaths(existing) : [trimmed], lastUsedAtMs: Date.now() };
+  const project = { id: existing?.id ?? id, name: name?.trim() || existing?.name || projectNameForPath(trimmed), path: trimmed,
+    paths: deduplicateWorkspaceRoots([trimmed, ...(existing ? projectTargetPaths(existing) : [])]), lastUsedAtMs: Date.now() };
   projectCatalog = existing
     ? projectCatalog.map((item) => item.id === existing.id ? { ...item, ...project } : item)
     : [project, ...projectCatalog];
@@ -379,7 +489,7 @@ const projectForThread = (thread: HarnessReadModel['threads'][number]): ProjectB
 };
 const hasPersistedTurn = (thread: HarnessReadModel['threads'][number]): boolean => thread.turnCount > 0;
 const projectGroups = (): ProjectGroup[] => {
-  const visibleThreads = model.threads.filter(hasPersistedTurn);
+  const visibleThreads = model.threads.filter(thread => hasPersistedTurn(thread) && !isThreadArchived(thread.id));
   const groups: ProjectGroup[] = projectCatalog.map((project) => ({
     id: project.id, name: project.name, path: project.path,
     threads: visibleThreads.filter((thread) => Boolean(thread.cwd && projectTargetPaths(project).some((target) => sameWorkspaceRoot(thread.cwd!, target)))),
@@ -400,7 +510,22 @@ const projectGroups = (): ProjectGroup[] => {
   }
   groups.push(...discovered.values());
   groups.push(projectless);
-  return groups;
+  // Sidebar positions are independent of conversation activity and of whether
+  // a discovered directory has since been saved as a project.
+  const knownIds = new Set(projectOrderIds);
+  let orderChanged = false;
+  for (const group of groups) {
+    if (group.id === PROJECTLESS_ID || knownIds.has(group.id)) continue;
+    projectOrderIds.push(group.id);
+    knownIds.add(group.id);
+    orderChanged = true;
+  }
+  if (orderChanged) {
+    try { localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(projectOrderIds)); } catch { /* storage may be unavailable */ }
+  }
+  const positions = new Map(projectOrderIds.map((id, index) => [id, index]));
+  return groups.sort((left, right) => (positions.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+    - (positions.get(right.id) ?? Number.MAX_SAFE_INTEGER));
 };
 const currentProjectId = (): string => {
   const active = model.threads.find((thread) => thread.id === model.activeThreadId);
@@ -408,6 +533,10 @@ const currentProjectId = (): string => {
   if (!model.workspace.rootPath) return PROJECTLESS_ID;
   return projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, model.workspace.rootPath!)))?.id
     ?? projectIdForPath(model.workspace.rootPath);
+};
+const currentProjectName = (): string => {
+  const projectId = currentProjectId();
+  return projectCatalog.find((project) => project.id === projectId)?.name || model.workspace.rootLabel || '默认工作区';
 };
 const renderProjectPicker = (): string => {
   if (!projectPickerVisible) return '';
@@ -470,7 +599,10 @@ const renderProjectEditDialog = (): string => {
       <label class="project-name-field"><span>项目名称</span><input data-role="project-edit-name" type="text" maxlength="80" value="${escapeHtml(flow.draftName)}" autocomplete="off"></label>
       <h3 class="project-target-heading">源文件夹</h3>
       <div class="project-target-list">
-        ${flow.paths.map((path, index) => `<div class="project-target-row"><i data-lucide="folder"></i><span title="${escapeHtml(path)}">${escapeHtml(path)}</span><button class="icon-button small" type="button" data-action="remove-project-target" data-project-id="${escapeHtml(flow.projectId)}" data-target-index="${index}" aria-label="移除 ${escapeHtml(path)}" title="${index === 0 ? '主目录不能移除' : '移除'}" ${index === 0 || flow.paths.length <= 1 ? 'disabled' : ''}><i data-lucide="x-circle"></i></button></div>`).join('')}
+        ${flow.paths.map((path, index) => {
+          const displayPath = workspaceRootForDisplay(path);
+          return `<div class="project-target-row"><i data-lucide="folder"></i><span title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</span><button class="icon-button small" type="button" data-action="remove-project-target" data-project-id="${escapeHtml(flow.projectId)}" data-target-index="${index}" aria-label="移除 ${escapeHtml(displayPath)}" title="${index === 0 ? '主目录不能移除' : '移除'}" ${index === 0 || flow.paths.length <= 1 ? 'disabled' : ''}><i data-lucide="x-circle"></i></button></div>`;
+        }).join('')}
         <button class="project-target-add" type="button" data-action="add-project-target" data-project-id="${escapeHtml(flow.projectId)}" ${flow.busy ? 'disabled' : ''}><i data-lucide="plus"></i><span>添加文件夹</span></button>
       </div>
       ${flow.error ? `<p class="project-name-error" role="alert">${escapeHtml(flow.error)}</p>` : ''}
@@ -561,9 +693,9 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
       ];
       break;
     case 'memory': {
-      const active = model.memories.filter((item) => item.status === 'ACTIVE').length;
-      const proposed = model.memories.filter((item) => item.status === 'PROPOSED').length;
-      const revoked = model.memories.filter((item) => item.status === 'REVOKED').length;
+      const active = experienceMemories().filter((item) => item.status === 'ACTIVE').length;
+      const proposed = experienceMemories().filter((item) => item.status === 'PROPOSED').length;
+      const revoked = experienceMemories().filter((item) => item.status === 'RETRACTED').length;
       rows = [
         ['记忆状态', `已启用 ${active} · 待确认 ${proposed} · 已撤回 ${revoked}`],
         ['Dream 记录', `${model.dreamRuns.length} 次`],
@@ -748,6 +880,8 @@ const openSettings = async (): Promise<void> => {
 const compactError = (error: unknown): string => {
   const raw = error instanceof Error ? error.message : String(error);
   const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? '';
+  const recoveryCode = firstLine.match(/\b(?:THREAD_RESUME_GOAL_REQUIRED|THREAD_RESUME_PLAN_INVALID|THREAD_RESUME_CHECKPOINT_UNAVAILABLE|PERSISTENCE_LOCK_TIMEOUT)\b/u)?.[0];
+  if (recoveryCode) return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
   return firstLine.length > 240 ? `${firstLine.slice(0, 237)}...` : firstLine;
 };
 
@@ -906,6 +1040,10 @@ const reasonDisplayLabel = (value: unknown): string => {
   const key = typeof value === 'string' ? value.toUpperCase() : '';
   const labels: Record<string, string> = {
     RULE_PATTERN_MISMATCH: '与当前任务不匹配', POLICY_ALLOWED: '当前策略允许其他路线',
+    THREAD_RESUME_GOAL_REQUIRED: '上次在生成计划前中断，且未保存原始任务文字。请补充具体目标后重新规划。',
+    THREAD_RESUME_PLAN_INVALID: '保存的进度不是有效执行计划，无法直接续跑。请补充任务目标后重新规划。',
+    THREAD_RESUME_CHECKPOINT_UNAVAILABLE: '没有找到可恢复的进度，请重新输入任务目标。',
+    PERSISTENCE_LOCK_TIMEOUT: '等待本地数据存储锁超时，任务未能继续。',
     ROUTE_BLOCKED: '执行路线被安全规则阻止', ROLE_ISOLATION_REQUIRED: '需要隔离角色上下文',
     BOUNDED_EXECUTION_REQUIRED: '需要限制执行范围', OUTCOME_NOT_VERIFIED_SUCCESS: '上次结果尚未验证成功',
     EVIDENCE_GAP_REMAINS: '仍缺少必要证据', JEV_ACTION_GATE_NOT_ALLOW: '安全决策未允许该动作',
@@ -995,9 +1133,9 @@ const executionTypeLabel = (recordType: RuntimeExecutionRecord['recordType']): s
 }[recordType]);
 
 const governanceStateLabel = (state: string): string => ({
-  PROPOSED: '待提议',
-  VERIFIED: '已验证',
-  ACTIVE: '已激活',
+  PROPOSED: '待审核',
+  VERIFIED: '已核验，待启用',
+  ACTIVE: '已启用',
   RETRACTED: '已撤回',
   EXPIRED: '已过期',
   RUNNING: '运行中',
@@ -1008,8 +1146,9 @@ const governanceStateLabel = (state: string): string => ({
   VALIDATED: '已校验',
   LOADED: '已加载',
   QUARANTINED: '已隔离',
-  SHADOW: 'Shadow',
-  CANARY: 'Canary',
+  SHADOW: '观察评估中',
+  CANARY: '小范围试用中',
+  VALIDATING: '评估中',
   PROMOTED: '已晋级',
   ROLLED_BACK: '已回滚',
   INSTALLED: '已安装',
@@ -1017,6 +1156,112 @@ const governanceStateLabel = (state: string): string => ({
   DEGRADED: '降级',
   REJECTED: '已拒绝'
 }[state] ?? statusDisplayLabel(state));
+
+// Disclosures are keyed by record identity so a refresh/reordered list cannot
+// open another record's details or collapse what the user is reading.
+const contextDisclosureState = new Map<string, boolean>();
+app.addEventListener('toggle', (event) => {
+  const detail = event.target;
+  if (detail instanceof HTMLDetailsElement && detail.isConnected && detail.dataset.disclosureId) {
+    contextDisclosureState.set(detail.dataset.disclosureId, detail.open);
+  }
+}, true);
+const panelDetails = (key: string, label: string, body: string, open = false, className = 'panel-details'): string =>
+  `<details class="${className}" data-disclosure-id="${escapeHtml(key)}" ${(contextDisclosureState.get(key) ?? open) ? 'open' : ''}><summary>${escapeHtml(label)}</summary><div class="panel-detail-body">${body}</div></details>`;
+// Explain the purpose before opening a section, and retain the reader's choice
+// across streamed updates just like record-level disclosures.
+const contextGroup = (key: string, title: string, description: string, body: string, meta = '', className = 'context-section context-disclosure purpose-group'): string =>
+  `<details class="${className}" data-disclosure-id="${escapeHtml(key)}" ${contextDisclosureState.get(key) ? 'open' : ''}>
+    <summary><span class="purpose-group-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(description)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ''}</span><span class="purpose-group-arrow" aria-hidden="true">›</span></summary>
+    <div class="panel-detail-body">${body}</div></details>`;
+const panelFields = (fields: Array<[string, unknown]>): string => `<dl class="panel-fields">${fields
+  .filter(([, value]) => value !== undefined && value !== null && value !== '')
+  .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(Array.isArray(value) ? value.join('、') : String(value))}</dd></div>`).join('')}</dl>`;
+const panelDate = (value?: number): string => value && Number.isFinite(value)
+  ? new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '时间未记录';
+const panelPurpose = (text: string): string => `<p class="panel-purpose">${escapeHtml(text)}</p>`;
+const readableTaskClass = (value: string): string => ({ inspect: '检查与阅读', modify: '文件修改', test: '测试', code: '代码处理', unknown: '未分类' }[value] ?? humanizeCode(value, '未分类'));
+const readableDecision = (value?: string): string => ({
+  SELECT_ROUTE: '选择执行路线', SELECT_CONTEXT_PACK: '选择任务上下文', ALLOCATE_ROLE_CONTEXTS: '分配角色上下文', SELECT_TOPOLOGY: '选择协作方式', CREATE_PLAN: '制定执行计划', SELECT_SAFE_MODEL_FALLBACK: '选择备用模型', ACTION_GATE: '核对操作权限', SELECT_TOOL_ACTION: '选择工具操作', SELECT_CANDIDATE: '选择候选方案', VERIFY_BEHAVIOR: '检查执行行为', VERIFY_TASK_RESULT: '核对任务结果', DIAGNOSE_VERIFICATION: '分析核验失败原因', SELECT_PROBE: '选择补充检查', SELECT_RECOVERY_DIRECTION: '选择恢复方式', SELECT_CLARIFICATION_REQUEST: '确定需要补充的信息', SELECT_REPLAN_PLAN: '调整执行计划', RECOVER_TASK: '恢复任务',
+  CLASSIFY_TASK: '识别任务类型', ROUTE_MODEL: '选择执行模型', RESOLVE_ROUTE: '选择执行路线',
+  ALLOCATE_CONTEXT: '分配角色上下文', ALLOCATE_CONTEXTS: '分配角色上下文', PLAN_TASK: '制定执行计划',
+  PLAN: '制定执行计划', SELECT_ACTION: '选择下一步操作', VERIFY_RESULT: '核对任务结果',
+  VERIFY: '核对任务结果', CONSOLIDATE_MEMORY: '决定是否保存为记忆', REVIEW_PLAN: '比较并审阅方案',
+  DIAGNOSE: '分析失败原因', SAFETY_CHECK: '核对操作权限'
+} as Record<string, string>)[value ?? ''] ?? humanizeCode(value, '任务决策');
+const readableRole = (value?: string): string => ({
+  Classifier: '任务分类', Router: '模型选择', PlanningRole: '计划制定', ExecutionRole: '任务执行',
+  MemoryConsolidator: '记忆整理', Verifier: '结果核验', Diagnostician: '故障诊断', Council: '方案审议',
+  planner: '计划制定', executor: '任务执行', verifier: '结果核验'
+} as Record<string, string>)[value ?? ''] ?? humanizeCode(value, '未标注角色');
+type DisplayMemory = HarnessReadModel['memories'][number];
+// These exact legacy templates contain run metadata, not a reusable lesson.
+// Keep their original records accessible without asking users to approve them
+// as knowledge. An edited statement no longer matching a template is preserved.
+const memoryActivityRecord = (memory: DisplayMemory): { title: string; note: string } | undefined => {
+  const outcome = /^Verified task outcome: class=([^;]+); verifier=PASS; outputDigest=sha256:[a-f0-9]{64}$/.exec(memory.statement);
+  if (outcome) return { title: '任务检查通过的技术记录', note: '只记录检查结果和内容校验值，没有说明可供下次使用的做法。用于排查和追溯，不需要作为经验审核。' };
+  const run = /^Verified run used (.+); workspace entries=(\d+); toolCalls=(\d+)\.$/.exec(memory.statement);
+  if (run) return { title: '文件读取与工具调用统计', note: `记录了 ${run[2]} 个文件或文件夹、${run[3]} 次工具调用，仅供排查运行过程。没有提炼出可复用的经验，无需审核。` };
+  return undefined;
+};
+const experienceMemories = (): DisplayMemory[] => model.memories.filter(memory => !memoryActivityRecord(memory));
+const memoryUsageHelp = (memory: DisplayMemory): string => memory.scope === 'workspace'
+  ? '启用后，Agent 处理这个项目的后续任务时，可以检索这条内容作为参考。'
+  : `启用后，Agent 可在“${memory.scope}”范围内检索这条内容作为参考。`;
+const memoryStatusLabel = (status: string): string => ({ PROPOSED: '尚未使用 · 待确认内容', VERIFIED: '内容已确认 · 尚未启用', ACTIVE: '已启用', RETRACTED: '已停止使用', REJECTED: '不采用', EXPIRED: '已过期', PRUNED: '已清理' } as Record<string, string>)[status] ?? governanceStateLabel(status);
+const memoryExplanation = (memory: DisplayMemory): string => panelFields([
+  ['记住什么', memory.statement || '这条记录没有提供具体内容，请先补充。'],
+  ['有什么用', memoryUsageHelp(memory)],
+  ['现在怎么做', memoryStateHelp(memory.status)]
+]);
+const memoryStateHelp = (status: string): string => ({
+  PROPOSED: '核对上面的内容是否正确、有用。正确就点“内容正确”，不适合保留就点“不采用”。确认后还需单独启用。',
+  VERIFIED: '内容已确认。希望 Agent 以后参考这条内容，就点“让 Agent 使用”。',
+  ACTIVE: 'Agent 已经可以参考这条内容。不再适用时，点“停止使用”；记录仍会保留。',
+  REJECTED: '已拒绝收录，不会作为有效记忆使用。', RETRACTED: '已撤回，后续任务不再使用。',
+  EXPIRED: '已过期，需要重新核对内容和适用范围。'
+} as Record<string, string>)[status] ?? '状态详情见下方记录。';
+const panelSources = (runId?: string, eventIds: string[] = []): string => {
+  const links = eventIds.map((ref, index) => {
+    const item = resolveEvidenceTarget(ref);
+    return item ? `<button class="governance-button" data-action="focus-evidence" data-evidence-ref="${escapeHtml(ref)}">查看来源证据 ${index + 1}</button>` : '';
+  }).filter(Boolean);
+  if (runId && model.timeline.some(item => item.runId === runId)) links.push(`<button class="governance-button" data-action="focus-run" data-run-id="${escapeHtml(runId)}">查看来源任务</button>`);
+  if (!links.length && (runId || eventIds.length)) links.push('<span class="panel-note">来源尚未载入当前视图。</span><button class="governance-button" data-action="navigate" data-page="runs">到运行记录查找</button>');
+  return `<div class="governance-actions">${links.join('')}</div>`;
+};
+const panelActionNotice = (key: string): string => governanceActionNotice?.key === key
+  ? `<p class="${governanceActionNotice.error ? 'panel-error' : 'panel-next-step'}">${escapeHtml(governanceActionNotice.text)}</p>` : '';
+const panelState = (status: string, label = governanceStateLabel(status)): string => `<span class="governance-state governance-state-${escapeHtml(status.toLowerCase())}">${escapeHtml(label)}</span>`;
+const renderExperienceActions = (memory: DisplayMemory, surface: string): string => {
+  const id = escapeHtml(memory.memoryId);
+  const button = (operation: string, label: string, extra = '', tone = ''): string => `<button class="governance-button ${tone}" data-action="memory-action" data-operation="${operation}" data-memory-id="${id}" ${extra}>${label}</button>`;
+  const primary = memory.status === 'PROPOSED'
+    ? button('verify', '内容正确', 'data-accepted="true"', 'governance-button-primary') + button('verify', '不采用', 'data-accepted="false"')
+    : memory.status === 'VERIFIED' ? button('activate', '让 Agent 使用', '', 'governance-button-primary')
+    : memory.status === 'ACTIVE' ? button('retract', '停止使用') : '';
+  const conflict = memory.conflictsWithMemoryIds?.length ? button('resolve-conflict', '处理内容冲突', '', 'governance-button-warning') : '';
+  const editable = ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status);
+  return `<div class="governance-actions">${primary}${conflict}</div>${editable ? panelDetails(`memory-actions:${surface}:${memory.memoryId}`, '修改内容或删除记录', `<div class="governance-actions"><button class="governance-button" data-action="memory-edit" data-memory-id="${id}">修改这条内容</button>${button('delete', '删除记录', '', 'governance-button-danger')}</div>`) : ''}`;
+};
+const renderMemoryActivityArchive = (surface: 'panel' | 'page'): string => {
+  const records = model.memories.filter(memory => memoryActivityRecord(memory)).slice().sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  if (!records.length) return '';
+  const pageCount = Math.max(1, Math.ceil(records.length / 8));
+  memoryRecordPage = Math.min(memoryRecordPage, pageCount);
+  const visible = surface === 'panel' ? records.slice(0, 3) : records.slice((memoryRecordPage - 1) * 8, memoryRecordPage * 8);
+  return contextGroup(`memory-records:${surface}`, '自动生成的技术记录', '只用于排查运行过程，没有具体经验内容，无需逐条审核。',
+    panelPurpose('这些原始记录仍然保留，未被删除。它们不计入上面的经验数量；如果旧记录曾被启用，可以在这里停止使用。')
+    + visible.map(memory => {
+      const copy = memoryActivityRecord(memory)!;
+      return `<article class="panel-card" data-memory-id="${escapeHtml(memory.memoryId)}"><strong>${escapeHtml(copy.title)}</strong><p class="panel-note">${escapeHtml(copy.note)}</p><p class="panel-note">${escapeHtml(panelDate(memory.updatedAtMs))}</p>
+        ${memory.status === 'ACTIVE' ? `<p class="panel-error">这条旧记录已被启用，仍可能被检索。若无参考价值，可停止使用。</p><button class="governance-button" data-action="memory-action" data-operation="retract" data-memory-id="${escapeHtml(memory.memoryId)}">停止使用这条统计记录</button>` : ''}
+        ${panelDetails(`memory-record:${surface}:${memory.memoryId}`, '原始数据与来源（排查用）', panelFields([['原始记录', memory.statement], ['保存状态', governanceStateLabel(memory.status)], ['系统评分（不代表正确率）', memory.confidence], ['记录编号', memory.memoryId], ['来源事件', memory.sourceEventIds]]) + panelSources(memory.runId, memory.sourceEventIds ?? []))}${panelActionNotice(`memory:${memory.memoryId}`)}</article>`;
+    }).join('')
+    + (surface === 'panel' ? '<button class="governance-button" data-action="view-memory-records">查看全部技术记录</button>'
+      : pageCount > 1 ? `<nav class="governance-actions" aria-label="技术记录分页"><button class="governance-button" data-action="memory-record-page" data-delta="-1" ${memoryRecordPage === 1 ? 'disabled' : ''}>上一页</button><span>第 ${memoryRecordPage} / ${pageCount} 页</span><button class="governance-button" data-action="memory-record-page" data-delta="1" ${memoryRecordPage === pageCount ? 'disabled' : ''}>下一页</button></nav>` : ''), `${records.length} 条 · 供维护人员查阅`);
+};
 
 // The dashboard reports version lifecycle facts directly; the plugin list
 // command is the fallback for the manual governance refresh path.
@@ -1107,22 +1352,25 @@ const renderDecisionTrace = (): string => {
   return `
     <section class="context-section decision-trace-section" aria-label="决策关系">
       <div class="section-heading">
-        <div><span class="section-kicker">决策关系</span><h3>决策图</h3></div>
+        <div><span class="section-kicker">任务如何推进</span><h3>决策过程</h3></div>
         <span class="context-count">${allDecisions.length} 个决策 · ${edges.length} 条依赖</span>
       </div>
+      ${panelPurpose('查看系统在每个步骤选择了什么方案、为什么选择，以及之后的执行结果。未采用的候选保留供追溯。')}
       ${decisions.length === 0
         ? '<div class="empty-note">暂无已提交决策</div>'
         : `<div class="decision-node-list">${decisions.map((node) => `
             <article class="governance-row decision-node" data-decision-id="${escapeHtml(node.decisionId)}" data-decision-status="${escapeHtml(node.status)}">
               <div class="governance-copy">
-                <strong>${escapeHtml(humanizeCode(node.decisionType, '决策'))} · ${escapeHtml(humanizeCode(node.role, '未标注角色'))}</strong>
+                <strong>${escapeHtml(readableDecision(node.decisionType))} · ${escapeHtml(readableRole(node.role))}</strong>
                 <span>${escapeHtml(decisionStatusLabel(node))} · ${node.optionCount} 个方案${node.selectedOptionId ? ` · 已采用：${escapeHtml(decisionOptionDisplayLabel(node.selectedOptionId))}` : ''}${node.stepId ? ` · 步骤：${escapeHtml(humanizeCode(node.stepId, '未标注'))}` : ''}</span>
               </div>
               ${(node.options ?? []).length === 0 ? '' : `<div class="decision-option-list">${(node.options ?? []).map((option) => `<div class="runtime-line" data-decision-option="${escapeHtml(option.optionId)}" title="${escapeHtml(decisionOptionTechnicalReason(option))}"><i data-lucide="file"></i><span>${escapeHtml(decisionOptionLabel(node, option))}</span></div>`).join('')}</div>`}
               ${(node.reasonCodes ?? []).length === 0 ? '' : `<div class="decision-reason-list"><div class="runtime-line" data-decision-reason="selection"><i data-lucide="list-tree"></i><span>选择理由：${escapeHtml((node.reasonCodes ?? []).map(reasonDisplayLabel).join('、'))}</span></div>${(node.selectionCriteria ?? []).length ? `<div class="runtime-line" data-decision-reason="criteria"><i data-lucide="file-cog"></i><span>评分依据：${escapeHtml((node.selectionCriteria ?? []).map((value) => humanizeCode(value, '未提供')).join('、'))}</span></div>` : ''}</div>`}
+              ${panelDetails(`decision:${node.decisionId}`, '查看决策来源', panelFields([['原始决策类型', node.decisionType], ['决策编号', node.decisionId], ['步骤编号', node.stepId], ['事件编号', node.eventId]]) + panelSources(node.runId, node.eventId ? [node.eventId] : []))}
             </article>`).join('')}</div>`}
-      ${edges.length === 0 ? '' : `<div class="decision-edge-list"><span class="technical-label">技术关系</span>${edges.map((edge) => `<div class="runtime-line" data-decision-edge="parent"><i data-lucide="list-tree"></i><span>前置决策 ${escapeHtml(shortDigest(edge.parentId))} → 当前决策 ${escapeHtml(shortDigest(edge.childId))}${edge.resolved ? '' : ' · 前置节点不在当前窗口'}</span></div>`).join('')}</div>`}
+      ${edges.length || supersedes.length ? panelDetails('decision-relations', '查看决策依赖与替代关系', `      ${edges.length === 0 ? '' : `<div class="decision-edge-list"><span class="technical-label">技术关系</span>${edges.map((edge) => `<div class="runtime-line" data-decision-edge="parent"><i data-lucide="list-tree"></i><span>前置决策 ${escapeHtml(shortDigest(edge.parentId))} → 当前决策 ${escapeHtml(shortDigest(edge.childId))}${edge.resolved ? '' : ' · 前置节点不在当前窗口'}</span></div>`).join('')}</div>`}
       ${supersedes.length === 0 ? '' : `<div class="decision-edge-list"><span class="technical-label">替代关系</span>${supersedes.map((node) => `<div class="runtime-line" data-decision-edge="supersede"><i data-lucide="list-tree"></i><span>新决策已替代旧决策（${escapeHtml(shortDigest(node.supersedesDecisionId))} → ${escapeHtml(shortDigest(node.decisionId))}）</span></div>`).join('')}</div>`}
+`) : ''}
     </section>`;
 };
 
@@ -1158,9 +1406,9 @@ const renderCouncilPanel = (): string => {
     const display = ({ Proposal: '候选方案', Critique: '审阅意见', Judge: '候选比较', Probe: '探查' } as Record<string, string>)[label] ?? label;
     return items.length === 0
       ? `<div class="council-column"><strong>${display}</strong><span class="empty-note">${empty}</span></div>`
-      : `<div class="council-column"><strong>${display}</strong>${items.map((node) => `<div class="council-item" data-council-kind="${label}"><span>${escapeHtml(humanizeCode(node.decisionType ?? node.role, '未标注'))}</span><small>${escapeHtml(decisionStatusLabel(node))}${node.selectedOptionId ? ` · 已采用：${escapeHtml(decisionOptionDisplayLabel(node.selectedOptionId))}` : ''}${node.reasonCodes?.length ? ` · ${escapeHtml(node.reasonCodes.map(reasonDisplayLabel).join('、'))}` : ''}</small>${extra ? extra(node) : ''}</div>`).join('')}</div>`;
+      : `<div class="council-column"><strong>${display}</strong>${items.map((node) => `<div class="council-item" data-council-kind="${label}"><span>${escapeHtml(readableDecision(node.decisionType))}</span><small>${escapeHtml(decisionStatusLabel(node))}${node.selectedOptionId ? ` · 已采用：${escapeHtml(decisionOptionDisplayLabel(node.selectedOptionId))}` : ''}${node.reasonCodes?.length ? ` · ${escapeHtml(node.reasonCodes.map(reasonDisplayLabel).join('、'))}` : ''}</small>${extra ? extra(node) : ''}</div>`).join('')}</div>`;
   };
-  return `<section class="context-section council-section" aria-label="多候选审议"><div class="section-heading"><div><span class="section-kicker">多候选审议</span><h3>多候选审议</h3></div><span class="context-count">${council.length} 条持久化事实</span></div><div class="council-grid">${section('Proposal', proposals, '暂无独立候选方案记录')}${section('Critique', critiques, '暂无结构化审阅记录')}${section('Judge', judges, '暂无候选比较记录', ranking)}${section('Probe', probes, '暂无探查记录')}</div><div class="runtime-line"><i data-lucide="shield-check"></i><span>当前投影只展示已保存的决策和候选排序；缺少的主张、证据、审阅、探查、预算和轮数不会被推断为已完成。</span></div></section>`;
+  return `<section class="context-section council-section" aria-label="多候选审议"><div class="section-heading"><div><span class="section-kicker">多候选审议</span><h3>多候选审议</h3></div><span class="context-count">${council.length} 条审议记录</span></div>${panelPurpose('当任务需要比较多个方案时，这里展示方案、审阅意见和选择结果。各阶段没有记录时会明确标注。')}<div class="council-grid">${section('Proposal', proposals, '暂无独立候选方案记录')}${section('Critique', critiques, '暂无结构化审阅记录')}${section('Judge', judges, '暂无候选比较记录', ranking)}${section('Probe', probes, '暂无探查记录')}</div><div class="runtime-line"><i data-lucide="shield-check"></i><span>这里只展示已记录的审议过程。未提供的信息会标为暂无记录。</span></div></section>`;
 };
 
 // The A-T distribution is the only evidence behind a continuous score, so it
@@ -1224,17 +1472,17 @@ const renderVerificationEvidence = (item: TimelineItem): string => {
 };
 
 const renderFinalVerificationChecks = (): string => {
-  const checks = model.timeline.filter(item => item.evidenceKind === 'rule-verification-check' && item.runId === activeRuntimeRunId);
+  const checks = model.timeline.filter(item => item.evidenceKind === 'rule-verification-check' && item.runId === verificationRunId());
   if (!checks.length) return '';
   return `<section class="verification-checks" aria-label="确定性验收检查">
     <h2>确定性验收检查</h2>
-    <p>来源：运行时规则核对报告。以下时间为界面收到报告的时间；运行时未提供逐项检查时间和影响等级。</p>
+    <p>来源：运行时规则核对报告。历史记录显示报告事件时间；实时记录显示接收时间。运行时未提供逐项检查时间和影响等级。</p>
     <div class="verification-check-list">${checks.map(item => `
       <article class="verification-check" data-status="${item.status}">
         <h3>${escapeHtml(item.title)}</h3>
         <pre>${escapeHtml(item.body)}</pre>
         ${renderVerificationEvidence(item)}
-        <small>报告接收时间：${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small>
+        <small>报告时间：${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small>
       </article>`).join('')}</div>
   </section>`;
 };
@@ -1245,7 +1493,7 @@ const renderContinuousVerification = (): string => {
   const completed = records.filter((record) => record.kind === 'CandidateVerificationCompleted');
   const process = model.processVerification;
   const processDistribution = formatDistribution(process?.distribution);
-  const hasProcess = typeof process?.score === 'number' || processDistribution !== '';
+  const hasProcess = Boolean(process?.status) || typeof process?.score === 'number' || processDistribution !== '';
   if (records.length === 0 && !hasProcess) return '';
   // The process row is the only place a step-level score appears, and it is
   // always the host-derived expectation rather than model-authored text.
@@ -1254,6 +1502,7 @@ const renderContinuousVerification = (): string => {
     : '';
   return `<section class="context-section continuous-verification-section" aria-label="连续验证">
     <div class="section-heading"><div><span class="section-kicker">连续验证</span><h3>连续验证</h3></div><span class="context-count">${completed.length} 次汇总 · ${records.length} 条样本</span></div>
+    ${panelPurpose('重复核对候选方案与执行过程。分数和概率反映核验记录；任务是否完成还需查看最终验收结果。')}
     ${processRow}
     ${completed.map((record) => {
       const ranking = (record.ranking ?? []).map((item) => `${item.candidateId ?? '?'} ${typeof item.score === 'number' ? item.score.toFixed(2) : '—'}`).join(' · ');
@@ -1268,6 +1517,40 @@ const renderContinuousVerification = (): string => {
       }).join('；');
       return `<div class="governance-row" data-verification-event="${escapeHtml(record.eventId)}"><div class="governance-copy"><strong>${escapeHtml(record.stepId ?? 'verification')}</strong><span>${escapeHtml(config)}${ranking ? ` · 排名 ${escapeHtml(ranking)}` : ''}${sampleText ? ` · 样本 ${escapeHtml(sampleText)}` : ''}</span></div></div>`;
     }).join('')}
+  </section>`;
+};
+
+const verificationRunId = (): string | undefined => historyView && !model.activeRun
+  ? [...model.timeline].reverse().find(item => item.runId)?.runId
+  : focusedRunId ?? activeRuntimeRunId ?? model.activeRun?.runId;
+
+const taskVerificationSummaries = (): TimelineItem[] => model.timeline.filter(item =>
+  item.runId === verificationRunId() && ['rule-verification-summary', 'semantic-verification-summary'].includes(item.evidenceKind ?? ''));
+
+const taskVerificationStatus = (): string | undefined => {
+  if (!historyView || model.activeRun) return model.processVerification?.status;
+  const latest = taskVerificationSummaries().filter(item => item.evidenceKind === 'rule-verification-summary').at(-1);
+  return latest ? latest.status === 'COMPLETE' ? 'PASS' : latest.status === 'ERROR' ? 'FAIL' : 'UNKNOWN' : undefined;
+};
+
+const renderTaskVerification = (): string => {
+  const history = Boolean(historyView && !model.activeRun);
+  const summaries = taskVerificationSummaries();
+  const checks = renderFinalVerificationChecks();
+  // Dashboard verification belongs to its own latest run, not necessarily
+  // the selected historical conversation. Use only replayed history here.
+  const continuous = history ? '' : renderContinuousVerification();
+  const empty = !summaries.length && !checks && !continuous;
+  const notice = historyView?.loading ? '正在读取此会话的验证记录…'
+    : historyView?.error ? `验证记录尚未读到：${historyView.error}`
+    : history && historyView?.hasMore ? '当前已加载记录中没有这次运行的验证报告，可加载更早记录继续查找。'
+    : running ? '任务尚未生成验证报告，结果产生后会显示在这里。' : '这次运行没有保存验证报告，无法展示检查明细。';
+  return `<section class="context-section task-verification-section" data-task-verification tabindex="-1" aria-label="任务完成报告">
+    <div class="section-heading"><div><span class="section-kicker">${history ? '当前会话最近一次运行' : '当前任务'}</span><h2>完成报告</h2></div></div>
+    ${summaries.map(item => `<article class="verification-check" data-status="${item.status}"><h3>${escapeHtml(item.title)}</h3><p class="timeline-body">${escapeHtml(item.body)}</p><small>${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small></article>`).join('')}
+    ${checks}${continuous}
+    ${empty ? `<p class="empty-note" role="status">${escapeHtml(notice)}</p>` : ''}
+    ${history && (historyView?.hasMore || historyView?.error) ? `<button class="secondary-button" data-action="history-older" ${historyView?.loading || historyView?.loadingOlder ? 'disabled' : ''}>${historyView?.loadingOlder ? '正在加载…' : historyView?.error ? '重试读取记录' : '加载更早验证记录'}</button>` : ''}
   </section>`;
 };
 
@@ -1291,7 +1574,7 @@ const renderSupportBundle = (): string => {
   if (!bundle) return '';
   const scan = bundle.privacy.scan;
   const counts = Object.entries(bundle.stores)
-    .map(([key, value]) => `${key} ${typeof value.count === 'number' ? value.count : '—'}`);
+    .map(([key, value]) => `${({ events: '事件记录', threads: '对话', memories: '记忆', decisions: '决策', feedback: '反馈', plugins: '插件', evolution: '演进候选', dreams: '整理记录', trajectories: '执行轨迹' } as Record<string, string>)[key] ?? key}：${typeof value.count === 'number' ? value.count : '未统计'}`);
   // Egress is reported per candidate because one logical fanout can send one
   // prompt per candidate to a different provider.
   const egress = model.modelEgress;
@@ -1313,17 +1596,20 @@ const renderSupportBundle = (): string => {
         <span class="governance-state governance-state-${scan.ok ? 'active' : 'failed'}">${scan.ok ? '脱敏检查通过' : '脱敏检查失败'}</span>
       </div>
       <div class="runtime-line" data-support-bundle-scan="${scan.ok ? 'pass' : 'fail'}"><i data-lucide="shield-check"></i><span>隐私扫描 ${scan.ok ? '通过' : '失败'} · ${scan.violations.length} 个违规</span></div>
-      <div class="runtime-line"><i data-lucide="history"></i><span>${escapeHtml(bundle.evidenceSource)}</span></div>
+      ${panelPurpose('诊断包用于排查问题。先查看脱敏检查结果，再前往设置与诊断选择导出范围。调用统计用于了解模型使用情况。')}
+      <button class="governance-button" data-action="navigate" data-page="diagnostics">打开诊断与导出</button>
+      ${panelDetails('support-technical', '查看导出命令与数据来源', `      <div class="runtime-line"><i data-lucide="history"></i><span>${escapeHtml(bundle.evidenceSource)}</span></div>
       <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${escapeHtml(bundle.exportInvocation)}</span></div>
       <div class="decision-edge-list">${counts.map((line) => `<div class="runtime-line"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>
-      ${egress === undefined ? '' : `<div class="runtime-line" data-model-egress="total"><i data-lucide="list-tree"></i><span>出域 ${egress.recordCount} 条 · 调用 ${egress.totals.calls} · 失败 ${egress.totals.failures} · 预估成本 ${egress.totals.expectedCost ?? '未知'}（已知 ${egress.totals.expectedCostKnown}/${egress.totals.calls}） · 实际成本 ${egress.totals.actualCost ?? '未知'}（已知 ${egress.totals.actualCostKnown}/${egress.totals.calls}）</span></div>
+`)}
+      ${egress === undefined ? '' : `<div class="runtime-line" data-model-egress="total"><i data-lucide="list-tree"></i><span>模型请求 ${egress.recordCount} 条 · 调用 ${egress.totals.calls} · 失败 ${egress.totals.failures} · 预估成本 ${egress.totals.expectedCost ?? '未知'}（已知 ${egress.totals.expectedCostKnown}/${egress.totals.calls}） · 实际成本 ${egress.totals.actualCost ?? '未知'}（已知 ${egress.totals.actualCostKnown}/${egress.totals.calls}）</span></div>
       <div class="decision-edge-list">${egressCandidates.map((line) => `<div class="runtime-line" data-model-egress="candidate"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
       ${usage === undefined ? '' : `<div class="runtime-line" data-model-cache="summary"><i data-lucide="database"></i><span>提示缓存命中率 ${cacheRate} · 统计覆盖 ${cacheCoverage} · 输入 ${usage.inputTokens} 个令牌 · 命中 ${cachedTokens} · 未命中 ${uncachedTokens}</span></div>`}
     </section>`;
 };
 
-const renderGovernance = (): string => {
-  const memories = model.memories.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
+const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
+  const memories = experienceMemories().slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
   const dreams = model.dreamRuns.slice().sort((left, right) => right.startedAtMs - left.startedAtMs).slice(0, 6);
   const plugins = model.plugins.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
   const proposals = model.evolutionProposals.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
@@ -1336,31 +1622,10 @@ const renderGovernance = (): string => {
     : maintenance?.cycleCount
       ? ` · 已完成 ${maintenance.cycleCount} 轮`
       : '';
-  const memoryAction = (memory: typeof memories[number]): string => {
-    const edit = ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status)
-      ? `<button class="governance-button" data-action="memory-edit" data-memory-id="${escapeHtml(memory.memoryId)}">编辑新版本</button>`
-      : '';
-    const conflict = memory.conflictsWithMemoryIds?.length
-      ? `<button class="governance-button governance-button-warning" data-action="memory-action" data-operation="resolve-conflict" data-memory-id="${escapeHtml(memory.memoryId)}">处理冲突</button>`
-      : '';
-    if (memory.status === 'PROPOSED') {
-      return `<div class="governance-actions">${edit}${conflict}
-        <button class="governance-button governance-button-primary" data-action="memory-action" data-operation="verify" data-accepted="true" data-memory-id="${escapeHtml(memory.memoryId)}">验证</button>
-        <button class="governance-button governance-button-danger" data-action="memory-action" data-operation="verify" data-accepted="false" data-memory-id="${escapeHtml(memory.memoryId)}">拒绝</button>
-        <button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="${escapeHtml(memory.memoryId)}">删除</button>
-      </div>`;
-    }
-    if (memory.status === 'VERIFIED') {
-      return `<div class="governance-actions">${edit}${conflict}<button class="governance-button governance-button-primary" data-action="memory-action" data-operation="activate" data-memory-id="${escapeHtml(memory.memoryId)}">激活</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="${escapeHtml(memory.memoryId)}">删除</button></div>`;
-    }
-    if (memory.status === 'ACTIVE') {
-      return `<div class="governance-actions">${edit}${conflict}<button class="governance-button governance-button-danger" data-action="memory-action" data-operation="retract" data-memory-id="${escapeHtml(memory.memoryId)}">撤回</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="${escapeHtml(memory.memoryId)}">删除</button></div>`;
-    }
-    return conflict ? `<div class="governance-actions">${conflict}</div>` : '';
-  };
+  const memoryAction = (memory: DisplayMemory): string => renderExperienceActions(memory, 'panel');
   const evolutionAction = (proposal: typeof proposals[number]): string => {
     if (['PROPOSED', 'VALIDATING', 'SHADOW', 'QUARANTINED'].includes(proposal.status)) {
-      return `<button class="governance-button governance-button-danger" data-action="evolution-action" data-operation="transition" data-state="REJECTED" data-proposal-id="${escapeHtml(proposal.proposalId)}">拒绝</button>`;
+      return `<button class="governance-button governance-button-danger" data-action="evolution-action" data-operation="transition" data-state="REJECTED" data-proposal-id="${escapeHtml(proposal.proposalId)}">拒绝候选</button>`;
     }
     if (['CANARY', 'ACTIVE'].includes(proposal.status)) {
       return `<div class="governance-actions"><button class="governance-button" data-action="evolution-action" data-operation="monitor" data-proposal-id="${escapeHtml(proposal.proposalId)}">在线监测</button><button class="governance-button governance-button-danger" data-action="evolution-action" data-operation="rollback" data-proposal-id="${escapeHtml(proposal.proposalId)}">回滚</button></div>`;
@@ -1404,73 +1669,92 @@ const renderGovernance = (): string => {
     if (!summary?.quarantineReason) return '';
     return `<span>隔离原因 ${escapeHtml(summary.quarantineReason)}</span>`;
   };
-  return `
-    <section class="context-section governance-section" aria-label="治理状态">
-      <div class="section-heading">
-        <div><span class="section-kicker">治理状态</span><h3>记忆 · 后台整理 · 插件 · 演进</h3></div>
-        <button class="icon-button small" data-action="refresh-governance" title="刷新治理状态" aria-label="刷新治理状态"><i data-lucide="rotate-ccw-clock"></i></button>
-      </div>
-      <div class="governance-group">
-        <div class="governance-group-heading"><strong>反馈</strong><span>${model.feedback.length} 条</span></div>
-        ${model.feedback.length === 0
-          ? '<div class="empty-note">暂无已提交反馈</div>'
-          : model.feedback.slice().sort((left, right) => (right.eventSequence ?? 0) - (left.eventSequence ?? 0)).slice(0, 8).map((item) => {
-            const status = typeof item.outcomeStatus === 'string' ? item.outcomeStatus : 'UNKNOWN';
-            const key = typeof item.scenarioKey === 'string' ? item.scenarioKey : item.feedbackId ?? item.eventId ?? '脱敏反馈';
-            return '<article class="governance-row"><div class="governance-copy"><strong>' + escapeHtml(key) + '</strong><span>' + escapeHtml(statusDisplayLabel(status)) + (item.runId ? ' · 运行 ' + escapeHtml(shortDigest(item.runId)) : '') + '</span></div><span class="governance-state governance-state-' + escapeHtml(status.toLowerCase()) + '">' + escapeHtml(statusDisplayLabel(status)) + '</span></article>';
-          }).join('')}
-      </div>
-      <div class="governance-group">
-        <div class="governance-group-heading"><strong>记忆</strong><span>${memories.length} 条</span></div>
-        ${memories.length === 0
-          ? '<div class="empty-note">暂无记忆候选或已激活记忆</div>'
-          : memories.map((memory) => `
-            <article class="governance-row">
-              <div class="governance-copy"><strong>${escapeHtml(memory.statement)}</strong><span>${escapeHtml(memory.scope)} · 置信度 ${(memory.confidence * 100).toFixed(0)}%</span></div>
-              <span class="governance-state governance-state-${escapeHtml(memory.status.toLowerCase())}">${escapeHtml(governanceStateLabel(memory.status))}</span>
-              ${memoryAction(memory)}
-            </article>`).join('')}
-      </div>
-      <div class="governance-group">
-        <div class="governance-group-heading"><strong>后台整理</strong><span>${dreams.length} 次</span><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>运行一次</button>${maintenanceRunning ? `<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>` : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>启动后台</button>`}</div></div>
-        <div class="governance-row"><div class="governance-copy"><strong>后台维护 · ${escapeHtml(maintenanceState)}</strong><span>${escapeHtml(maintenance?.projectId ?? model.workspace.rootLabel)}${escapeHtml(maintenanceDetail)}</span></div><span class="governance-state governance-state-${escapeHtml((maintenance?.state ?? 'DISABLED').toLowerCase())}">${escapeHtml(maintenanceState)}</span></div>
-        ${dreams.length === 0
-          ? '<div class="empty-note">暂无后台整理记录</div>'
-          : dreams.map((dream) => `
-            <article class="governance-row">
-              <div class="governance-copy"><strong>${escapeHtml(dream.projectId)}</strong><span>${escapeHtml(humanizeCode(dream.phase, '等待阶段'))} · ${escapeHtml(formatTime(dream.startedAtMs))}</span></div>
-              <span class="governance-state governance-state-${escapeHtml(dream.state.toLowerCase())}">${escapeHtml(governanceStateLabel(dream.state))}</span>
-            </article>`).join('')}
-      </div>
-      <div class="governance-group">
-        <div class="governance-group-heading"><strong>插件</strong><span>${plugins.length} 个</span></div>
-        ${plugins.length === 0
-          ? '<div class="empty-note">暂无插件治理记录</div>'
-          : plugins.map((plugin) => `
-            <article class="governance-row">
-              <div class="governance-copy"><strong>${escapeHtml(plugin.pluginId)} · ${escapeHtml(plugin.version)}</strong><span>${escapeHtml(plugin.source)}</span></div>
-              <div class="governance-copy">${pluginVersionCopy(plugin.pluginId)}${pluginQuarantineCopy(plugin)}${pluginGrantCopy(plugin)}</div>
-              <span class="governance-state governance-state-${escapeHtml(plugin.state.toLowerCase())}">${escapeHtml(governanceStateLabel(plugin.state))}</span>
-              <button class="governance-button" data-action="plugin-action" data-operation="validate" data-plugin-id="${escapeHtml(plugin.pluginId)}">校验</button>
-              ${plugin.state === 'QUARANTINED' ? '' : `<button class="governance-button governance-button-danger" data-action="plugin-action" data-operation="transition" data-state="QUARANTINED" data-plugin-id="${escapeHtml(plugin.pluginId)}">隔离</button>`}
-            </article>`).join('')}
-      </div>
-      <div class="governance-group">
-        <div class="governance-group-heading"><strong>演进</strong><span>${proposals.length} 个候选</span></div>
-        <article class="governance-row">
-          <div class="governance-copy"><strong>全局停止开关</strong><span>${model.evolutionControl?.reason ? escapeHtml(reasonDisplayLabel(model.evolutionControl.reason)) : '未阻断'}</span></div>
-          <span class="governance-state governance-state-${model.evolutionControl?.enabled === false ? 'failed' : 'active'}">${model.evolutionControl?.enabled === false ? '已阻断' : '允许'}</span>
-        </article>
-        ${proposals.length === 0
-          ? '<div class="empty-note">暂无自进化提案</div>'
-          : proposals.map((proposal) => `
-            <article class="governance-row">
-              <div class="governance-copy"><strong>${escapeHtml(proposal.candidateId)}</strong><span>${escapeHtml(proposal.proposalId)} · ${escapeHtml(formatTime(proposal.updatedAtMs))}</span></div>
-              <span class="governance-state governance-state-${escapeHtml(proposal.status.toLowerCase())}">${escapeHtml(governanceStateLabel(proposal.status))}</span>
-              ${evolutionAction(proposal)}
-            </article>`).join('')}
-      </div>
-    </section>`;
+  const feedback = model.feedback.slice().sort((a, b) => (b.eventSequence ?? 0) - (a.eventSequence ?? 0)).slice(0, 8);
+  const feedbackRows = feedback.map((item) => {
+    const status = item.outcomeStatus ?? 'UNKNOWN';
+    const source = item.sourceType === 'SYSTEM' ? '系统记录' : item.sourceType === 'USER' ? '用户反馈' : '来源类型未提供';
+    const title = model.activeRun && item.runId === model.activeRun.runId ? model.activeRun.title : '任务结果记录';
+    const event = model.timeline.find(event => event.runId === item.runId);
+    return `<article class="governance-row panel-card">
+      <div class="panel-card-heading"><strong>${escapeHtml(title)}</strong>${panelState(status, status === 'FAILED' ? '任务未完成' : statusDisplayLabel(status))}</div>
+      <p class="panel-note">${escapeHtml(source)}${event ? ` · ${escapeHtml(panelDate(event.createdAtMs))}` : ''} · 用于评估任务完成情况。</p>
+      ${panelDetails(`feedback:${item.feedbackId ?? item.eventId}`, '查看来源与记录', panelFields([
+        ['记录来源', source], ['任务结果', statusDisplayLabel(status)], ['任务编号', item.runId], ['场景摘要编号', item.scenarioKey],
+        ['模型与角色标识', item.candidateKey], ['反馈编号', item.feedbackId], ['事件编号', item.eventId]
+      ]) + panelSources(item.runId, item.eventId ? [item.eventId] : []))}
+    </article>`;
+  }).join('');
+  const memoryRows = memories.map(memory => {
+    return `<article class="governance-row panel-card" data-memory-id="${escapeHtml(memory.memoryId)}">
+      <div class="panel-card-heading"><strong>供以后参考的一条经验</strong>${panelState(memory.status, memoryStatusLabel(memory.status))}</div>
+      ${memoryExplanation(memory)}
+      ${panelDetails(`memory:${memory.memoryId}`, '核对来源与保存信息', panelFields([
+        ['保存的原文', memory.statement], ['更新时间', panelDate(memory.updatedAtMs)], ['版本', memory.version], ['来源事件', memory.sourceEventIds],
+        ['系统评分（不代表正确率）', memory.confidence],
+        ['有效期', memory.expiresAtMs ? panelDate(memory.expiresAtMs) : '未设置'], ['敏感性', memory.sensitivity ? sensitivityDisplayLabel(memory.sensitivity) : '未提供'],
+        ['替代的记忆', memory.supersedesMemoryId], ['冲突的记忆', memory.conflictsWithMemoryIds], ['记忆编号', memory.memoryId]
+      ]) + panelSources(memory.runId, memory.sourceEventIds ?? []))}
+      ${memoryAction(memory)}${panelActionNotice(`memory:${memory.memoryId}`)}
+    </article>`;
+  }).join('');
+  const phaseLabel = (phase?: string): string => ({ ORIENT: '检查整理范围', GATHER: '收集历史记录', CONSOLIDATE: '合并重复内容', VERIFY: '核对候选记忆', REVIEW: '等待审核', PUBLISH: '提交候选', PRUNE: '清理过期记录', COMPLETE: '整理完成', ELIGIBILITY_CHECK: '检查启动条件' } as Record<string, string>)[phase ?? ''] ?? humanizeCode(phase, '等待开始');
+  const dreamRows = dreams.map(dream => `<article class="governance-row panel-card">
+    <div class="panel-card-heading"><strong>${escapeHtml(dream.projectId)}的记忆整理</strong>${panelState(dream.state)}</div>
+    <p class="panel-note">${escapeHtml(phaseLabel(dream.phase))} · ${escapeHtml(panelDate(dream.startedAtMs))}${dream.candidateCount === undefined ? '' : ` · 生成 ${dream.candidateCount} 条候选`}</p>
+    ${dream.errorCode ? `<p class="panel-next-step">${escapeHtml(reasonDisplayLabel(dream.errorCode))}</p>` : ''}
+    ${panelDetails(`dream:${dream.runId}`, '查看整理详情', panelFields([['当前阶段', phaseLabel(dream.phase)], ['启动条件未满足原因', dream.gateReasons?.map(reasonDisplayLabel)], ['结束时间', dream.finishedAtMs ? panelDate(dream.finishedAtMs) : '尚未记录'], ['运行编号', dream.runId]]))}
+  </article>`).join('');
+  const pluginRows = plugins.map(plugin => {
+    const name = typeof plugin.manifest.displayName === 'string' ? plugin.manifest.displayName : typeof plugin.manifest.name === 'string' ? plugin.manifest.name : plugin.pluginId;
+    const description = typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '此插件提供扩展能力；展开查看来源、权限和版本。';
+    return `<article class="governance-row panel-card">
+      <div class="panel-card-heading"><strong>${escapeHtml(name)}</strong>${panelState(plugin.state)}</div>
+      <p class="panel-note">${escapeHtml(description)}</p><p class="panel-note">版本 ${escapeHtml(plugin.version)} · 来源 ${escapeHtml(plugin.source)}</p>
+      ${pluginQuarantineCopy(plugin)}
+      ${panelDetails(`plugin:${plugin.pluginId}`, '查看权限与版本详情', `<div class="governance-copy">${pluginVersionCopy(plugin.pluginId)}${pluginGrantCopy(plugin)}</div>` + panelFields([['插件编号', plugin.pluginId], ['安装包摘要', plugin.packageDigest], ['更新时间', panelDate(plugin.updatedAtMs)]]))}
+      <div class="governance-actions"><button class="governance-button" data-action="plugin-action" data-operation="validate" data-plugin-id="${escapeHtml(plugin.pluginId)}">检查插件</button>${plugin.state === 'QUARANTINED' ? '' : `<button class="governance-button governance-button-danger" data-action="plugin-action" data-operation="transition" data-state="QUARANTINED" data-plugin-id="${escapeHtml(plugin.pluginId)}">隔离插件</button>`}</div>
+      <p class="panel-note">检查插件会核对其有效性；隔离后将阻止使用。</p>${panelActionNotice(`plugin:${plugin.pluginId}`)}
+    </article>`;
+  }).join('');
+  const proposalRows = proposals.map(proposal => {
+    const route = proposal.route && typeof proposal.route === 'object' ? proposal.route as Record<string, unknown> : {};
+    const title = proposal.candidateType === 'OUTCOME_DERIVED' || proposal.candidateId.startsWith('outcome-') ? '任务结果生成的改进候选' : '策略改进候选';
+    const reports = model.evolutionReports.filter(report => report.proposalId === proposal.proposalId).sort((a, b) => b.evaluatedAtMs - a.evaluatedAtMs);
+    const report = reports[0];
+    const stage = (value: string): string => ({ OFFLINE_REPLAY: '历史任务回放', SHADOW: '观察评估', CANARY: '小范围试用', PROMOTION: '正式发布评估', ONLINE_MONITOR: '运行监测' } as Record<string, string>)[value] ?? humanizeCode(value);
+    return `<article class="governance-row panel-card">
+      <div class="panel-card-heading"><strong>${escapeHtml(title)}</strong>${panelState(proposal.status, proposal.status === 'PROPOSED' ? '待评估' : governanceStateLabel(proposal.status))}</div>
+      <p class="panel-note">${escapeHtml(typeof proposal.taskClass === 'string' ? `${readableTaskClass(proposal.taskClass)}任务 · ` : '')}${escapeHtml(typeof route.model === 'string' ? `模型 ${route.model}` : '未提供具体改进说明')} · ${escapeHtml(panelDate(proposal.updatedAtMs))}</p>
+      <p class="panel-next-step">${proposal.status === 'PROPOSED' ? '已记录候选，尚未发布。需要经过回放、观察和小范围试用评估。' : proposal.status === 'ACTIVE' ? '已启用，可检查近期效果或回滚。' : proposal.status === 'REJECTED' ? '已拒绝该候选。' : '查看评估详情，了解当前阶段和处理依据。'}</p>
+      ${panelDetails(`evolution:${proposal.proposalId}`, '查看候选依据与评估', panelFields([
+        ['服务商', route.provider], ['模型', route.model], ['来源结果编号', proposal.sourceOutcomeIds],
+        ['最近评估阶段', report ? stage(report.stage) : '暂无评估报告'], ['评估时间', report ? panelDate(report.evaluatedAtMs) : undefined],
+        ['评估说明', Array.isArray(report?.decision?.reasonCodes) ? report.decision.reasonCodes.map(String).map(reasonDisplayLabel) : undefined],
+        ['候选编号', proposal.candidateId], ['提案编号', proposal.proposalId], ['报告编号', report?.reportId]
+      ]))}
+      <div class="governance-actions">${evolutionAction(proposal)}</div>${panelActionNotice(`evolution:${proposal.proposalId}`)}
+    </article>`;
+  }).join('');
+  const control = model.evolutionControl;
+  const group = (key: string, title: string, count: string, purpose: string, content: string): string => {
+    if ((scope === 'memory') !== (key === 'memory')) return '';
+    return scope === 'memory' ? panelPurpose(purpose) + content
+      : contextGroup(`group:${key}`, title, purpose, content, count, 'governance-group purpose-group');
+  };
+  return `<section class="context-section governance-section" aria-label="${scope === 'memory' ? '可供后续任务使用的经验' : '系统维护'}">
+    <div class="section-heading"><div><h3>${scope === 'memory' ? '确认并启用后才供后续任务使用' : '维护 Agent 的扩展能力与记录'}</h3></div><button class="governance-button" data-action="refresh-governance">刷新记录</button></div>
+    ${scope === 'maintenance' ? panelPurpose('供配置和维护应用的人使用。普通任务无需逐项处理这些记录。') : ''}
+    ${governanceReadFailed ? '<p class="panel-error" role="alert">刷新失败，正在显示上次记录。请点击刷新后核对。</p>' : ''}
+    ${memoryActionError ? '<p class="panel-error" role="alert">记忆操作未确认成功，请刷新记录后核对状态。</p>' : ''}
+    ${governanceActionNotice ? `<p class="${governanceActionNotice.error ? 'panel-error' : 'panel-next-step'}" role="status">${escapeHtml(governanceActionNotice.text)}</p>` : ''}
+    ${group('feedback', '回看任务完成情况', `${model.feedback.length} 条记录`, '查看任务成败及反馈，供评估 Agent 效果时参考。', `<p class="panel-note">这些是历史记录，不是等待你处理的任务。显示最近 ${feedback.length} 条，共 ${model.feedback.length} 条。</p>${feedbackRows || '<p class="empty-note">任务结束后，结果记录会显示在这里。</p>'}`)}
+
+    ${group('memory', '已保存的经验', `${experienceMemories().length} 条`, '这里保存的是以后仍有用的具体内容。先核对，再启用；启用后 Agent 才可以参考。运行次数、文件数量等统计单独保存在技术记录中。', `<button class="governance-button" data-action="navigate" data-page="memory">查看全部经验</button><p class="panel-note">显示最近 ${memories.length} 条，共 ${experienceMemories().length} 条经验。</p>${memoryRows || '<p class="empty-note">暂时没有可审核的具体经验。运行统计不需要你确认。<br>有用的经验可以是项目约定或已确认的解决方法，例如“本项目使用 pnpm 安装依赖”（仅为示例，不是本项目结论）。</p>'}`)}
+    ${scope === 'memory' ? renderMemoryActivityArchive('panel') : ''}
+    ${group('dream', '从历史任务整理经验', `${model.dreamRuns.length} 次`, '回看任务历史，去重并提炼记忆候选；整理完成后仍需审核候选。', `<div class="panel-card"><div class="panel-card-heading"><strong>自动整理</strong>${panelState(maintenance?.state ?? 'DISABLED', maintenanceState)}</div><p class="panel-note">${escapeHtml(maintenanceDetail || '可先手动整理一次，查看生成的候选。')}</p><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>整理一次</button>${maintenanceRunning ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">暂停自动整理</button>' : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>开启自动整理</button>`}</div></div>${panelActionNotice('dream')}<p class="panel-note">最近 ${dreams.length} 次整理</p>${dreamRows}`)}
+    ${group('plugins', '检查或停用插件', `${model.plugins.length} 个`, '插件提供模型、工具等扩展能力。检查来源与权限后，再决定是否继续使用；异常插件可以隔离。', pluginRows || '<p class="empty-note">暂无插件记录。</p>')}
+    ${group('evolution', '评估 Agent 改进方案', `${model.evolutionProposals.length} 个候选`, '根据任务结果评估模型或策略的改进候选，逐步试用并监测效果。', `<div class="panel-card"><div class="panel-card-heading"><strong>是否允许自动评估改进方案</strong>${panelState(control ? control.enabled ? 'ACTIVE' : 'BLOCKED' : 'UNKNOWN', control ? control.enabled ? '流程开放' : '已暂停' : '尚未读取')}</div><p class="panel-note">${control ? control.enabled ? '允许进入评估流程；每个候选仍需分别通过发布条件。' : '新的评估和发布已暂停，已有候选仍可紧急回滚。' : '刷新记录后查看总闸状态。'}</p>${control?.reason ? `<p class="panel-note">原因：${escapeHtml(reasonDisplayLabel(control.reason))}</p>` : ''}</div><p class="panel-note">显示最近 ${proposals.length} 个候选，共 ${model.evolutionProposals.length} 个。</p>${proposalRows || '<p class="empty-note">暂无策略改进候选。</p>'}`)}
+  </section>`;
 };
 
 const subAgentIcon = (state: SubAgentReadModel['state']): string => {
@@ -1545,10 +1829,9 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
         ${approval.approvalExpiresAt ? `<span>有效至 ${escapeHtml(formatTime(approval.approvalExpiresAt))}</span>` : ''}
         <span>仅本次 · Windows 受限执行器</span>
       </div>
-      ${approval.scope?.snapshotDigest ? `<div class="approval-scope" title="${escapeHtml(approval.scope.snapshotDigest)}">快照 ${escapeHtml(approval.scope.snapshotDigest.slice(0, 24))}...</div>` : ''}
-      ${approval.requestDigest ? `<div class="approval-scope" title="${escapeHtml(approval.requestDigest)}">动作摘要 ${escapeHtml(approval.requestDigest)}</div>` : ''}
+      ${panelDetails(`approval:${approval.requestId}`, '查看审批核对信息', panelPurpose('这些编号用于核对本次操作与授权是否对应。') + panelFields([['工作区快照摘要', approval.scope?.snapshotDigest], ['动作摘要', approval.requestDigest], ['审批编号', approval.requestId]]))}
       ${requested ? `<div class="approval-actions">
-        <button class="secondary-button" data-action="resolve-approval" data-approved="false" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>拒绝</button>
+        <button class="secondary-button" data-action="resolve-approval" data-approved="false" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>拒绝操作</button>
         <button class="primary-action approval-approve" data-action="resolve-approval" data-approved="true" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>${pendingApprovalResolutions.has(approval.requestId) ? '处理中…' : '批准一次'}</button>
         <button class="secondary-button" data-action="cancel-run">取消任务</button>
       </div>` : ''}
@@ -1581,7 +1864,7 @@ const confirmHighRiskApproval = (approval: ApprovalReadModel, trigger: HTMLEleme
     <pre></pre>
     <div class="approval-confirmation-actions">
       <button class="secondary-button" data-confirmation="back" autofocus>返回检查</button>
-      <button class="secondary-button" data-confirmation="reject">拒绝</button>
+      <button class="secondary-button" data-confirmation="reject">拒绝操作</button>
       <button class="primary-action" data-confirmation="approve">确认批准一次</button>
     </div>`;
   dialog.querySelector('pre')!.textContent = [approval.capability, approval.command, approval.path,
@@ -1718,7 +2001,7 @@ const timelineItemHtml = (item: TimelineItem): string => `
               <time>${formatTime(item.createdAtMs)}</time>
               <span class="timeline-status timeline-status-${item.status.toLowerCase()}">${escapeHtml(statusDisplayLabel(item.status))}</span>
             </div>
-            <p class="timeline-body">${escapeHtml(timelineBodyDisplay(item))}</p>
+            <div class="timeline-body${item.kind === 'AGENT' ? ' markdown-body' : ''}">${item.kind === 'AGENT' ? renderMarkdown(item.body) : escapeHtml(timelineBodyDisplay(item))}</div>
             ${item.commandText ? `<pre class="timeline-command"><code>${escapeHtml(item.commandText)}</code></pre>` : ''}
             ${timelineTechnicalDetails(item)}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
@@ -1728,15 +2011,24 @@ const timelineItemHtml = (item: TimelineItem): string => `
 const historyIcons = (root: ParentNode): void => createIcons({ icons: {
   Bot, UserRound, CircleAlert, CheckCircle2, TerminalSquare, File, Folder,
   ShieldCheck, LoaderCircle, History, ChevronDown, ChevronRight, ArrowLeft, FolderOpen,
-  XCircle, Cpu, FileCog, PanelRight, Gauge, HeartPulse, ListTree, Square,
-  RotateCcwClock: History, Database
+  XCircle, Cpu, FileCog, PanelRight, Gauge, HeartPulse, ListTree, LayoutDashboard, Square,
+  RotateCcwClock: History, Database, Settings, Archive
 } }, root);
+const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project-thread-list">
+  ${group.threads.length ? group.threads.map((thread) => `<div class="project-thread-item"><button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
+    <span class="thread-title">${escapeHtml(thread.title || '未命名会话')}</span>
+    <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}</span>
+  </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`).join('') : '<div class="project-empty">暂无会话</div>'}
+</div>`;
+const renderArchiveNavigation = (): string => `<button class="nav-item ${activePage === 'archived' ? 'active' : ''}" data-action="navigate" data-page="archived"><i data-lucide="history"></i><span>已归档</span><span class="archive-count">${Object.keys(threadArchives).length}</span></button>
+  ${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}</div>` : ''}`;
+const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${running}:${liveTaskRunning()}`;
 const renderProjectThreadList = (): string => {
   const activeProjectId = currentProjectId();
   return projectGroups().map((group) => {
     const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId);
-    const edit = !group.discovered && group.id !== PROJECTLESS_ID
-      ? `<button class="icon-button small project-edit-button" type="button" data-action="edit-project" data-project-id="${escapeHtml(group.id)}" title="编辑项目" aria-label="编辑项目"><i data-lucide="settings"></i></button>` : '';
+    const edit = group.id !== PROJECTLESS_ID
+      ? `<button class="icon-button small project-edit-button" type="button" data-action="edit-project" data-project-id="${escapeHtml(group.id)}" title="${group.discovered ? '保存并编辑项目' : '编辑项目'}" aria-label="${group.discovered ? '保存并编辑项目' : '编辑项目'}"><i data-lucide="settings"></i></button>` : '';
     const countLabel = group.threads.length ? `${group.threads.length} 个会话` : '暂无会话';
     return `<section class="project-group ${open ? 'open' : ''}" data-project-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}，${countLabel}">
       <div class="project-header-row"><button class="project-header" type="button" data-action="toggle-project" data-project-id="${escapeHtml(group.id)}" aria-expanded="${open}" aria-label="${escapeHtml(group.name)}，${open ? '收起' : '展开'}">
@@ -1744,27 +2036,71 @@ const renderProjectThreadList = (): string => {
         <span class="project-header-copy"><strong>${escapeHtml(group.name)}</strong></span>
         <i class="project-chevron" data-lucide="${open ? 'chevron-down' : 'chevron-right'}"></i>
       </button>${edit}</div>
-      ${open ? `<div class="project-thread-list">
-        ${group.threads.length ? group.threads.map((thread) => `<button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
-          <span class="thread-title">${escapeHtml(thread.title || '未命名会话')}</span>
-          <span class="thread-meta">${thread.turnCount} 次 Turn${thread.resumable || thread.checkpoint?.plan ? ' · 可恢复' : ''}</span>
-        </button>`).join('') : '<div class="project-empty">暂无会话</div>'}
-      </div>` : ''}
+      ${open ? projectThreadsHtml(group) : ''}
     </section>`;
   }).join('');
 };
 
 const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string }>();
 const updateThreadList = (): void => {
+  patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, threadArchiveNotice, activePage], renderArchiveNavigation);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
   if (!list) return;
+  const navigationRail = app.querySelector<HTMLElement>('.navigation-rail');
+  const railScrollTop = navigationRail?.scrollTop ?? 0;
   const previous = threadListInputs.get(list);
   const catalogKey = projectCatalog.map((project) => `${project.id}:${project.lastUsedAtMs}`).join('|');
-  const expansionKey = `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}`;
+  const expansionKey = projectExpansionKey();
   if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey) return;
+  const scrollTop = list.scrollTop;
   threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey });
   list.innerHTML = renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>';
   historyIcons(list);
+  // Selecting a thread changes the active-row class and rebuilds this list.
+  // Restore the user's viewport so the sidebar does not jump to its top.
+  list.scrollTop = scrollTop;
+  requestAnimationFrame(() => {
+    if (list.isConnected) list.scrollTop = scrollTop;
+    if (navigationRail?.isConnected) navigationRail.scrollTop = railScrollTop;
+  });
+  if (navigationRail) navigationRail.scrollTop = railScrollTop;
+};
+
+const toggleProjectExpansion = (header: HTMLElement): void => {
+  const projectId = header.dataset.projectId ?? '';
+  const section = header.closest<HTMLElement>('.project-group');
+  const list = section?.parentElement;
+  const group = projectGroups().find((item) => item.id === projectId);
+  if (!section || !list || !group) return;
+  const navigationRail = list.closest<HTMLElement>('.navigation-rail');
+  const scrollTop = list.scrollTop;
+  const railScrollTop = navigationRail?.scrollTop ?? 0;
+  const open = header.getAttribute('aria-expanded') !== 'true';
+  if (open) {
+    expandedProjectIds.add(projectId);
+    collapsedProjectIds.delete(projectId);
+  } else {
+    expandedProjectIds.delete(projectId);
+    collapsedProjectIds.add(projectId);
+  }
+  // Keep every header in place, including the focused button. Rebuilding the
+  // whole list during a toggle discards focus and lets scroll anchoring jump.
+  section.classList.toggle('open', open);
+  header.setAttribute('aria-expanded', String(open));
+  header.setAttribute('aria-label', `${group.name}，${open ? '收起' : '展开'}`);
+  if (header.firstElementChild) header.firstElementChild.outerHTML = `<i data-lucide="${open ? 'folder-open' : 'folder'}"></i>`;
+  if (header.lastElementChild) header.lastElementChild.outerHTML = `<i class="project-chevron" data-lucide="${open ? 'chevron-down' : 'chevron-right'}"></i>`;
+  if (open) section.insertAdjacentHTML('beforeend', projectThreadsHtml(group));
+  else section.querySelector('.project-thread-list')?.remove();
+  historyIcons(section);
+  const previous = threadListInputs.get(list);
+  if (previous) previous.expansionKey = projectExpansionKey();
+  const restoreScroll = (): void => {
+    if (list.isConnected) list.scrollTop = scrollTop;
+    if (navigationRail?.isConnected) navigationRail.scrollTop = railScrollTop;
+  };
+  restoreScroll();
+  requestAnimationFrame(restoreScroll);
 };
 
 let persistedNavigation = savedNavigation;
@@ -1777,14 +2113,87 @@ const persistNavigation = (): void => {
 
 const renderPrimaryNavigation = (): string => `
         <nav class="nav-list context-page-nav" aria-label="工作台导航">
-          <div class="context-page-nav-title">工作台</div>
-          <button class="nav-item ${activePage === 'workbench' ? 'active' : ''}" data-action="navigate" data-page="workbench"><i data-lucide="layout-dashboard"></i><span>工作台</span></button>
-          <button class="nav-item ${activePage === 'runs' ? 'active' : ''}" data-action="navigate" data-page="runs"><i data-lucide="history"></i><span>运行记录</span></button>
-          <button class="nav-item ${activePage === 'workspace' ? 'active' : ''}" data-action="navigate" data-page="workspace"><i data-lucide="list-tree"></i><span>工作区</span></button>
-          <button class="nav-item ${activePage === 'memory' ? 'active' : ''}" data-action="navigate" data-page="memory"><i data-lucide="file"></i><span>记忆</span></button>
-          <button class="nav-item ${activePage === 'safety' ? 'active' : ''}" data-action="navigate" data-page="safety"><i data-lucide="shield-check"></i><span>能力与安全</span></button>
-          <button class="nav-item ${activePage === 'diagnostics' ? 'active' : ''}" data-action="navigate" data-page="diagnostics"><i data-lucide="heart-pulse"></i><span>设置与诊断</span></button>
-        </nav>`;
+          <div class="context-page-nav-title">功能导航</div>
+          ${([
+            ['workbench', 'layout-dashboard', '任务对话', '提需求、看回答'],
+            ['runs', 'history', '历史任务', '查找过去的任务'],
+            ['workspace', 'list-tree', '项目文件', '浏览文件内容'],
+            ['memory', 'file', '已保存的经验', '管理 Agent 的记忆'],
+            ['safety', 'shield-check', '操作权限', '查看授权与审批'],
+            ['diagnostics', 'heart-pulse', '设置与排查', '配置模型、查故障']
+          ] as const).map(([page, icon, title, hint]) => `<button class="nav-item ${activePage === page ? 'active' : ''}" data-action="navigate" data-page="${page}" ${activePage === page ? 'aria-current="page"' : ''}><i data-lucide="${icon}"></i><span><strong>${title}</strong><small>${hint}</small></span></button>`).join('')}
+         </nav>`;
+
+const renderTaskValueSummary = (): string => {
+  const run = model.activeRun;
+  const thread = model.threads.find((item) => item.id === model.activeThreadId);
+  const terminal = !running && (!run || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED', 'PAUSED', 'PAUSED_UNSUPPORTED'].includes(run.state));
+  const recoveryMode = threadRecoveryMode(thread);
+  const resumable = recoveryMode === 'PLAN' || recoveryMode === 'PREPARATION';
+  const verification = taskVerificationStatus()
+    ?? (!historyView && model.continuousVerification?.length ? '已产生连续核验证据' : undefined);
+  const usage = model.modelUsage;
+  const egress = model.modelEgress;
+  const tokenCount = usage && usage.status === 'REPORTED' && Number.isInteger(usage.inputTokens)
+    && Number.isInteger(usage.outputTokens) && usage.inputTokens >= 0 && usage.outputTokens >= 0
+    ? usage.inputTokens + usage.outputTokens : undefined;
+  const tokenLabel = tokenCount === undefined ? 'token 未报告' : `${tokenCount.toLocaleString('zh-CN')} token`;
+  const usageLine = usage
+    ? `${Number.isInteger(usage.calls) && usage.calls >= 0 ? `${usage.calls} 次调用` : '调用次数未报告'} · ${tokenLabel}`
+    : '调用统计尚未读取';
+  const cost = egress?.totals.actualCost;
+  const costLine = !Number.isFinite(cost) ? '实际成本未知' : `实际成本 ${cost}`;
+  const failed = run ? run.state === 'FAILED' : thread?.state === 'FAILED';
+  const completed = run ? run.state === 'SUCCEEDED' : thread?.state === 'COMPLETED';
+  const hasTask = Boolean(run || thread || historyView);
+  const state = running ? taskProgressMessage || runStateLabel(run?.state)
+    : completed ? '任务已完成' : failed ? '任务未完成'
+    : run ? runStateLabel(run.state) : thread?.state === 'PAUSED' ? '任务已暂停'
+    : hasTask ? '已保存的任务' : '还没有开始任务';
+  const nextStep = running ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
+    : failed ? '先查看完成报告和对话中的错误原因，再决定是否继续或重试。'
+    : completed ? '回答在中间的对话区。可以查看检查依据，或把结果保存为文件。'
+    : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断，尚无完整计划。重新规划时可能需要补充原始目标。'
+    : terminal && resumable ? '有已保存的任务进度，可以从上次中断的地方继续。'
+    : hasTask ? '可以查看已有回答和完成报告；要提出新需求，请在下方输入。'
+    : '在中间下方输入要完成的事情，例如“总结这个项目的功能”，然后发送。';
+  const verificationLabel = verification ? statusDisplayLabel(verification, '已记录') : historyView ? '当前记录中未找到报告' : '待验证';
+  const stateTone = completed ? 'active' : failed ? 'failed' : 'pending';
+  const budgetLabel = [
+    taskBudget.maxTokens ? `${taskBudget.maxTokens.toLocaleString('zh-CN')} token` : 'token 未限额',
+    taskBudget.maxToolRounds ? `${taskBudget.maxToolRounds} 轮工具` : '工具轮数未限额',
+    taskBudget.maxCost !== undefined ? `费用 ≤ ${taskBudget.maxCost}` : '费用未限额'
+  ].join(' · ');
+  const actionRow = (action: string, title: string, hint: string, disabled = false, primary = false): string =>
+    `<button class="task-action-row ${primary ? 'task-action-primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span aria-hidden="true">›</span></button>`;
+  const continueAction = resumable && terminal
+    ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', recoveryMode === 'PREPARATION' ? '补齐目标后重新制定计划' : '使用已保存的进度继续执行', false, !failed)
+    : '';
+  const retryAction = failed && recoveryMode !== 'INVALID' && terminal
+    ? actionRow('retry-task', '重试任务 / 更换模型', '选择模型后重新尝试，缺少目标时会提示补充') : '';
+  const title = run?.title ?? (thread?.title && !/^Thread\s+[a-f\d]+$/i.test(thread.title) ? thread.title : undefined);
+  return `<section class="context-section task-value-section" aria-label="当前任务与下一步">
+          ${isThreadArchived(model.activeThreadId) ? `<div class="panel-next-step">此会话已归档。发送新消息或继续任务时会自动恢复。<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(model.activeThreadId!)}">恢复到列表</button></div>` : ''}
+          <div class="section-heading"><h3>现在需要做什么</h3></div>
+          <div class="task-guidance task-guidance-${stateTone}">
+            <strong>${escapeHtml(state)}</strong>
+            ${title ? `<p class="task-current-goal">${escapeHtml(title)}</p>` : ''}
+            <p>${escapeHtml(nextStep)}</p>
+          </div>
+          ${!hasTask && !running ? actionRow('focus-task-input', '输入任务需求', '告诉 Agent 你想得到什么结果', false, true) : ''}
+          ${continueAction}
+          ${hasTask ? actionRow('view-verification', '查看完成报告', `检查是否通过、依据是什么 · ${verificationLabel}`, false, failed) : ''}
+          ${retryAction}
+          ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和完成报告（Markdown）' : '将回答和完成报告导出为 Markdown 文件', taskExportBusy) : ''}
+          ${taskActionNotice ? `<div class="settings-message settings-message-success" role="status">${escapeHtml(taskActionNotice)}</div>` : ''}
+          ${taskExportNotice ? `<div class="settings-message ${taskExportNotice.error ? 'settings-message-error' : 'settings-message-success'}" role="status" aria-live="polite" data-task-export-notice>${escapeHtml(taskExportNotice.text)}</div>` : ''}
+          ${panelDetails('task:options', '用量限制与执行依据', `
+            ${actionRow('set-task-budget', '设置任务用量上限', '限制模型用量、工具轮数和费用')}
+            <p class="panel-note">当前设置：${escapeHtml(budgetLabel)}</p>
+            ${hasTask ? actionRow('view-decisions', '查看执行依据', '了解 Agent 为什么选择这些步骤和模型') : ''}
+            <p class="panel-note">所有任务累计用量（非本次任务）：${escapeHtml(usageLine)} · ${escapeHtml(costLine)}</p>`)}
+        </section>`;
+};
 
 const renderContextContent = (): string => {
   const workspaceTitle = model.workspace.rootLabel || '默认工作区';
@@ -1806,13 +2215,22 @@ const renderContextContent = (): string => {
         ${renderPrimaryNavigation()}
         <div class="context-header">
           <div>
-            <span class="eyebrow">上下文</span>
-            <h2>任务上下文</h2>
+            <h2>任务 Agent</h2>
+            <p class="panel-note">先看下一步，需要时再展开工具。</p>
           </div>
-          <button class="icon-button mobile-context-close" data-action="toggle-context" title="关闭" aria-label="关闭上下文面板"><i data-lucide="x-circle"></i></button>
-        </div>
+           <button class="icon-button mobile-context-close" data-action="toggle-context" title="关闭" aria-label="关闭上下文面板"><i data-lucide="x-circle"></i></button>
+         </div>
 
-        <section class="context-section workspace-section">
+        ${model.approvals.some(approval => approval.state === 'REQUESTED') ? `<section class="context-section pending-approval-section" data-pending-approvals tabindex="-1">
+          <h3>需要你确认的操作</h3>
+          <p class="panel-purpose">逐项核对要执行的内容和影响范围，再选择批准或拒绝。每次批准只针对对应操作。</p>
+          ${model.approvals.filter(approval => approval.state === 'REQUESTED').map(renderApprovalCard).join('')}
+        </section>` : ''}
+
+        ${renderTaskValueSummary()}
+
+        <div class="context-section-label"><h3>需要时使用</h3><p>点击入口展开，任务运行时也可以查看。</p></div>
+        ${contextGroup('tools:workspace', '查看项目文件', '确认 Agent 正在读取哪个项目，浏览文件内容。', `<section class="context-section workspace-section">
           <div class="section-heading">
             <div>
               <span class="section-kicker">工作区</span>
@@ -1822,65 +2240,76 @@ const renderContextContent = (): string => {
               ? '<button class="icon-button small" data-action="workspace-up" title="返回上级" aria-label="返回上级"><i data-lucide="arrow-left"></i></button>'
               : ''}
           </div>
+          ${panelPurpose('当前任务可以访问的项目文件。点击文件查看内容，点击文件夹进入目录。')}
           <div class="workspace-path" title="${escapeHtml(workspacePath)}">${escapeHtml(workspacePath)}</div>
           <div class="workspace-list" data-scroll-anchor="workspace-list">${renderWorkspaceEntries()}</div>
         </section>
 
-        ${renderSelectedFile()}
+        ${renderSelectedFile()}`, workspaceTitle)}
 
-        <section class="context-section capability-section">
+        ${contextGroup('tools:memory', '让 Agent 记住有用经验', '审核并启用可靠的经验，供以后的任务参考。', renderGovernance('memory'), `${experienceMemories().filter(item => item.status === 'ACTIVE').length} 条已启用 · ${experienceMemories().filter(item => item.status === 'PROPOSED').length} 条待确认 · ${experienceMemories().filter(item => item.status === 'VERIFIED').length} 条待启用`)}
+
+        ${contextGroup('tools:permissions', 'Agent 可以做哪些操作', '查看读文件、改文件、执行命令和联网的权限。', `<section class="context-section capability-section">
           <div class="section-heading">
-            <div><span class="section-kicker">安全边界</span><h3>能力边界</h3></div>
+            <div><span class="section-kicker">权限与审批</span><h3>允许哪些操作</h3></div>
           </div>
+          ${panelPurpose(controlled ? '受控模式：命令与写入需要逐项批准。待确认的操作会单独显示在面板上方。' : '只读模式：可以查看已授权工作区，命令执行和文件修改处于关闭状态。')}
           <dl class="capability-list">
-            <div><dt>发布渠道</dt><dd>${escapeHtml(model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? 'Windows 只读版' : model.runtime.releaseChannel === 'WINDOWS_PHASE1_5_CONTROLLED' ? 'Windows 受控版' : model.runtime.releaseChannel ?? '尚未确认')}</dd></div>
-            <div><dt>工作区读取</dt><dd class="capability-on"><i data-lucide="check-circle-2"></i>允许</dd></div>
+            <div><dt>工作区读取</dt><dd class="${model.workspace.granted ? 'capability-on' : ''}"><i data-lucide="${model.workspace.granted ? 'check-circle-2' : 'x-circle'}"></i>${model.workspace.granted ? '已授权' : '尚未授权'}</dd></div>
             <div><dt>命令执行</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
             <div><dt>文件写入</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
             <div><dt>外部网络</dt><dd class="${controlled && controlledNetworkTargets.parsed.length ? 'capability-on' : ''}"><i data-lucide="${controlled && controlledNetworkTargets.parsed.length ? 'check-circle-2' : 'x-circle'}"></i>${controlled && controlledNetworkTargets.parsed.length ? `受控 · ${escapeHtml(controlledNetworkTargets.parsed.map((target) => target.host).join(', '))}` : '关闭'}</dd></div>
           </dl>
-          ${controlled ? `
+          ${controlled ? panelDetails('network-targets', '设置网络访问范围（高级）', `
+            ${panelPurpose('使用 JSON 列出允许访问的域名、端口和请求方式。留空时关闭外部网络。')}
             <div class="network-target-editor">
               <label for="network-targets-input">网络目标列表（JSON，留空表示关闭）</label>
               <input id="network-targets-input" data-role="network-targets" type="text" spellcheck="false"
                 placeholder='[{"host":"api.example.com","port":443,"scheme":"https","methods":["GET"]}]'
                 value="${escapeHtml(controlledNetworkTargets.text)}" />
               ${controlledNetworkTargets.error ? `<div class="network-target-error">${escapeHtml(controlledNetworkTargets.error)}</div>` : ''}
-            </div>` : ''}
-          ${model.approvals.filter((approval) => approval.state === 'REQUESTED' || approval.state === 'APPROVED' || approval.state === 'EXPIRED').map(renderApprovalCard).join('')}
-        </section>
+            </div>`) : ''}
+          <button class="governance-button" data-action="navigate" data-page="safety">打开权限与审批管理</button>
+          ${panelDetails('permissions:past', '查看已批准或已过期的请求', model.approvals.filter(approval => approval.state === 'APPROVED' || approval.state === 'EXPIRED').map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
+        </section>`, controlled ? '当前为受控模式：修改和执行需逐项批准' : '当前为只读模式：不改文件、不执行命令')}
 
-        <section class="context-section execution-state-section">
+        ${contextGroup('tools:troubleshooting', '遇到问题 / 查看执行细节', '查操作记录、模型选择依据和连接状态，帮助定位失败原因。', `
+        <button class="governance-button" data-action="navigate" data-page="diagnostics">打开模型设置与故障排查</button>
+        ${contextGroup('section:execution', '操作有没有执行成功', '查看请求、审批和授权使用记录。', `<section class="context-section execution-state-section">
           <div class="section-heading">
-            <div><span class="section-kicker">执行状态</span><h3>受控状态</h3></div>
+            <div><span class="section-kicker">审批与执行</span><h3>操作处理记录</h3></div>
             <button class="icon-button small" data-action="refresh-execution-state" title="刷新执行状态" aria-label="刷新执行状态"><i data-lucide="rotate-ccw-clock"></i></button>
           </div>
+          ${panelPurpose('动作请求说明要做什么，审批记录你的决定，一次性授权记录该操作是否已使用许可。')}
           ${executionRecords.length === 0
             ? '<div class="empty-note">暂无已保存的动作请求、审批或一次性授权</div>'
             : `<div class="execution-record-list">${executionRecords.slice(-12).reverse().map((record) => `
               <div class="execution-record">
                 <div class="execution-record-heading"><strong>${executionTypeLabel(record.recordType)}</strong><span>${escapeHtml(executionStateLabel(record.state))}</span></div>
-                <div class="execution-record-meta">${escapeHtml(record.capability ?? '受控能力')} · ${escapeHtml(formatTime(record.updatedAtMs))}</div>
+                <div class="execution-record-meta">${escapeHtml(toolDisplayLabel(record.capability ?? '受控能力'))} · ${escapeHtml(panelDate(record.updatedAtMs))}</div>
+                ${panelDetails(`execution:${record.recordId}`, '查看来源与授权详情', panelFields([['记录编号', record.recordId], ['操作编号', record.operationId], ['任务编号', record.runId], ['有效期', record.expiresAt ? panelDate(record.expiresAt) : '未提供']]) + panelSources(record.runId))}
               </div>`).join('')}</div>`}
-        </section>
+        </section>`, `${executionRecords.length} 条记录`)}
 
-        ${renderGovernance()}
+        ${contextGroup('section:decisions', '为什么这样执行', '查看 Agent 选择步骤、模型和处理方式的依据。', renderDecisionTrace(), `${model.decisions.length} 条记录`)}
 
-        ${renderDecisionTrace()}
+        ${contextGroup('section:council', '比较过哪些方案', '查看备选方案、审议意见和最终选择。', renderCouncilPanel())}
 
-        ${renderCouncilPanel()}
+        ${model.supportBundle ? contextGroup('section:support', '调用统计与诊断资料', '查看调用消耗、诊断信息，供排查或联系维护人员时使用。', renderSupportBundle()) : ''}
 
-        ${renderSupportBundle()}
-
-        <section class="context-section runtime-section">
+        ${contextGroup('section:runtime', '模型和本地服务连接正常吗', '检查模型配置、本地服务和记忆存储的状态。', `<section class="context-section runtime-section">
           <div class="section-heading"><div><span class="section-kicker">运行时</span><h3>运行时</h3></div></div>
+          ${panelPurpose('查看本地服务、模型连接和记忆存储是否就绪。遇到连接问题可前往设置与诊断。')}
           <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览'}</span></div>
           <div class="runtime-line"><i data-lucide="heart-pulse"></i><span>${escapeHtml(runtimeHealth)}</span></div>
           <div class="runtime-line"><i data-lucide="cpu"></i><span title="${escapeHtml(runtimeRoute)}">${escapeHtml(runtimeRoute)}</span></div>
           <div class="runtime-line"><i data-lucide="file-cog"></i><span>${escapeHtml(runtimeConfig)}</span></div>
           <div class="runtime-line"><i data-lucide="database"></i><span title="${escapeHtml(contextSidecar?.state ?? 'LOCAL')} ">本地记忆日志 · ${escapeHtml(contextSidecarState)}${escapeHtml(contextSidecarDetail)}</span></div>
-          <div class="runtime-line"><i data-lucide="gauge"></i><span data-projection-version>运行投影 v${model.projectionVersion}</span></div>
-        </section>
+          ${panelDetails('runtime-version', '查看技术版本', `<span data-projection-version>界面数据版本 ${model.projectionVersion}</span>`)}
+          <button class="governance-button" data-action="navigate" data-page="diagnostics">打开设置与诊断</button>
+        </section>`)}`)}
+
+        ${contextGroup('tools:maintenance', '高级管理', '管理插件、整理历史经验、评估 Agent 改进方案。通常由维护人员使用。', renderGovernance('maintenance'))}
 `;
 };
 
@@ -1928,7 +2357,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     region.innerHTML = `<div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1 data-history-title></h1></div></div>
       <div data-history-status role="status"></div>
       <button class="secondary-button" data-action="history-older"><i data-lucide="history"></i><span>加载更早记录</span></button>
-      <div class="timeline" data-history-items></div>`;
+      <div class="timeline" data-history-items></div><div data-history-verification></div>`;
     historyIcons(region);
   }
   region.querySelector('[data-history-title]')!.textContent = model.threads.find((thread) => thread.id === view.threadId)?.title ?? '历史会话';
@@ -1945,6 +2374,8 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   older.querySelector('span')!.textContent = view.loadingOlder ? '正在加载…' : view.error ? '重试加载' : '加载更早记录';
   syncKeyedList(region.querySelector<HTMLElement>('[data-history-items]')!, timelineItems,
     (item) => item.itemId, timelineItemHtml, historyIcons);
+  patchLiveRegion(region.querySelector('[data-history-verification]'),
+    [model.timeline, view.loading, view.loadingOlder, view.hasMore, view.error], renderTaskVerification);
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) {
     // Keep the editor usable while a directory read is in flight.  The send
@@ -1954,14 +2385,14 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     composer.placeholder = model.composer.placeholder;
   }
   const send = app.querySelector<HTMLButtonElement>('.composer .send-button');
-  if (send) send.disabled = !model.composer.enabled || workspaceChanging;
+  if (send) send.disabled = running || !model.composer.enabled || workspaceChanging;
   app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"]').forEach((button) => {
     button.disabled = running || workspaceChanging;
   });
   const stop = app.querySelector<HTMLButtonElement>('.composer-stop');
   if (stop) stop.disabled = true;
   const status = app.querySelector<HTMLElement>('.run-status');
-  if (status) status.textContent = view.loading ? '正在加载历史会话…' : '历史会话';
+  if (status) status.textContent = taskProgressMessage || (view.loading ? '正在加载历史会话…' : '历史会话');
   const connection = app.querySelector<HTMLElement>('.connection-status');
   if (connection) {
     connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
@@ -1980,7 +2411,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     const label = mode.lastChild;
     if (label?.nodeType === Node.TEXT_NODE) label.textContent = model.composer.mode === 'CONTROLLED' ? '受控模式' : '只读模式';
   }
-  const workspaceTitle = model.workspace.rootLabel || '默认工作区';
+  const workspaceTitle = currentProjectName();
   const workspace = app.querySelector<HTMLElement>('.workspace-identity strong');
   if (workspace) { workspace.textContent = workspaceTitle; workspace.title = workspaceTitle; }
   const project = app.querySelector<HTMLElement>('.composer-project');
@@ -2035,7 +2466,7 @@ const renderSelectedFile = (): string => {
         <span class="file-size">${formatBytes(file.totalBytes)}${file.truncated ? ' · 已截断' : ''}</span>
       </div>
       ${preview}
-      <div class="digest" title="${escapeHtml(file.contentDigest)}">${escapeHtml(file.contentDigest)}</div>
+      ${panelDetails(`file:${file.relativePath}`, '文件校验信息', panelPurpose('摘要用于比对文件内容是否变化。') + panelFields([['内容摘要', file.contentDigest]]))}
     </section>`;
 };
 
@@ -2046,6 +2477,188 @@ const exportData = async (scope: string): Promise<void> => {
     exportNotice = result.ok ? `导出完成：${result.output ?? '已生成文件'}` : `导出未完成：${result.error ?? '未知错误'}`;
   } catch (error) { exportNotice = `导出未完成：${error instanceof Error ? error.message : String(error)}`; }
   render();
+};
+
+const exportTaskResult = async (): Promise<void> => {
+  if (taskExportBusy) return;
+  // Capture selection once: changing conversations during an export must not
+  // mix replies or verification evidence from another task into the file.
+  const snapshot = model;
+  const threadId = snapshot.activeThreadId;
+  const thread = snapshot.threads.find(item => item.id === threadId);
+  let runId = snapshot.activeRun || threadId || focusedRunId ? verificationRunId() : undefined;
+  const partial = running;
+  const title = (snapshot.activeRun?.title ?? thread?.title ?? '任务结果').replace(/[\r\n]+/g, ' ');
+  const exportedAt = new Date();
+  const report = (text: string, error = false): void => {
+    taskExportNotice = { text, error };
+    render();
+    patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
+  };
+  taskExportBusy = true;
+  report('正在整理当前任务结果…');
+  try {
+    if (historyView?.loading) throw new Error('会话仍在加载，请加载完成后再导出。');
+    if (!threadId && !runId) throw new Error('请先选择已有运行记录的会话，再导出结果。');
+    let items = snapshot.timeline.filter(item => Boolean(runId) && item.runId === runId);
+    if (desktopBridge.isNative() && threadId && !partial) {
+      const events: RuntimeEvent[] = [];
+      const cursors = new Set<string>();
+      let before: string | undefined;
+      do {
+        if (running) throw new Error('任务已开始运行，请稍后重新导出。');
+        const page = await desktopBridge.listThreadEvents(threadId, { limit: 500, before });
+        runId ??= page.events.at(-1)?.runId;
+        events.push(...page.events.filter(event => event.runId === runId));
+        if (!page.hasMore) break;
+        if (!page.nextCursor || cursors.has(page.nextCursor)) throw new Error('历史记录分页异常，未生成不完整文件。');
+        cursors.add(page.nextCursor);
+        before = page.nextCursor;
+        report(`正在读取“${title}”的历史结果，已读取 ${events.length} 条相关记录…`);
+      } while (before);
+      const seen = new Set<string>();
+      const ordered = events.sort((left, right) => left.emittedAtMs - right.emittedAtMs || left.sequence - right.sequence)
+        .filter(event => {
+          const key = event.eventId ?? `${event.runId}:${event.sequence}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      items = replayThreadEvents({ ...snapshot, timeline: [] }, ordered).timeline;
+    }
+    if (!runId || items.length === 0) throw new Error('当前任务还没有可导出的记录。');
+    const replies = [...new Set(items.filter(item => item.kind === 'AGENT' && item.body.trim()).map(item => item.body))];
+    const verification = items.filter(item => ['rule-verification-summary', 'semantic-verification-summary', 'rule-verification-check'].includes(item.evidenceKind ?? ''));
+    const failures = items.filter(item => item.kind === 'ERROR' && !item.evidenceKind?.includes('verification'));
+    const content = [
+      `# ${title}`,
+      `- 导出时间：${exportedAt.toLocaleString('zh-CN')}\n- 会话：${threadId ?? '未保存'}\n- 运行：${runId}\n- 工作区：${thread?.cwd ?? snapshot.workspace.rootPath ?? '未指定'}`,
+      partial ? '> 任务仍在运行。本文件仅包含点击导出时已收到的内容，不代表最终结果。' : '',
+      items.some(item => item.truncated) ? '> 部分原始记录已被截断或脱敏，导出保留其现有内容。' : '',
+      '## 回复正文',
+      replies.length ? replies.join('\n\n---\n\n') : '本次运行没有可恢复的模型回复正文，以下保留已记录的验证或错误信息。',
+      '## 验证记录',
+      verification.length ? verification.map(item => `### ${item.title}\n\n${item.body}`).join('\n\n') : '未保存验证报告。',
+      failures.length ? '## 错误与中断\n\n' + failures.map(item => `### ${item.title}\n\n${item.body}`).join('\n\n') : ''
+    ].filter(Boolean).join('\n\n') + '\n';
+    const fileName = `task-result-${runId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80)}-${exportedAt.getTime()}.md`;
+    report(`“${title}”的结果已整理，请在保存窗口中选择文件位置。`);
+    const result = await desktopBridge.saveTaskResult(fileName, content);
+    if (result.cancelled) report('已取消导出，未保存文件。');
+    else if (result.ok && result.output) report(`“${title}”导出完成：${result.output}`);
+    else throw new Error(result.error ?? '未确认文件保存成功，请重新导出。');
+  } catch (error) {
+    report(`导出未完成：${compactError(error)}`, true);
+  } finally {
+    taskExportBusy = false;
+    render();
+    patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
+  }
+};
+
+const taskOptionsFromBudget = (): Pick<RuntimeTaskOptions, 'maxTokens' | 'maxToolRounds' | 'maxCost'> => ({
+  ...(taskBudget.maxTokens ? { maxTokens: taskBudget.maxTokens } : {}),
+  ...(taskBudget.maxToolRounds ? { maxToolRounds: taskBudget.maxToolRounds } : {}),
+  ...(taskBudget.maxCost !== undefined ? { maxCost: taskBudget.maxCost } : {})
+});
+
+const configureTaskBudget = (): void => {
+  const read = (label: string, current: number | undefined, integer: boolean): number | undefined | null => {
+    const raw = window.prompt(`${label}（留空表示不限制）`, current === undefined ? '' : String(current));
+    if (raw === null) return null;
+    const value = raw.trim();
+    if (!value) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0 || (integer && !Number.isInteger(parsed))) {
+      taskActionNotice = `${label}输入无效，请填写非负${integer ? '整数' : '数字'}。`;
+      render();
+      return null;
+    }
+    return parsed;
+  };
+  const maxTokens = read('Token 上限', taskBudget.maxTokens, true);
+  if (maxTokens === null) return;
+  const maxToolRounds = read('工具轮数上限', taskBudget.maxToolRounds, true);
+  if (maxToolRounds === null) return;
+  const maxCost = read('费用上限', taskBudget.maxCost, false);
+  if (maxCost === null) return;
+  taskBudget = {
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+    ...(maxToolRounds === undefined ? {} : { maxToolRounds }),
+    ...(maxCost === undefined ? {} : { maxCost })
+  };
+  localStorage.setItem('hmcodex.taskBudget', JSON.stringify(taskBudget));
+  taskActionNotice = '任务预算已保存，将应用于下一次任务。';
+  render();
+};
+
+const threadRecoveryMode = (thread: HarnessReadModel['threads'][number] | undefined): NonNullable<HarnessReadModel['threads'][number]['resumeMode']> => {
+  if (thread?.resumeMode) return thread.resumeMode;
+  const checkpoint = thread?.checkpoint;
+  const plan = checkpoint?.plan;
+  if (Array.isArray(plan)) {
+    return ['CLASSIFYING', 'PRECHECKING', 'ROUTING', 'ALLOCATING_CONTEXTS', 'PLANNING'].includes(checkpoint?.phase ?? '')
+      && plan.length === 1 && plan[0]?.id === 'classify' && plan[0]?.status === 'RUNNING'
+      && /^sha256:[0-9a-f]{64}$/u.test(plan[0]?.actionDigest ?? '') ? 'PREPARATION' : 'INVALID';
+  }
+  if (plan && typeof plan === 'object') {
+    const candidate = plan as { steps?: unknown; plan?: unknown };
+    const steps = candidate.steps ?? candidate.plan;
+    return Array.isArray(steps) && steps.length > 0 ? 'PLAN' : 'INVALID';
+  }
+  return checkpoint ? 'INVALID' : thread?.resumable ? 'PLAN' : 'NONE';
+};
+
+const isContinuationPrompt = (value: string): boolean => /^(?:继续(?:之前的|上次的)?任务|继续|重试|continue(?:\s+(?:the\s+)?(?:previous\s+)?task)?|resume|retry)[.!。！\s]*$/iu.test(value.trim());
+const latestPromptForThread = (): string => {
+  // The timeline belongs to the selected thread. Never borrow a global last
+  // prompt from a different conversation or treat a continue label as a goal.
+  const latest = [...model.timeline].reverse().find((item) => item.kind === 'USER' && item.body.trim() && !isContinuationPrompt(item.body));
+  return latest?.body.trim() ?? '';
+};
+
+const taskContinuationPrompt = (): string | undefined => {
+  const thread = model.threads.find((item) => item.id === model.activeThreadId);
+  const recoveryMode = threadRecoveryMode(thread);
+  if (recoveryMode === 'INVALID') return undefined;
+  const known = latestPromptForThread();
+  if (known) return known;
+  if (recoveryMode === 'PLAN') return '继续之前的任务';
+  const supplied = window.prompt('上次未生成可执行计划，历史记录也未保存原始任务文字。请输入要完成的具体任务；将在当前会话中重新规划。', '');
+  if (supplied === null) return undefined;
+  const prompt = supplied.trim();
+  if (!prompt || isContinuationPrompt(prompt)) {
+    taskActionNotice = '请填写具体任务目标，例如需要检查或修改什么；仅填写“继续任务”无法重新规划。';
+    render();
+    return undefined;
+  }
+  return prompt;
+};
+
+const focusTaskSection = (selector: string): void => {
+  activePage = 'workbench';
+  localStorage.setItem('hmcodex.activePage', 'workbench');
+  contextVisible = true;
+  transcriptStick = false;
+  render();
+  requestAnimationFrame(() => {
+    const target = app.querySelector<HTMLElement>(selector);
+    if (!target) {
+      taskActionNotice = '当前任务尚无此项详情，请等待记录加载完成后再查看。';
+      patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
+      return;
+    }
+    for (let parent = target?.parentElement; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) {
+        parent.open = true;
+        if (parent.dataset.disclosureId) contextDisclosureState.set(parent.dataset.disclosureId, true);
+      }
+    }
+    if (!target.matches('button, input, textarea, select, a[href], [tabindex]')) target.tabIndex = -1;
+    target.scrollIntoView({ block: 'start', behavior: 'auto' });
+    target.focus({ preventScroll: true });
+    transcriptScrollTop = app.querySelector<HTMLElement>('.transcript')?.scrollTop ?? transcriptScrollTop;
+  });
 };
 
 const recordRecovery = (recovery: RuntimeRecoveryResponse): void => {
@@ -2161,29 +2774,19 @@ const renderWorkspacePage = (): string => {
   </div>`;
 };
 const renderMemoryPage = (): string => {
-  const allMemories = model.memories.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.memoryId.localeCompare(right.memoryId));
+  const allMemories = experienceMemories().slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.memoryId.localeCompare(right.memoryId));
   const pageCount = Math.max(1, Math.ceil(allMemories.length / 8));
   memoryPage = Math.min(memoryPage, pageCount);
   const memories = allMemories.slice((memoryPage - 1) * 8, memoryPage * 8);
   const dreams = model.dreamRuns.slice().sort((left, right) => right.startedAtMs - left.startedAtMs).slice(0, 6);
   const counts = {
     active: allMemories.filter((memory) => memory.status === 'ACTIVE').length,
-    proposed: allMemories.filter((memory) => memory.status === 'PROPOSED' || memory.status === 'VERIFIED').length,
+    proposed: allMemories.filter((memory) => memory.status === 'PROPOSED').length,
+    verified: allMemories.filter((memory) => memory.status === 'VERIFIED').length,
     conflicts: allMemories.filter((memory) => (memory.conflictsWithMemoryIds?.length ?? 0) > 0).length,
     retracted: allMemories.filter((memory) => ['RETRACTED', 'PRUNED', 'REJECTED'].includes(memory.status)).length
   };
-  const renderMemoryActions = (memory: typeof allMemories[number]): string => {
-    const edit = ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status)
-      ? '<button class="governance-button" data-action="memory-edit" data-memory-id="' + escapeHtml(memory.memoryId) + '">编辑新版本</button>'
-      : '';
-    const conflict = memory.conflictsWithMemoryIds?.length
-      ? '<button class="governance-button governance-button-warning" data-action="memory-action" data-operation="resolve-conflict" data-memory-id="' + escapeHtml(memory.memoryId) + '">处理冲突</button>'
-      : '';
-    if (memory.status === 'PROPOSED') return '<div class="governance-actions">' + edit + conflict + '<button class="governance-button governance-button-primary" data-action="memory-action" data-operation="verify" data-accepted="true" data-memory-id="' + escapeHtml(memory.memoryId) + '">验证</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="verify" data-accepted="false" data-memory-id="' + escapeHtml(memory.memoryId) + '">拒绝</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="' + escapeHtml(memory.memoryId) + '">删除</button></div>';
-    if (memory.status === 'VERIFIED') return '<div class="governance-actions">' + edit + conflict + '<button class="governance-button governance-button-primary" data-action="memory-action" data-operation="activate" data-memory-id="' + escapeHtml(memory.memoryId) + '">激活</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="' + escapeHtml(memory.memoryId) + '">删除</button></div>';
-    if (memory.status === 'ACTIVE') return '<div class="governance-actions">' + edit + conflict + '<button class="governance-button governance-button-danger" data-action="memory-action" data-operation="retract" data-memory-id="' + escapeHtml(memory.memoryId) + '">撤回</button><button class="governance-button governance-button-danger" data-action="memory-action" data-operation="delete" data-memory-id="' + escapeHtml(memory.memoryId) + '">删除</button></div>';
-    return conflict ? '<div class="governance-actions">' + conflict + '</div>' : '';
-  };
+  const renderMemoryActions = (memory: DisplayMemory): string => renderExperienceActions(memory, 'page');
   const renderEditForm = (memory: typeof allMemories[number]): string => {
     const draft = memoryEditState?.memoryId === memory.memoryId
       ? memoryEditState
@@ -2219,16 +2822,17 @@ const renderMemoryPage = (): string => {
       + (memory.version !== undefined ? ' · 版本 ' + memory.version : '')
       + (relations ? ' · ' + relations : '');
     const editing = memoryEditState?.memoryId === memory.memoryId;
-    return '<article class="run-history-row memory-row" data-memory-id="' + escapeHtml(memory.memoryId) + '"><div class="run-history-copy"><strong>' + escapeHtml(memory.statement) + '</strong><span>' + escapeHtml(memory.scope) + ' · 置信度 ' + Math.round(memory.confidence * 100) + '% · ' + escapeHtml(governanceStateLabel(memory.status)) + '</span><small>' + escapeHtml(details) + '</small></div>' + (editing ? renderEditForm(memory) : renderMemoryActions(memory)) + '</article>';
+    return `<article class="run-history-row memory-row" data-memory-id="${escapeHtml(memory.memoryId)}"><div class="run-history-copy"><strong>供以后参考的一条经验</strong><span>${escapeHtml(memoryStatusLabel(memory.status))}</span>${memoryExplanation(memory)}${panelDetails('memory-page:' + memory.memoryId, '核对来源与保存信息', panelFields([['记录信息', details], ['系统评分（不代表正确率）', memory.confidence]]) + panelSources(memory.runId, memory.sourceEventIds ?? []))}</div>${editing ? renderEditForm(memory) : renderMemoryActions(memory)}</article>`;
   }).join('');
-  const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待确认 ' + counts.proposed + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
+  const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待确认 ' + counts.proposed + '</span><span>待启用 ' + counts.verified + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
   const editHint = memoryEditState ? '<div class="page-status memory-edit-hint"><strong>正在编辑 ' + escapeHtml(memoryEditState.memoryId) + '</strong><span>编辑会创建新版本，提交前请核对来源和敏感性。</span></div>' : '';
-  return '<div class="page-placeholder"><span class="eyebrow">记忆</span><h1>记忆</h1>'
+  return '<div class="page-placeholder"><span class="eyebrow">供后续任务参考</span><h1>已保存的经验</h1><p class="panel-purpose">核对具体内容后再启用。Agent 可以在以后的任务中检索已启用的经验；运行统计不计入经验数量。</p>'
     + (governanceReadFailed ? '<div class="page-status memory-action-error" role="alert"><strong>刷新未完成</strong><span>无法读取最新治理状态，当前显示上次读取的记录。请重新读取后核对。</span><button class="secondary-button" data-action="refresh-governance">重新读取</button></div>' : '')
     + (memoryActionError ? '<div class="page-status memory-action-error" role="alert"><strong>操作未完成</strong><span>请求未成功返回，结果尚未确认。请先刷新治理状态核对，再决定是否重试；页面保留上次读取的记录。</span><button class="secondary-button" data-action="refresh-governance">刷新治理状态</button></div>' : '')
     + statusSummary + editHint
-    + '<div class="run-history-list">' + (memoryRows || '<div class="page-status page-status-empty"><strong>暂无记忆</strong><span>当前没有已提交记忆。</span></div>') + '</div>'
+    + '<div class="run-history-list">' + (memoryRows || '<div class="page-status page-status-empty"><strong>暂时没有具体经验需要审核</strong><span>文件数量、工具调用次数不属于可复用经验。它们保留在下方的技术记录里，无需逐条确认。</span></div>') + '</div>'
     + (pageCount > 1 ? '<nav aria-label="记忆分页" class="route-heading"><button class="secondary-button" data-action="memory-page" data-delta="-1" ' + (memoryPage === 1 ? 'disabled' : '') + '>上一页</button><span>第 ' + memoryPage + ' / ' + pageCount + ' 页 · 共 ' + allMemories.length + ' 条</span><button class="secondary-button" data-action="memory-page" data-delta="1" ' + (memoryPage === pageCount ? 'disabled' : '') + '>下一页</button></nav>' : '')
+    + renderMemoryActivityArchive('page')
     + '<div class="route-heading"><div><span class="eyebrow">后台整理</span><h2>后台整理状态</h2></div><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>运行一次</button>' + (model.runtime.dreamMaintenance?.running === true ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>' : '<button class="governance-button" data-action="start-dream-maintenance" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>启动后台</button>') + '</div></div>'
     + '<div class="run-history-list">' + (dreams.map((dream) => '<div class="run-history-row"><div class="run-history-copy"><strong>后台记忆整理 · ' + escapeHtml(shortDigest(dream.runId)) + '</strong><span>' + escapeHtml(statusDisplayLabel(dream.state)) + ' · ' + escapeHtml(formatTime(dream.startedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(dream.errorCode ? reasonDisplayLabel(dream.errorCode) : (dream.finishedAtMs ? '已完成' : '运行中')) + '</span></div>').join('') || '<div class="page-status page-status-empty"><strong>暂无后台整理记录</strong><span>当前没有后台记忆整理运行记录。</span></div>') + '</div>'
     + '<button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>';
@@ -2255,7 +2859,7 @@ const renderSafetyPage = (): string => {
     ['文件写入', controlled ? '受控' : '关闭'],
     ['外部网络', network]
   ].map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('');
-  const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(record.capability ?? '受控能力') + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
+  const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
   return `<div class="page-placeholder"><span class="eyebrow">能力与安全</span><h1>能力与安全</h1>
     <div class="run-history-list">${rows}</div>
     <div class="route-heading"><div><span class="eyebrow">动作审批</span><h2>待审批动作信息</h2></div><span class="route-count">${actionRows.length ? '已记录' : '暂无'}</span></div>
@@ -2350,6 +2954,18 @@ const renderRunsPage = (): string => {
     <button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>`;
 };
 
+const renderArchivedThreadsPage = (): string => {
+  const threads = model.threads.filter(thread => isThreadArchived(thread.id))
+    .slice().sort((a, b) => threadArchives[b.id] - threadArchives[a.id]);
+  return `<div class="page-placeholder"><h1>已归档会话</h1>
+    <p class="panel-purpose">归档只在本机隐藏会话，不删除历史内容。恢复后会重新出现在左侧项目列表中。</p>
+    <div class="run-history-list">${threads.map(thread => `<article class="run-history-row">
+      <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(projectForThread(thread)?.name ?? (thread.cwd ? projectNameForPath(thread.cwd) : '未绑定项目'))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
+      <div class="governance-actions"><button class="governance-button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" ${liveTaskRunning() ? 'disabled title="请等待当前任务结束后查看其他会话"' : ''}>查看会话</button><button class="governance-button governance-button-primary" data-action="restore-thread" data-thread-id="${escapeHtml(thread.id)}">恢复到列表</button></div>
+    </article>`).join('') || `<div class="page-status page-status-empty"><strong>${Object.keys(threadArchives).length ? '归档会话尚未载入' : '暂无已归档会话'}</strong><span>${Object.keys(threadArchives).length ? '归档标记仍保留，等待历史会话加载。' : '点击左侧会话旁的“归档”，即可收起暂时不用的会话。'}</span></div>`}</div>
+  </div>`;
+};
+
 const renderPageStatus = (page: string): string => {
   const meta = primaryPages[page] ?? { title: '页面', description: '内容正在准备。' };
   const stale = model.connection.state === 'ERROR' ? 'stale' : '';
@@ -2398,20 +3014,22 @@ const patchLiveRegion = (element: HTMLElement | null, inputs: unknown[], html: (
     const scrollPositions = captureScrollPositions(element);
     const scrollTarget = scrollSelector ? element.querySelector<HTMLElement>(scrollSelector) : element;
     const scroll = scrollTarget?.scrollTop ?? 0;
-    const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
-    element.innerHTML = content;
-    element.querySelectorAll('details').forEach((detail, i) => { detail.open = disclosures[i] ?? detail.open; });
-    historyIcons(element);
+    element.querySelectorAll<HTMLDetailsElement>('details[data-disclosure-id]').forEach(detail => contextDisclosureState.set(detail.dataset.disclosureId!, detail.open));
+    syncRegionContent(element, content, historyIcons);
+    syncMemoryActionControls();
     restoreScrollPositions(element, scrollPositions);
     const restoredTarget = scrollSelector ? element.querySelector<HTMLElement>(scrollSelector) : element;
     if (restoredTarget && scroll !== 0) restoredTarget.scrollTop = scroll;
   }
   liveRegions.set(element, { inputs, html: content });
 };
-const contextPanelInputs = (): unknown[] => [model.workspace, model.runtime, model.composer.mode,
+const contextPanelInputs = (): unknown[] => [threadArchives, model.workspace, model.runtime, model.composer.mode,
   model.approvals, [...pendingApprovalResolutions].join(','), executionRecords, model.memories, model.dreamRuns,
   model.plugins, model.pluginVersions, model.evolutionProposals, model.evolutionReports, model.evolutionControl,
-  model.decisions, model.feedback, model.supportBundle, model.modelEgress, model.modelUsage, controlledNetworkTargets.text, controlledNetworkTargets.error];
+  model.decisions, model.feedback, model.supportBundle, model.modelEgress, model.modelUsage,
+  model.activeRun, model.activeThreadId, model.threads, model.processVerification,
+  model.continuousVerification, model.timeline, controlledNetworkTargets.text, controlledNetworkTargets.error,
+  governanceActionNotice, governanceReadFailed, memoryActionError, taskActionNotice, taskExportBusy, taskExportNotice, taskProgressMessage, running];
 let contextPanelPatchTimer: number | undefined;
 let pendingContextPanelPatch: { element: HTMLElement; inputs: unknown[]; html: () => string } | undefined;
 const patchContextPanel = (element: HTMLElement | null, inputs: unknown[], html: () => string): void => {
@@ -2419,7 +3037,8 @@ const patchContextPanel = (element: HTMLElement | null, inputs: unknown[], html:
   const previous = liveRegions.get(element);
   if (previous && previous.inputs.length === inputs.length && inputs.every((value, index) => value === previous.inputs[index])) return;
   pendingContextPanelPatch = { element, inputs, html };
-  window.clearTimeout(contextPanelPatchTimer);
+  // Bound the refresh rate without postponing updates indefinitely during a stream.
+  if (contextPanelPatchTimer !== undefined) return;
   contextPanelPatchTimer = window.setTimeout(() => {
     contextPanelPatchTimer = undefined;
     const pending = pendingContextPanelPatch;
@@ -2439,15 +3058,19 @@ const followLiveTranscript = (): void => {
   transcriptFollowFrame = requestAnimationFrame(() => {
     transcriptFollowFrame = undefined;
     const transcript = app?.querySelector<HTMLElement>('.transcript');
-    if (transcript && transcriptStick) transcript.scrollTop = transcript.scrollHeight;
+    if (transcript && transcriptStick) {
+      restoringScroll = true;
+      transcript.scrollTop = transcript.scrollHeight;
+      window.requestAnimationFrame(() => { restoringScroll = false; });
+    }
   });
 };
 const renderRunControls = (): void => {
   refreshComposerCache();
   refreshModeControls();
-  patchLiveRegion(app.querySelector('.run-status'), [model.activeRun?.state], () => `
-    <i data-lucide="${liveTaskRunning() ? 'loader-circle' : 'shield-check'}" class="${liveTaskRunning() ? 'spin' : ''}"></i>
-    <span>${escapeHtml(runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(runStateNextStep(model.activeRun?.state))}</small>`);
+  patchLiveRegion(app.querySelector('.run-status'), [model.activeRun?.state, taskProgressMessage], () => `
+    <i data-lucide="${liveTaskRunning() || taskProgressMessage ? 'loader-circle' : 'shield-check'}" class="${liveTaskRunning() || taskProgressMessage ? 'spin' : ''}"></i>
+    <span>${escapeHtml(taskProgressMessage || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>`);
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) { composer.disabled = !model.composer.enabled; composer.placeholder = model.composer.placeholder; }
   const stop = app.querySelector<HTMLButtonElement>('.composer-stop');
@@ -2463,14 +3086,12 @@ const renderRunControls = (): void => {
   });
 };
 const refreshWorkspaceChrome = (): void => {
-  const workspaceTitle = model.workspace.rootLabel || '默认工作区';
+  const workspaceTitle = currentProjectName();
   const identity = app.querySelector<HTMLElement>('.workspace-identity strong');
   if (identity) {
     identity.textContent = workspaceTitle;
     identity.title = workspaceTitle;
   }
-  const workspaceButtonLabel = model.workspace.granted ? '更换项目' : '打开项目';
-  app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"] span').forEach((label) => setTextIfChanged(label, workspaceButtonLabel));
   setTextIfChanged(app.querySelector<HTMLElement>('.composer-project'), workspaceTitle);
 };
 const renderLiveView = (): void => {
@@ -2517,7 +3138,7 @@ const renderLiveView = (): void => {
     else lists.tools.pause();
     lists.source = model.timeline; lists.focus = focusedRunId; lists.expanded = executionGroupExpanded;
   }
-  patchLiveRegion(slot('verification'), [model.continuousVerification, model.processVerification, model.timeline], () => renderFinalVerificationChecks() + renderContinuousVerification());
+  patchLiveRegion(slot('verification'), [model.continuousVerification, model.processVerification, model.timeline, verificationRunId(), running], renderTaskVerification);
   patchLiveRegion(app.querySelector('.connection-status'), [model.connection], () => `<span></span>${escapeHtml(model.connection.label)}`);
   const connection = app.querySelector<HTMLElement>('.connection-status');
   if (connection) connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
@@ -2529,14 +3150,15 @@ const renderLiveView = (): void => {
   const projection = app.querySelector('[data-projection-version]');
   if (projection) projection.textContent = `运行投影 v${model.projectionVersion}`;
   syncMemoryActionControls();
-  followLiveTranscript();
 };
 const render = (): void => {
-  if (historyView && activePage === 'workbench' && !model.activeRun && !settingsVisible && !projectPickerVisible && !projectNameDialog) {
+  app.querySelectorAll<HTMLDetailsElement>('details[data-disclosure-id]').forEach(detail => contextDisclosureState.set(detail.dataset.disclosureId!, detail.open));
+  if (historyView && activePage === 'workbench' && !model.activeRun && !settingsVisible
+    && !projectPickerVisible && !projectNameDialog && !projectEditDialog && !app.querySelector('.project-picker-backdrop')) {
     renderHistoryView();
     return;
   }
-  if (!historyView && activePage === 'workbench' && app.querySelector('[data-live-workbench]')
+  if ((!historyView || model.activeRun) && activePage === 'workbench' && app.querySelector('[data-live-workbench]')
     && app.querySelector<HTMLElement>('.app-shell')?.dataset.composerMode === model.composer.mode
     && settingsVisible === Boolean(app.querySelector('[data-settings-dialog]')) && !settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog
     && !app.querySelector('.project-picker-backdrop')) {
@@ -2555,9 +3177,10 @@ const render = (): void => {
     start: previousComposer.selectionStart, end: previousComposer.selectionEnd,
     direction: previousComposer.selectionDirection, scrollTop: previousComposer.scrollTop
   } : undefined;
+  const navigationScrollTop = navigationRailScrollTop || app.querySelector<HTMLElement>('.navigation-rail')?.scrollTop || 0;
   const statusClass = model.connection.state === 'READY' ? 'status-ready' :
     model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting';
-  const workspaceTitle = model.workspace.rootLabel || '默认工作区';
+  const workspaceTitle = currentProjectName();
   // Read-only is an execution policy, not an input lock. Keep the composer
   // editable while the native runtime hydrates; a submitted prompt waits for
   // that one-time read to finish before the task child is spawned.
@@ -2573,7 +3196,7 @@ const render = (): void => {
     <div class="app-shell ${contextVisible ? 'context-open' : ''}" data-composer-mode="${model.composer.mode}">
       <aside class="navigation-rail" aria-label="项目与设置">
         <div class="brand-row">
-          <div class="brand-mark">hm</div>
+        <div class="brand-mark">dda</div>
           <div>
             <strong>dda</strong>
             <span>${model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览'}</span>
@@ -2591,6 +3214,7 @@ const render = (): void => {
         </div>
 
         <div class="rail-footer">
+          <div data-archive-navigation>${renderArchiveNavigation()}</div>
           <button class="nav-item ${settingsVisible ? 'active' : ''}" data-action="open-settings" aria-label="模型设置"><i data-lucide="settings"></i><span>设置</span></button>
           <div class="version-label">v${escapeHtml(model.runtime.version)} · ${controlled ? '受控模式' : '只读模式'}</div>
         </div>
@@ -2605,20 +3229,16 @@ const render = (): void => {
           <div class="topbar-actions">
             <button class="icon-button" title="搜索" aria-label="搜索"><i data-lucide="search"></i></button>
             <button class="icon-button context-toggle" data-action="toggle-context" title="${contextVisible ? '隐藏任务上下文' : '显示任务上下文'}" aria-label="${contextVisible ? '隐藏任务上下文' : '显示任务上下文'}" aria-expanded="${contextVisible}"><i data-lucide="panel-right"></i></button>
-            <button class="secondary-button" data-action="open-workspace" ${running || workspaceChanging ? 'disabled title="请等待当前任务或目录切换完成"' : ''}>
-              <i data-lucide="folder-open"></i>
-              <span>${model.workspace.granted ? '更换项目' : '打开项目'}</span>
-            </button>
           </div>
         </header>
 
         <section class="run-strip" aria-live="polite">
           <div class="connection-status ${statusClass}"><span></span>${escapeHtml(model.connection.label)}</div>
           <div class="run-status">
-            ${model.activeRun?.state === 'PLANNING' || model.activeRun?.state === 'EXECUTING_READ' || model.activeRun?.state === 'VERIFYING'
+            ${taskProgressMessage || model.activeRun?.state === 'PLANNING' || model.activeRun?.state === 'EXECUTING_READ' || model.activeRun?.state === 'VERIFYING'
               ? '<i data-lucide="loader-circle" class="spin"></i>'
               : '<i data-lucide="shield-check"></i>'}
-            <span>${escapeHtml(runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(runStateNextStep(model.activeRun?.state))}</small>
+            <span>${escapeHtml(taskProgressMessage || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>
           </div>
           <button class="mode-pill ${controlled ? 'mode-controlled' : ''}" data-action="toggle-mode" title="${escapeHtml(desktopBridge.isNative() ? (model.runtime.releaseChannel ?? '发布渠道尚未确认') : 'Web 预览仅支持只读模式')}" ${!desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? 'disabled' : ''}>
             <i data-lucide="shield-check"></i>${controlled ? '受控模式' : '只读模式'}
@@ -2627,7 +3247,7 @@ const render = (): void => {
 
         <section class="transcript" aria-label="任务时间线">
           <div class="transcript-inner" data-region="conversation">
-            ${activePage === 'runs' ? renderRunsPage() : activePage === 'diagnostics' ? renderDiagnosticsPage() : activePage === 'workspace' ? renderWorkspacePage() : activePage === 'memory' ? renderMemoryPage() : activePage === 'safety' ? renderSafetyPage() : activePage !== 'workbench' ? renderPageStatus(activePage) : ''}
+            ${activePage === 'archived' ? renderArchivedThreadsPage() : activePage === 'runs' ? renderRunsPage() : activePage === 'diagnostics' ? renderDiagnosticsPage() : activePage === 'workspace' ? renderWorkspacePage() : activePage === 'memory' ? renderMemoryPage() : activePage === 'safety' ? renderSafetyPage() : activePage !== 'workbench' ? renderPageStatus(activePage) : ''}
             ${activePage === 'workbench' ? `
             <div data-live-workbench>
               <div class="live-region" data-live-region="route"></div>
@@ -2674,7 +3294,10 @@ const render = (): void => {
 
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) composer.value = composerDraft;
-  if (activePage === 'workbench') renderLiveView();
+  if (activePage === 'workbench') {
+    if (historyView && !model.activeRun) renderHistoryView();
+    else renderLiveView();
+  }
   // Startup and idle-state refreshes replace the shell. Restore the draft's
   // editing position so a background update cannot interrupt the next keystroke.
   if (composer && composerFocus && !composer.disabled && !settingsVisible) {
@@ -2703,6 +3326,7 @@ const render = (): void => {
 
   createIcons({
     icons: {
+      Archive,
       ArrowLeft,
       Bot,
       CheckCircle2,
@@ -2735,12 +3359,17 @@ const render = (): void => {
     }
   });
   syncMemoryActionControls();
+  const navigationRail = document.querySelector<HTMLElement>('.navigation-rail');
+  if (navigationRail) navigationRail.scrollTop = navigationScrollTop;
   requestAnimationFrame(() => {
+    if (navigationRail?.isConnected) navigationRail.scrollTop = navigationScrollTop;
     const transcript = document.querySelector<HTMLElement>('.transcript');
     if (transcript) {
       // 中间时间线：只在用户停在底部时自动跟随。
+      restoringScroll = true;
       if (transcriptStick) transcript.scrollTop = transcript.scrollHeight;
       else transcript.scrollTop = Math.min(transcriptScrollTop, transcript.scrollHeight);
+      window.requestAnimationFrame(() => { restoringScroll = false; });
     }
     const contextPanel = document.querySelector<HTMLElement>('.context-panel');
     if (contextPanel) {
@@ -2753,7 +3382,7 @@ const render = (): void => {
 const renderWithFallback = (background = false): void => {
   try {
     if (background && (settingsVisible || activePage !== 'workbench')) {
-      if (activePage === 'workbench' && !historyView) renderLiveView();
+      if (activePage === 'workbench' && (!historyView || model.activeRun)) renderLiveView();
       else renderRunControls();
       return;
     }
@@ -2914,9 +3543,28 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
 };
 
 const loadPageDetails = async (): Promise<void> => {
-  if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics'].includes(activePage)) return;
-  await historyStartupReady;
+  if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics', 'archived'].includes(activePage)) return;
+  // Recovery must own the command slot before optional dashboard rebuilds.
+  await Promise.all([historyStartupReady, runtimeHydrationReady]);
+  if (running) return;
   if (!dashboardDetailsLoaded) await refreshDashboard();
+};
+
+const scheduleBackgroundDetails = (): void => {
+  window.clearTimeout(backgroundDetailsTimer);
+  backgroundDetailsTimer = window.setTimeout(() => {
+    backgroundDetailsTimer = undefined;
+    if (running) return;
+    if (executionRefreshQueued || governanceRefreshQueued) {
+      executionRefreshQueued = false;
+      governanceRefreshQueued = false;
+      // One dashboard contains both execution and governance records. Avoid
+      // queuing six redundant processes ahead of the next Continue/Retry.
+      void refreshDashboard();
+    } else {
+      void loadPageDetails();
+    }
+  }, 2000);
 };
 
 const refreshGovernance = async (options: { allowDuringRun?: boolean } = {}): Promise<void> => {
@@ -2968,6 +3616,13 @@ const refreshGovernance = async (options: { allowDuringRun?: boolean } = {}): Pr
 };
 
 const runGovernanceAction = async (action: string, element: HTMLElement): Promise<void> => {
+  if (!desktopBridge.isNative()) return;
+  const key = governanceBusyKey(element);
+  if (pendingGovernanceActions.has(key)) return;
+  const label = element.textContent?.trim() || '操作';
+  pendingGovernanceActions.add(key);
+  governanceActionNotice = { key, text: `${label}正在处理，请稍候。`, error: false };
+  syncMemoryActionControls();
   let pendingMemoryId: string | undefined;
   try {
     if (action === 'memory-action') {
@@ -3003,11 +3658,17 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
       }
     }
     await refreshGovernance();
+    governanceActionNotice = governanceReadFailed
+      ? { key, text: `${label}请求已返回，但最新记录未读到。请刷新后核对状态。`, error: true }
+      : { key, text: `${label}请求已完成，记录已刷新。`, error: false };
   } catch (error) {
+    governanceActionNotice = { key, text: `${label}未确认成功。请刷新记录后核对，再决定是否重试。`, error: true };
     if (action === 'memory-action') memoryActionError = 'FAILED';
     update(appendErrorTimelineItem(model, '治理操作', error));
   } finally {
+    pendingGovernanceActions.delete(key);
     if (pendingMemoryId) pendingMemoryActions.delete(pendingMemoryId);
+    render();
     syncMemoryActionControls();
   }
 };
@@ -3016,6 +3677,10 @@ const runtimeFailureText = (event: RuntimeEvent): string => {
   const payload = event.payload ?? {};
   const reason = typeof payload.error === 'string' ? payload.error : typeof payload.message === 'string' ? payload.message : typeof payload.text === 'string' ? payload.text : '';
   const code = typeof payload.errorCode === 'string' ? payload.errorCode : typeof payload.code === 'string' ? payload.code : '';
+  const recoveryCode = code || reason;
+  if (['THREAD_RESUME_GOAL_REQUIRED', 'THREAD_RESUME_PLAN_INVALID', 'THREAD_RESUME_CHECKPOINT_UNAVAILABLE', 'PERSISTENCE_LOCK_TIMEOUT'].includes(recoveryCode)) {
+    return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
+  }
   const phase = typeof payload.phase === 'string' ? payload.phase : '';
   const detailKeys = ['failurePhase', 'failureStatus', 'stepId', 'stepErrorCode', 'reasonCode', 'cause', 'status', 'reportStatus', 'nextAction'];
   const details = (Array.isArray(payload.failureCodes) && payload.failureCodes.length ? [`失败码：${payload.failureCodes.join(', ')}`] : [])
@@ -3155,6 +3820,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       };
     }
 
+    case 'SemanticVerificationCompleted':
     case 'VerificationCompleted': {
       const checks = Array.isArray(payload.checks) ? payload.checks : [];
       const failedChecks = checks.filter((check) => check && typeof check === 'object' && String((check as Record<string, unknown>).status).toUpperCase() === 'FAIL')
@@ -3165,18 +3831,21 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         });
       const failures = Array.isArray(payload.failureCodes) ? payload.failureCodes.filter((code): code is string => typeof code === 'string').slice(0, 8) : [];
       const bodyParts = [
-        text(payload.status, 'UNKNOWN'),
+        statusDisplayLabel(text(payload.status, 'UNKNOWN')),
         text(payload.summary, '未提供摘要'),
         failures.length ? `失败码 ${failures.join(', ')}` : '',
         failedChecks.length ? `失败检查 ${failedChecks.join('；')}` : '',
+        text(payload.reasonCode, '') ? `判断依据 ${reasonDisplayLabel(payload.reasonCode)}` : '',
+        Array.isArray(payload.evidenceRefs) && payload.evidenceRefs.length ? `证据引用：${payload.evidenceRefs.filter(ref => typeof ref === 'string').join('、')}` : '',
         text(payload.nextAction, '') ? `下一步 ${text(payload.nextAction, '')}` : ''
       ].filter(Boolean);
       return {
         ...common,
         kind: payload.status === 'FAIL' ? 'ERROR' : 'STATUS',
-        title: '验证结果',
+        title: persistedKind === 'SemanticVerificationCompleted' ? '语义验证结果' : '验证结果',
+        evidenceKind: persistedKind === 'SemanticVerificationCompleted' ? 'semantic-verification-summary' : 'rule-verification-summary',
         body: bodyParts.join(' · '),
-        status: payload.status === 'FAIL' ? 'ERROR' : (payload.status === 'UNKNOWN' || payload.status === 'ABSTAIN' ? 'PENDING' : 'COMPLETE')
+        status: payload.status === 'FAIL' ? 'ERROR' : payload.status === 'PASS' ? 'COMPLETE' : 'PENDING'
       };
     }
     case 'CouncilPlanReviewCompleted':
@@ -3238,6 +3907,13 @@ const replayThreadEvents = (base: HarnessReadModel, events: RuntimeEvent[]): Har
     }
     seen.add(item.itemId);
     timeline.push(item);
+    if (event.payload?.persistedKind === 'VerificationCompleted') {
+      const checks = appendVerificationChecks({ ...base, timeline: [] }, event.payload.checks, event.runId).timeline;
+      timeline.push(...checks.map((check, index) => ({ ...check,
+        itemId: `${item.itemId}-check-${index}`, eventId: event.eventId,
+        createdAtMs: item.createdAtMs
+      })));
+    }
   }
   return { ...base, projectionVersion: base.projectionVersion + 1, timeline };
 };
@@ -3320,7 +3996,28 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   // sequence and Rust watchdog timestamp, but must not pollute the user-facing
   // task timeline or mutate the task state projection.
   if (event.kind === 'runtime.heartbeat') return;
+  if (event.kind === 'runtime.phase') {
+    const phases: Record<string, string> = {
+      INITIALIZING: '正在启动任务', STORAGE_CONFIGURATION: '正在准备本地记录',
+      LEGACY_MIGRATION_CHECK: '正在检查历史数据', STORAGE_CAPACITY_CHECK: '正在检查存储空间',
+      THREAD_STORE_LOAD: '正在读取会话和恢复检查点', FEEDBACK_STORE_LOAD: '正在读取任务反馈',
+      THREAD_INITIALIZATION: '正在恢复任务', INITIAL_GIT_AUDIT: '正在核对工作区版本',
+      EXECUTION_STATE_LOAD: '正在恢复执行状态', MEMORY_STORE_LOAD: '正在读取记忆',
+      PROFILE_STORE_LOAD: '正在读取执行配置', CREDIT_BLAME_LOAD: '正在读取历史评估',
+      MODEL_EGRESS_LOAD: '正在读取调用记录', ROLE_CONTEXT_STORE_LOAD: '正在恢复角色上下文',
+      TRAJECTORY_READ: '正在读取任务轨迹', READY_FOR_CLASSIFICATION: '正在分析任务类型',
+      ROUTE_SELECTION: '正在选择执行方案', ROLE_BINDING_RESOLUTION: '正在准备模型配置',
+      ROLE_CONTEXT_ALLOCATION: '正在准备子 Agent', ROLE_CONTEXT_ALLOCATION_COMPLETE: '正在准备工作区检查',
+      WORKSPACE_SNAPSHOT: '正在读取工作区文件'
+    };
+    if (running && typeof payload.phase === 'string' && phases[payload.phase]) {
+      taskProgressMessage = phases[payload.phase];
+      scheduleRender();
+    }
+    return;
+  }
   if (event.kind === 'run.state_changed' && typeof payload.to === 'string') {
+    taskProgressMessage = '';
     const state = payload.to as RunState;
     update(setRunState(model, state));
     return;
@@ -3563,7 +4260,8 @@ const applyWorkspaceGrant = (grant: WorkspaceGrant): boolean => {
   if (grant.rootPath) rememberProject(grant.rootPath);
   const next = setWorkspace(model, grant.rootLabel, '', [], grant.rootPath);
   const reset = next.activeThreadId !== model.activeThreadId
-    || Boolean(model.workspace.rootPath && grant.rootPath && !sameWorkspaceRoot(model.workspace.rootPath, grant.rootPath));
+    || (Boolean(model.workspace.rootPath && grant.rootPath && !sameWorkspaceRoot(model.workspace.rootPath, grant.rootPath))
+      && !historyView);
   if (reset) {
     historyView = undefined;
     historyRenderSerial++;
@@ -3576,6 +4274,54 @@ const applyWorkspaceGrant = (grant: WorkspaceGrant): boolean => {
   update(next);
   return reset;
 };
+
+const revealThreadProject = (id: string): void => {
+  const thread = model.threads.find(item => item.id === id);
+  if (!thread) return;
+  const projectId = projectForThread(thread)?.id ?? (thread.cwd ? projectIdForPath(thread.cwd) : PROJECTLESS_ID);
+  expandedProjectIds.add(projectId);
+  collapsedProjectIds.delete(projectId);
+  projectsSectionCollapsed = false;
+  try { localStorage.setItem('hmcodex.projectsSectionCollapsed', 'false'); } catch { /* archive flag is already persisted */ }
+};
+
+const changeThreadArchive = (id: string, archived: boolean): void => {
+  const thread = model.threads.find(item => item.id === id);
+  if (!id || (!thread && !isThreadArchived(id))) return;
+  if (archived && threadArchiveBlocked(id)) {
+    threadArchiveNotice = { text: '此会话正在运行，请等任务结束后再归档。', error: true };
+    render();
+    return;
+  }
+  if (!writeThreadArchive(id, archived)) { render(); return; }
+  threadArchiveNotice = archived
+    ? { text: '会话已归档，历史内容保留。', undoId: id }
+    : { text: '会话已恢复到左侧列表。' };
+  if (!archived) revealThreadProject(id);
+  if (archived && model.activeThreadId === id) {
+    focusedRunId = null;
+    localStorage.removeItem('hmcodex.focusedRunId');
+    taskActionNotice = '';
+    taskExportNotice = undefined;
+    resetToNewTask();
+    persistNavigation();
+  } else render();
+};
+
+const restoreArchivedThreadForRun = (id?: string): boolean => {
+  if (!id || !isThreadArchived(id)) return true;
+  if (!writeThreadArchive(id, false)) { render(); return false; }
+  revealThreadProject(id);
+  threadArchiveNotice = { text: '会话已自动恢复到列表，正在继续任务。' };
+  return true;
+};
+
+window.addEventListener('storage', event => {
+  if (event.key !== THREAD_ARCHIVE_STORAGE_KEY && event.key !== null) return;
+  try { threadArchives = readThreadArchives(); threadArchiveNotice = undefined; }
+  catch { threadArchiveNotice = { text: '无法读取更新后的归档状态，请检查本地存储。', error: true }; }
+  render();
+});
 
 const resetToNewTask = (): void => {
   running = false;
@@ -3642,10 +4388,29 @@ const ensureThreadWorkspace = async (thread: HarnessReadModel['threads'][number]
   if (currentRoot && sameWorkspaceRoot(currentRoot, threadPath)) return true;
   const known = projectForThread(thread);
   if (!known) rememberProject(threadPath);
-  projectPickerMode = 'select-thread';
-  projectPickerThreadId = thread.id;
-  await continueProjectPickerAction(projectIdForPath(threadPath));
-  return false;
+  // A project can contain multiple target paths. Looking it up by a target's
+  // derived ID can miss the saved project and recursively select this thread
+  // with no workspace. Bind the exact thread directory instead.
+  workspaceChanging = true;
+  try {
+    const grant = await desktopBridge.setWorkspace(threadPath);
+    if (historyView?.threadId === thread.id && model.activeThreadId === thread.id) {
+      // Reconcile the selected history's directory without treating it as a
+      // manual project change, which would discard the history being loaded.
+      const next = setWorkspace(model, grant.rootLabel, '', [], grant.rootPath);
+      update({ ...next, activeThreadId: model.activeThreadId, resumeThreadId: model.resumeThreadId,
+        timeline: model.timeline, composer: model.composer });
+    } else if (!historyView) {
+      applyWorkspaceGrant(grant);
+    }
+    return true;
+  } catch (error) {
+    update(appendErrorTimelineItem(model, '会话工作区', compactError(error)));
+    return false;
+  } finally {
+    workspaceChanging = false;
+    scheduleRender();
+  }
 };
 
 const openWorkspace = async (): Promise<boolean> => {
@@ -3717,7 +4482,14 @@ const finishProjectNameDialog = (name: string): void => {
 };
 
 const beginProjectEdit = (projectId: string): void => {
-  const project = projectCatalog.find((item) => item.id === projectId);
+  let project = projectCatalog.find((item) => item.id === projectId);
+  // Threads can arrive before their directory has been explicitly saved as
+  // a project. Promote that discovered group when its action is requested so
+  // the right-side button has a real target instead of silently doing nothing.
+  if (!project) {
+    const discovered = projectGroups().find((group) => group.id === projectId && group.discovered);
+    if (discovered?.path) project = rememberProject(discovered.path, discovered.name);
+  }
   if (!project) return;
   projectEditDialog = { projectId, draftName: project.name, paths: projectTargetPaths(project), busy: false };
   render();
@@ -3737,7 +4509,7 @@ const saveProjectEdit = (): void => {
     render();
     return;
   }
-  const paths = [...new Set(flow.paths.filter(Boolean))];
+  const paths = deduplicateWorkspaceRoots(flow.paths);
   if (!paths.length) {
     projectEditDialog = { ...flow, error: '项目至少需要一个源文件夹。' };
     render();
@@ -3762,7 +4534,7 @@ const addProjectTarget = async (projectId: string): Promise<void> => {
     const grant = await desktopBridge.chooseWorkspace();
     const target = grant.rootPath?.trim();
     if (!target) throw new Error('未返回所选文件夹');
-    const paths = projectTargetPaths(project);
+    const paths = deduplicateWorkspaceRoots(flow.paths);
     if (paths.some((path) => sameWorkspaceRoot(path, target))) {
       projectEditDialog = { ...projectEditDialog!, busy: false, error: '这个文件夹已经在项目中了。' };
     } else {
@@ -3853,7 +4625,13 @@ const restoreSavedNavigation = async (): Promise<void> => {
 };
 
 const selectThread = async (threadId: string): Promise<void> => {
-  if (running || workspaceChanging || !threadId) return;
+  // `running` is a submission lock and can briefly outlive a task after the
+  // runtime has already reached a terminal state. History navigation must be
+  // gated by the authoritative active-run state, otherwise a stale lock makes
+  // sidebar clicks appear to do nothing.
+  // History navigation is read-only and must remain responsive even while a
+  // previous workspace operation is unwinding.
+  if (liveTaskRunning() || !threadId) return;
   const selectedThread = model.threads.find((thread) => thread.id === threadId);
   if (selectedThread && !hasPersistedTurn(selectedThread)) {
     historyView = undefined;
@@ -3863,7 +4641,6 @@ const selectThread = async (threadId: string): Promise<void> => {
     render();
     return;
   }
-  if (selectedThread && !(await ensureThreadWorkspace(selectedThread))) return;
   if (historyView?.threadId === threadId && !historyView.error) {
     activePage = 'workbench';
     settingsVisible = false;
@@ -3886,12 +4663,22 @@ const selectThread = async (threadId: string): Promise<void> => {
     composer: { ...model.composer, enabled: false } };
   renderHistoryView();
   persistNavigation();
+  // Render the selected conversation immediately. Workspace reconciliation is
+  // required for sending a follow-up, but it must not make a history click
+  // appear inert while a directory switch is pending.
+  if (selectedThread) void ensureThreadWorkspace(selectedThread).catch((error) => {
+    update(appendErrorTimelineItem(model, '会话工作区', compactError(error)));
+  });
   try {
     const page = await loadInitialHistoryPage(threadId);
     if (historyView !== view || running) return;
     if (page.thread) model = setThreads(model, [page.thread, ...model.threads.filter((thread) => thread.id !== threadId)]);
     model = setActiveThread(model, threadId, Boolean(page.thread?.resumable || page.thread?.checkpoint?.plan));
-    const pageModel = replayThreadEvents({ ...model, timeline: [] }, page.events);
+    const cachedEntry = historyPageCache.get(threadId);
+    const pageModel = cachedEntry?.timeline
+      ? { ...model, timeline: cachedEntry.timeline }
+      : replayThreadEvents({ ...model, timeline: [] }, page.events);
+    if (cachedEntry && !cachedEntry.timeline) cachedEntry.timeline = pageModel.timeline;
     model = { ...model, timeline: [] };
     renderHistoryView();
     await syncKeyedListIncrementally(
@@ -3991,9 +4778,26 @@ const loadOlderHistory = async (): Promise<void> => {
   }
 };
 
+const enterLiveWorkbench = (): void => {
+  // Continue and Retry bypass the composer submit handler. Invalidate the
+  // history renderer here for every task entry point; otherwise each delta
+  // misses the live render path and replaces the entire application shell.
+  historyView = undefined;
+  historyRenderSerial++;
+  historyPageCache.clear();
+  focusedRunId = null;
+  localStorage.removeItem('hmcodex.focusedRunId');
+  activePage = 'workbench';
+  localStorage.setItem('hmcodex.activePage', 'workbench');
+  navigationTouched = true;
+  transcriptStick = true;
+};
+
 const runMockTask = async (prompt: string): Promise<void> => {
   if (running || workspaceChanging) return;
+  if (!restoreArchivedThreadForRun(model.activeThreadId)) return;
   running = true;
+  enterLiveWorkbench();
   const started = beginRun(model, prompt);
   const runId = started.activeRun?.runId;
   if (!runId) {
@@ -4080,12 +4884,20 @@ const runMockTask = async (prompt: string): Promise<void> => {
   }
 };
 
-const runCordisTask = async (prompt: string): Promise<void> => {
+const runCordisTask = async (prompt: string, modelOverride?: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
   if (running || workspaceChanging) return;
+  if (!restoreArchivedThreadForRun(extraOptions.threadId ?? model.activeThreadId)) return;
   // Acquire the local run lock before awaiting event subscription setup. A
   // rapid double-submit during startup must not create two overlapping
   // runtime children or let the second display run replace the first.
   running = true;
+  window.clearTimeout(backgroundDetailsTimer);
+  backgroundDetailsTimer = undefined;
+  taskActionNotice = '';
+  taskProgressMessage = extraOptions.resume || model.resumeThreadId ? '正在准备恢复任务…' : '正在准备任务…';
+  render();
+  // Context refreshes are normally throttled, but a click needs immediate acknowledgement.
+  patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
   // Ensure the native event subscription is installed before spawning the
   // runtime child. This prevents losing the first streamed delta or approval
   // request when a user submits immediately after application launch.
@@ -4098,9 +4910,12 @@ const runCordisTask = async (prompt: string): Promise<void> => {
     await workspaceReady;
   } catch (error) {
     running = false;
+    taskProgressMessage = '';
     update(appendErrorTimelineItem(model, 'Cordis runtime 事件流', error));
+    scheduleBackgroundDetails();
     return;
   }
+  taskProgressMessage = '正在启动本地任务进程…';
   runtimeStreamObserved = false;
   activeRuntimeRunId = undefined;
   runtimeEventFloorMs = Date.now();
@@ -4108,10 +4923,12 @@ const runCordisTask = async (prompt: string): Promise<void> => {
   // Event keys include runId, but clearing this bounded-lifetime set avoids
   // retaining every historical run for the lifetime of the desktop process.
   observedRuntimeEvents.clear();
+  enterLiveWorkbench();
   let next = beginRun(model, prompt);
   const runId = next.activeRun?.runId;
   if (!runId) {
     running = false;
+    taskProgressMessage = '';
     return;
   }
   const hostAgentId = `${runId}-cordis-host`;
@@ -4146,8 +4963,9 @@ const runCordisTask = async (prompt: string): Promise<void> => {
         }
       : { executionMode: 'READ_ONLY' as const };
     Object.assign(taskOptions, workspaceThreadOptions(model));
+    Object.assign(taskOptions, taskOptionsFromBudget(), extraOptions);
     if (model.activeThreadId && !taskOptions.threadId) update(setActiveThread(model, undefined));
-    const result = await desktopBridge.runModelTask(prompt, pinnedModel ?? undefined, taskOptions);
+    const result = await desktopBridge.runModelTask(prompt, modelOverride ?? pinnedModel ?? undefined, taskOptions);
     // A completed bridge promise may belong to a cancelled/replaced UI run.
     // Do not let that response rebind the new run's runtime identity.
     if (!isCurrentRunActive()) return;
@@ -4215,6 +5033,14 @@ const runCordisTask = async (prompt: string): Promise<void> => {
       });
     }
     next = appendVerificationChecks(next, result.verification?.checks, activeRuntimeRunId);
+    if (result.verification) {
+      next = appendTimelineItem(next, {
+        kind: 'STATUS', runId: activeRuntimeRunId, evidenceKind: 'rule-verification-summary',
+        title: '验证结果',
+        body: [statusDisplayLabel(result.verification.status), result.verification.summary].filter(Boolean).join(' · '),
+        status: result.verification.status === 'PASS' ? 'COMPLETE' : result.verification.status === 'FAIL' ? 'ERROR' : 'PENDING'
+      });
+    }
     if (result.verification?.semantic) {
       const semantic = result.verification.semantic;
       const identity = semantic.modelIdentity
@@ -4231,6 +5057,7 @@ const runCordisTask = async (prompt: string): Promise<void> => {
       next = appendTimelineItem(next, {
         kind: 'STATUS',
         title: '语义 Verifier 证据',
+        runId: activeRuntimeRunId, evidenceKind: 'semantic-verification-summary',
         body: [
           `Verdict ${semantic.status}`,
           semantic.summary,
@@ -4270,18 +5097,24 @@ const runCordisTask = async (prompt: string): Promise<void> => {
     update(appendErrorTimelineItem(setRunState(next, 'FAILED'), 'Cordis runtime', compactMessage));
   } finally {
     running = false;
+    taskProgressMessage = '';
+    // The runtime commits the thread turn immediately before its child exits.
+    // Refresh the durable thread summaries once the process is gone so the
+    // sidebar cannot lag behind a completed run when the result projection and
+    // thread-store write arrive in different event-loop turns.
+    if (desktopBridge.isNative()) {
+      try {
+        const persistedThreads = await desktopBridge.listThreads();
+        if (persistedThreads.length) update(setThreads(model, persistedThreads));
+      } catch (error) {
+        update(appendErrorTimelineItem(model, '线程列表刷新', error));
+      }
+    }
     scheduleRender();
     // Reads requested by approval events or manual refreshes are deferred
     // while the runtime owns the Harness database. Flush them only after the
     // child has exited, when the SQLite connection is no longer contested.
-    if (executionRefreshQueued) {
-      executionRefreshQueued = false;
-      void refreshExecutionState();
-    }
-    if (governanceRefreshQueued) {
-      governanceRefreshQueued = false;
-      void refreshGovernance();
-    }
+    scheduleBackgroundDetails();
     // A native cancellation acknowledges taskkill before the blocking
     // runtime reader has necessarily drained and cleared its process state.
     // Keep the composer disabled until this invocation has actually returned,
@@ -4302,6 +5135,14 @@ function closeSettings(): void {
   render();
   app?.querySelector<HTMLElement>('[data-action="open-settings"]')?.focus({ preventScroll: true });
 }
+
+app.addEventListener('pointerover', (event) => {
+  const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action="select-thread"]');
+  if (!row || !app.contains(row)) return;
+  const related = event.relatedTarget as Node | null;
+  if (related && row.contains(related)) return;
+  prefetchHistoryPage(row.dataset.threadId ?? '');
+});
 
 app.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : undefined;
@@ -4385,17 +5226,7 @@ app.addEventListener('click', (event) => {
     return;
   }
   if (action === 'toggle-project') {
-    const projectId = actionElement?.dataset.projectId ?? '';
-    const activeProjectId = currentProjectId();
-    const isOpen = !collapsedProjectIds.has(projectId) && (expandedProjectIds.has(projectId) || projectId === activeProjectId);
-    if (isOpen) {
-      expandedProjectIds.delete(projectId);
-      collapsedProjectIds.add(projectId);
-    } else {
-      expandedProjectIds.add(projectId);
-      collapsedProjectIds.delete(projectId);
-    }
-    updateThreadList();
+    if (actionElement) toggleProjectExpansion(actionElement);
     return;
   }
   if (action === 'select-new-task-project') {
@@ -4452,10 +5283,30 @@ app.addEventListener('click', (event) => {
   if (action === 'focus-run') { historyView = undefined; focusedRunId = actionElement?.dataset.runId ?? null; activePage = 'workbench'; localStorage.setItem('hmcodex.activePage', 'workbench'); if (focusedRunId) localStorage.setItem('hmcodex.focusedRunId', focusedRunId); else localStorage.removeItem('hmcodex.focusedRunId'); render(); return; }
   if (action === 'clear-run-focus') { focusedRunId = null; localStorage.removeItem('hmcodex.focusedRunId'); render(); return; }
   if (action === 'memory-page') { const delta = Number(actionElement?.dataset.delta); if (delta === 1 || delta === -1) memoryPage = Math.max(1, memoryPage + delta); render(); return; }
+  if (action === 'memory-record-page') { const delta = Number(actionElement?.dataset.delta); if (delta === 1 || delta === -1) memoryRecordPage = Math.max(1, memoryRecordPage + delta); render(); return; }
+  if (action === 'view-memory-records') {
+    activePage = 'memory';
+    localStorage.setItem('hmcodex.activePage', activePage);
+    render();
+    requestAnimationFrame(() => {
+      const section = app.querySelector<HTMLDetailsElement>('[data-disclosure-id="memory-records:page"]');
+      if (!section) return;
+      section.open = true;
+      contextDisclosureState.set('memory-records:page', true);
+      section.scrollIntoView({ block: 'start' });
+      section.querySelector('summary')?.focus({ preventScroll: true });
+    });
+    return;
+  }
   if (action === 'memory-edit') {
     const memoryId = actionElement?.dataset.memoryId;
+    if (pendingMemoryActions.has(memoryId ?? '') || memoryActionsAwaitingRefresh.has(memoryId ?? '')) return;
     const memory = model.memories.find((candidate) => candidate.memoryId === memoryId);
     if (!memory) return;
+    const orderedMemories = experienceMemories().slice().sort((a, b) => b.updatedAtMs - a.updatedAtMs || a.memoryId.localeCompare(b.memoryId));
+    const memoryIndex = orderedMemories.findIndex(item => item.memoryId === memoryId);
+    if (memoryIndex < 0) return;
+    memoryPage = Math.floor(memoryIndex / 8) + 1;
     memoryEditState = { memoryId: memory.memoryId, statement: memory.statement, scope: memory.scope, confidence: String(memory.confidence), sourceEventIds: (memory.sourceEventIds ?? []).join(', '), sensitivity: memory.sensitivity ?? 'INTERNAL' };
     memoryEditError = '';
     activePage = 'memory';
@@ -4500,6 +5351,52 @@ app.addEventListener('click', (event) => {
     contextVisible = !contextVisible;
     render();
     void loadPageDetails();
+  }
+  if (action === 'set-task-budget') {
+    configureTaskBudget();
+    return;
+  }
+  if (action === 'view-verification') {
+    focusTaskSection('[data-task-verification]');
+    return;
+  }
+  if (action === 'focus-task-input') {
+    focusTaskSection('textarea[name="prompt"]');
+    return;
+  }
+  if (action === 'view-decisions') {
+    focusTaskSection('.context-panel .decision-trace-section');
+    return;
+  }
+  if (action === 'export-task-result') {
+    void exportTaskResult();
+    return;
+  }
+  if (action === 'continue-task') {
+    const threadId = model.activeThreadId;
+    const thread = model.threads.find((item) => item.id === threadId);
+    if (!threadId || !['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread))) return;
+    if (running || workspaceChanging) return;
+    const prompt = taskContinuationPrompt();
+    if (!prompt) return;
+    update(setActiveThread(model, threadId, true));
+    void (desktopBridge.isNative() ? runCordisTask(prompt, undefined, { threadId, resume: true }) : runMockTask(prompt));
+    return;
+  }
+  if (action === 'retry-task') {
+    if (running || workspaceChanging) return;
+    const prompt = taskContinuationPrompt();
+    if (!prompt) return;
+    const fallback = model.runtime.model?.model;
+    const requested = window.prompt('重试模型（留空使用当前模型；升级时填写已配置的模型名称）', pinnedModel ?? fallback ?? '');
+    if (requested === null) return;
+    const preferred = requested.trim() || undefined;
+    taskActionNotice = preferred ? `将使用 ${preferred} 重试任务。` : '将使用当前模型重试任务。';
+    render();
+    const thread = model.threads.find((item) => item.id === model.activeThreadId);
+    const resume = ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread));
+    void (desktopBridge.isNative() ? runCordisTask(prompt, preferred, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(prompt));
+    return;
   }
   if (action === 'cancel-run') {
     void (async () => {
@@ -4554,6 +5451,10 @@ app.addEventListener('click', (event) => {
     render();
   }
   if (action === 'workspace-up') void workspaceUp();
+  if (action === 'archive-thread' || action === 'restore-thread') {
+    changeThreadArchive(actionElement?.dataset.threadId ?? '', action === 'archive-thread');
+    return;
+  }
   if (action === 'select-thread') void selectThread(actionElement?.dataset.threadId ?? '');
   if (action === 'refresh-execution-state') void refreshExecutionState();
   if (action === 'refresh-governance') void refreshGovernance();
@@ -4796,6 +5697,7 @@ app.addEventListener('submit', (event) => {
   const data = new FormData(form);
   const prompt = String(data.get('prompt') ?? '').trim();
   if (!prompt || !model.composer.enabled || running || workspaceChanging) return;
+  taskActionNotice = '';
   historyView = undefined;
   lastSubmitReceipt = { id: `cmd-${Date.now().toString(36)}`, prompt, status: 'pending', atMs: Date.now() };
   form.reset();
@@ -4839,7 +5741,6 @@ historyStartupReady = (async () => {
   await Promise.all([refreshDashboard({ startup: true }), savedPageRequest]);
   await restoreSavedNavigation();
 })();
-void historyStartupReady.then(() => loadPageDetails());
 
 runtimeHydrationReady = (async () => {
   try {
@@ -4882,5 +5783,6 @@ runtimeHydrationReady = (async () => {
 // Hydrate the persistent composer metric after startup without delaying history
 // or requiring the user to open the diagnostics/context panel.
 void Promise.all([historyStartupReady, runtimeHydrationReady]).then(async () => {
-  if (desktopBridge.isNative() && model.runtime.runtimeReady && !dashboardDetailsLoaded) await refreshDashboard();
+  app.dataset.startupHydration = 'complete';
+  if (desktopBridge.isNative() && model.runtime.runtimeReady) scheduleBackgroundDetails();
 });

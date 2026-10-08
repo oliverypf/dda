@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialReadModel, setActiveThread, setThreads, setWorkspace } from './store';
-import { workspaceThreadOptions } from './workspace';
+import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './workspace';
+
+describe('workspace root identity and display', () => {
+  it('deduplicates Windows spellings while retaining the first native path and distinct folders', () => {
+    expect(deduplicateWorkspaceRoots([
+      '\\\\?\\C:\\Windows', 'C:\\Windows', 'c:/windows/', 'C:\\Windows\\System32', 'C:\\Windows-old', ''
+    ])).toEqual(['\\\\?\\C:\\Windows', 'C:\\Windows\\System32', 'C:\\Windows-old']);
+    expect(sameWorkspaceRoot('\\\\?\\C:\\Windows', 'C:\\Windows')).toBe(true);
+  });
+
+  it('deduplicates extended UNC roots and preserves case-sensitive POSIX folders', () => {
+    expect(deduplicateWorkspaceRoots([
+      '\\\\?\\UNC\\Server\\Share', '\\\\server\\share', '//SERVER/SHARE/', '/projects/A', '/projects/a'
+    ])).toEqual(['\\\\?\\UNC\\Server\\Share', '/projects/A', '/projects/a']);
+  });
+
+  it('shows extended Windows and UNC paths in their ordinary form', () => {
+    expect(workspaceRootForDisplay('\\\\?\\C:\\Windows')).toBe('C:\\Windows');
+    expect(workspaceRootForDisplay('\\\\?\\UNC\\Server\\Share')).toBe('\\\\Server\\Share');
+    expect(workspaceRootForDisplay('C:\\Windows')).toBe('C:\\Windows');
+    expect(workspaceRootForDisplay('/projects/A')).toBe('/projects/A');
+  });
+});
 
 describe('workspace thread options', () => {
   const thread = { id: 'saved', title: 'Saved task', cwd: 'C:\\demo', turnCount: 1, createdAtMs: 1, updatedAtMs: 2 };

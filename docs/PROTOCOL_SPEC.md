@@ -1,4 +1,4 @@
-# hmCodex 跨平台 Harness Protocol 规范
+# dda 跨平台 Harness Protocol 规范
 
 版本：Harness Protocol 1.1  
 状态：Phase 0.5–1 实现基线

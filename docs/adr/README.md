@@ -1,4 +1,4 @@
-# hmCodex Architecture Decision Records
+# dda Architecture Decision Records
 
 ADR 记录长期、难以逆转或跨模块的设计选择。专项规范描述当前规则，ADR 说明为什么做出该选择以及替代方案为何没有采用。
 

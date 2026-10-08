@@ -129,6 +129,7 @@ export interface ThreadReadModel {
   cwd: string;
   turnCount: number;
   resumable?: boolean;
+  resumeMode?: 'NONE' | 'PREPARATION' | 'PLAN' | 'INVALID';
   createdAtMs: number;
   updatedAtMs: number;
   forkedFrom?: string;
@@ -447,6 +448,10 @@ export interface RuntimeRecoveryResponse {
 export interface RuntimeTaskOptions {
   threadId?: string;
   resume?: boolean;
+  /** Per-task execution guardrails selected by the operator. */
+  maxToolRounds?: number;
+  maxTokens?: number;
+  maxCost?: number;
   executionMode?: RuntimeExecutionMode;
   leaseCapabilities?: string[];
   leaseCommands?: string[];

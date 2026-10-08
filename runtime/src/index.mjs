@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { PluginRegistry, pluginManifest } from './plugins/registry.mjs';
 import { randomUUID } from 'node:crypto';
+import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, verifiedToolDecisionEvidence } from './decision/evidence-claim.mjs';
+import { toolWorkspaceDecisionEvidence } from './decision/workspace-context.mjs';
+import { readonlyRegistryObservation } from './decision/registry-observation.mjs';
+import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
+import { canRetryVerificationOnly } from './decision/verification-retry.mjs';
+import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
@@ -26,7 +32,7 @@ import { createReadModelRebuilder, loadFreshReadModel, pageProjectionTimeline } 
 import { createFileRetentionProgressStore, createRetentionWorker, parseRetentionWorkerBatchSize, parseRetentionWorkerFailureLimit, parseRetentionWorkerInterval } from './retention-worker.mjs';
 import { createExecutionScopeSnapshot, compareGitObservations } from './execution-scope-snapshot.mjs';
 import { createExecutionStateStore, executionDigest } from './execution-state-store.mjs';
-import { createThreadStore } from './thread-store.mjs';
+import { createThreadStore, checkpointResumeMode } from './thread-store.mjs';
 import { readThreadHistory } from './thread-history-reader.mjs';
 import { saveRunResponse } from './run-response-store.mjs';
 import { runHistoryCommand } from './history-cli.mjs';
@@ -61,7 +67,7 @@ import { createExplicitLeaseProvider } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -113,6 +119,9 @@ const writeStdout = (text) => {
     if (error?.code !== 'EPIPE') throw error;
   }
 };
+const flushStdout = (text) => new Promise((resolve, reject) => {
+  process.stdout.write(text, (error) => error ? reject(error) : resolve());
+});
 
 // A mapped Windows drive and its UNC spelling refer to the same workspace,
 // but string comparison alone would make a resumed Thread look unrelated.
@@ -421,6 +430,14 @@ async function runTask() {
   const taskTimeoutMs = Number.isFinite(requestedTaskTimeoutMs) && requestedTaskTimeoutMs > 0
     ? Math.min(Math.floor(requestedTaskTimeoutMs), 24 * 60 * 60 * 1000)
     : 0;
+  const requestedMaxToolRounds = Number(arg('--max-tool-rounds', '0'));
+  const maxToolRounds = Number.isInteger(requestedMaxToolRounds) && requestedMaxToolRounds > 0
+    ? Math.min(64, requestedMaxToolRounds) : undefined;
+  const requestedMaxTokens = Number(arg('--max-tokens', '0'));
+  const maxTokens = Number.isInteger(requestedMaxTokens) && requestedMaxTokens >= 256
+    ? Math.min(1_000_000, requestedMaxTokens) : undefined;
+  const requestedMaxCost = Number(arg('--max-cost', ''));
+  const maxCost = Number.isFinite(requestedMaxCost) && requestedMaxCost >= 0 ? requestedMaxCost : undefined;
   const taskAbortController = new AbortController();
   let taskTimeoutError;
   let taskCancelError;
@@ -678,11 +695,10 @@ async function runTask() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
     || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const cancelRegistry = createTaskCancelRegistry({
-    storagePath: argValue('--cancel-store')
+  const cancelRegistryPath = argValue('--cancel-store')
       ?? process.env.HMCODEX_CANCEL_STORE
-      ?? taskCancelStorePath(trajectoryPath)
-  });
+      ?? taskCancelStorePath(trajectoryPath);
+  const cancelRegistry = createTaskCancelRegistry({ storagePath: cancelRegistryPath });
   const cancelPollMs = Math.min(5000, Math.max(100, Number(arg('--cancel-poll-ms', process.env.HMCODEX_CANCEL_POLL_MS ?? '500')) || 500));
   const pollCancellation = async () => {
     if (cancelPollStopped || taskCancelError || taskAbortController.signal.aborted) return;
@@ -816,8 +832,20 @@ async function runTask() {
   let thread = requestedThreadId ? await threads.get(requestedThreadId) : undefined;
   if (requestedThreadId && !thread) throw new Error('THREAD_NOT_FOUND');
   const resumeSourceRunId = resumeRequested ? thread?.checkpoint?.runId : undefined;
+  const resumeSourceCheckpointDigest = resumeRequested ? thread?.checkpoint?.checkpointDigest : undefined;
   if (resumeRequested && (!thread || !thread.checkpoint || typeof thread.checkpoint.plan !== 'object')) {
     throw new Error('THREAD_RESUME_CHECKPOINT_UNAVAILABLE');
+  }
+  // Preparation markers are not executable plans. Validate before saving a
+  // new checkpoint, scanning the workspace, or allocating model contexts.
+  const resumeMode = resumeRequested ? checkpointResumeMode(thread.checkpoint) : 'NONE';
+  const restoredResumePlan = resumeMode === 'PLAN' ? restorePlannerPlan(thread.checkpoint.plan) : undefined;
+  if (resumeRequested && (resumeMode === 'INVALID' || resumeMode === 'NONE' || (resumeMode === 'PLAN' && !restoredResumePlan))) {
+    throw new Error('THREAD_RESUME_PLAN_INVALID');
+  }
+  if (resumeMode === 'PREPARATION' && (!prompt.trim()
+    || /^(?:继续(?:之前的|上次的)?任务|继续|重试|continue(?:\s+(?:the\s+)?(?:previous\s+)?task)?|resume|retry)[.!。！\s]*$/iu.test(prompt.trim()))) {
+    throw new Error('THREAD_RESUME_GOAL_REQUIRED');
   }
   setRuntimePhase('THREAD_INITIALIZATION');
   setRuntimePhase('INITIAL_GIT_AUDIT');
@@ -1445,7 +1473,8 @@ async function runTask() {
   }
   await coordinator.transitionAndFlush('CLASSIFYING');
   await saveThreadCheckpoint('CLASSIFYING', {
-    plan: [{ id: 'classify', status: 'RUNNING', actionDigest: sha256Digest(prompt.slice(0, 240)) }],
+    // Keep an executable plan intact if recovery fails during preparation.
+    ...(restoredResumePlan ? {} : { plan: [{ id: 'classify', status: 'RUNNING', actionDigest: sha256Digest(prompt.slice(0, 240)) }] }),
     pendingActions: ['classify task']
   });
   const ruleTaskClass = classifyTask(prompt);
@@ -1666,9 +1695,28 @@ async function runTask() {
     if (modelRegistry.hasDurableSink) await modelRegistry.registerDurably(defaultModel);
     else modelRegistry.register(defaultModel);
   }
+  const requestedExecutorModel = arg('--executor-model');
+  const requestedExecutorRecord = requestedExecutorModel
+    ? (modelConfig.models ?? []).find((record) => record.modelId === requestedExecutorModel || record.model === requestedExecutorModel)
+    : undefined;
+  if (requestedExecutorModel && !requestedExecutorRecord && requestedExecutorModel !== modelConfig.model) {
+    throw new Error('ROLE_BINDING_BLOCKED:UNKNOWN_EXECUTOR_MODEL');
+  }
+  const executorAllowList = modelConfig.roleBindings?.executor?.allowList;
+  if (requestedExecutorModel && Array.isArray(executorAllowList)
+    && !executorAllowList.includes(requestedExecutorRecord?.modelId ?? defaultModelId)) {
+    throw new Error('ROLE_BINDING_BLOCKED:EXECUTOR_MODEL_NOT_ALLOWLISTED');
+  }
+  const effectiveRoleBindings = requestedExecutorModel ? {
+    ...modelConfig.roleBindings,
+    executor: {
+      ...(typeof modelConfig.roleBindings?.executor === 'object' ? modelConfig.roleBindings.executor : {}),
+      selector: 'PINNED', modelId: requestedExecutorRecord?.modelId ?? defaultModelId
+    }
+  } : modelConfig.roleBindings ?? {};
   roleBindingResolution = createRoleBindingResolver({
     registry: modelRegistry,
-    bindings: modelConfig.roleBindings ?? {}
+    bindings: effectiveRoleBindings
   }).resolve({
     roles: routeDecision.roles,
     taskClass,
@@ -1679,10 +1727,13 @@ async function runTask() {
     // authorize a side effect. The built-in default remains usable on its
     // first run, before profile evidence exists.
     requireEligible: mode === EXECUTION_MODES.CONTROLLED
-      && Object.hasOwn(modelConfig.roleBindings ?? {}, 'executor'),
+      && (Object.hasOwn(modelConfig.roleBindings ?? {}, 'executor') || Boolean(requestedExecutorRecord)),
     risk: candidateFanoutRisk(taskClass, mode)
   });
   if (roleBindingResolution.status === 'BLOCKED') throw new Error('ROLE_BINDING_BLOCKED:NO_MODEL_CANDIDATE');
+  if (requestedExecutorModel && roleBindingResolution.roles.executor?.modelId !== (requestedExecutorRecord?.modelId ?? defaultModelId)) {
+    throw new Error('ROLE_BINDING_BLOCKED:REQUESTED_EXECUTOR_MODEL_UNAVAILABLE');
+  }
   const missingRole = Object.keys(routeDecision.roles).find((role) => !roleBindingResolution.roles[role]);
   if (missingRole) throw new Error(`ROLE_BINDING_BLOCKED:${missingRole}`);
   routeDecision.roleBindings = roleBindingResolution.roles;
@@ -1894,6 +1945,7 @@ async function runTask() {
   const pluginRoot = arg('--plugin-root', process.env.HMCODEX_PLUGIN_ROOT ?? defaultPluginRoot());
   const runtimeStorePaths = [
     trajectoryPath,
+    cancelRegistryPath,
     ...(trajectoryPath ? [`${trajectoryPath}.runs`] : []),
     threadPath,
     executionStatePath,
@@ -2428,9 +2480,8 @@ async function runTask() {
       });
       const plannerBinding = roleBindingResolution.roles.planner;
       const plannerProvider = roleProviders.get(plannerBinding?.modelId) ?? defaultUsageProvider;
-      if (resumeRequested) {
-        plannerPlan = restorePlannerPlan(thread.checkpoint.plan);
-        if (!plannerPlan) throw new Error('THREAD_RESUME_PLAN_INVALID');
+      if (restoredResumePlan) {
+        plannerPlan = restoredResumePlan;
         plannerTurn = {
           turnId: `restored-planner-${runId}`,
           outputDigest: plannerPlan.planDigest,
@@ -2449,9 +2500,9 @@ async function runTask() {
         });
         plannerPlan = plannerTurn.plan;
       }
-      let shouldDeliberate = !resumeRequested
+      let shouldDeliberate = !restoredResumePlan
         && (plannerPlan.steps.length > 2 || ['modify', 'test'].includes(taskClass));
-      if (!resumeRequested && decisionEngine?.enabled && decisionConfig?.topologyEnabled === true) {
+      if (!restoredResumePlan && decisionEngine?.enabled && decisionConfig?.topologyEnabled === true) {
         const topologyCandidates = [
           { candidateId: 'DIRECT_EXECUTE', modelId: 'DIRECT_EXECUTE', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 1 },
           { candidateId: 'DELIBERATE_THEN_EXECUTE', modelId: 'DELIBERATE_THEN_EXECUTE', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 100 },
@@ -2656,7 +2707,7 @@ async function runTask() {
         decisionType: 'CREATE_PLAN',
         actionKind: 'PLAN',
         parentDecisionIds: [allocationDecision.decisionId],
-        summary: resumeRequested
+        summary: restoredResumePlan
           ? `Restored ${plannerPlan.steps.length} validated plan step(s) from thread checkpoint`
           : `Planner produced ${plannerPlan.steps.length} validated step(s)`,
         outputRefs: [`plan-${plannerPlan.planDigest}`],
@@ -2721,7 +2772,7 @@ async function runTask() {
         planDigest: plannerPlan.planDigest,
         stepCount: plannerPlan.steps.length,
         decisionId: plannerDecision.decisionId,
-        ...(resumeRequested ? { source: 'THREAD_CHECKPOINT', sourceRunId: resumeSourceRunId } : {})
+        ...(restoredResumePlan ? { source: 'THREAD_CHECKPOINT', sourceRunId: resumeSourceRunId } : {})
       });
       linkDecisionEvent(plannerDecision, plannerTurnCompletedEvent.event);
       await trajectory.append({
@@ -2735,7 +2786,7 @@ async function runTask() {
           planDigest: plannerPlan.planDigest,
           stepCount: plannerPlan.steps.length,
           decisionId: plannerDecision.decisionId,
-          ...(resumeRequested ? { source: 'THREAD_CHECKPOINT', sourceRunId: resumeSourceRunId } : {})
+          ...(restoredResumePlan ? { source: 'THREAD_CHECKPOINT', sourceRunId: resumeSourceRunId } : {})
         },
         sensitivity: 'INTERNAL'
       });
@@ -2748,9 +2799,7 @@ async function runTask() {
         pendingActions: ['execute validated plan through the bounded executor']
       });
     }
-    executionPlan = resumeRequested
-      ? restorePlannerPlan(thread.checkpoint.plan)
-      : plannerPlan ?? normalizePlannerPlan({
+    executionPlan = restoredResumePlan ?? plannerPlan ?? normalizePlannerPlan({
       planId: `plan-${runId}`,
       steps: [{
         stepId: 'execute',
@@ -2760,6 +2809,16 @@ async function runTask() {
       }]
     }, { objectiveDigest: sha256Digest(prompt), sourceText: prompt });
     if (!executionPlan) throw new Error('THREAD_RESUME_PLAN_INVALID');
+    // Surface checkpoint restoration in every execution topology. Controlled
+    // multi-agent runs already emit this from the planner role; read-only
+    // single-agent resumes restore the plan directly at this boundary.
+    if (restoredResumePlan && agentMode !== 'multi') {
+      emitEvent('planner.restored', {
+        sourceRunId: resumeSourceRunId,
+        planDigest: executionPlan.planDigest,
+        stepCount: executionPlan.steps.length
+      });
+    }
     if (agentMode !== 'multi') {
       const planningEvidence = await collectDecisionEvidence({ kinds: ['RoleBindingsResolved', 'TaskClassified', 'TaskRunCreated'], limit: 6 });
       const planningEvidenceIds = planningEvidence.map((ref) => ref.evidenceId);
@@ -2770,7 +2829,7 @@ async function runTask() {
         decisionType: 'CREATE_PLAN',
         actionKind: 'PLAN',
         parentDecisionIds: [allocationDecision.decisionId],
-        summary: resumeRequested && thread.checkpoint?.plan
+        summary: restoredResumePlan
           ? `Restored ${executionPlan.steps.length} validated plan step(s) from thread checkpoint`
           : `Created deterministic bounded plan with ${executionPlan.steps.length} step(s)`,
         outputRefs: [`plan-${executionPlan.planDigest}`],
@@ -2850,10 +2909,29 @@ async function runTask() {
         workspaceSnapshotDigest: snapshot.snapshotDigest
       });
     }
+    // A killed read-only run can repeat its interrupted observation safely,
+    // but the planner's READ label alone cannot prove that no write occurred.
+    // Require the durable source run's host mode and the current host mode to
+    // both enforce READ_ONLY. Missing/ambiguous source evidence stays blocked.
+    const sourceRunCreatedEvents = priorEvents.filter((event) => event.runId === resumeSourceRunId && event.kind === 'TaskRunCreated');
+    const sourceRunCreatedPayload = sourceRunCreatedEvents[0]?.payload?.payload ?? sourceRunCreatedEvents[0]?.payload;
+    const canRetryInterruptedObservation = resumeRequested && mode === EXECUTION_MODES.READ_ONLY
+      && sourceRunCreatedEvents.length === 1 && sourceRunCreatedPayload?.requestedMode === EXECUTION_MODES.READ_ONLY;
+    const resumedReadonlyActions = resumeRequested ? readonlyResumeObservations({ events: priorEvents,
+      sourceRunId: resumeSourceRunId, checkpointDigest: resumeSourceCheckpointDigest, threadId: thread.id,
+      promptDigest: sha256Digest(prompt), mode }) : [];
+    const resumedReadonlyEventIds = new Set(resumedReadonlyActions.map(action => action.sourceEventId));
+    const resumedReadonlyEvents = priorEvents.filter(event => resumedReadonlyEventIds.has(event.eventId));
+    const priorVerificationEvent = priorEvents.findLast(event => event.runId === resumeSourceRunId && event.kind === 'VerificationCompleted');
+    const priorVerification = priorVerificationEvent?.payload?.payload ?? priorVerificationEvent?.payload;
+    if (resumedReadonlyActions.length) await coordinator.recordEventAndFlush('ReadonlyResumeObservationsImported', {
+      sourceRunId: resumeSourceRunId, sourceEventIds: resumedReadonlyActions.map(action => action.sourceEventId), actionCount: resumedReadonlyActions.length
+    });
     const planCoordinator = createPlanStepCoordinator({
       coordinator,
       plan: executionPlan,
       resumeFailed: resumeRequested,
+      reconcileStep: canRetryInterruptedObservation ? () => ({ status: 'RETRY' }) : undefined,
       onStateChange: async ({ reason, plan: statePlan, currentStepId }) => {
         const checkpointPlan = {
           planId: statePlan.planId,
@@ -2919,6 +2997,12 @@ async function runTask() {
     }
     const runPlanStep = async ({ step, priorResults = [] } = {}) => {
       if (!step || typeof step.stepId !== 'string') throw new Error('PLAN_STEP_INVALID');
+      // Reconciliation may make an interrupted observation READY while the
+      // aggregate remains RECOVERING. Re-enter execution before new work;
+      // the state machine must still reject RECOVERING -> VERIFYING directly.
+      if (coordinator.state === 'RECOVERING') {
+        await coordinator.transitionAndFlush('EXECUTING', { reason: `resume:${step.stepId}` });
+      }
       // A completed verification leaves the aggregate run in VERIFYING. Move
       // through PLANNING before starting the next independent step so the
       // durable TaskRun state remains a legal transition sequence.
@@ -2950,7 +3034,10 @@ async function runTask() {
       ].filter(Boolean).join('\n').slice(0, 6000);
       const recoveryRun = await runVerifierRecovery({
       maxAttempts: recoveryLimit,
-      execute: async ({ attempt, recovery }) => {
+      initialActions: resumedReadonlyActions,
+      initialContext: resumedReadonlyActions.length ? createRecoveryContext({ status: priorVerification?.status ?? 'UNKNOWN', summary: 'Resume remaining work with prior actual read-only tool observations' },
+        { previousActions: resumedReadonlyActions }) : undefined,
+      execute: async ({ attempt, recovery, previousActions = [] }) => {
         const verificationActions = [];
         const recoveryText = recovery
           ? [
@@ -3018,13 +3105,27 @@ async function runTask() {
           prompt: stepPrompt,
           workspace: snapshot,
           historyContext: recoveryText,
+          recovery,
           mode,
           modelProvider: recoveryModelProvider,
+          ...(maxToolRounds ? { maxToolRounds } : {}),
+          ...(maxTokens ? { maxTokens } : {}),
+          ...(maxCost !== undefined ? { maxCost } : {}),
           onToolCall: async (call) => {
             const executorContext = allocatedRoles.find((context) => context.role === 'executor');
-            const toolEvidence = await collectDecisionEvidence({ kinds: ['tool.result', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
+            const toolEvidence = await collectDecisionEvidence({ kinds: ['ToolInvocationCompleted', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
+            const terminalToolEvidence = actionDecisionEvidence([...previousActions, ...verificationActions], { includeReadPaths: true });
             const toolEvidenceIds = toolEvidence.map((ref) => ref.evidenceId);
             const toolReadOnly = call.name === 'workspace.list' || call.name === 'workspace.read';
+            const previousReadonlyObservation = decisionEngine.enabled
+              ? readonlyRegistryObservation([...resumedReadonlyEvents, ...await listDurableRunEvents()]) : undefined;
+            const workspaceEvidence = decisionEngine.enabled ? await toolWorkspaceDecisionEvidence({
+              workspace, snapshot, name: call.name, proposedInputClaim: call.proposedInputClaim
+            }) : [];
+            const processIntentClaim = requestedProcessDecisionClaim(call.proposedProcessIntent);
+            if (workspaceEvidence.length) await trajectory.append({ runId, kind: 'DecisionWorkspaceContextCollected',
+              payload: { proposalId: call.id, name: call.name, context: workspaceEvidence.map(item => ({ evidenceId: item.id, digest: item.source })) },
+              sensitivity: 'INTERNAL' });
             const toolGate = await decisionEngine.decideActionGate({
               signal: taskAbortController.signal,
               state: {
@@ -3034,13 +3135,24 @@ async function runTask() {
                 stepIndex: Math.max(0, executionPlan.steps.findIndex((item) => item.stepId === step.stepId)),
                 tool: call.name,
                 toolRequest: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}) },
-                evidence: toolEvidence.map((item) => ({
+                ...(previousReadonlyObservation ? { observation: previousReadonlyObservation } : {}),
+                evidence: [...toolEvidence.map((item) => ({
                   id: item.evidenceId,
                   type: item.kind ?? 'runtime_state',
                   claim: item.summary ?? item.digest,
                   source: item.eventId ?? item.evidenceId,
                   confidence: 0.7
-                })),
+                })), ...terminalToolEvidence,
+                ...verifiedToolDecisionEvidence([...previousActions, ...verificationActions], { idPrefix: `verified-tool-result-gate-${attempt}`, limit: 6 }),
+                ...workspaceEvidence,
+                ...(processIntentClaim ? [{ id: 'host-requested-process-scope', type: 'runtime_state', claim: processIntentClaim,
+                  source: 'host-restricted-executor-and-workspace-default', confidence: 1 }] : []),
+                { id: 'host-proposed-tool-policy', type: 'runtime_state',
+                  claim: hostToolPolicyDecisionClaim({ name: call.name, ...call.toolPolicyFacts, mode,
+                    configuredCapabilities: approvedCapabilities, configuredCommands: approvedCommands }),
+                  source: 'host-tool-registry-and-operator-config', confidence: 1 },
+                { id: 'proposed-tool-input', type: 'model_output', claim: call.proposedInputClaim,
+                  source: call.argumentsDigest, confidence: 0.2 }],
                 requirements: [{ id: `requirement-${step.stepId}`, description: step.summary, status: 'unknown', evidenceIds: toolEvidenceIds }],
                 mode,
                 executionMode: mode,
@@ -3111,6 +3223,7 @@ async function runTask() {
             });
             linkDecisionEvent(toolDecision, toolCallRequestedEvent);
             return {
+              decision: toolGate.decision,
               allow: toolGate.decision !== 'BLOCK' && toolGate.decision !== 'REQUEST_EVIDENCE',
               ...(toolGate.decision === 'BLOCK' || toolGate.decision === 'REQUEST_EVIDENCE' ? {
                 errorCode: toolGate.decision === 'BLOCK' ? 'TOOL_ACTION_BLOCKED_BY_JEV' : 'TOOL_ACTION_REQUIRES_EVIDENCE',
@@ -3119,12 +3232,20 @@ async function runTask() {
               } : {})
             };
           },
+          onToolResult: async (evidence) => {
+            const action = verificationActions.find(item => item.id === evidence.id);
+            if (action && ['SUCCEEDED', 'FAILED'].includes(action.state)) action.verifiedResult = evidence;
+          },
           onEvent: async (event) => {
             if (event.kind === 'model.text_delta' && typeof event.text === 'string') streamedResponseText += event.text;
             if (event.kind === 'tool.result') {
               const action = verificationActions.find((item) => item.id === event.id);
               if (action) {
                 action.state = event.ok === true ? 'SUCCEEDED' : 'FAILED';
+                if (event.invocationAttempted === false && event.gateDecision === 'REQUEST_EVIDENCE') {
+                  action.invocationAttempted = false;
+                  action.gateDecision = event.gateDecision;
+                }
                 if (event.ok === true && event.outputDigest) action.outputDigest = event.outputDigest;
                 if (event.ok !== true && event.errorCode) action.errorCode = event.errorCode;
                 if (event.ok !== true && event.message) action.errorMessage = String(event.message).slice(0, 640);
@@ -3157,6 +3278,8 @@ async function runTask() {
               attempt,
               round: event.round,
               ...(event.id ? { id: event.id } : {}),
+              ...(event.invocationAttempted === false && event.gateDecision === 'REQUEST_EVIDENCE'
+                ? { invocationAttempted: false, gateDecision: event.gateDecision } : {}),
               ...(event.name ? { name: event.name } : {}),
               ...(event.text ? { text: event.text } : {}),
               ...(event.argumentsDigest ? { argumentsDigest: event.argumentsDigest } : {}),
@@ -3338,7 +3461,7 @@ async function runTask() {
         const result = agentMode === 'multi'
           ? await runExecutorTurn({
               taskRunner: root.taskRunner,
-              provider: activeModelProvider,
+              provider: recoveryModelProvider,
               contextId: allocatedRoles.find((context) => context.role === 'executor')?.contextId ?? `${runId}-executor`,
               plan: executionPlan,
               signal: taskAbortController.signal,
@@ -3372,7 +3495,7 @@ async function runTask() {
           attempt,
           actionDigests: (result.actions ?? []).map((action) => action.argumentsDigest).filter(Boolean).slice(-16)
         });
-        await coordinator.transitionAndFlush('VERIFYING');
+        if (coordinator.state !== 'VERIFYING') await coordinator.transitionAndFlush('VERIFYING');
         let verification = createRuleVerifier().verify({
           prompt: stepPrompt,
           output: result.text,
@@ -3391,14 +3514,20 @@ async function runTask() {
             source: check.id,
             confidence: check.status === 'PASS' ? 0.95 : 0.35
           })),
-          ...(result.actions ?? []).map((action, index) => ({
+          ...(result.actions ?? []).slice(-8).map((action, index) => ({
             id: `tool-action-${step.stepId}-${attempt}-${index + 1}`,
             type: 'tool_result',
             claim: `${action.name ?? 'tool'} ${action.state ?? 'UNKNOWN'}`,
             source: action.outputDigest ?? action.argumentsDigest ?? `action-${index + 1}`,
             confidence: action.state === 'SUCCEEDED' ? 0.8 : 0.3
-          }))
+          })),
+          ...actionDecisionEvidence([...previousActions, ...(result.actions ?? [])], { includeReadPaths: true }),
+          ...verifiedToolDecisionEvidence([...previousActions, ...(result.actions ?? [])], { idPrefix: `verified-tool-result-${attempt}` }),
+          { id: `model-answer-${attempt}`, type: 'model_output',
+            claim: modelAnswerDecisionClaim(result.text),
+            source: `model-answer-${attempt}`, confidence: 0.2 }
         ];
+        const ruleVerificationStatus = verification.status;
         const behaviorDecision = await decisionEngine.judgeVerification({
           signal: taskAbortController.signal,
           ruleStatus: verification.status,
@@ -3460,24 +3589,7 @@ async function runTask() {
             failureCodes: verification.failureCodes,
             checks: verification.checks
           },
-          evidence: [
-            ...verification.checks.map((check, index) => ({
-              id: `verification-check-${step.stepId}-${attempt}-${index + 1}`,
-              type: /test|lint|typecheck|build/u.test(String(check.id ?? check.message ?? '').toLowerCase()) ? 'test_result' : 'runtime_state',
-              claim: check.message,
-              source: check.id,
-              confidence: check.status === 'PASS' ? 0.95 : 0.35,
-              relatedRequirementIds: [`requirement-${step.stepId}`]
-            })),
-            ...result.actions.map((action, index) => ({
-              id: `tool-action-${step.stepId}-${attempt}-${index + 1}`,
-              type: 'tool_result',
-              claim: `${action.name ?? 'tool'} ${action.state ?? 'UNKNOWN'}`,
-              source: action.outputDigest ?? action.argumentsDigest ?? `action-${index + 1}`,
-              confidence: action.state === 'SUCCEEDED' ? 0.8 : 0.3,
-              relatedRequirementIds: [`requirement-${step.stepId}`]
-            }))
-          ],
+          evidence: behaviorEvidence.map(item => ({ ...item, relatedRequirementIds: [`requirement-${step.stepId}`] })),
           requirements: [{
             id: `requirement-${step.stepId}`,
             description: step.summary,
@@ -3490,8 +3602,8 @@ async function runTask() {
           recentActions: result.actions,
           recentFailures: verification.failureCodes.map((code) => ({ code, summary: verification.summary })),
           availableTests: [],
-          executedTests: result.actions
-            .filter((action) => /test|lint|typecheck|build/u.test(String(action.name ?? '').toLowerCase()))
+          executedTests: [...previousActions, ...result.actions]
+            .filter((action) => action.name === 'test.execute' && action.verifiedResult)
             .map((action, index) => ({ id: `executed-test-${index + 1}`, command: action.name, status: action.state })),
           currentConfidence: verification.status === 'PASS' ? 0.9 : 0.35,
           scenario: 'coding',
@@ -3610,6 +3722,10 @@ async function runTask() {
             predictedRiskCodes: (verification.failureCodes ?? []).filter((code) => /^[A-Za-z0-9_.:-]+$/u.test(code)).slice(0, 32)
           }
         });
+        if (canRetryVerificationOnly({ ruleStatus: ruleVerificationStatus, behaviorDecision, report: verification })) {
+          verification = { ...verification, verificationOnlyRetry: true, nextAction: 'RETRY_VERIFICATION',
+            summary: 'Execution evidence passed deterministic checks; retry only the unavailable semantic verification provider' };
+        }
         finalResult = result;
         finalVerification = verification;
         finalVerificationDecision = verificationDecision;
@@ -3947,12 +4063,17 @@ async function runTask() {
         };
       },
       onPhase: async ({ phase, attempt, report, recovery }) => {
+        if (phase === 'VERIFYING_RETRY') {
+          await coordinator.recordEventAndFlush('VerificationRetryStarted', { attempt, status: report.status, reason: 'TRANSIENT_VERIFICATION_PROVIDER_FAILURE', replayExecutor: false });
+          emitEvent('verification.retrying', { attempt, replayExecutor: false });
+          return;
+        }
         if (phase === 'RECOVERING') {
           await saveThreadCheckpoint('RECOVERING', {
             blockers: report?.failureCodes ?? [],
             pendingActions: ['run bounded recovery attempt'],
             attempt,
-            recovery: recovery ? { verifierStatus: recovery.verifierStatus, failureCodes: recovery.failureCodes, previousActionDigests: recovery.previousActionDigests } : undefined
+            recovery: recovery ? { verifierStatus: recovery.verifierStatus, failureCodes: recovery.failureCodes, previousActionDigests: recovery.previousActionDigests, previousActionObservations: recovery.previousActionObservations } : undefined
           });
         }
         if (phase === 'EXECUTING') {
@@ -6499,8 +6620,17 @@ try {
           : command === 'evolution' || command === 'evolutions'
             ? await runEvolutionCommand()
         : { ok: true, plugins: manifests() };
-  writeStdout(`${JSON.stringify(result)}\n`);
+  const output = `${JSON.stringify(result)}\n`;
+  if (command === 'task') {
+    await flushStdout(output);
+    process.exit(0);
+  }
+  writeStdout(output);
 } catch (error) {
-  writeStdout(`${JSON.stringify({ ok: false, ...(taskResponseRunId ? { runId: taskResponseRunId } : {}), error: error instanceof Error ? error.message : String(error), plugins: manifests() })}\n`);
+  const output = `${JSON.stringify({ ok: false, ...(taskResponseRunId ? { runId: taskResponseRunId } : {}), error: error instanceof Error ? error.message : String(error), plugins: manifests() })}\n`;
+  if (command === 'task') {
+    try { await flushStdout(output); } finally { process.exit(1); }
+  }
+  writeStdout(output);
   process.exitCode = 1;
 }

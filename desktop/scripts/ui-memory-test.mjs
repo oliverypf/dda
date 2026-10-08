@@ -40,11 +40,16 @@ await page.addInitScript(() => {
       if (command === 'list_workspace') return [];
       if (command === 'reconcile_runtime_state') return { ok: true, reconciled: 0 };
       if (command === 'context_sidecar_status' || command === 'dream_maintenance_status') return undefined;
-      if (command === 'runtime_dashboard') return { ok: true, summaryOnly: !args.details, threads: [], execution: { records: [] }, feedback: [], memories: structuredClone(memories), dreams: [], plugins: [], pluginVersions: [], evolution: { proposals: [], reports: [], control: { enabled: true } } };
+      if (command === 'runtime_dashboard') return { ok: true, summaryOnly: !args.details, threads: [], execution: { records: [] }, feedback: [], memories: structuredClone(memories), dreams: [], plugins: [], pluginVersions: [], evolution: { proposals: [], reports: [], control: { enabled: true } }, ...structuredClone(window.__memoryTest.dashboard ?? {}) };
       if (command === 'list_memories') { if (window.__memoryTest.failRead) throw Error('FIXTURE_READ_FAILED'); return { memories: structuredClone(memories) }; }
-      if (command === 'list_dream_runs') return { runs: [] };
-      if (command === 'list_plugin_governance') return { plugins: [] };
-      if (command === 'list_evolution') return { proposals: [], reports: [] };
+      if (command === 'list_dream_runs') return { runs: structuredClone(window.__memoryTest.dashboard?.dreams ?? []) };
+      if (command === 'list_plugin_governance') return { plugins: structuredClone(window.__memoryTest.dashboard?.plugins ?? []) };
+      if (command === 'list_evolution') return structuredClone(window.__memoryTest.dashboard?.evolution ?? { proposals: [], reports: [] });
+      if (command === 'plugin_action') {
+        window.__memoryTest.calls.push({ command, ...args });
+        if (window.__memoryTest.holdPlugin) await new Promise(resolve => { window.__memoryTest.releasePlugin = resolve; });
+        throw Error('FIXTURE_PLUGIN_FAILED');
+      }
       if (command === 'memory_action') {
         window.__memoryTest.calls.push(args);
         if (window.__memoryTest.hold) await new Promise(resolve => { window.__memoryTest.release = resolve; });
@@ -52,6 +57,10 @@ await page.addInitScript(() => {
         const index = memories.findIndex(m => m.memoryId === args.memoryId);
         if (index < 0) throw Error('INVALID_FIXTURE_ACTION');
         const current = memories[index];
+        if (args.operation === 'verify' || args.operation === 'activate') {
+          current.status = args.operation === 'activate' ? 'ACTIVE' : args.accepted ? 'VERIFIED' : 'REJECTED';
+          return { memory: current };
+        }
         if (args.operation === 'edit' || args.operation === 'resolve-conflict') {
           const next = { ...current, memoryId: `${current.memoryId}-v2`, statement: args.statement ?? current.statement, scope: args.scope ?? current.scope, confidence: args.confidence ?? current.confidence, sensitivity: args.sensitivity ?? current.sensitivity, version: Number(current.version ?? 1) + 1, supersedesMemoryId: current.memoryId, updatedAtMs: Date.now() };
           if (args.operation === 'resolve-conflict') delete next.conflictsWithMemoryIds;
@@ -71,7 +80,7 @@ try {
   await mkdir(output, { recursive: true });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.locator('.connection-status.status-ready').waitFor();
-  await page.locator('[data-action="navigate"][data-page="memory"]').click();
+  await page.locator('.context-page-nav [data-action="navigate"][data-page="memory"]').click();
   const content = page.locator('.transcript');
   await content.getByText('Memory PROPOSED', { exact: true }).waitFor();
   assert.match(await content.innerText(), /event-0/);
@@ -194,8 +203,102 @@ try {
   await page.evaluate(() => { window.__memoryTest.failRead = false; });
   await content.getByRole('button', {name: '重新读取'}).click();
   await content.getByText('Older memory 3', {exact: true}).waitFor({state: 'detached'});
+
+  // Exercise the whole context panel with the same awkward records users see:
+  // hashed scenarios, generated English memories and outcome-derived ids.
+  await page.evaluate(() => {
+    const fixture = window.__memoryTest;
+    fixture.calls = [];
+    fixture.memories.splice(0, fixture.memories.length, ...Array.from({ length: 10 }, (_, i) => ({
+      memoryId: `readable-${i}`, statement: `Verified task outcome: class=test; verifier=PASS; outputDigest=sha256:${'a'.repeat(64)}`,
+      status: 'PROPOSED', scope: 'workspace', confidence: .8, createdAtMs: 1, updatedAtMs: i + 100,
+      sourceEventIds: [`source-${i}`], version: 1
+    })));
+    fixture.memories[9].statement = '<img src=x onerror="window.__unsafe=true"> 项目约定：修改文件后运行测试并保留详细来源，以便之后核对。这段长内容应当完整换行显示。';
+    fixture.dashboard = {
+      feedback: Array.from({ length: 10 }, (_, i) => ({ feedbackId: `feedback-${i}`, runId: `run-${i}`, sourceType: i === 9 ? 'USER' : 'SYSTEM', outcomeStatus: 'FAILED', scenarioKey: `sha256:${'b'.repeat(64)}`, eventSequence: i })),
+      dreams: [{ runId: 'dream-1', projectId: '示例项目', state: 'SUCCEEDED', phase: 'COMPLETE', startedAtMs: 1700000000000, candidateCount: 2 }],
+      plugins: [{ pluginId: 'fixture-plugin', version: '1.0', source: 'local', manifest: { name: '工作区读取工具', description: '用于读取项目文件和目录。', contributions: [] }, packageDigest: `sha256:${'c'.repeat(64)}`, state: 'VALIDATED', updatedAtMs: 1700000000000 }],
+      evolution: { control: { enabled: true }, proposals: Array.from({ length: 10 }, (_, i) => ({ proposalId: `proposal-${i}`, candidateId: `outcome-outcome-${i}`, candidateType: 'OUTCOME_DERIVED', taskClass: 'test', route: { provider: 'fixture', model: '示例模型' }, sourceOutcomeIds: [`outcome-${i}`], status: 'PROPOSED', updatedAtMs: 1700000000000 + i })), reports: [] },
+      projection: { decisions: [{ decisionId: 'decision-1', decisionType: 'CONSOLIDATE_MEMORY', role: 'MemoryConsolidator', status: 'COMMITTED', optionCount: 1, selectedOptionId: 'memory-proposal-create', options: [{ optionId: 'memory-proposal-create', rejectionReasonCodes: [] }] }] },
+      supportBundle: { privacy: { scan: { ok: true, violations: [] } }, stores: { memories: { count: 10 } }, evidenceSource: 'FIXTURE', exportInvocation: 'fixture export' }
+    };
+  });
+  const panel = page.locator('.context-panel');
+  await panel.locator('[data-action="refresh-governance"]').click();
+  await panel.locator('[data-memory-id="readable-9"]').first().waitFor();
+  assert.match(await panel.innerText(), /长期记忆 · 10 条 · 10 条待审核/);
+  assert.equal(await panel.locator('[data-disclosure-id="group:memory"] article').count(), 8);
+  assert.equal(await panel.locator('img').count(), 0, 'record text is escaped');
+  assert.equal(await page.evaluate(() => window.__unsafe), undefined);
+  assert.doesNotMatch(await panel.locator('[data-disclosure-id="group:memory"]').innerText(), /Verified task outcome|sha256:/, 'raw summaries hidden until details opened');
+  const details = panel.locator('[data-disclosure-id="memory:readable-8"]');
+  await details.locator('summary').click();
+  assert.match(await details.innerText(), /Verified task outcome/);
+  await page.evaluate(() => { window.__memoryTest.memories[9].updatedAtMs = 101; window.__memoryTest.memories[9].statement = '项目约定：修改文件后运行测试并保留详细来源，以便之后核对。这段长内容应当完整换行显示。'; });
+  await panel.locator('[data-action="refresh-governance"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-disclosure-id="group:memory"] article')?.dataset.memoryId === 'readable-8');
+  assert.equal(await details.evaluate(el => el.open), true, 'open state follows identity after reorder');
+  assert.equal(await panel.locator('[data-disclosure-id="memory:readable-7"]').evaluate(el => el.open), false, 'other record stays closed');
+  await details.locator('summary').click();
+  const review = panel.locator('article[data-memory-id="readable-8"]');
+  await review.getByRole('button', { name: '确认已核验', exact: true }).click();
+  await review.getByRole('button', { name: '启用记忆', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__memoryTest.memories.find(m => m.memoryId === 'readable-8').status), 'VERIFIED', 'review does not implicitly activate');
+  await review.getByRole('button', { name: '启用记忆', exact: true }).click();
+  await review.getByText('已启用', { exact: true }).waitFor();
+  const feedback = panel.locator('[data-disclosure-id="group:feedback"]');
+  await feedback.locator(':scope > summary').focus();
+  await page.keyboard.press('Enter');
+  await feedback.getByText('用户反馈 · 用于评估任务完成情况。', { exact: true }).waitFor();
+  assert.match(await feedback.innerText(), /系统记录/);
+  assert.doesNotMatch(await feedback.innerText(), /sha256:/);
+  await feedback.locator('article').first().locator('summary').click();
+  assert.match(await feedback.innerText(), /sha256:/, 'full scenario id available in details');
+  await feedback.locator('article').first().locator('summary').click();
+  for (const key of ['dream', 'plugins', 'evolution']) {
+    await panel.locator(`[data-disclosure-id="group:${key}"] > summary`).click();
+  }
+  assert.match(await panel.locator('[data-disclosure-id="group:dream"]').innerText(), /整理完成/);
+  const evolution = panel.locator('[data-disclosure-id="group:evolution"]');
+  assert.match(await evolution.innerText(), /已记录候选，尚未发布/);
+  assert.match(await evolution.innerText(), /最近 8 个候选，共 10 个/);
+  assert.doesNotMatch(await evolution.innerText(), /outcome-outcome-/);
+  await evolution.locator('[data-disclosure-id="evolution:proposal-9"] summary').click();
+  assert.match(await evolution.innerText(), /outcome-outcome-9/);
+  await panel.locator('[data-disclosure-id="section:decisions"] > summary').click();
+  assert.match(await panel.locator('.decision-trace-section').innerText(), /决定是否保存为记忆 · 记忆整理/);
+  for (const key of ['council', 'support', 'runtime', 'execution']) await panel.locator(`[data-disclosure-id="section:${key}"] > summary`).click();
+  await page.evaluate(() => { window.__memoryTest.holdPlugin = true; });
+  await panel.getByRole('button', { name: '检查插件', exact: true }).click();
+  assert.equal(await panel.locator('[data-action="plugin-action"]:enabled').count(), 0, 'conflicting plugin operations disabled');
+  await page.evaluate(() => document.querySelector('[data-action="plugin-action"]').click());
+  assert.equal(await page.evaluate(() => window.__memoryTest.calls.filter(c => c.command === 'plugin_action').length), 1);
+  await page.evaluate(() => { window.__memoryTest.holdPlugin = false; window.__memoryTest.releasePlugin(); });
+  await panel.getByRole('status').filter({ hasText: '检查插件未确认成功' }).waitFor();
+  assert.equal(await panel.getByRole('button', { name: '检查插件', exact: true }).isEnabled(), true);
+  const assertPanelBounds = async () => {
+    const overflows = await panel.evaluate(root => [...root.querySelectorAll('.panel-card, .panel-card strong, .governance-button, summary, .runtime-line span')]
+      .filter(el => el.getClientRects().length && (el.scrollWidth > el.clientWidth + 2 || el.getBoundingClientRect().right > root.getBoundingClientRect().right + 2))
+      .map(el => ({ text: el.textContent.slice(0, 70), width: el.clientWidth, scroll: el.scrollWidth })));
+    assert.deepEqual(overflows, [], 'all visible context content and buttons fit without clipping');
+  };
+  await assertPanelBounds();
+  await panel.locator('[data-disclosure-id="group:memory"] > summary').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(output, 'context-readable-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertPanelBounds();
+  const note = panel.locator('article[data-memory-id="readable-8"] .panel-card-heading strong');
+  assert.equal(await note.evaluate(el => getComputedStyle(el).whiteSpace), 'normal');
+  const primary = panel.locator('article[data-memory-id="readable-7"] [data-operation="verify"][data-accepted="true"]');
+  assert.ok((await primary.boundingBox()).height >= 34);
+  await panel.locator('[data-disclosure-id="group:evolution"] > summary').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(output, 'context-readable-narrow.png') });
   assert.deepEqual(errors, []);
-  await writeFile(resolve(output, 'results.json'), JSON.stringify({ ok: true, scope: 'browser with mocked native transport; no real deletion', cases: ['source and expiry fields', 'unknown training restriction', 'explicit training restriction flags', 'three states delete dispatch and refresh', 'failed request retains records and displays uncertainty', 'successful retry clears error', '390px dark viewport and retry bounds', 'keyboard Enter activates deletion', 'Tab reaches deletion with visible focus', '19 records reachable over three pages', 'empty last page clamps after deletion', 'read failure preserves records and retry clears stale warning', 'pending duplicate and conflicting actions suppressed in both locations'] }, null, 2));
+  assert.deepEqual(await page.evaluate(() => window.__memoryTest.unexpected), []);
+  console.log('PASS context summaries, full details, source labels, stable disclosures, review/activation, duplicate controls, error feedback, desktop/narrow layout');
+  assert.deepEqual(errors, []);
+  await writeFile(resolve(output, 'results.json'), JSON.stringify({ ok: true, scope: 'browser with mocked native transport; no real deletion', cases: ['source and expiry fields', 'unknown training restriction', 'explicit training restriction flags', 'three states delete dispatch and refresh', 'failed request retains records and displays uncertainty', 'successful retry clears error', '390px dark viewport and retry bounds', 'keyboard Enter activates deletion', 'Tab reaches deletion with visible focus', '19 records reachable over three pages', 'empty last page clamps after deletion', 'read failure preserves records and retry clears stale warning', 'pending duplicate and conflicting actions suppressed in both locations', 'right panel readable summaries and explicit source labels', 'source identifiers preserved in disclosures', 'reordered records preserve disclosure identity', 'memory review and activation remain separate', 'plugin pending and failed operations are visible and deduplicated', '390px right panel cards and controls fit', 'HTML-like record content rendered safely as text'] }, null, 2));
   console.log('PASS memory fields, unknown semantics, delete bridge dispatch and refresh for three states');
 } catch (error) {
   console.log(await page.locator('.transcript').innerText());

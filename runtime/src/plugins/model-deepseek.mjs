@@ -1,7 +1,7 @@
 import LlmRuntime from '@deepseek-ai/dsh-llm';
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek';
 import { cordisPlugin } from './cordis-plugin.mjs';
-import { createOpenAICompatiblePlugin } from './model-openai.mjs';
+import { createOpenAICompatiblePlugin, encodeToolName, decodeToolName } from './model-openai.mjs';
 import { resolveModelConfig } from '../model-config.mjs';
 import { stableToolDefinitions } from '../prompt-cache.mjs';
 
@@ -11,7 +11,7 @@ export const deepSeekToolDefinitions = (tools) => {
   if (!Array.isArray(tools)) return undefined;
   const ordered = process.env.HMCODEX_PROMPT_CACHE === 'off' ? tools : stableToolDefinitions(tools);
   return ordered.map((tool) => ({
-    name: tool.name ?? tool.id,
+    name: encodeToolName(tool.name ?? tool.id),
     description: typeof tool.description === 'string' ? tool.description : '',
     parameters: tool.parameters ?? tool.inputSchema ?? {
       type: 'object',
@@ -44,14 +44,20 @@ const modelPlugin = (options) => cordisPlugin((ctx) => {
     protocol: 'deepseek-harness',
     model: options.model,
     async *stream(request) {
-      yield* ctx.llm.stream({
+      for await (const chunk of ctx.llm.stream({
         provider,
         model: options.model,
         system: request.system,
         messages: request.messages,
         ...(Array.isArray(request.tools) ? { tools: deepSeekToolDefinitions(request.tools) } : {}),
         ...(request.signal ? { signal: request.signal } : {})
-      });
+      })) {
+        if (chunk && typeof chunk === 'object' && typeof chunk.name === 'string') {
+          yield { ...chunk, name: decodeToolName(chunk.name) };
+        } else {
+          yield chunk;
+        }
+      }
     }
   });
 }, 'model-deepseek', ['llm']);

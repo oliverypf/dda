@@ -5,11 +5,11 @@ import { projectPaths } from './windows-path.mjs';
 
 const { runtimeRoot: runtimeDir } = projectPaths(import.meta.url);
 if (Number(process.versions.node.split('.')[0]) < 24) {
-  throw new Error('hmCodex requires Node.js 24 or newer with built-in SQLite support.');
+  throw new Error('dda requires Node.js 24 or newer with built-in SQLite support.');
 }
 const { DatabaseSync, backup } = await import('node:sqlite');
 if (typeof DatabaseSync !== 'function' || typeof backup !== 'function') {
-  throw new Error('hmCodex requires node:sqlite DatabaseSync and backup support.');
+  throw new Error('dda requires node:sqlite DatabaseSync and backup support.');
 }
 const sqliteProbe = new DatabaseSync(':memory:');
 try { sqliteProbe.prepare('SELECT sqlite_version()').get(); } finally { sqliteProbe.close(); }

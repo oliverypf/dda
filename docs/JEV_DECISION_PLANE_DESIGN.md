@@ -2,7 +2,7 @@
 
 版本：v1.2（渐进迁移）
 
-hmCodex 保留原有 Planner、Executor、Tool、Skill、Memory 和任务恢复执行层；所有需要在运行时“选什么、是否能做、是否继续、是否停止、是否换方向”的语义判断统一进入 Jev Decision Plane。
+dda 保留原有 Planner、Executor、Tool、Skill、Memory 和任务恢复执行层；所有需要在运行时“选什么、是否能做、是否继续、是否停止、是否换方向”的语义判断统一进入 Jev Decision Plane。
 
 ## 边界
 

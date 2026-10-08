@@ -1,10 +1,20 @@
 import { bounded } from './types.mjs';
 
-const DEFAULT_ENDPOINT = 'https://api.typesafe.ai/v1/system_one';
+const DEFAULT_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const DEFAULT_MODEL = 'jev-latest';
 const MAX_RESPONSE_CHARS = 64 * 1024;
 
 const clone = (value) => structuredClone(value);
+
+// The engine's finite choices are internal. TypeSafe's public choice schema
+// requires named criteria and instructions, not choices/prompt/context.
+const wireQuestions = questions => Object.fromEntries(Object.entries(questions).map(([name, question]) => {
+  if (question?.type !== 'choice' || !Array.isArray(question.choices)) return [name, clone(question)];
+  if (!question.choices.length || question.choices.some(choice => typeof choice !== 'string' || !choice)
+    || new Set(question.choices).size !== question.choices.length) throw errorWithCode('JEV_QUESTIONS_INVALID');
+  return [name, { type: 'choice', criteria: Object.fromEntries(question.choices.map(choice => [choice, question.criteria?.[choice] ?? null])),
+    ...(question.prompt || question.context ? { instructions: { question: question.prompt ?? '', ...(question.context ? { context: clone(question.context) } : {}) } } : {}) }];
+}));
 
 const errorWithCode = (code, cause) => {
   const error = new Error(code);
@@ -94,8 +104,7 @@ export class JevClient {
         body: JSON.stringify({
           model: this.#model,
           state: clone(state),
-          questions: clone(questions),
-          output: 'finite_choice_distribution'
+          questions: wireQuestions(questions)
         }),
         signal: controller.signal
       });
@@ -107,7 +116,11 @@ export class JevClient {
       return {
         answers: Object.fromEntries(Object.entries(answerMap(payload)).map(([key, value]) => [key, normalizeAnswer(value)])),
         latencyMs: Math.max(0, Date.now() - startedAtMs),
-        model: this.#model
+        model: typeof payload.model === 'string' ? payload.model : this.#model,
+        requestedModel: this.#model,
+        ...(Number.isInteger(payload.usage?.input_tokens) && payload.usage.input_tokens >= 0
+          && Number.isInteger(payload.usage?.output_tokens) && payload.usage.output_tokens >= 0
+          ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens, source: 'PROVIDER_USAGE' } } : {})
       };
     } catch (error) {
       if (error?.name === 'AbortError' || controller.signal.aborted) {
@@ -126,4 +139,3 @@ export class JevClient {
 
 export const createJevClient = (options) => new JevClient(options);
 export const jevDefaults = Object.freeze({ endpoint: DEFAULT_ENDPOINT, model: DEFAULT_MODEL, timeoutMs: 1200 });
-

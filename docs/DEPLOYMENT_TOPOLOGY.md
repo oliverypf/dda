@@ -1,4 +1,4 @@
-# hmCodex 多平台部署拓扑规范
+# dda 多平台部署拓扑规范
 
 版本：v1.0  
 状态：Phase 0.5 基线
@@ -19,7 +19,7 @@
 ## 2. 共同组件
 
 ```text
-hmCodex Client
+dda Client
   ├── ArkUI/Tauri UI 或 Linux CLI + HarnessFacade / ReadModel
   ├── Coordinator / AgentCore / Safety / Rule Verifier / Jev Decision Plane
   ├── Local Trajectory / Profiles / Policy
@@ -50,7 +50,7 @@ UI、SafetyDecision、用户审批和本地审计属于客户端；本地 Execut
 适用：个人服务器、云开发机或专用工作站。
 
 ```text
-HarmonyOS ── WSS + bearer/capability token ── hmCodex Gateway
+HarmonyOS ── WSS + bearer/capability token ── dda Gateway
                                              ├── stdio/Unix socket → App Server
                                              └── isolated workspace/Executor
 ```
@@ -58,7 +58,7 @@ HarmonyOS ── WSS + bearer/capability token ── hmCodex Gateway
 - 一位用户/设备获得独立 endpoint 身份、workspace 和进程权限。
 - 使用短期 access token；长期 refresh/私钥保存在 Asset Store。
 - TLS 校验服务器身份；可选证书 pin、设备绑定和 challenge/attestation。
-- Gateway 对客户端暴露版本化 hmCodex Adapter protocol，并在同一主机通过 stdio/Unix socket 驱动固定版本 App Server；这样不把实验性 App Server WebSocket 直接暴露到生产网络。
+- Gateway 对客户端暴露版本化 dda Adapter protocol，并在同一主机通过 stdio/Unix socket 驱动固定版本 App Server；这样不把实验性 App Server WebSocket 直接暴露到生产网络。
 - 直接连接 App Server WSS 仅用于开发、受控试点或官方将该 transport 标记为生产支持后的新 ADR；即使使用官方认证参数也不能把“可认证”误认为“生产稳定”。
 - Adapter 不能信任客户端路径字符串，按 workspaceId 解析服务端 canonical root。
 - 断线不自动迁移到另一 Executor；先 reconciliation，避免重复副作用。

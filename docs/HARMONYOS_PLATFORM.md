@@ -1,11 +1,11 @@
-# hmCodex HarmonyOS PC 平台规范
+# dda HarmonyOS PC 平台规范
 
 版本：v1.0  
 状态：API 24 平台基线
 
 ## 1. 平台定位
 
-hmCodex 是 HarmonyOS PC/2in1 原生 ArkTS + ArkUI Agent Harness。当前工程 `targetSdkVersion` 和 `compatibleSdkVersion` 均为 HarmonyOS 6.1.1 API 24，Stage 模型，模块声明 `phone`、`tablet`、`2in1`。
+dda 是 HarmonyOS PC/2in1 原生 ArkTS + ArkUI Agent Harness。当前工程 `targetSdkVersion` 和 `compatibleSdkVersion` 均为 HarmonyOS 6.1.1 API 24，Stage 模型，模块声明 `phone`、`tablet`、`2in1`。
 
 产品能力分级：
 

@@ -1,11 +1,11 @@
-# hmCodex 跨平台数据模型与迁移规范
+# dda 跨平台数据模型与迁移规范
 
 版本：Storage Schema 1  
 状态：Phase 1 实现基线
 
 ## 1. 存储原则
 
-hmCodex 使用平台无关的数据模型保存结构化事实。HarmonyOS 适配 `relationalStore`、`preferences` 和 Asset Store；Windows/Linux/Gateway 使用等价的 SQLite、系统安全存储和服务端凭据适配器。UI 状态不能替代数据库，模型上下文不能成为唯一事实源。
+dda 使用平台无关的数据模型保存结构化事实。HarmonyOS 适配 `relationalStore`、`preferences` 和 Asset Store；Windows/Linux/Gateway 使用等价的 SQLite、系统安全存储和服务端凭据适配器。UI 状态不能替代数据库，模型上下文不能成为唯一事实源。
 
 数据模型采用“追加式事件 + 可重建投影”：
 

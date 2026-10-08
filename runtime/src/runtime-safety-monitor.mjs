@@ -222,7 +222,7 @@ const normalizeStringList = (value, name, { allowWildcard = false } = {}) => {
 };
 
 const normalizeRelativePath = (value, { allowEmpty = false } = {}) => {
-  if (value === '' && allowEmpty) return '';
+  if (allowEmpty && ['', '.', './', '.\\'].includes(value)) return '';
   if (typeof value !== 'string' || value.length < 1 || value.length > 512 || value.includes('\0') || isAbsolute(value)) {
     fail(value === '' ? SAFETY_ERROR_CODES.PATH_REQUIRED : SAFETY_ERROR_CODES.PATH_INVALID);
   }

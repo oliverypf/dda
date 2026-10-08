@@ -1,11 +1,11 @@
-# hmCodex 多平台单客户端架构基线
+# dda 多平台单客户端架构基线
 
 版本：v0.3
 状态：迁移基线；Linux CLI 形态已确定
 
 ## 1. 产品定位
 
-hmCodex 是一个本地运行的 Agent 客户端，目标体验类似 Codex：用户安装一个客户端，客户端自己负责会话、模型连接、工作区、工具调用、审批、轨迹和上下文记忆。
+dda 是一个本地运行的 Agent 客户端，目标体验类似 Codex：用户安装一个客户端，客户端自己负责会话、模型连接、工作区、工具调用、审批、轨迹和上下文记忆。
 
 HarmonyOS、Windows 和 Linux 是同一个产品的不同平台构建，不是“端侧控制云侧”的必然拆分。远程 App Server、远程 Executor 或 Gateway 只能作为可选连接模式，不能成为客户端的前置依赖或主要产品形态。
 
@@ -26,7 +26,7 @@ Windows/Linux 不直接复用 ArkUI 页面。Windows 使用 Tauri，Linux 使用
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ hmCodex Client                                               │
+│ dda Client                                               │
 │                                                             │
 │  Platform App      Harness Core / Coordinator                │
 │  ArkUI/Tauri/CLI ─▶ Session / Agent / Safety / ReadModel      │

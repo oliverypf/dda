@@ -1,4 +1,4 @@
-# hmCodex 跨平台契约目录
+# dda 跨平台契约目录
 
 这里是 HarmonyOS、Windows 和 Linux 客户端及其本地运行时共用的协议事实源。Gateway 仅在未来远程模式中复用这些契约，不是本地客户端的必需组件。
 

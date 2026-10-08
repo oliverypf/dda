@@ -2,12 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-09-29
-- Deciders: hmCodex architecture
+- Deciders: dda architecture
 - Related: [ADR-0006](0006-multi-platform-clients.md), [Linux CLI 实施计划](../LINUX_CLI_IMPLEMENTATION_PLAN.md)
 
 ## Context
 
-hmCodex 当前包含 HarmonyOS ArkUI 客户端、Windows Tauri 客户端和 Node/Cordis 本地 runtime。现有多平台基线曾将 Linux 描述为 Tauri 桌面客户端，但产品目标已经明确：Linux 端首期只提供无界面 CLI，供服务器、开发机、CI 和远程终端使用。
+dda 当前包含 HarmonyOS ArkUI 客户端、Windows Tauri 客户端和 Node/Cordis 本地 runtime。现有多平台基线曾将 Linux 描述为 Tauri 桌面客户端，但产品目标已经明确：Linux 端首期只提供无界面 CLI，供服务器、开发机、CI 和远程终端使用。
 
 现有 runtime 已具备独立命令入口、JSONL runtime event、health、task、thread、recovery、tools 和诊断命令。Linux 如果重新实现一套 Agent 或桌面壳，会重复任务编排、安全、审批、Memory 和事件逻辑，造成跨平台语义漂移。
 

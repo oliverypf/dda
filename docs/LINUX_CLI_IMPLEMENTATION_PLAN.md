@@ -59,7 +59,7 @@ contracts/v1 + local stores + provider adapters
 
 实现可以做以下边界调整，但不能改变上述语义：
 
-- 新增 `hmcodex` CLI 启动器和命令别名；
+- 新增 `dda` CLI 启动器和命令别名；
 - 把 argv、终端输入和 runtime JSONL 事件转换成 CLI 交互；
 - 新增 Linux/XDG 路径解析；
 - 新增 POSIX 进程组创建、取消和清理；
@@ -93,11 +93,11 @@ contracts/v1 + local stores + provider adapters
 
 实现范围：
 
-- `hmcodex health`；
-- `hmcodex task --workspace PATH --prompt TEXT`；
-- `hmcodex thread list/get`；
-- `hmcodex recovery`；
-- `hmcodex support-info`；
+- `dda health`；
+- `dda task --workspace PATH --prompt TEXT`；
+- `dda thread list/get`；
+- `dda recovery`；
+- `dda support-info`；
 - `--format human` 和 `--format jsonl`；
 - stdout/stderr 分流；
 - `SIGINT` 和 `SIGTERM` 传递；
@@ -162,7 +162,7 @@ contracts/v1 + local stores + provider adapters
 - Node.js 24+；
 - x86_64 Linux、glibc 环境；
 - tar.gz 或 npm 安装方式；
-- `hmcodex` 可执行入口；
+- `dda` 可执行入口；
 - 版本、runtime、provider 和 platform 信息可通过 `support-info` 查询。
 
 后续再评估 deb、AppImage、ARM64、musl 和 Node SEA。发布形式不能先于行为契约稳定化。
@@ -171,7 +171,7 @@ contracts/v1 + local stores + provider adapters
 
 | 编号 | 工作包 | 主要内容 | 依赖 | 交付物 |
 | --- | --- | --- | --- | --- |
-| L-CLI-01 | 命令路由 | argv 解析、子命令、帮助和别名 | L0 | `hmcodex` CLI 入口 |
+| L-CLI-01 | 命令路由 | argv 解析、子命令、帮助和别名 | L0 | `dda` CLI 入口 |
 | L-CLI-02 | runtime bridge | 启动 runtime、传参数、读取 JSONL、转发 stdin | L-CLI-01 | 可重用 bridge |
 | L-CLI-03 | 终端渲染 | phase、heartbeat、审批、结果和错误展示 | L-CLI-02 | human formatter |
 | L-CLI-04 | 机器输出 | JSONL 原样 envelope、最终结果、stdout 约束 | L-CLI-02 | jsonl formatter |

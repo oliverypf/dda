@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "model": "jev-latest",
+  "source": "https://typesafe.ai/blog/introducing-system-one-models-and-jev",
+  "checkedAt": "2026-10-07T08:46:00.000Z",
+  "currency": "USD",
+  "basis": "API_PRICE",
+  "inputPerMillion": 0.042,
+  "cachedInputPerMillion": 0.042,
+  "outputPerMillion": 0,
+  "note": "Published Jev input rate. No separate cache discount is declared. Estimated API usage is not an invoice or actual cash charge."
+}

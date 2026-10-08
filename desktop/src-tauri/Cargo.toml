@@ -1,17 +1,17 @@
 [package]
-name = "hmcodex-desktop"
+name = "dda-desktop"
 version = "0.1.0"
 description = "Windows-first read-only desktop harness for dda"
 authors = ["dda contributors"]
 edition = "2021"
-default-run = "hmcodex-desktop"
+default-run = "dda-desktop"
 
 [lib]
-name = "hmcodex_desktop_lib"
+name = "dda_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "hmcodex-desktop"
+name = "dda-desktop"
 path = "src/main.rs"
 
 [build-dependencies]

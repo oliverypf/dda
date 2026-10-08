@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Functional UI tests for the hmCodex desktop shell.
+// Functional UI tests for the dda desktop shell.
 //
 // The tests drive the real Tauri window through the WebView2 DevTools
 // protocol. They cover the user-visible interactions that the runtime unit
@@ -11,7 +11,7 @@
 //   node scripts/ui-functional-test.mjs
 //   node scripts/ui-functional-test.mjs --task
 //   node scripts/ui-functional-test.mjs --inspect
-//   node scripts/ui-functional-test.mjs --exe "C:\path\to\hmcodex-desktop.exe" --port 9333
+//   node scripts/ui-functional-test.mjs --exe "C:\path\to\dda-desktop.exe" --port 9333
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
-const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
+const DEFAULT_EXE = 'C:\\Program Files\\dda\\dda-desktop.exe';
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
@@ -29,13 +29,22 @@ const flag = (name) => argv.includes(name);
 
 const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
 const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9333'));
-const runTaskFlow = flag('--task') || process.env.HMCODEX_UI_TASK === '1';
+const runResumeFlow = flag('--resume-fixture') || process.env.HMCODEX_UI_RESUME_FIXTURE === '1';
+const runRetryFlow = flag('--retry-fixture');
+const runCrowdedFlow = flag('--crowded-fixture');
+const runTaskFlow = flag('--task') || runResumeFlow || runRetryFlow || runCrowdedFlow || process.env.HMCODEX_UI_TASK === '1';
 const inspectOnly = flag('--inspect');
 const closeWhenDone = flag('--close');
+const viewportWidth = option('--viewport-width', undefined);
+const viewportHeight = option('--viewport-height', undefined);
+for (const dimension of [viewportWidth, viewportHeight].filter(value => value !== undefined)) {
+  if (!Number.isInteger(Number(dimension)) || Number(dimension) < 200 || Number(dimension) > 8192) throw Error('INVALID_UI_VIEWPORT');
+}
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 const results = [];
+let modelFixtureStatsUrl = '';
 const record = (name, status, detail = '') => {
   results.push({ name, status, detail });
   const suffix = detail ? ` — ${detail}` : '';
@@ -144,7 +153,7 @@ const connect = async () => {
 };
 
 const launchApp = (extraEnv = {}) => {
-  spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const child = spawn(exe, [], {
     detached: true,
     stdio: 'ignore',
@@ -256,6 +265,9 @@ const waitForReady = async (client) => {
     interval: 500,
     label: 'composer ready'
   });
+  await waitFor(client, `document.querySelector('#app')?.dataset.startupHydration === 'complete'`, {
+    timeout: 120000, interval: 500, label: 'startup history and dashboard hydration complete'
+  });
   // The full-local debug build is a valid native channel too. The previous
   // gate only accepted the phase-1.5 title, so it timed out after the runtime
   // was already ready and made the UI suite report a false startup failure.
@@ -279,7 +291,9 @@ const suite = async (client) => {
   await waitForReady(client);
 
   await runTest('T01 初始渲染与只读门控', async () => {
-    assert((await client.evaluate('document.title')) === 'hmCodex', 'title');
+    assert((await client.evaluate('document.title')) === 'dda', 'title');
+    assert((await text(client, '.brand-mark')) === 'dda', 'brand mark');
+    assert((await text(client, '.brand-row strong')) === 'dda', 'product name');
     assert(await exists(client, '.app-shell'), 'app-shell');
     assert(await exists(client, '.navigation-rail'), 'navigation-rail');
     assert(await exists(client, '.workbench'), 'workbench');
@@ -302,18 +316,36 @@ const suite = async (client) => {
     return 'title/connection/run-state/composer/mode/cancel';
   });
 
-  await runTest('T01A 空闲刷新不重建右侧上下文面板', async () => {
+  await runTest('T01A 工作台空闲刷新不重建右侧上下文面板', async () => {
+    // WebView navigation can survive the last suite's diagnostics page.
+    // Exercise the workbench's incremental refresh path explicitly.
+    assert((await clickByDataset(client, '[data-action="navigate"][data-page]', 'page', 'workbench')) === 'CLICKED', 'workbench navigation');
+    await waitFor(client, `Boolean(document.querySelector('[data-live-workbench]'))`, { label: 'idle workbench' });
+    // Startup dashboard hydration can legitimately replace the initial shell
+    // once. Wait until the same panel instance survives a quiet interval so
+    // the assertion below measures the refresh action itself.
+    await waitFor(client, `(() => {
+      const panel = document.querySelector('.context-panel');
+      if (!panel) return false;
+      const now = Date.now();
+      if (window.__ddaStableContextPanel !== panel) {
+        window.__ddaStableContextPanel = panel;
+        window.__ddaStableContextPanelSince = now;
+        return false;
+      }
+      return now - (window.__ddaStableContextPanelSince ?? now) >= 1000;
+    })()`, { timeout: 15000, interval: 250, label: 'stable context panel after startup hydration' });
     const captured = await client.evaluate(`(() => {
       const panel = document.querySelector('.context-panel');
       if (!panel) return false;
-      window.__hmCodexContextPanelBefore = panel;
+      window.__ddaContextPanelBefore = panel;
       return true;
     })()`);
     assert(captured, 'context panel');
     if (!(await exists(client, '[data-action="refresh-execution-state"]'))) skipTest('当前布局未挂载右侧上下文操作');
     assert((await click(client, '[data-action="refresh-execution-state"]')) === 'CLICKED', 'refresh execution state');
     await delay(700);
-    assert(await client.evaluate('window.__hmCodexContextPanelBefore === document.querySelector(\'.context-panel\')'), 'context panel DOM identity changed');
+    assert(await client.evaluate('window.__ddaContextPanelBefore === document.querySelector(\'.context-panel\')'), 'context panel DOM identity changed');
     return 'context panel preserved';
   });
 
@@ -463,6 +495,7 @@ const suite = async (client) => {
   });
 
   await runTest('T07 线程选择与时间线恢复', async () => {
+    if (runResumeFlow) return 'seeded checkpoint is verified by T07R';
     const threads = await count(client, '.thread-row');
     if (threads === 0) skipTest('当前没有已保存线程');
     const first = await client.evaluate(`(() => {
@@ -484,6 +517,81 @@ const suite = async (client) => {
     }
     return `${first.title || first.id} · ${await count(client, '.timeline-item')} timeline items`;
   });
+
+  if (runCrowdedFlow) await runTest('T01C 原生项目树 80 任务滚轮与末项可达', async () => {
+    await client.evaluate(`document.querySelectorAll('.project-header[aria-expanded="false"]').forEach(element => element.click())`);
+    await waitFor(client, `document.querySelectorAll('[data-action="select-thread"]').length >= 80`, { label: '80 native thread rows' });
+    const before = await client.evaluate(`(() => {
+      const list = document.querySelector('[data-region="thread-list"]'); const box = list.getBoundingClientRect();
+      return { top: list.scrollTop, max: list.scrollHeight-list.clientHeight, railTop: document.querySelector('.navigation-rail').scrollTop,
+        brandTop: document.querySelector('.brand-row').getBoundingClientRect().top, x: box.left+box.width/2, y: box.top+box.height/2 };
+    })()`);
+    assert(before.max > 0, 'the native list must overflow');
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaY: 600, deltaX: 0 });
+    await waitFor(client, `document.querySelector('[data-region="thread-list"]').scrollTop > ${before.top}`, { label: 'native sidebar wheel' });
+    const wheelBudget = Math.ceil(before.max / 600) + 3;
+    for (let wheel = 0; wheel < wheelBudget; wheel++) {
+      const position = await client.evaluate(`(() => {
+        const list = document.querySelector('[data-region="thread-list"]');
+        return { top: list.scrollTop, max: list.scrollHeight-list.clientHeight };
+      })()`);
+      if (Math.abs(position.top-position.max) <= 1) break;
+      await client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaY: 600, deltaX: 0 });
+      await waitFor(client, `document.querySelector('[data-region="thread-list"]').scrollTop > ${position.top}`, { label: 'native sidebar wheel toward last task' });
+    }
+    // An extra wheel at the end must stay in the list instead of moving its rail.
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaY: 600, deltaX: 0 });
+    const after = await client.evaluate(`(() => {
+      const list = document.querySelector('[data-region="thread-list"]');
+      const box = list.getBoundingClientRect(); const last = [...list.querySelectorAll('[data-action="select-thread"]')].at(-1).getBoundingClientRect();
+      return { top: list.scrollTop, max: list.scrollHeight-list.clientHeight, railTop: document.querySelector('.navigation-rail').scrollTop,
+        brandTop: document.querySelector('.brand-row').getBoundingClientRect().top, lastVisible: last.top >= box.top && last.bottom <= box.bottom+1 };
+    })()`);
+    assert(after.railTop === before.railTop && after.brandTop === before.brandTop, 'wheel moved the outer navigation rail');
+    assert(Math.abs(after.top-after.max) <= 1 && after.lastVisible, 'last native task is clipped');
+    const screenshot = option('--scroll-screenshot', undefined);
+    if (screenshot) {
+      const { data } = await client.send('Page.captureScreenshot', { format: 'png' });
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(resolve(screenshot), Buffer.from(data, 'base64'));
+    }
+    await client.evaluate(`document.querySelector('[data-region="thread-list"]').scrollTop = ${before.top}`);
+    return 'native wheel reaches the last task without moving the brand or outer rail';
+  });
+
+  if (runResumeFlow) {
+    await runTest('T07R 预置中断任务从 checkpoint 继续', async () => {
+      const seed = await client.evaluate(`(() => {
+        const row = [...document.querySelectorAll('.thread-row')]
+          .find((candidate) => candidate.innerText.includes('可恢复'));
+        return row ? { id: row.dataset.threadId, text: row.innerText } : null;
+      })()`);
+      assert(seed?.id, 'seeded resumable thread');
+      assert((await clickByDataset(client, '.thread-row', 'threadId', seed.id)) === 'CLICKED', 'seeded thread click');
+      await waitFor(client, `document.querySelector('.thread-row.active')?.dataset.threadId === ${JSON.stringify(seed.id)}`, { label: 'seeded thread active' });
+      await waitFor(client, `Boolean(document.querySelector('[data-action="continue-task"]'))`, { label: 'continue action visible' });
+      if ((await text(client, '.mode-pill')).includes('受控模式')) {
+        assert((await click(client, '.mode-pill')) === 'CLICKED', 'switch resume fixture to read-only');
+        await waitFor(client, `/只读模式/u.test(document.querySelector('.mode-pill')?.innerText ?? '')`, { label: 'resume fixture read-only mode' });
+      }
+      const beforeStats = modelFixtureStatsUrl
+        ? await (await fetch(modelFixtureStatsUrl)).json()
+        : { plannerCalls: 0, executorCalls: 0 };
+      assert((await click(client, '[data-action="continue-task"]')) === 'CLICKED', 'continue checkpoint action');
+      await waitFor(client, `document.querySelector('.composer-stop')?.disabled === false`, { timeout: 30000, label: 'resumed task started' });
+      await waitFor(client, `/只读检查完成|任务未完成|任务已取消|已验证完成/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'resumed task terminal state' });
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 30000, label: 'resumed task settled' });
+      const body = await text(client, 'body');
+      const timeline = await client.evaluate(`[...document.querySelectorAll('.timeline-item')].map((item) => item.innerText).join(' || ')`);
+      assert(/只读检查完成|已验证完成/u.test(body) && timeline.includes('工具执行完成'), `resumed task evidence missing; timeline=${timeline}; body=${body.slice(-1200)}`);
+      if (modelFixtureStatsUrl) {
+        const afterStats = await (await fetch(modelFixtureStatsUrl)).json();
+        assert(afterStats.executorCalls > beforeStats.executorCalls, `executor call count did not increase: ${JSON.stringify({ beforeStats, afterStats })}`);
+        assert(afterStats.plannerCalls === beforeStats.plannerCalls, `resume unexpectedly replanned: ${JSON.stringify({ beforeStats, afterStats })}`);
+      }
+      return `checkpoint restored; planner unchanged; executor advanced`;
+    });
+  }
 
   await runTest('T08 会话不加载全局审计分页', async () => {
     assert(!(await exists(client, '.timeline-more')), 'global audit pagination hidden from transcript');
@@ -524,6 +632,15 @@ const suite = async (client) => {
   if (runTaskFlow) {
     await runTest('T13 真实任务终态与时间线渲染', async () => {
       assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task click');
+      await waitFor(client, `Boolean(document.querySelector('.project-picker-card'))`, { label: 'task project picker' });
+      assert(await client.evaluate(`(() => {
+        const button = document.querySelector('.project-picker-last-used')
+          ?? [...document.querySelectorAll('[data-action="select-new-task-project"]')].find(item => item.dataset.projectId !== '__projectless__');
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`), 'select fixture project');
+      await waitFor(client, `!document.querySelector('.project-picker-card')`, { label: 'task project selected' });
       await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 10000, label: 'new task ready to submit' });
       assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
       assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
@@ -535,6 +652,70 @@ const suite = async (client) => {
       const hasErrorOrOutput = await client.evaluate(`[...document.querySelectorAll('.timeline-item')].some((item) => item.innerText.length > 80 || /run\\.failed|PLAN_STEP_FAILED|错误|失败/u.test(item.innerText))`);
       assert(hasErrorOrOutput, 'timeline renders model output or terminal error');
       return `${terminal} · ${await count(client, '.timeline-item')} timeline items · ${await count(client, '.thread-row')} threads`;
+    });
+    if (runRetryFlow) await runTest('T15 必失败任务点击重试升级后成功', async () => {
+      if ((await text(client, '.mode-pill')).includes('受控模式')) {
+        assert((await click(client, '.mode-pill')) === 'CLICKED', 'read-only retry fixture');
+      }
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { label: 'previous task settled' });
+      assert((await setComposer(client, 'UI_RETRY_UPGRADE_PROBE: read README and provide evidence')) === 'SET', 'retry probe prompt');
+      assert((await submitComposer(client)) === 'SUBMITTED', 'failure task submitted');
+      await waitFor(client, `/任务未完成/u.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 90000, label: 'definite failure terminal' });
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { label: 'failed reader released' });
+      const failedStats = await (await fetch(modelFixtureStatsUrl)).json();
+      assert(failedStats.definiteFailureCalls > 0 && failedStats.strongCalls === 0, 'ordinary executor failed before upgrade');
+      await waitFor(client, `document.querySelector('[data-action="retry-task"]')?.disabled === false`, { label: 'failed task retry action rendered' });
+      assert((await attr(client, '[data-action="retry-task"]', 'disabled')) === null, 'retry enabled after failure');
+      await client.evaluate(`(() => { window.__retryOriginalPrompt = window.prompt; window.prompt = () => 'strong-executor-fixture'; })()`);
+      assert((await click(client, '[data-action="retry-task"]')) === 'CLICKED', 'actual retry action');
+      await client.evaluate(`window.prompt = window.__retryOriginalPrompt`);
+      await waitFor(client, `/只读检查完成|已验证完成/u.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 90000, label: 'upgraded retry succeeded' });
+      await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { label: 'upgrade reader released' });
+      const after = await (await fetch(modelFixtureStatsUrl)).json();
+      assert(after.definiteFailureCalls === failedStats.definiteFailureCalls, 'retry did not call the pinned ordinary executor');
+      assert(after.strongCalls >= 2 && after.strongEvidenceResults > 0, `strong executor received actual file evidence: ${JSON.stringify(after)}`);
+      assert((await text(client, 'body')).includes('工具执行完成'), 'upgraded tool completion rendered');
+      return `FAILED -> retry strong-executor-fixture -> SUCCEEDED; ${after.strongCalls} strong calls; actual file evidence received`;
+    });
+    await runTest('T14 任务价值摘要六项操作入口', async () => {
+      await waitFor(client, `Boolean(document.querySelector('.task-value-section'))`, { timeout: 30000, label: 'task value summary' });
+      const actions = ['continue-task', 'view-verification', 'set-task-budget', 'view-decisions', 'retry-task', 'export-task-result'];
+      for (const action of actions) assert(await exists(client, `[data-action="${action}"]`), `${action} action`);
+      assert((await text(client, '.task-value-section')).includes('任务预算'), 'budget summary');
+
+      // Drive the budget prompts deterministically, then verify the saved
+      // values are rendered back into the same task summary.
+      await client.evaluate(`(() => {
+        const values = ['4096', '4', '0.25'];
+        window.prompt = () => values.shift() ?? '';
+      })()`);
+      assert((await click(client, '[data-action="set-task-budget"]')) === 'CLICKED', 'budget action');
+      await waitFor(client, `document.querySelector('.task-value-section')?.innerText.includes('4,096 token')`, { label: 'budget saved in summary' });
+      assert((await text(client, '.task-value-section')).includes('4 轮工具'), 'tool round budget rendered');
+      assert((await text(client, '.task-value-section')).includes('费用 ≤ 0.25'), 'cost budget rendered');
+
+      assert((await click(client, '[data-action="view-verification"]')) === 'CLICKED', 'verification action');
+      await waitFor(client, `Boolean(document.querySelector('.context-panel'))`, { label: 'verification context' });
+      assert(!(await text(client, 'body')).includes('界面渲染出错'), 'no render error after verification action');
+      assert((await click(client, '[data-action="view-decisions"]')) === 'CLICKED', 'decision action');
+      await waitFor(client, `Boolean(document.querySelector('.context-panel'))`, { label: 'decision context' });
+
+      // This checks the successful-run gate. A separate failed-run fixture is
+      // still needed to prove that the retry handler reaches success.
+      const retryState = await client.evaluate(`(() => {
+        const button = document.querySelector('[data-action="retry-task"]');
+        return { exists: Boolean(button), disabled: button?.hasAttribute('disabled') ?? false };
+      })()`);
+      assert(retryState.exists, 'retry action state');
+      if (retryState.disabled) {
+        assert((await click(client, '[data-action="retry-task"]')) === 'DISABLED', 'retry is gated after success');
+      }
+
+      assert((await click(client, '[data-action="export-task-result"]')) === 'CLICKED', 'export action');
+      assert((await click(client, '[data-action="navigate"][data-page="diagnostics"]')) === 'CLICKED', 'diagnostics navigation');
+      await waitFor(client, `document.querySelector('.page-status')?.innerText.includes('导出')`, { timeout: 30000, label: 'export status' });
+      assert((await text(client, '.page-status')).includes('导出'), 'export status visible');
+      return 'six actions present; budget, verification, decision, gated retry and export exercised';
     });
     await runTest('T12 真实任务取消流程', async () => {
       await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 180000, label: 'previous task reader released' });
@@ -556,17 +737,28 @@ const suite = async (client) => {
 };
 
 const main = async () => {
-  const fixture = runTaskFlow ? await startUiModelFixture({ delayMs: 80 }) : undefined;
+  const fixture = runTaskFlow ? await startUiModelFixture({ delayMs: 80, seedResumeThread: runResumeFlow, retryUpgrade: runRetryFlow,
+    seedThreadCount: runCrowdedFlow ? 80 : 0 }) : undefined;
+  modelFixtureStatsUrl = fixture?.statsUrl ?? '';
   const pid = launchApp(fixture ? {
     ...fixture.env,
     HMCODEX_MODEL_CONFIG: fixture.modelConfigPath,
     HMCODEX_UI_MODEL_FIXTURE_KEY: 'fixture-key',
     HMCODEX_WORKSPACE_ROOT: fixture.workspaceRoot
   } : {});
-  console.log(`hmCodex UI functional tests · exe=${exe} · port=${port} · pid=${pid}`);
+  console.log(`dda UI functional tests · exe=${exe} · port=${port} · pid=${pid}`);
   let client;
   try {
     client = await connect();
+    if (viewportWidth !== undefined || viewportHeight !== undefined) {
+      const initialViewport = await client.evaluate(`({ width: innerWidth, height: innerHeight, scale: devicePixelRatio })`);
+      const width = Number(viewportWidth ?? initialViewport.width), height = Number(viewportHeight ?? initialViewport.height);
+      await client.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: initialViewport.scale, mobile: false });
+      await runTest('T00V 指定原生 WebView 视口', async () => {
+        await waitFor(client, `innerWidth === ${width} && innerHeight === ${height}`, { label: 'requested WebView viewport' });
+        return `${width}x${height} CSS pixels; native window chrome is not resized`;
+      });
+    }
     if (inspectOnly) {
       await inspectDom(client);
       return;
@@ -575,7 +767,7 @@ const main = async () => {
   } finally {
     client?.close();
     if (closeWhenDone) {
-      spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+      spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     }
     await fixture?.close();
   }

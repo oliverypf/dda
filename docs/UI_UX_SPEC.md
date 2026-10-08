@@ -1,4 +1,4 @@
-# hmCodex HarmonyOS PC UI/UX 规范
+# dda HarmonyOS PC UI/UX 规范
 
 版本：v1.1  
 状态：Phase 1 交互基线

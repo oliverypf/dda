@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
-const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
+const DEFAULT_EXE = 'C:\\Program Files\\dda\\dda-desktop.exe';
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
@@ -108,7 +108,7 @@ const waitFor = async (client, expression, { timeout = 45000, interval = 300, la
 };
 
 const main = async () => {
-  spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const fixture = await startUiModelFixture({ delayMs: 80 });
   const child = spawn(exe, [], {
     detached: true,
@@ -126,6 +126,9 @@ const main = async () => {
   const client = await connect();
   try {
     await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { label: 'runtime ready' });
+    if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式') === true`)) {
+      await client.evaluate(`document.querySelector('.mode-pill').click()`);
+    }
     await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { label: 'read-only execution mode' });
     await client.evaluate(`(() => {
       const textarea = document.querySelector('textarea[name="prompt"]');
@@ -170,7 +173,7 @@ const main = async () => {
     console.log('PASS streaming row updated in place without rebuilding the app root');
   } finally {
     client.close();
-    spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     await fixture.close();
   }
 };

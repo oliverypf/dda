@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hmcodex.local/contracts/v1/thread-record.schema.json",
-  "title": "hmCodex Persisted Thread",
+  "title": "dda Persisted Thread",
   "description": "Thread history and redacted checkpoint used to resume a task without replaying side effects.",
   "type": "object",
   "additionalProperties": false,

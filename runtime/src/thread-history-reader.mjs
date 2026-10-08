@@ -3,7 +3,8 @@ import { readRunResponse } from './run-response-store.mjs';
 import { createHash } from 'node:crypto';
 import { openHarnessDatabase, readHarnessEventTail } from './harness-store-schema.mjs';
 import { createHarnessEventStore } from './harness-event-store.mjs';
-import { createThreadStore, THREAD_STATES, checkpointDigest, titleDigest } from './thread-store.mjs';
+import { createThreadStore, THREAD_STATES, checkpointDigest, titleDigest,
+  compareThreadEvents as compare, checkpointClearApplies, checkpointResumeMode } from './thread-store.mjs';
 import { readPersistentJsonFile } from './persistent-json-store.mjs';
 import { createTrajectoryStore } from './trajectory-store.mjs';
 
@@ -28,10 +29,12 @@ const validate = (event) => {
   }
   return event;
 };
-const compare = (a, b) => a.emittedAtMs - b.emittedAtMs
-  || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0) || a.sequence - b.sequence;
+const recoverySummary = (checkpoint) => {
+  const resumeMode = checkpointResumeMode(checkpoint);
+  return { resumeMode, resumable: resumeMode === 'PLAN' || resumeMode === 'PREPARATION' };
+};
 const summary = ({ turns = [], checkpoint, ...thread }) => ({ ...thread,
-  turnCount: turns.length, resumable: Boolean(checkpoint?.plan) });
+  turnCount: turns.length, ...recoverySummary(checkpoint) });
 
 // Thread titles are local presentation metadata. The durable event keeps only
 // titleDigest so support bundles and event exports never contain the prompt.
@@ -76,7 +79,7 @@ function readSqliteMetadata(db, threadId, includeRuns, titles = new Map()) {
         cwd: typeof p.cwd === 'string' ? p.cwd : '', state: THREAD_STATES.includes(p.state) ? p.state : 'IDLE',
         createdAtMs: Number.isFinite(p.createdAtMs) ? p.createdAtMs : event.emittedAtMs,
         updatedAtMs: Number.isFinite(p.updatedAtMs) ? p.updatedAtMs : event.emittedAtMs,
-        turnCount: turns.length, resumable: false,
+        turnCount: turns.length, ...recoverySummary(undefined),
         ...(typeof p.forkedFrom === 'string' ? { forkedFrom: p.forkedFrom } : {}) },
       turnIds: new Set(turns.map((turn) => turn.id)),
       runIds: new Set(includeRuns ? turns.map((turn) => turn.runId).filter(Boolean) : []),
@@ -105,12 +108,13 @@ function readSqliteMetadata(db, threadId, includeRuns, titles = new Map()) {
       if (typeof p.runId === 'string' && p.runId) thread.activeRunId = p.runId;
       if (p.checkpoint && p.checkpoint.checkpointDigest === checkpointDigest(p.checkpoint)) {
         record.checkpointRunId = p.checkpoint.runId;
-        thread.resumable = Boolean(p.checkpoint.plan);
+        Object.assign(thread, recoverySummary(p.checkpoint));
         thread.state = THREAD_STATES.includes(p.checkpoint.state) ? p.checkpoint.state : 'RUNNING';
       }
     } else if (event.kind === 'ThreadCheckpointCleared') {
+      if (!checkpointClearApplies(record.checkpointRunId, event)) continue;
       record.checkpointRunId = undefined;
-      thread.resumable = false;
+      Object.assign(thread, recoverySummary(undefined));
       if (THREAD_STATES.includes(p.state)) thread.state = p.state;
       delete thread.activeRunId;
     }

@@ -18,7 +18,7 @@
 通用形式：
 
 ```bash
-hmcodex <command> [subcommand] [options]
+dda <command> [subcommand] [options]
 ```
 
 公共选项：
@@ -27,7 +27,7 @@ hmcodex <command> [subcommand] [options]
 | --- | --- |
 | `--format human|jsonl` | 输出格式；默认 TTY 为 `human`，非 TTY 为 `jsonl` |
 | `--config PATH` | 指定模型配置文件 |
-| `--data-dir PATH` | 指定 hmCodex 数据根目录，优先级高于 XDG 默认值 |
+| `--data-dir PATH` | 指定 dda 数据根目录，优先级高于 XDG 默认值 |
 | `--workspace PATH` | 指定工作区根目录 |
 | `--timeout-ms N` | CLI 等待 runtime 的最大时间 |
 | `--events stdout` | 直接启用 runtime JSONL 事件流 |
@@ -41,8 +41,8 @@ hmcodex <command> [subcommand] [options]
 ### 3.1 `health`
 
 ```bash
-hmcodex health
-hmcodex health --format jsonl
+dda health
+dda health --format jsonl
 ```
 
 用途：验证 Node、runtime 入口、配置格式、存储路径和 provider 路由可解析性。
@@ -57,8 +57,8 @@ hmcodex health --format jsonl
 ### 3.2 `task`
 
 ```bash
-hmcodex task --workspace /path/to/project --prompt "检查项目结构"
-hmcodex task --workspace /path/to/project --prompt "检查项目结构" --format jsonl
+dda task --workspace /path/to/project --prompt "检查项目结构"
+dda task --workspace /path/to/project --prompt "检查项目结构" --format jsonl
 ```
 
 常用选项：
@@ -79,10 +79,10 @@ Linux CLI 不得默认将 `CONTROLLED` 映射为自动批准。无 TTY 的 `CONT
 ### 3.3 `thread`
 
 ```bash
-hmcodex thread list
-hmcodex thread get --thread-id THREAD_ID
-hmcodex thread create --title "项目检查"
-hmcodex thread fork --thread-id THREAD_ID --title "实验分支"
+dda thread list
+dda thread get --thread-id THREAD_ID
+dda thread create --title "项目检查"
+dda thread fork --thread-id THREAD_ID --title "实验分支"
 ```
 
 线程数据继续由 runtime 的 Thread Store 和 Harness Event Store 管理。CLI 不维护第二份线程事实源。
@@ -90,7 +90,7 @@ hmcodex thread fork --thread-id THREAD_ID --title "实验分支"
 ### 3.4 `thread-events`
 
 ```bash
-hmcodex thread-events --thread-id THREAD_ID
+dda thread-events --thread-id THREAD_ID
 ```
 
 输出线程历史事件。分页、cursor、未知事件和脱敏规则复用现有 runtime 命令。
@@ -98,8 +98,8 @@ hmcodex thread-events --thread-id THREAD_ID
 ### 3.5 `recovery`
 
 ```bash
-hmcodex recovery
-hmcodex recovery --workspace /path/to/project
+dda recovery
+dda recovery --workspace /path/to/project
 ```
 
 只对账孤立的 Approval、Lease、Intent、RoleContext 和 Dream 状态，不自动重放任务，不自动执行副作用。
@@ -107,8 +107,8 @@ hmcodex recovery --workspace /path/to/project
 ### 3.6 `tools`
 
 ```bash
-hmcodex tools --workspace /path/to/project
-hmcodex tools --workspace /path/to/project --tool workspace.read
+dda tools --workspace /path/to/project
+dda tools --workspace /path/to/project --tool workspace.read
 ```
 
 只读阶段允许列出工具和调用只读 workspace 工具。受控工具必须经过原有 Runtime Safety 链。
@@ -116,11 +116,11 @@ hmcodex tools --workspace /path/to/project --tool workspace.read
 ### 3.7 诊断命令
 
 ```bash
-hmcodex support-info
-hmcodex support-bundle --output PATH
-hmcodex dashboard
-hmcodex metrics
-hmcodex capacity
+dda support-info
+dda support-bundle --output PATH
+dda dashboard
+dda metrics
+dda capacity
 ```
 
 诊断输出默认脱敏，不包含原始 prompt、模型全文、hidden reasoning、API key、完整源代码和未过滤命令输出。

@@ -21,7 +21,7 @@
     {
       "itemId": "welcome",
       "kind": "AGENT",
-      "title": "hmCodex",
+      "title": "dda",
       "body": "Windows 只读工作台已就绪。可以检查项目、阅读文件并整理下一步。",
       "status": "COMPLETE",
       "createdAtMs": 1788230400000

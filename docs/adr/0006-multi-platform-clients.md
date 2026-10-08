@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-31
-- Deciders: hmCodex architecture
+- Deciders: dda architecture
 - Supersedes: none
 
 补充：Linux 客户端形态在 [ADR-0023](0023-linux-cli-client.md) 中细化为无界面 CLI；本 ADR 中关于 Linux Tauri 桌面壳的描述以 ADR-0023 为准。

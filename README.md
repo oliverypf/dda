@@ -1,4 +1,6 @@
-# hmCodex
+# dda
+
+产品名称统一为 `dda`，桌面程序为 `dda-desktop.exe`。为沿用已有配置和历史记录，数据目录 `%LOCALAPPDATA%\hmCodex`、数据库 `hmcodex.db`、`HMCODEX_*` 环境变量、应用标识和浏览器存储键保留兼容名称。MSI 的升级 GUID 固定为原值，发布者显示为 `dda`。仓库实际目录与归档证据中的旧路径不变。
 
 Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmCodex\trajectory.jsonl`，下一次任务最多恢复最近三个 run 的结构化摘要作为有界 context；原始 prompt、模型全文、隐藏思维链和凭据不会写入或恢复。
 

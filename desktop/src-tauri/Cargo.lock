@@ -706,6 +706,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dda-desktop"
+version = "0.1.0"
+dependencies = [
+ "rfd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1518,20 +1532,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "hmcodex-desktop"
-version = "0.1.0"
-dependencies = [
- "rfd",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tempfile",
- "url",
-]
 
 [[package]]
 name = "html5ever"

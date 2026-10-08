@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "model": "mimo-v2.6-flash",
+  "source": "https://opencode.ai/docs/go/#usage-limits",
+  "checkedAt": "2026-10-07T16:16:22.721Z",
+  "currency": "USD",
+  "basis": "SUBSCRIPTION_QUOTA",
+  "inputPerMillion": 0.14,
+  "cachedInputPerMillion": 0.0028,
+  "outputPerMillion": 0.28,
+  "note": "Published quota consumption rates, not an invoice. Verified from official Go documentation on 2026-10-08."
+}

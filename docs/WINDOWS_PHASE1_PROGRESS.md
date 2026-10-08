@@ -51,7 +51,7 @@
 
 2026-09-08 本地副本构建与启动验收：共享盘上 Tauri CLI 原生程序无法加载（`-1073741818`），已将源码复制到本地 NTFS `C:\work\hmCodex`，干净安装依赖并执行 `npm run build:windows:phase1`，MSI/NSIS/EXE 均生成；EXE 含 `WINDOWS_PHASE1_READ_ONLY` 且不含前置渠道字符串，直接启动后 `health → recovery → dashboard` 正常、dashboard 返回 `ok:true`。启动时发现 5 个旧 JSON 存储在 2026-09-04 17:39:06 被整体清零（全 NUL、不可恢复），已改名 `*.zeroed-20260904T173906` 留档；运行时重建了 schema 合法存储（decision-trace 740 决策/551 结果/2031 事件，credit-blame 551 条，evaluation 19 条 outcome，profiles 4 画像/23 证据，memory 5 条），默认 `hmcodex.db` 校验 44 事件/44 回执/0 墓碑。校验值与环境见 [构建记录](WINDOWS_PHASE1_BUILD_2026-09-08.md)。本结果不等于 MSI/NSIS 安装、卸载或 M7 手工场景通过。
 
-2026-09-08 模型路由更新：hmCodex 项目默认模型改为 OpenCode Go（`openai-chat` / `chat-completions` / `mimo-v2.5-pro` / `https://opencode.ai/zen/go/v1`，`OPENCODE_GO_API_KEY`），新增 `headers` / `sessionHeader` 配置与 `x-opencode-session` 注入，修正流式 tool-call 后置 `null` 字段覆盖首个 id/name 的问题；CLI 真实任务与工具轮次均成功，runtime 并行全量 385/385，release EXE 已重建并启动。详见构建记录。
+2026-09-08 模型路由更新：dda 项目默认模型改为 OpenCode Go（`openai-chat` / `chat-completions` / `mimo-v2.5-pro` / `https://opencode.ai/zen/go/v1`，`OPENCODE_GO_API_KEY`），新增 `headers` / `sessionHeader` 配置与 `x-opencode-session` 注入，修正流式 tool-call 后置 `null` 字段覆盖首个 id/name 的问题；CLI 真实任务与工具轮次均成功，runtime 并行全量 385/385，release EXE 已重建并启动。详见构建记录。
 
 M0 已实现：四种渠道标识；runtime task、Tauri task 和桌面模式状态的 Phase 1 只读门控；health、dashboard、桌面能力区和 `support-info` 渠道展示；动态插件导入在 Phase 1 被关闭；旧数据导入边界见 WINDOWS_STORE_MIGRATION_POLICY.md。
 

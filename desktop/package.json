@@ -1,5 +1,5 @@
 {
-  "name": "hmcodex-desktop",
+  "name": "dda-desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -16,6 +16,11 @@
     "build:windows:full-local:fast": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\" --fast",
     "tauri": "tauri",
     "test:ui:task": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\" --task",
+    "test:evidence:goal": "node \"%npm_config_local_prefix%/scripts/goal-evidence-harness.mjs\"",
+    "test:evidence:upgrade": "node \"%npm_config_local_prefix%/scripts/goal-upgrade-harness.mjs\"",
+    "test:goal": "node \"%npm_config_local_prefix%/scripts/validate-agent-goal.mjs\"",
+    "test:ui:resume": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\" --resume-fixture --close",
+    "test:ui:recovery": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\" --resume-fixture --retry-fixture --close",
     "dev:vite": "node \"%npm_config_local_prefix%/node_modules/vite/bin/vite.js\" --config \"%npm_config_local_prefix%/vite.config.ts\" --configLoader native --host 127.0.0.1 --port 1420",
     "test": "node \"%npm_config_local_prefix%/scripts/test.mjs\"",
     "test:ui": "node \"%npm_config_local_prefix%/scripts/ui-functional-test.mjs\"",
@@ -40,7 +45,9 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "lucide": "^1.38.0"
+    "dompurify": "3.4.16",
+    "lucide": "^1.38.0",
+    "marked": "18.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

@@ -30,7 +30,7 @@ EXE 与 NSIS 版本信息为 `0.1.0`；MSI 无文件版本资源。
 ## 渠道与运行时校验
 
 - `hmcodex-desktop.exe` 内含字符串 `WINDOWS_PHASE1_READ_ONLY`，不含 `WINDOWS_MVP_PRE_PHASE1`，渠道在构建期烘焙进程序。
-- 未安装 MSI/NSIS，直接启动 release EXE（PID 19960），窗口标题 `hmCodex` 且响应正常。
+- 未安装 MSI/NSIS，直接启动 release EXE（PID 19960），窗口标题 `dda` 且响应正常。
 - 启动序列 `health → recovery → dashboard` 均正常执行；`dashboard` 返回 `ok:true`。
 - Tauri 在本地副本的 `release\runtime\src\index.mjs` 解析到捆绑 runtime，不依赖 Z 盘。
 
@@ -46,7 +46,7 @@ EXE 与 NSIS 版本信息为 `0.1.0`；MSI 无文件版本资源。
 
 ## 模型路由更新与重建（2026-09-08 20:49 +08:00）
 
-项目默认模型改为 OpenCode Go：`provider=openai-chat`、`protocol=chat-completions`、`model=mimo-v2.5-pro`、`baseURL=https://opencode.ai/zen/go/v1`、`apiKeyEnv=OPENCODE_GO_API_KEY`，并按网关要求注入 `x-opencode-session` 请求头。这是 hmCodex 项目自身的模型配置，未修改 Codex 应用配置。
+项目默认模型改为 OpenCode Go：`provider=openai-chat`、`protocol=chat-completions`、`model=mimo-v2.5-pro`、`baseURL=https://opencode.ai/zen/go/v1`、`apiKeyEnv=OPENCODE_GO_API_KEY`，并按网关要求注入 `x-opencode-session` 请求头。这是 dda 项目自身的模型配置，未修改 Codex 应用配置。
 
 实现要点：
 

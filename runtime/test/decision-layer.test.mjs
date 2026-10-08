@@ -58,7 +58,9 @@ test('Jev client normalizes finite-choice answers and sends no tool surface', as
     questions: { failureType: { type: 'choice', choices: ['TEST_FAILURE', 'UNKNOWN'] } }
   });
   assert.equal(result.answers.failureType.choice, 'TEST_FAILURE');
-  assert.equal(request.output, 'finite_choice_distribution');
+  assert.deepEqual(request.questions.failureType.criteria, { TEST_FAILURE: null, UNKNOWN: null });
+  assert.equal(Object.hasOwn(request.questions.failureType, 'choices'), false);
+  assert.equal(Object.hasOwn(request, 'output'), false);
   assert.equal(Object.hasOwn(request, 'tools'), false);
 });
 
@@ -190,4 +192,25 @@ test('Jev owns candidate selection and action gating without a model verifier ro
   const behavior = await engine.judgeVerification({ ruleStatus: 'PASS', state: { taskId: 'task-jev', goal: 'finish' }, evidence: [] });
   assert.equal(behavior.decision, 'UNCERTAIN');
   assert.deepEqual(calls, [['candidate'], ['actionGate'], ['verification']]);
+});
+
+test('action gates retain host hard blocks and actual Jev refusals while avoiding duplicate instruction evidence', async () => {
+  let calls = 0;
+  const evidence = [{ id: 'actual-test', type: 'tool_result', claim: '{"name":"test.execute","ok":false,"exitCode":1}', source: 'host-test', confidence: 1 }];
+  const engine = createDecisionEngine({ enabled: true, enforce: true, client: {
+    async decide({ state, questions }) {
+      calls += 1;
+      assert.deepEqual(state.evidence.map(item => item.id), ['actual-test']);
+      assert.equal(questions.actionGate.context.evidence, undefined, 'execution data is supplied once in state');
+      return { answers: { actionGate: { choice: 'BLOCK', confidence: 0.05 } } };
+    }
+  } });
+  const state = { taskId: 'task', goal: 'observe a diagnostic failure', tool: 'test.execute', evidence };
+  const hard = await engine.decideActionGate({ state, hardDecision: { decision: 'BLOCK', source: 'rule', confidence: 1, reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE' } });
+  assert.equal(hard.decision, 'BLOCK');
+  assert.equal(calls, 0, 'a semantic provider never overrides the host hard policy');
+  const actual = await engine.decideActionGate({ state });
+  assert.equal(actual.decision, 'BLOCK', 'low confidence does not silently convert an actual refusal into permission');
+  assert.equal(actual.confidence, 0.05);
+  assert.equal(calls, 1);
 });

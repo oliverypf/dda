@@ -1,7 +1,7 @@
-type HmCodexIconNode = [tag: string, attrs: Record<string, string>][];
+type DdaIconNode = [tag: string, attrs: Record<string, string>][];
 
 declare module 'lucide/dist/esm/icons/*.mjs' {
-  const icon: HmCodexIconNode;
+  const icon: DdaIconNode;
   export default icon;
 }
 
@@ -10,7 +10,7 @@ declare module 'lucide/dist/esm/replaceElement.mjs' {
     element: Element,
     options: {
       nameAttr: string;
-      icons: Record<string, HmCodexIconNode>;
+      icons: Record<string, DdaIconNode>;
       attrs: Record<string, string | number>;
     }
   ) => unknown;

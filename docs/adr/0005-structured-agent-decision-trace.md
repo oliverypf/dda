@@ -2,14 +2,14 @@
 
 - Status: Accepted
 - Date: 2026-08-29
-- Deciders: hmCodex architecture
+- Deciders: dda architecture
 - Supersedes: none
 
 ## Context
 
 只记录最终答案、工具调用和 Verifier 结果，无法可靠回答某个 Agent 当时看到了什么、比较了哪些可行方案、为何选择当前步骤，也无法区分路由、规划、执行选择和验证判断各自造成的 Credit/Blame。后续 Capability Profile、Router 评价、Dreaming 和策略学习因此容易受到结果泄漏、自评偏差和不完整轨迹影响。
 
-另一方面，保存或要求模型隐藏 chain-of-thought 不稳定、不可验证，也会扩大隐私、注入和数据保留风险。hmCodex 需要的是可审计领域事实，而不是复原模型内部逐 token 推理。
+另一方面，保存或要求模型隐藏 chain-of-thought 不稳定、不可验证，也会扩大隐私、注入和数据保留风险。dda 需要的是可审计领域事实，而不是复原模型内部逐 token 推理。
 
 ## Decision
 

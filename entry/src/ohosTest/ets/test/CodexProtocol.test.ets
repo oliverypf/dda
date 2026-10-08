@@ -4,7 +4,7 @@ import { CodexProtocol } from '../../../main/ets/services/CodexProtocol';
 export default function codexProtocolTest() {
   describe('CodexProtocol', () => {
     it('builds the app-server initialize request', 0, () => {
-      const raw: string = CodexProtocol.initialize(1, 'hmcodex', '0.1.0');
+      const raw: string = CodexProtocol.initialize(1, 'dda', '0.1.0');
       const message = CodexProtocol.parse(raw);
       expect(message?.method).assertEqual('initialize');
       expect(message?.id).assertEqual(1);

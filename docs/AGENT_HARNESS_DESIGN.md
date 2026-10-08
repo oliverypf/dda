@@ -1,4 +1,4 @@
-# hmCodex 多平台 Agent Harness 设计
+# dda 多平台 Agent Harness 设计
 
 版本：v0.7（Jev Decision Plane 基线）
 状态：本文件与 [Jev Decision Plane 设计](JEV_DECISION_PLANE_DESIGN.md) 是当前权威设计契约；各平台落地进度不同，规范先行于实现。
@@ -13,7 +13,7 @@
 
 ## 1. 目标与边界
 
-hmCodex 的下一阶段目标，是建设一套面向 HarmonyOS、Windows 和 Linux 的多平台 Agent Harness。客户端可以使用 ArkUI 或桌面 Web/Rust 技术，但核心契约、会话、上下文、安全和执行边界保持一致。它借鉴三类思路：
+dda 的下一阶段目标，是建设一套面向 HarmonyOS、Windows 和 Linux 的多平台 Agent Harness。客户端可以使用 ArkUI 或桌面 Web/Rust 技术，但核心契约、会话、上下文、安全和执行边界保持一致。它借鉴三类思路：
 
 - Pi Agent 的轻量 Agent Core：用少量稳定的核心抽象组织任务、上下文、工具调用和循环，而不是把所有能力写死在 UI 中。
 - DSH 的插件化机制：Agent、Skill、Executor 和确定性 Verifier 都可以按 manifest 注册、启停、升级和隔离；语义决策统一由 Jev Decision Plane 承担。
@@ -737,9 +737,9 @@ Claude Code 的官方文档把跨会话能力称为 **Auto Memory**：每个会�
 
 Anthropic 公开的 **Dreaming** 则是 Claude Managed Agents 的研究预览能力：它作为定时过程回看历史 Agent session 和 memory store，抽取跨会话模式、整理记忆，并允许自动更新或先经人工审核后落地。它不应被理解为“模型在后台无限自主执行”，而是一个有触发条件、输入范围、锁、预算和发布门槛的记忆维护任务。
 
-因此 hmCodex 可以加入同类能力，但产品命名和工程边界应是 `DreamScheduler + MemoryConsolidator`。不把社区对隐藏功能或逆向实现的描述当成 Claude Code 的规范，也不宣称 hmCodex 复刻了 Claude Code 的内部实现。
+因此 dda 可以加入同类能力，但产品命名和工程边界应是 `DreamScheduler + MemoryConsolidator`。不把社区对隐藏功能或逆向实现的描述当成 Claude Code 的规范，也不宣称 dda 复刻了 Claude Code 的内部实现。
 
-### 10.2 在 hmCodex 中的定位
+### 10.2 在 dda 中的定位
 
 Dreaming 是一种 `MEMORY_MAINTENANCE` 任务，属于 Harness 的后台维护流，不是普通 Coding Turn，也不拥有额外的执行权限：
 
@@ -862,7 +862,7 @@ UI 中禁止使用“模型自己学会了”这类不可验证表述，应显�
 
 多 Agent 的价值不在于“让几个模型闲聊”，而在于让多个相对独立的解决路径暴露假设，再用证据和 Verifier 筛掉错误路径。现有资料给出的结论是有条件的：
 
-| 证据 | 观察 | 对 hmCodex 的启示 |
+| 证据 | 观察 | 对 dda 的启示 |
 | --- | --- | --- |
 | Multiagent Debate 研究 | 多实例先独立回答，再互相批评和修订；在多个推理/事实任务上优于单实例，但成本更高，且可能收敛到错误共识 | 默认先独立、后讨论；必须保留 `ABSTAIN`，不能把共识当正确性证明 |
 | SWE-Debate | 面向软件问题先生成多个故障传播路径，再由专业角色进行多轮竞争式讨论，最后交给代码修改/搜索过程 | 代码任务应围绕依赖图、失败日志、测试和 diff 进行讨论，而不是只比较自然语言答案 |
@@ -1199,7 +1199,7 @@ Router 可以依据历史数据决定是否开启 Council，但安全层不使�
 - **模型注册与回退漂移**：provider、模型 ID、能力声明和可用性会变化；每次解析都要校验注册表并保存快照，回退链不得改变权限上限或绕过候选安全过滤。
 - **Verifier 偏差**：模型式 Verifier 只能作为证据之一，不能单独触发放权；确定性测试和安全规则拥有更高优先级。
 
-这份设计保留了当前 hmCodex 已有的聊天、工作区、审批和 App Server 基础，同时把分类、可配置角色路由、受约束多 Agent 审议、验证、轨迹、安全画像和跨会话记忆提升为一等模块。后续实现应从 Phase 0.5 的协议与 Adapter 合规基线开始，再交付 Phase 1 的只读、可解释闭环；只有 Phase 1.5 的运行时安全、审批、租约和 Verifier 闭环全部通过，才开放写入与命令能力。Deliberation、Dreaming、角色级自适应升级和策略学习均由真实轨迹评估结果决定是否启用。
+这份设计保留了当前 dda 已有的聊天、工作区、审批和 App Server 基础，同时把分类、可配置角色路由、受约束多 Agent 审议、验证、轨迹、安全画像和跨会话记忆提升为一等模块。后续实现应从 Phase 0.5 的协议与 Adapter 合规基线开始，再交付 Phase 1 的只读、可解释闭环；只有 Phase 1.5 的运行时安全、审批、租约和 Verifier 闭环全部通过，才开放写入与命令能力。Deliberation、Dreaming、角色级自适应升级和策略学习均由真实轨迹评估结果决定是否启用。
 
 ## 16. 长期专项规范
 

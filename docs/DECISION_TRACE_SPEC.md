@@ -1,4 +1,4 @@
-# hmCodex Agent Decision Trace 规范
+# dda Agent Decision Trace 规范
 
 版本：Decision Trace 1.0  
 状态：Phase 1 实现基线

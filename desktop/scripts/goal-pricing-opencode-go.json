@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "model": "mimo-v2.6-pro",
+  "source": "https://opencode.ai/docs/go/#usage-limits",
+  "checkedAt": "2026-10-07T06:17:33.449Z",
+  "currency": "USD",
+  "basis": "SUBSCRIPTION_QUOTA",
+  "inputPerMillion": 0.435,
+  "cachedInputPerMillion": 0.003625,
+  "outputPerMillion": 0.87,
+  "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+}

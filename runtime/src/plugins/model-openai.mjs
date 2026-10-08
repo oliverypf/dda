@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { stableToolDefinitions, cacheSessionId } from '../prompt-cache.mjs';
 import { providerTokenUsage } from '../model-usage.mjs';
 import { cordisPlugin } from './cordis-plugin.mjs';
@@ -12,6 +13,31 @@ const PROTOCOLS = Object.freeze(['responses', 'chat-completions']);
 const DEFAULT_RESPONSES_MODEL = 'gpt-4.1-mini';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
+const RETRYABLE_HTTP = new Set([429, 500, 502, 503, 504]);
+// Retry only before receiving a successful stream. Replaying a partial stream
+// could duplicate tool calls or output, so streaming errors still propagate.
+const fetchModelStream = async (endpoint, init, { retries, retryDelayMs }) => {
+  for (let attempt = 0; ; attempt += 1) {
+    init.signal?.throwIfAborted();
+    let response;
+    try {
+      response = await fetch(endpoint, init);
+    } catch (error) {
+      if (init.signal?.aborted || error?.name === 'AbortError' || attempt >= retries
+        || !(error instanceof TypeError)) throw error;
+    }
+    if (response && (!RETRYABLE_HTTP.has(response.status) || attempt >= retries)) return response;
+    const retryAfter = response?.headers.get('retry-after');
+    const retryAfterMs = retryAfter ? Math.max(0, Number.isFinite(Number(retryAfter))
+      ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
+    // A long quota wait belongs to the caller; do not ignore its Retry-After.
+    if (response && retryAfterMs > 30_000) return response;
+    await response?.body?.cancel().catch(() => {});
+    await delay(Math.max(retryDelayMs * 2 ** attempt, Number.isFinite(retryAfterMs) ? retryAfterMs : 0), undefined,
+      { signal: init.signal });
+  }
+};
+
 const trimBaseUrl = (value) => String(value).replace(/\/+$/, '');
 
 /* OpenAI-compatible APIs restrict function names to ASCII letters, digits,
@@ -19,7 +45,7 @@ const trimBaseUrl = (value) => String(value).replace(/\/+$/, '');
  * dots (for example `workspace.read`).  Encode only names that need it on the
  * wire and decode model-produced calls before they reach the local registry.
  * The `_xHEX_` form is deterministic, bounded and reversible. */
-const encodeToolName = (name) => {
+export const encodeToolName = (name) => {
   const value = String(name ?? '');
   if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
   return `hmc_${[...value].map((character) => /^[a-zA-Z0-9_-]$/.test(character)
@@ -27,7 +53,7 @@ const encodeToolName = (name) => {
     : `_x${character.codePointAt(0).toString(16)}_`).join('')}`;
 };
 
-const decodeToolName = (name) => {
+export const decodeToolName = (name) => {
   const value = String(name ?? '');
   if (!value.startsWith('hmc_')) return value;
   return value.slice(4).replace(/_x([0-9a-f]+)_/gi, (_match, code) => {
@@ -460,6 +486,10 @@ const chatDelta = (event, payload) => {
 };
 
 const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
+  const retries = options.transportRetries ?? 2;
+  const retryDelayMs = options.transportRetryDelayMs ?? 500;
+  if (!Number.isInteger(retries) || retries < 0 || retries > 3
+    || !Number.isInteger(retryDelayMs) || retryDelayMs < 0 || retryDelayMs > 5000) throw new Error('MODEL_RETRY_CONFIG_INVALID');
   const protocol = options.protocol ?? 'responses';
   if (!PROTOCOLS.includes(protocol)) throw new Error(`UNKNOWN_MODEL_PROTOCOL:${protocol}`);
   const apiKeyEnv = options.apiKeyEnv ?? 'OPENAI_API_KEY';
@@ -523,7 +553,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         body.logprobs = true;
         body.top_logprobs = 20;
       }
-      const response = await fetch(endpoint, {
+      const response = await fetchModelStream(endpoint, {
         method: 'POST',
         headers: {
           ...extraHeaders,
@@ -534,7 +564,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         },
         body: JSON.stringify(body),
         signal: request.signal
-      });
+      }, { retries, retryDelayMs });
       if (!response.ok || !response.body) {
         const raw = await response.text().catch(() => '');
         throw new Error(`MODEL_HTTP_ERROR:${failureMessage(response.status, parseJson(raw))}`);

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startUiModelFixture } from './ui-local-model-fixture.mjs';
 
-const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
+const DEFAULT_EXE = 'C:\\Program Files\\dda\\dda-desktop.exe';
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
@@ -117,7 +117,7 @@ const connect = async () => {
 };
 
 const launch = (fixtureEnv, envOverrides = {}) => {
-  spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const child = spawn(exe, [], {
     detached: true,
     stdio: 'ignore',
@@ -177,12 +177,24 @@ const submitComposer = (client) =>
   })()`);
 
 const waitForReady = async (client) => {
-  await waitFor(client, `!document.querySelector('.connection-status')?.innerText.includes('正在启动')`, { timeout: 45000, label: 'runtime ready' });
+  await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { timeout: 45000, label: 'runtime ready' });
+  if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式') === true`)) {
+    assert((await click(client, '.mode-pill')) === 'CLICKED', 'select read-only mode');
+  }
   await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { timeout: 45000, label: 'read-only execution mode' });
 };
 
 const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
   assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task click');
+  await waitFor(client, `Boolean(document.querySelector('.project-picker-card'))`, { label: 'new task project picker' });
+  assert(await client.evaluate(`(() => {
+    const button = document.querySelector('.project-picker-last-used')
+      ?? [...document.querySelectorAll('[data-action="select-new-task-project"]')].find(item => item.dataset.projectId !== '__projectless__');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`), 'select fixture project');
+  await waitFor(client, `!document.querySelector('.project-picker-card')`, { label: 'fixture project selected' });
   assert((await setComposer(client, prompt)) === 'SET', 'set composer');
   assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
   await waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, {
@@ -195,7 +207,7 @@ const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
 
 const main = async () => {
   const fixture = await startUiModelFixture({ delayMs: 40 });
-  const badEndpoint = 'http://127.0.0.1:1/hmCodex/disconnected';
+  const badEndpoint = 'http://127.0.0.1:1/dda/disconnected';
   const fixtureConfig = JSON.parse(await (await import('node:fs/promises')).readFile(fixture.modelConfigPath, 'utf8'));
   const patchedConfigPath = join(fixture.workspaceRoot, 'model-config-disconnected.json');
   const badRegistryPath = join(fixture.workspaceRoot, 'model-registry-disconnected.json');
@@ -205,7 +217,7 @@ const main = async () => {
     endpoint: badEndpoint,
     models: fixtureConfig.models.map((model) => ({ ...model, endpoint: badEndpoint }))
   }, null, 2)}\n`, 'utf8');
-  console.log(`hmCodex UI disconnect tests · exe=${exe} · port=${port} · fixture=${fixture.endpoint}`);
+  console.log(`dda UI disconnect tests · exe=${exe} · port=${port} · fixture=${fixture.endpoint}`);
   let client;
   let recoveredPid;
   try {
@@ -248,7 +260,7 @@ const main = async () => {
     client?.close();
     stop(recoveredPid);
     if (existsSync(patchedConfigPath)) unlinkSync(patchedConfigPath);
-    if (!keepApp) spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+    if (!keepApp) spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
     await fixture.close();
   }
   const passed = results.filter((item) => item.status === 'PASS').length;

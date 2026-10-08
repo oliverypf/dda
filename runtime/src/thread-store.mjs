@@ -5,11 +5,34 @@ import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './per
 const THREAD_STATES = Object.freeze(['IDLE', 'RUNNING', 'PAUSED', 'FAILED', 'COMPLETED']);
 const CHECKPOINT_PHASES = Object.freeze(['CLASSIFYING', 'PRECHECKING', 'ROUTING', 'ALLOCATING_CONTEXTS', 'PLANNING', 'EXECUTING', 'VERIFYING', 'DIAGNOSING', 'RECOVERING']);
 const CHECKPOINT_FORBIDDEN = /(?:prompt|message|reasoning|credential|password|secret|token|authorization|api[_-]?key|private[_-]?key)/i;
+// Classify the legacy progress marker separately from a real planner DAG.
+// PLAN is a shape hint for the UI; execution still validates the full DAG.
+export const checkpointResumeMode = (checkpoint) => {
+  if (!checkpoint) return 'NONE';
+  const plan = checkpoint.plan;
+  if (plan && !Array.isArray(plan) && Array.isArray(plan.steps ?? plan.plan)
+    && (plan.steps ?? plan.plan).length > 0) return 'PLAN';
+  if (['CLASSIFYING', 'PRECHECKING', 'ROUTING', 'ALLOCATING_CONTEXTS', 'PLANNING'].includes(checkpoint.phase)
+    && Array.isArray(plan) && plan.length === 1 && plan[0]?.id === 'classify'
+    && plan[0]?.status === 'RUNNING' && /^sha256:[0-9a-f]{64}$/u.test(plan[0]?.actionDigest ?? '')) {
+    return 'PREPARATION';
+  }
+  return 'INVALID';
+};
 const checkpointDigest = (value) => {
   const { checkpointDigest: _ignored, ...unsigned } = value;
   return `sha256:${createHash('sha256').update(canonical(unsigned), 'utf8').digest('hex')}`;
 };
 const titleDigest = (value) => `sha256:${createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex')}`;
+// Storage pages are ordered by random run ID for stable pagination, not time.
+// A thread can span several runs; replay it in the same order as its history.
+export const compareThreadEvents = (a, b) => a.emittedAtMs - b.emittedAtMs
+  || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0) || a.sequence - b.sequence;
+export const checkpointClearApplies = (checkpointRunId, event) => {
+  const clearingRunId = event.payload?.runId ?? event.runId;
+  return !checkpointRunId || clearingRunId === checkpointRunId
+    || clearingRunId === `thread:${event.payload?.threadId}`;
+};
 const canonical = (value) => Array.isArray(value)
   ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object'
@@ -56,6 +79,7 @@ export class ThreadStore {
         if (this.#eventStore?.list) {
           let events;
           try { events = await this.#eventStore.list(); } catch { throw new Error('THREAD_STORE_INVALID'); }
+          events = [...events].sort(compareThreadEvents);
           const restoredThreads = new Map();
           const titleDigests = new Map();
           for (const event of events) {
@@ -96,6 +120,9 @@ export class ThreadStore {
                 thread.state = THREAD_STATES.includes(checkpoint.state) ? checkpoint.state : 'RUNNING';
               }
             } else if (event.kind === 'ThreadCheckpointCleared') {
+              // A late completion from another run must not clear this run's
+              // checkpoint or overwrite its state with COMPLETED.
+              if (!checkpointClearApplies(thread.checkpoint?.runId, event)) continue;
               delete thread.checkpoint;
               if (THREAD_STATES.includes(payload.state)) thread.state = payload.state;
               delete thread.activeRunId;

@@ -48,7 +48,7 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
         const choice = id === 'candidate' ? 'model-b'
           : id === 'actionGate' ? 'ALLOW'
             : id === 'verification' ? 'PASS'
-              : question.choices?.[0];
+              : Object.keys(question.criteria ?? {})[0];
         if (choice) answers[id] = { choice, confidence: 0.9 };
       }
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -213,7 +213,10 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
 
   // The single tool-executing turn received the selected draft and never saw
   // the losing candidate's draft.
-  const executorCalls = requests.filter((item) => !/isolated dda role|Planner role|Council member or Judge|Independently verify|Semantic Verifier role/iu.test(String(item.body.instructions ?? '')));
+  // Jev receives bounded data from the completed executor for verification;
+  // those requests are not new tool-executing turns.
+  const executorCalls = requests.filter((item) => item.url !== '/jev'
+    && !/isolated dda role|Planner role|Council member or Judge|Independently verify|Semantic Verifier role/iu.test(String(item.body.instructions ?? '')));
   assert.ok(executorCalls.length >= 1);
   const executorText = JSON.stringify(executorCalls.map((item) => item.body));
   assert.ok(executorText.includes('draft from candidate-b'));

@@ -1,4 +1,4 @@
-# hmCodex Plugin 规范
+# dda Plugin 规范
 
 版本：Plugin API 1.0  
 状态：Phase 2 实现基线
@@ -80,7 +80,7 @@ HarmonyOS 客户端生产版默认只运行随应用签名发布、编译期注�
 
 | 等级 | 来源 | 生产默认 |
 | --- | --- | --- |
-| `CORE` | 与 hmCodex 同签名、同发布 | 启用 |
+| `CORE` | 与 dda 同签名、同发布 | 启用 |
 | `BUNDLED_SIGNED` | 随 App 发布的签名 HAR/HSP | 按产品配置 |
 | `ENTERPRISE_SIGNED` | 企业白名单与可信签名 | 管理员启用 |
 | `REMOTE_ATTESTED` | 认证远端服务/Executor | 按连接策略 |

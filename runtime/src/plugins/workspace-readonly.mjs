@@ -1,3 +1,4 @@
+import { withWorkspaceIoTimeout } from '../workspace-io-timeout.mjs';
 import { createHash } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
@@ -11,7 +12,7 @@ const MAX_ENTRIES = 180;
 // operator override, but give the default snapshot enough time to finish
 // without collapsing the useful I/O error into WORKSPACE_SNAPSHOT_FAILED.
 const LIST_TIMEOUT_MS = (() => { const raw = Number(process.env.HMCODEX_WORKSPACE_TIMEOUT_MS); return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 60000; })();
-const withTimeout = (promise, label) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`WORKSPACE_IO_TIMEOUT:${label}`)), LIST_TIMEOUT_MS))]);
+const withTimeout = (promise, label) => withWorkspaceIoTimeout(promise, label, LIST_TIMEOUT_MS);
 const MAX_FILE_BYTES = 32 * 1024;
 const MAX_READ_CHARS = MAX_FILE_BYTES;
 const SENSITIVE_PATH = /(^|[\\/])(?:\.env(?:\.[^\\/]+)?|credentials?(?:\.[^\\/]+)?|secrets?(?:\.[^\\/]+)?|tokens?(?:\.[^\\/]+)?|passwords?(?:\.[^\\/]+)?|private(?:\.[^\\/]+)?|id_rsa(?:\.[^\\/]+)?)(?:[\\/]|$)/i;
@@ -110,6 +111,7 @@ async function walk(root, current, entries, isExcluded) {
     if (entries.length >= MAX_ENTRIES) break;
     if (child.name === 'node_modules' || child.name === '.git' || child.name === 'target') continue;
     const candidate = resolve(current, child.name);
+    if (isExcluded(candidate, contractPath(relative(root, candidate)))) continue;
     const real = await withTimeout(mappedRealpath(candidate), 'realpath').catch(() => null);
     if (!real || !inside(root, real)) continue;
     const relativePath = contractPath(relative(root, real));
@@ -131,6 +133,7 @@ async function listDirect(root, current, entries, isExcluded) {
     if (entries.length >= MAX_ENTRIES) break;
     if (child.name === 'node_modules' || child.name === '.git' || child.name === 'target') continue;
     const candidate = resolve(current, child.name);
+    if (isExcluded(candidate, contractPath(relative(root, candidate)))) continue;
     const real = await mappedRealpath(candidate).catch(() => null);
     if (!real || !inside(root, real)) continue;
     const relativePath = contractPath(relative(root, real));

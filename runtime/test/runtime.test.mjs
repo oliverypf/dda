@@ -129,7 +129,7 @@ test('Phase 1 records memory conflict and supersession suggestions from recalled
   await journal.flush();
 
   const result = await run([
-    'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace
+    'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace, '--cancel-poll-ms', '100'
   ], {
     HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
     HMCODEX_EXECUTION_MODE: 'READ_ONLY',

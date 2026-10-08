@@ -26,13 +26,15 @@ const browser = await chromium.launch({ headless: true, channel: process.env.HMC
 const results = [];
 const errors = [];
 
-async function openFixture({ savedThread = 'a', savedPage = 'workbench', delaySummary = false, viewport = { width: 1440, height: 960 } } = {}) {
+async function openFixture({ savedThread = 'a', savedPage = 'workbench', delaySummary = false, threadCount = 8, viewport = { width: 1440, height: 960 } } = {}) {
   const page = await browser.newPage({ viewport });
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(({ savedThread, savedPage, delaySummary }) => {
+  await page.addInitScript(({ savedThread, savedPage, delaySummary, threadCount }) => {
     localStorage.setItem('hmcodex.nav', JSON.stringify({ threadId: savedThread, page: savedPage }));
     localStorage.setItem('hmcodex.activePage', savedPage);
-    const threads = ['a', 'b', 'c', 'empty', 'broken', 'invalid', 'fresh', 'partial'].map((id, index) => ({
+    const threadIds = ['a', 'b', 'c', 'empty', 'broken', 'invalid', 'fresh', 'partial'];
+    threadIds.push(...Array.from({ length: Math.max(0, threadCount - threadIds.length) }, (_, index) => `scroll-${index}`));
+    const threads = threadIds.map((id, index) => ({
       id, title: `History ${id}`, state: 'COMPLETED', turnCount: 600,
       createdAtMs: 1000 + index, updatedAtMs: 2000 + index, cwd: '/fixture'
     }));
@@ -96,7 +98,7 @@ async function openFixture({ savedThread = 'a', savedPage = 'workbench', delaySu
         throw Error(`Unexpected native call: ${command}`);
       }
     };
-  }, { savedThread, savedPage, delaySummary });
+  }, { savedThread, savedPage, delaySummary, threadCount });
   await page.goto(url);
   return page;
 }
@@ -275,6 +277,57 @@ try {
   await mobile.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   results.push({ name: 'mobile layout has no page overflow', pass: true });
+
+  const crowded = await openFixture({ threadCount: 80, viewport: { width: 1200, height: 745 } });
+  await crowded.waitForSelector('[data-history-items] .timeline-item');
+  assert.equal(await crowded.locator('[data-action="select-thread"]').count(), 80);
+  const scrollState = () => crowded.evaluate(() => {
+    const list = document.querySelector('[data-region="thread-list"]');
+    const rail = document.querySelector('.navigation-rail');
+    const brand = document.querySelector('.brand-row').getBoundingClientRect();
+    return { top: list.scrollTop, max: list.scrollHeight - list.clientHeight,
+      railTop: rail.scrollTop, brandTop: brand.top, pageWidth: document.documentElement.scrollWidth,
+      viewportWidth: innerWidth, height: list.clientHeight };
+  });
+  const initialScroll = await scrollState();
+  assert.ok(initialScroll.max > 0 && initialScroll.height > 100, JSON.stringify(initialScroll));
+  const list = crowded.locator('[data-region="thread-list"]');
+  await list.hover();
+  await crowded.mouse.wheel(0, 700);
+  await crowded.waitForFunction(() => document.querySelector('[data-region="thread-list"]').scrollTop > 0);
+  const wheeled = await scrollState();
+  assert.equal(wheeled.brandTop, initialScroll.brandTop);
+  assert.equal(wheeled.railTop, initialScroll.railTop);
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  const bottom = await scrollState();
+  assert.ok(Math.abs(bottom.top - bottom.max) <= 1);
+  const last = list.locator('[data-action="select-thread"]').last();
+  const lastBox = await last.boundingBox(), listBox = await list.boundingBox();
+  assert.ok(lastBox && listBox && lastBox.y >= listBox.y && lastBox.y + lastBox.height <= listBox.y + listBox.height + 1);
+  const switchId = await list.evaluate(element => [...element.querySelectorAll('[data-action="select-thread"]')]
+    .reverse().find(row => row.dataset.threadId !== 'a').dataset.threadId);
+  await choose(crowded, switchId);
+  const switched = await scrollState();
+  assert.ok(Math.abs(switched.top - bottom.top) <= 1, `switching tasks reset sidebar: ${JSON.stringify({ bottom, switched })}`);
+  await crowded.screenshot({ path: resolve(output, 'sidebar-80-threads-bottom.png') });
+  assert.equal(await crowded.locator('.task-value-section').innerText().then(text => text.includes('NaN')), false);
+  assert.match(await crowded.locator('.task-value-section').innerText(), /token 未报告/u);
+  const clippedActions = await crowded.locator('.task-value-actions').evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return [...element.querySelectorAll('button')].filter(button => {
+      const item = button.getBoundingClientRect();
+      return item.left < box.left - 1 || item.right > box.right + 1;
+    }).map(button => button.dataset.action);
+  });
+  assert.deepEqual(clippedActions, [], 'all six task actions must fit the panel');
+  await crowded.setViewportSize({ width: 1200, height: 480 });
+  await list.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  const shorter = await scrollState();
+  assert.ok(shorter.height > 60 && Math.abs(shorter.top - shorter.max) <= 1);
+  assert.equal(shorter.pageWidth <= shorter.viewportWidth, true);
+  await crowded.screenshot({ path: resolve(output, 'sidebar-80-threads-short-window.png') });
+  results.push({ name: '80-task sidebar wheel, final-row access, task-switch position and short-window scrolling', pass: true,
+    evidence: { initialScroll, wheeled, bottom, switched, shorter } });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, results, output }, null, 2));
   await writeFile(resolve(output, 'results.json'), JSON.stringify({ ok: true, results, errors }, null, 2));

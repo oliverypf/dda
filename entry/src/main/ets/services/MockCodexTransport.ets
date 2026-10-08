@@ -126,7 +126,7 @@ export class MockCodexTransport implements CodexTransport {
         threadId: threadId,
         turnId: turnId,
         itemId: `tool-${turnId}`,
-        text: '$ pwd\n/workspace/hmCodex\n$ ls\nAppScope  entry  hvigorfile.ts\n'
+        text: '$ pwd\n/workspace/dda\n$ ls\nAppScope  entry  hvigorfile.ts\n'
       });
       this.listener?.({
         kind: SessionEventKind.ToolCompleted,

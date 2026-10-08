@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hmcodex.local/contracts/v1/memory-record.schema.json",
-  "title": "hmCodex Memory Record",
+  "title": "dda Memory Record",
   "description": "A redacted, source-linked memory record. Proposed memories are not active until verified and activated.",
   "type": "object",
   "additionalProperties": false,

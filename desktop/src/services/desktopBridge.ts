@@ -102,6 +102,11 @@ export const desktopBridge = {
     return invoke<{ ok: boolean; output?: string; error?: string }>('export_data', { scope });
   },
 
+  async saveTaskResult(fileName: string, content: string): Promise<{ ok: boolean; cancelled?: boolean; output?: string; error?: string }> {
+    if (!isTauriRuntime()) return { ok: false, error: '请在桌面客户端中保存任务结果' };
+    return invoke<{ ok: boolean; cancelled?: boolean; output?: string; error?: string }>('save_task_result', { fileName, content });
+  },
+
   async reconcileRuntimeState(): Promise<RuntimeRecoveryResponse> {
     if (!isTauriRuntime()) return {
       ok: true,
@@ -113,7 +118,7 @@ export const desktopBridge = {
   },
 
   async chooseWorkspace(): Promise<WorkspaceGrant> {
-    if (!isTauriRuntime()) return { rootLabel: 'dda 演示工作区', rootPath: '/demo/hmCodex' };
+    if (!isTauriRuntime()) return { rootLabel: 'dda 演示工作区', rootPath: '/demo/dda' };
     return invoke<WorkspaceGrant>('choose_workspace');
   },
 

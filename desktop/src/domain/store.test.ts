@@ -186,7 +186,7 @@ describe('HarnessReadModel store', () => {
       state: 'RUNNING',
       running: true,
       pid: 2048,
-      projectId: 'hmCodex',
+      projectId: 'dda',
       cycleCount: 2,
       consecutiveFailures: 0,
       lastErrorCode: null

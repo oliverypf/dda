@@ -1,12 +1,12 @@
 {
-  "name": "@hmcodex/windows-runtime",
+  "name": "@dda/windows-runtime",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
   },
   "type": "module",
-  "description": "Windows Cordis runtime for the hmCodex read-only MVP",
+  "description": "Windows Cordis runtime for the dda read-only MVP",
   "scripts": {
     "start": "node src/index.mjs",
     "test": "node --test --test-concurrency=6",

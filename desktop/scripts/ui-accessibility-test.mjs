@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const exe = process.env.HMCODEX_UI_EXE ?? 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
+const exe = process.env.HMCODEX_UI_EXE ?? 'C:\\Program Files\\dda\\dda-desktop.exe';
 const port = Number(process.env.HMCODEX_UI_PORT ?? '9337');
 const fail = (message) => { throw new Error(message); };
 const isShortDuration = (value) => {
@@ -14,7 +14,7 @@ const isShortDuration = (value) => {
   return Number.isFinite(amount) && amount <= 0.001;
 };
 
-spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
 const child = spawn(exe, [], {
   detached: true,
   stdio: 'ignore',

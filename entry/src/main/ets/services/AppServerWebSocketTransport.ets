@@ -105,7 +105,7 @@ export class AppServerWebSocketTransport implements CodexTransport {
 
     const initializeParams: InitializeParams = {
       clientInfo: {
-        name: 'hmcodex',
+        name: 'dda',
         title: 'dda',
         version: '0.1.0'
       },

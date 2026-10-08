@@ -994,6 +994,33 @@ fn revoke_execution_lease(
 }
 
 #[tauri::command]
+async fn save_task_result(app: AppHandle, file_name: String, content: String) -> Result<Value, String> {
+    if !file_name.starts_with("task-result-") || !file_name.ends_with(".md")
+        || file_name.len() > 160
+        || !file_name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) {
+        return Err("导出文件名无效".to_string());
+    }
+    if content.trim().is_empty() || content.len() > 16 * 1024 * 1024 {
+        return Err("导出内容为空或超过 16 MB，请缩小导出范围".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("保存当前任务结果")
+            .add_filter("Markdown 文档", &["md"])
+            .set_file_name(&file_name);
+        if let Ok(directory) = app.path().document_dir() {
+            dialog = dialog.set_directory(directory);
+        }
+        let Some(path) = dialog.save_file() else {
+            return Ok(serde_json::json!({ "ok": false, "cancelled": true }));
+        };
+        fs::write(&path, content.as_bytes())
+            .map_err(|error| "保存任务结果失败：".to_owned() + &error.to_string())?;
+        Ok(serde_json::json!({ "ok": true, "output": path.to_string_lossy() }))
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 fn export_data(app: AppHandle, scope: String) -> Result<Value, String> {
     let scope = required_runtime_argument(Some(scope), "scope")?;
     if !["all", "runs", "settings"].contains(&scope.as_str()) {
@@ -1363,6 +1390,9 @@ async fn run_model_task(
     model: Option<String>,
     thread_id: Option<String>,
     resume: Option<bool>,
+    max_tool_rounds: Option<u32>,
+    max_tokens: Option<u32>,
+    max_cost: Option<f64>,
     execution_mode: Option<String>,
     lease_capabilities: Option<Vec<String>>,
     lease_commands: Option<Vec<String>>,
@@ -1379,6 +1409,9 @@ async fn run_model_task(
             model,
             thread_id,
             resume,
+            max_tool_rounds,
+            max_tokens,
+            max_cost,
             execution_mode,
             lease_capabilities,
             lease_commands,
@@ -1441,6 +1474,9 @@ fn run_model_task_blocking(
     model: Option<String>,
     thread_id: Option<String>,
     resume: Option<bool>,
+    max_tool_rounds: Option<u32>,
+    max_tokens: Option<u32>,
+    max_cost: Option<f64>,
     execution_mode: Option<String>,
     lease_capabilities: Option<Vec<String>>,
     lease_commands: Option<Vec<String>>,
@@ -1522,7 +1558,8 @@ fn run_model_task_blocking(
         }
     }
     if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
-        command.arg("--model").arg(model);
+        command.arg("--model").arg(&model);
+        command.arg("--executor-model").arg(&model);
     }
     let has_thread_id = thread_id
         .as_ref()
@@ -1535,6 +1572,18 @@ fn run_model_task_blocking(
             return Err("恢复任务必须指定 Thread".to_string());
         }
         command.arg("--resume");
+    }
+    if let Some(value) = max_tool_rounds {
+        if !(1..=64).contains(&value) { return Err("工具轮数上限必须在 1 到 64 之间".to_string()); }
+        command.arg("--max-tool-rounds").arg(value.to_string());
+    }
+    if let Some(value) = max_tokens {
+        if !(256..=1_000_000).contains(&value) { return Err("Token 上限必须在 256 到 1000000 之间".to_string()); }
+        command.arg("--max-tokens").arg(value.to_string());
+    }
+    if let Some(value) = max_cost {
+        if !value.is_finite() || value < 0.0 { return Err("费用上限必须是非负数字".to_string()); }
+        command.arg("--max-cost").arg(value.to_string());
     }
     // Reserve the runtime slot before spawning while holding the same lock
     // used by Cancel. This closes the startup window where Cancel could see
@@ -1965,14 +2014,31 @@ fn cancel_runtime_process(state: &AppState) -> Result<RuntimeCancellation, Strin
 }
 
 fn runtime_entrypoint(app: &AppHandle) -> Result<PathBuf, String> {
+    let resolve_entry = |candidate: PathBuf| {
+        let resolved = normalize_existing_file(candidate);
+        append_desktop_log(&(String::from("runtime entrypoint=") + &resolved.display().to_string()));
+        resolved
+    };
     if let Ok(path) = std::env::var("HMCODEX_RUNTIME_ENTRY") {
         let candidate = PathBuf::from(path);
         if candidate.is_file() {
-            return Ok(normalize_existing_file(candidate));
+            return Ok(resolve_entry(candidate));
         }
         return Err("HMCODEX_RUNTIME_ENTRY 不是有效文件".to_string());
     }
     let current = std::env::current_dir().map_err(|error| format!("无法读取当前目录: {error}"))?;
+    // Directly launched debug binaries must use their enclosing checkout,
+    // rather than a stale resource copy from the last desktop build.
+    if cfg!(debug_assertions) {
+        if let Ok(executable) = std::env::current_exe() {
+            for ancestor in executable.ancestors().skip(1) {
+                let candidate = ancestor.join("runtime/src/index.mjs");
+                if ancestor.join("desktop/src-tauri/Cargo.toml").is_file() && candidate.is_file() {
+                    return Ok(resolve_entry(candidate));
+                }
+            }
+        }
+    }
     let mut candidates = Vec::with_capacity(8);
     // In development, prefer the caller's mapped-drive checkout. Tauri's
     // resource_dir may already be canonicalized to UNC and is slower.
@@ -2001,7 +2067,7 @@ fn runtime_entrypoint(app: &AppHandle) -> Result<PathBuf, String> {
     candidates
         .into_iter()
         .find(|candidate| candidate.is_file())
-        .map(normalize_existing_file)
+        .map(resolve_entry)
         .ok_or_else(|| "找不到 runtime/src/index.mjs，请设置 HMCODEX_RUNTIME_ENTRY".to_string())
 }
 
@@ -2520,6 +2586,7 @@ pub fn run() {
             revoke_execution_lease,
             reconcile_runtime_state,
             export_data,
+            save_task_result,
             list_memories,
             memory_action,
             list_dream_runs,

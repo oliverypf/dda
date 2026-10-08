@@ -179,10 +179,20 @@ const actionFailed = (action) => {
   return statusFromEvidence(value) === 'FAIL' || value.failed === true || value.error !== undefined;
 };
 
+// Only an explicit host observation before ToolRegistry.invoke is a deferred
+// proposal. An error code alone, an actual invocation, BLOCK or a permission
+// failure must keep its existing failure semantics.
+const actionDeferred = action => actionFailed(action)
+  && action.errorCode === 'TOOL_ACTION_REQUIRES_EVIDENCE'
+  && action.gateDecision === 'REQUEST_EVIDENCE' && action.invocationAttempted === false;
+
 // Tool errors that the model can recover from by choosing another path or
 // another file. They are evidence of progress (the model learned the request
 // was invalid), not a hard failure that must terminate the plan step.
 const RECOVERABLE_TOOL_ERROR_CODES = new Set([
+  'TEST_CHECK_FAILED',
+  'WORKSPACE_NOT_FOUND',
+  'WORKSPACE_NOT_DIRECTORY',
   'WORKSPACE_UNSUPPORTED_FILE',
   'WORKSPACE_BINARY_FILE',
   'WORKSPACE_FILE_TOO_LARGE',
@@ -396,41 +406,90 @@ export class RuleVerifier {
       add(check('actions.progress', 'SKIPPED', '没有提供动作轨迹'));
       add(check('actions.duplicates', 'SKIPPED', '没有动作可用于重复检测'));
     } else {
-      const doneCount = normalizedActions.filter(actionSucceeded).length;
-      const recoverableFailureCount = normalizedActions.filter(actionRecoverableFailure).length;
-      const hardFailureIndexes = normalizedActions.flatMap((action, index) => actionFailed(action) && !actionRecoverableFailure(action) ? [index] : []);
+      const deferredIndexes = new Set(normalizedActions.flatMap((action, index) => actionDeferred(action) ? [index] : []));
+      const attemptedActions = normalizedActions.filter((_, index) => !deferredIndexes.has(index));
+      const attemptedCount = attemptedActions.length;
+      // A later successful rerun resolves only the exact failed test command.
+      // Keep both observations for audit; unrelated tests and hard errors do
+      // not resolve it. Require the runner's argument digest and new evidence.
+      const resolvedTests = new Set(normalizedActions.flatMap((action, index) =>
+        actionFailed(action) && action.errorCode === 'TEST_CHECK_FAILED'
+          && action.name === 'test.execute' && typeof action.argumentsDigest === 'string'
+          && normalizedActions.slice(index + 1).some(later => later.name === action.name
+            && later.argumentsDigest === action.argumentsDigest && actionSucceeded(later)
+            && actionEvidence(later).length > 0) ? [index] : []));
+      const doneCount = normalizedActions.filter((action, index) => !deferredIndexes.has(index) && (actionSucceeded(action) || resolvedTests.has(index))).length;
+      const recoverableFailureCount = normalizedActions.filter((action, index) => actionRecoverableFailure(action) && !resolvedTests.has(index)).length;
+      const hardFailureIndexes = normalizedActions.flatMap((action, index) => !deferredIndexes.has(index) && actionFailed(action) && !actionRecoverableFailure(action) ? [index] : []);
       const hardFailureCount = hardFailureIndexes.length;
       const hardFailureCodes = [...new Set(hardFailureIndexes.map((index) => normalizedActions[index].errorCode)
         .filter((code) => typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/u.test(code)))].slice(0, 4);
-      actionProgress = doneCount / normalizedActions.length;
+      actionProgress = attemptedCount ? doneCount / attemptedCount : 0;
       const actionRefs = normalizedActions.map((action, index) => `action:${index}:${actionFingerprint(action).slice(7, 23)}`);
       add(check('actions.progress', hardFailureCount
         ? 'FAIL' : recoverableFailureCount
-          ? 'UNKNOWN' : doneCount === normalizedActions.length ? 'PASS' : 'UNKNOWN',
+          ? 'UNKNOWN' : attemptedCount > 0 && doneCount === attemptedCount ? 'PASS' : 'UNKNOWN',
       hardFailureCount ? `${hardFailureCount} 个动作执行失败${hardFailureCodes.length ? `（${hardFailureCodes.join('、')}）` : ''}` : recoverableFailureCount
-        ? `${recoverableFailureCount} 个动作返回可恢复工具错误，允许模型换路径重试` : doneCount === normalizedActions.length
-          ? '动作均有完成证据' : `仅 ${doneCount}/${normalizedActions.length} 个动作有完成证据`,
+        ? `${recoverableFailureCount} 个动作返回可恢复工具错误，允许模型换路径重试` : attemptedCount > 0 && doneCount === attemptedCount
+          ? '实际执行动作均有完成证据' : `仅 ${doneCount}/${attemptedCount} 个实际执行动作有完成证据；${deferredIndexes.size} 个提案在执行前请求补证据`,
       hardFailureCount ? hardFailureIndexes.map((index) => actionRefs[index]) : actionRefs));
       if (hardFailureCount) signals.hardFailure = true;
-      if (recoverableFailureCount || doneCount < normalizedActions.length) signals.shouldContinue = true;
+      if (recoverableFailureCount || doneCount < attemptedCount || !attemptedCount) signals.shouldContinue = true;
 
       const fingerprints = normalizedActions.map(actionFingerprint);
       const duplicateIndexes = [];
       const seen = new Map();
+      let workspaceWriteEpoch = 0;
       fingerprints.forEach((fingerprint, index) => {
-        if (seen.has(fingerprint)) duplicateIndexes.push(`${seen.get(fingerprint)}-${index}`);
-        else seen.set(fingerprint, index);
+        if (resolvedTests.has(index) || deferredIndexes.has(index)) return;
+        const action = normalizedActions[index];
+        const actualOutput = actionSucceeded(action) && /^sha256:[0-9a-f]{64}$/u.test(action.outputDigest ?? '');
+        // The same read before and after a write can verify both the repair
+        // and preservation of untouched tests. A changed actual read digest
+        // is also new evidence. Side effects retain their original identity.
+        const readObservation = ['workspace.read', 'workspace.list', 'file.diff'].includes(action.name ?? action.tool)
+          && actualOutput;
+        const key = readObservation ? `${fingerprint}:${workspaceWriteEpoch}:${action.outputDigest}` : fingerprint;
+        if (seen.has(key)) duplicateIndexes.push(`${seen.get(key)}-${index}`);
+        else seen.set(key, index);
+        if (actualOutput && ['file.write', 'file.patch'].includes(action.name ?? action.tool)) workspaceWriteEpoch += 1;
       });
-      const baseline = asArray(previousActions ?? priorActions).map(actionFingerprint);
+      // A single repeated restricted Node syntax check is historical lack of
+      // progress, not a permanent stall after a distinct actual full test.
+      // Keep the trace and report recovery. Other repeated commands, writes,
+      // ambiguous observations and multiple repetitions remain stalled.
+      const actualProcess = (action, kind) => action?.name === 'test.execute' && actionSucceeded(action)
+        && action.invocationAttempted !== false && action.verifiedResult?.processIntent?.kind === kind
+        && action.verifiedResult.executionOk === true && action.verifiedResult.exitCode === 0
+        && /^sha256:[0-9a-f]{64}$/u.test(action.outputDigest ?? '')
+        && action.verifiedResult.outputDigest === action.outputDigest;
+      const duplicateCounts = new Map();
+      for (const pair of duplicateIndexes) {
+        const index = Number(pair.split('-')[1]);
+        duplicateCounts.set(fingerprints[index], (duplicateCounts.get(fingerprints[index]) ?? 0) + 1);
+      }
+      const recoveredDiagnostics = duplicateIndexes.filter(pair => {
+        const [first, last] = pair.split('-').map(Number);
+        return duplicateCounts.get(fingerprints[last]) === 1
+          && actualProcess(normalizedActions[first], 'NODE_SYNTAX_CHECK') && actualProcess(normalizedActions[last], 'NODE_SYNTAX_CHECK')
+          && normalizedActions.slice(last + 1).some(action => actualProcess(action, 'NODE_TEST')
+            && actionFingerprint(action) !== fingerprints[last]);
+      });
+      const unresolvedDuplicates = duplicateIndexes.filter(pair => !recoveredDiagnostics.includes(pair));
+      if (recoveredDiagnostics.length) add(check('actions.recovered_diagnostics', 'PASS',
+        '一次重复的受限语法诊断之后，实际执行了不同的完整测试并成功；历史重复记录保留',
+        recoveredDiagnostics.map(pair => `actions:duplicate:${pair}`)));
+      const baseline = asArray(previousActions ?? priorActions).filter(action => !actionDeferred(normalizeAction(action))).map(actionFingerprint);
       const baselineSet = new Set(baseline);
-      const noNewEvidence = normalizedActions.every((action) => {
+      const noNewEvidence = attemptedActions.every((action) => {
         const value = normalizeAction(action);
         return value.newEvidence !== true && value.changed !== true && actionEvidence(value).length === 0;
       });
-      const repeatedFromPrior = baselineSet.size > 0 && fingerprints.every((fingerprint) => baselineSet.has(fingerprint)) && noNewEvidence;
-      const duplicate = duplicateIndexes.length > 0;
+      const repeatedFromPrior = baselineSet.size > 0 && attemptedActions.length > 0
+        && attemptedActions.map(actionFingerprint).every((fingerprint) => baselineSet.has(fingerprint)) && noNewEvidence;
+      const duplicate = unresolvedDuplicates.length > 0;
       if (duplicate || repeatedFromPrior) {
-        const evidenceRefs = duplicateIndexes.map((pair) => `actions:duplicate:${pair}`);
+        const evidenceRefs = unresolvedDuplicates.map((pair) => `actions:duplicate:${pair}`);
         if (repeatedFromPrior) evidenceRefs.push('actions:no-new-evidence');
         add(check('actions.duplicates', 'FAIL', repeatedFromPrior
           ? '动作与上一轮完全重复且没有新证据' : '检测到重复动作指纹', evidenceRefs));
@@ -438,7 +497,7 @@ export class RuleVerifier {
       } else {
         add(check('actions.duplicates', 'PASS', '未检测到重复动作指纹'));
       }
-      const progressMarkers = normalizedActions.some((action) => {
+      const progressMarkers = attemptedActions.some((action) => {
         const value = normalizeAction(action);
         return value.newEvidence === true || value.changed === true || actionEvidence(value).length > 0
           || actionRecoverableFailure(value);

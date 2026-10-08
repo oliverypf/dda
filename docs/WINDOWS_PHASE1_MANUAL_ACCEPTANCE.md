@@ -15,7 +15,7 @@
 
 ### 2.1 首次安装
 
-1. 记录安装前状态：`Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object DisplayName -like '*hmCodex*'`。
+1. 记录安装前状态：`Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object DisplayName -like '*dda*'`。
 2. 双击 MSI 或执行 `msiexec /i "hmCodex_0.1.0_x64_en-US.msi" /qb`。
 3. 期望：安装成功；开始菜单/桌面快捷方式存在；`hmcodex-desktop.exe` 可从安装目录启动。
 4. 启动后执行 `health`（或查看 UI 的关于/状态区），期望 `releaseChannel=WINDOWS_PHASE1_READ_ONLY`，不出现 `WINDOWS_MVP_PRE_PHASE1`。
@@ -45,7 +45,7 @@
 
 | 安装包 | 场景 | 结果 | 证据 |
 | --- | --- | --- | --- |
-| MSI（perMachine） | 首次安装 | PASS | 提权 `msiexec /i ... /qn /norestart` exit=0；卸载项 `hmCodex 0.1.0` 在 HKLM，安装目录 `C:\Program Files\hmCodex\`，含 `hmcodex-desktop.exe`、`hmcodex_desktop_lib.dll`、`runtime\` 资源；开始菜单 `ProgramData\...\hmCodex\hmCodex.lnk` + 公共桌面 `hmCodex.lnk`；安装后可启动 |
+| MSI（perMachine） | 首次安装 | PASS | 提权 `msiexec /i ... /qn /norestart` exit=0；卸载项 `dda 0.1.0` 在 HKLM，安装目录 `C:\Program Files\hmCodex\`，含 `hmcodex-desktop.exe`、`hmcodex_desktop_lib.dll`、`runtime\` 资源；开始菜单 `ProgramData\...\hmCodex\hmCodex.lnk` + 公共桌面 `hmCodex.lnk`；安装后可启动 |
 | MSI | 升级 | PASS | 再次提权安装 exit=0；卸载项仍为 1 个；`%LOCALAPPDATA%\hmCodex` 文件数 32、`hmcodex.db`/`threads.json` 哈希完全不变 |
 | MSI | 卸载 | PASS | 提权 `msiexec /x {D2027F7A-BD09-43C7-BB32-0E26A9433287} /qn` exit=0；`C:\Program Files\hmCodex` 已移除、快捷方式移除、卸载项 0；用户数据目录保留 32 文件、`hmcodex.db` 哈希不变；无残留进程 |
 | NSIS（perMachine） | 首次安装 | PASS | 提权 `hmCodex_0.1.0_x64-setup.exe /S` exit=0；卸载项在 HKLM，安装目录 `C:\Program Files\hmCodex`，含 `uninstall.exe` 和 `runtime\` 资源；开始菜单 + 公共桌面快捷方式；安装后可启动 |

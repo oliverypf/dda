@@ -59,5 +59,5 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`hmCodex static preview: http://${host}:${port}/`);
+  console.log(`dda static preview: http://${host}:${port}/`);
 });

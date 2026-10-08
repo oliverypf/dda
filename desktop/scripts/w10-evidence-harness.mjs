@@ -77,9 +77,9 @@ export const detectInstalledHost = async () => {
   const evidence = [];
   let installed = false;
   const candidates = [
-    ['INSTALLED_BINARY', programFiles ? join(programFiles, 'hmCodex', 'hmcodex-desktop.exe') : undefined],
-    ['INSTALLED_RUNTIME', programFiles ? join(programFiles, 'hmCodex', 'runtime', 'src', 'index.mjs') : undefined],
-    ['UNINSTALLER', programFiles ? join(programFiles, 'hmCodex', 'uninstall.exe') : undefined]
+    ['INSTALLED_BINARY', programFiles ? join(programFiles, 'dda', 'dda-desktop.exe') : undefined],
+    ['INSTALLED_RUNTIME', programFiles ? join(programFiles, 'dda', 'runtime', 'src', 'index.mjs') : undefined],
+    ['UNINSTALLER', programFiles ? join(programFiles, 'dda', 'uninstall.exe') : undefined]
   ];
   for (const [kind, path] of candidates) {
     if (!path || !existsSync(path)) continue;

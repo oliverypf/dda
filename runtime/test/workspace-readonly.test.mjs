@@ -87,6 +87,15 @@ test('excludes host-owned runtime stores from snapshot, listing and reads', asyn
   assert.equal(listing.entries.some((entry) => entry.path.startsWith('trajectory.jsonl')), false);
   await assert.rejects(workspace.read('trajectory.jsonl'), /WORKSPACE_EXCLUDED_PATH/);
   await assert.rejects(workspace.list('trajectory.jsonl.runs'), /WORKSPACE_EXCLUDED_PATH/);
+  await writeFile(join(root, 'trajectory.jsonl.cancels.json'), '{"requests":{}}');
+  await writeFile(join(root, 'trajectory.jsonl.cancels.json.lock'), 'host lock');
+  const withCancelStore = new ReadonlyWorkspace(root, { excludedPaths: [
+    join(root, 'trajectory.jsonl'), join(root, 'trajectory.jsonl.runs'),
+    join(root, 'trajectory.jsonl.cancels.json'), join(root, 'trajectory.jsonl.cancels.json.lock')
+  ] });
+  assert.equal((await withCancelStore.snapshot()).entries.some(entry => entry.path.includes('cancels.json')), false);
+  assert.equal((await withCancelStore.list()).entries.some(entry => entry.path.includes('cancels.json')), false);
+  await assert.rejects(withCancelStore.read('trajectory.jsonl.cancels.json.lock'), /WORKSPACE_EXCLUDED_PATH/u);
 });
 
 test('reads ANSI-colored build logs without changing file evidence or paging offsets', async () => {

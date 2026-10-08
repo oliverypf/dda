@@ -6,7 +6,7 @@ Accepted for Windows Phase 4 on 2026-09-15.
 
 ## Context
 
-hmCodex previously sent valid model requests but did not persist provider-reported cached input tokens. Historical cache hit rate is therefore unknown. A value of zero would be misleading because it would mix uninstrumented calls with reported cache misses.
+dda previously sent valid model requests but did not persist provider-reported cached input tokens. Historical cache hit rate is therefore unknown. A value of zero would be misleading because it would mix uninstrumented calls with reported cache misses.
 
 Provider prompt caches reuse an identical request prefix. They do not cache model answers and do not grant permission to reuse a prior execution result. The useful ideas adopted from Reasonix are deterministic prompt structure, append-only conversation turns, stable cache routing per workspace/model/role, and explicit cache hit/miss accounting.
 

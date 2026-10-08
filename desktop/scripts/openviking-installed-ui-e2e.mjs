@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const installedRoot = process.env.HMCODEX_INSTALLED_ROOT
-  ?? join(process.env.LOCALAPPDATA, 'Programs', 'hmCodex');
-const executable = join(installedRoot, 'hmcodex-desktop.exe');
+  ?? join(process.env.ProgramFiles ?? 'C:/Program Files', 'dda');
+const executable = join(installedRoot, 'dda-desktop.exe');
 const sidecar = join(installedRoot, 'sidecar', 'openviking-server.exe');
 const supervisor = join(installedRoot, 'runtime', 'src', 'openviking-sidecar-supervisor.mjs');
 const cdpPort = Number(process.env.HMCODEX_OPENVIKING_UI_PORT ?? 9488);
@@ -93,7 +93,7 @@ const sidecarReady = async (url) => {
 };
 
 const runScenario = async ({ name, expected, environment }) => {
-  spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
   const dataDir = await mkdtemp(join(process.env.TEMP, `hmcodex-openviking-${name}-`));
   const url = `http://127.0.0.1:${await freePort()}`;
   const child = spawn(executable, [], {

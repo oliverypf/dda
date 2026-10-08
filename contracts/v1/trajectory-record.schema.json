@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hmcodex.local/contracts/v1/trajectory-record.schema.json",
-  "title": "hmCodex Internal Trajectory Record",
+  "title": "dda Internal Trajectory Record",
   "description": "The redacted append-only record currently written by the local trajectory store. It is adapted to runtime-event before crossing the desktop boundary.",
   "type": "object",
   "additionalProperties": false,

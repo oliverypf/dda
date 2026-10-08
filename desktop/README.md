@@ -1,4 +1,6 @@
-# hmCodex Desktop
+# dda Desktop
+
+桌面可执行文件为 `dda-desktop.exe`，安装包显示名称和发布者均为 `dda`。已有数据路径、环境变量及应用标识继续兼容旧名称。MSI 固定旧升级 GUID；NSIS 的 `installer-brand-compat.nsi` 基于 Tauri CLI 2.11.4 上游模板，仅固定两个旧注册表键。升级 Tauri CLI 时应同步模板并保留这两处兼容设置，模板许可见旁边的 `.LICENSE` 文件。
 
 Windows 桌面客户端目录，目标运行时为 Tauri 2 + TypeScript 前端 + 本地运行时。Linux 使用独立的无界面 CLI，实施文档见 [Linux CLI 实施计划](../docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)。
 
@@ -39,7 +41,7 @@ Windows 原生任务由 `runtime/` 中的独立 Cordis 进程执行。
 `npm run dev` 或 Tauri 开发命令时会自动安装 runtime 依赖；也可以手动执行
 `npm run runtime:install`。模型配置从 `%LOCALAPPDATA%\hmCodex\model-config.json` 读取。
 复制 `runtime/model-config.example.json` 作为起点；配置文件只保存 provider、协议、模型和
-endpoint 等非敏感字段，API key 仍只从启动 hmCodex 的环境变量读取：
+endpoint 等非敏感字段，API key 仍只从启动 dda 的环境变量读取：
 
 Windows MVP 需要本机安装 Node.js 22+，因为 Cordis runtime 以 Node 子进程运行。
 打包配置会把 runtime 源码和依赖放进安装包；后续迭代再替换为随应用发布的

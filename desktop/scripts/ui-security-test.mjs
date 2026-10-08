@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 
-const DEFAULT_EXE = 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe';
+const DEFAULT_EXE = 'C:\\Program Files\\dda\\dda-desktop.exe';
 const argv = process.argv.slice(2);
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
@@ -263,6 +263,7 @@ const makeModelConfig = (server, endpointOverride) => {
 };
 
 let launchedPid;
+let webViewRoot;
 const terminate = () => {
   if (launchedPid) {
     spawnSync('taskkill', ['/PID', String(launchedPid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
@@ -271,7 +272,7 @@ const terminate = () => {
   }
   // A prior detached UI suite may have left the executable running. Clear it
   // before the first controlled launch so its release-channel environment wins.
-  spawnSync('taskkill', ['/IM', 'hmcodex-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
+  spawnSync('taskkill', ['/IM', 'dda-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
 };
 
 const launch = (modelConfigPath, modelRegistryPath, dataDir) => {
@@ -287,6 +288,7 @@ const launch = (modelConfigPath, modelRegistryPath, dataDir) => {
       HMCODEX_MODEL_REGISTRY: modelRegistryPath,
       HMCODEX_DATA_DIR: dataDir,
       HMCODEX_WORKSPACE_ROOT: dataDir,
+      WEBVIEW2_USER_DATA_FOLDER: webViewRoot,
       LOCALAPPDATA: join(dataDir, 'local-app-data'),
       APPDATA: join(dataDir, 'roaming-app-data'),
       HMCODEX_SECURITY_UI_API_KEY: 'fixture-key',
@@ -320,6 +322,16 @@ const setControlledMode = async (client) => {
 
 const runTask = async (client, prompt) => {
   assert((await click(client, '[data-action="new-task"]')) === 'CLICKED', 'new task');
+  await waitFor(client, `Boolean(document.querySelector('.project-picker-card'))`, { label: 'new task project picker' });
+  const selected = await client.evaluate(`(() => {
+    const button = document.querySelector('.project-picker-last-used')
+      ?? [...document.querySelectorAll('[data-action="select-new-task-project"]')].find(item => item.dataset.projectId !== '__projectless__');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  assert(selected, 'select the isolated fixture project');
+  await waitFor(client, `!document.querySelector('.project-picker-card')`, { label: 'project selection complete' });
   await waitFor(client, `document.querySelector('.send-button') && !document.querySelector('.send-button').disabled`, { timeout: 30000, label: 'composer ready' });
   await delay(3000);
   assert((await setComposer(client, prompt)) === 'SET', 'set prompt');
@@ -329,14 +341,15 @@ const runTask = async (client, prompt) => {
 const terminal = (client, timeout = 120000) => waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout, interval: 300, label: 'task terminal state' });
 
 const main = async () => {
-  console.log(`hmCodex controlled UI security tests · exe=${exe} · port=${port}`);
+  console.log(`dda controlled UI security tests · exe=${exe} · port=${port}`);
   if (output) await mkdir(output, { recursive: true });
   const server = await startMockProvider();
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-ui-security-'));
+  webViewRoot = await mkdtemp(join(tmpdir(), 'hmcodex-security-webview-'));
   const normalConfigPath = join(workspace, 'model-config.json');
   const badConfigPath = join(workspace, 'model-config-disconnected.json');
   await writeFile(normalConfigPath, JSON.stringify(makeModelConfig(server)));
-  await writeFile(badConfigPath, JSON.stringify(makeModelConfig(server, 'http://127.0.0.1:9/hmCodex/disconnected')));
+  await writeFile(badConfigPath, JSON.stringify(makeModelConfig(server, 'http://127.0.0.1:9/dda/disconnected')));
   let client;
   try {
     launch(normalConfigPath, join(workspace, 'model-registry.json'), workspace);
@@ -360,6 +373,7 @@ const main = async () => {
         input.dispatchEvent(new Event('change', { bubbles: true }));
         return 'SET';
       })()`)) === 'SET', 'set invalid network JSON');
+      await waitFor(client, `(document.querySelector('.network-target-error')?.innerText ?? '').includes('JSON')`, { label: 'invalid network JSON feedback' });
       const error = await text(client, '.network-target-error');
       assert(error.includes('JSON'), `error=${error}`);
       await client.evaluate(`(() => {
@@ -498,6 +512,7 @@ const main = async () => {
     if (closeWhenDone) terminate();
     server.close();
     await rm(workspace, { recursive: true, force: true }).catch(() => {});
+    await rm(webViewRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
   if (output) await writeFile(join(output, 'results.json'), JSON.stringify({ exe, results }, null, 2));
   const passed = results.filter((item) => item.status === 'PASS').length;

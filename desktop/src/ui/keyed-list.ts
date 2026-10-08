@@ -1,3 +1,64 @@
+// Reconcile trusted application markup without unmounting live scroll containers,
+// focused controls or animated icons. Entity keys take precedence over position.
+const regionNodeKey = (node: Node): string => {
+  if (!(node instanceof Element)) return `node:${node.nodeType}`;
+  const identity = ['id', 'data-key', 'data-disclosure-id', 'data-agent-id',
+    'data-memory-id', 'data-decision-id', 'data-item-id', 'data-live-region', 'name']
+    .find((attribute) => node.hasAttribute(attribute));
+  if (node.hasAttribute('data-action')) {
+    return `${node.tagName}:${[...node.attributes].filter(attribute => attribute.name.startsWith('data-'))
+      .map(attribute => `${attribute.name}=${attribute.value}`).sort().join('|')}`;
+  }
+  if (identity) return `${node.tagName}:${identity}:${node.getAttribute(identity)}`;
+  return `${node.tagName}:${node.classList.item(0) ?? ''}`;
+};
+
+export function syncRegionContent(container: Element, content: string,
+  initialize: (root: ParentNode) => void): void {
+  const template = document.createElement('template');
+  template.innerHTML = content;
+  // Convert icons before matching, so an existing SVG is never swapped for <i>.
+  initialize(template.content);
+  reconcileRegionChildren(container, template.content);
+}
+
+function reconcileRegionChildren(container: Node, desired: Node): void {
+  const available = new Map<string, Node[]>();
+  for (const node of [...container.childNodes]) {
+    const key = regionNodeKey(node);
+    const matches = available.get(key) ?? [];
+    matches.push(node);
+    available.set(key, matches);
+  }
+  let position = container.firstChild;
+  for (const next of [...desired.childNodes]) {
+    const current = available.get(regionNodeKey(next))?.shift();
+    if (!current) {
+      container.insertBefore(next, position);
+      continue;
+    }
+    if (current !== position) container.insertBefore(current, position);
+    if (current instanceof Element && next instanceof Element) {
+      const preserve = (name: string): boolean => current instanceof HTMLDetailsElement && name === 'open';
+      for (const attribute of [...current.attributes]) {
+        if (!preserve(attribute.name) && !next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+      }
+      for (const attribute of [...next.attributes]) {
+        if (!preserve(attribute.name) && current.getAttribute(attribute.name) !== attribute.value) {
+          current.setAttribute(attribute.name, attribute.value);
+        }
+      }
+      // Form drafts belong to the user; streaming data must not reset them.
+      if (!(current instanceof HTMLTextAreaElement) && !(current instanceof HTMLInputElement)
+        && !(current instanceof HTMLSelectElement) && !current.isEqualNode(next)) {
+        reconcileRegionChildren(current, next);
+      }
+    } else if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+    position = current.nextSibling;
+  }
+  for (const remaining of available.values()) for (const node of remaining) container.removeChild(node);
+}
+
 // Only changed/new rows are parsed. Existing rows retain focus, disclosure
 // state and DOM identity when older pages are prepended.
 const rendered = new WeakMap<Element, string>();

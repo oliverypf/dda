@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-29
-- Deciders: hmCodex architecture
+- Deciders: dda architecture
 - Supersedes: none
 
 ## Context

@@ -1,11 +1,29 @@
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
-import { applyTextPatch, textDigest, unifiedTextDiff } from './text-patch.mjs';
+import { applyTextPatch, MAX_PATCH_TEXT, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
+import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
 
 const MAX_COMMAND_LENGTH = 4096;
 const MAX_ARGUMENTS = 128;
 const MAX_ARGUMENT_LENGTH = 4096;
 const MAX_PATH_LENGTH = 512;
 const MAX_FILE_CHARS = 1024 * 1024;
+
+// Use the workspace API's own page size. A truncated read is never a complete
+// patch source: stitching pages must retain one full-file digest throughout.
+const readCompleteText = async (workspace, path, { maxChars = MAX_FILE_CHARS, maxBytes = Infinity } = {}) => {
+  let current, content = '';
+  do {
+    const page = await workspace.read(path, undefined, content.length);
+    if (current && (page.digest !== current.digest || page.path !== current.path)) throw new TextPatchError('PATCH_STALE_DIGEST');
+    current ??= page;
+    if (content.length + page.content.length > maxChars) throw new TextPatchError('PATCH_TOO_LARGE');
+    if (page.truncated && !page.content.length) throw new Error('WORKSPACE_INVALID_READ_PAGE');
+    content += page.content;
+    if (Buffer.byteLength(content, 'utf8') > maxBytes) throw new TextPatchError('PATCH_TOO_LARGE');
+    if (!page.truncated) break;
+  } while (true);
+  return { ...current, content, truncated: false };
+};
 
 const commandInputSchema = {
   type: 'object',
@@ -187,7 +205,7 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
     }
     return parsed;
   });
-  return async ({ capability, request }) => {
+  const provider = async ({ capability, request }) => {
     if (!monitor || monitor.mode !== EXECUTION_MODES.CONTROLLED) return undefined;
     if (!approvedCapabilities.has(capability)) return undefined;
     if ((capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) && approvedCommands.length === 0) {
@@ -206,6 +224,9 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
     await onLeaseIssued?.({ capability, request, lease });
     return lease;
   };
+  provider.canLease = capability => monitor?.mode === EXECUTION_MODES.CONTROLLED && approvedCapabilities.has(capability)
+    && (![CAPABILITIES.SHELL, CAPABILITIES.TEST].includes(capability) || approvedCommands.length > 0);
+  return provider;
 };
 
 const requireMethod = (executor, name) => {
@@ -226,6 +247,8 @@ export const registerExecutorTools = (registry, executor, {
   requireMethod(executor, 'writeFile');
   requireMethod(executor, 'test');
   const getLease = typeof leaseProvider === 'function' ? leaseProvider : () => undefined;
+  const effectMetadata = capability => ({ actionClass: 'SIDE_EFFECT', capability,
+    ...(typeof leaseProvider?.canLease === 'function' ? { available: leaseProvider.canLease(capability) } : {}) });
   const executeWithLease = async (capability, input, operation) => {
     let lease;
     try {
@@ -255,7 +278,7 @@ export const registerExecutorTools = (registry, executor, {
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
-    metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.SHELL },
+    metadata: effectMetadata(CAPABILITIES.SHELL),
     handler: async (input) => executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }))
   });
   registry.register({
@@ -264,7 +287,7 @@ export const registerExecutorTools = (registry, executor, {
     inputSchema: writeInputSchema,
     outputSchema: writeOutputSchema,
     readOnly: false,
-    metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.WRITE_FILE },
+    metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
     handler: async (input) => executeWithLease(CAPABILITIES.WRITE_FILE, input, (lease) => executor.writeFile(input, { lease }))
   });
   if (workspace && typeof workspace.read === 'function') {
@@ -277,7 +300,7 @@ export const registerExecutorTools = (registry, executor, {
         readOnly: true,
         metadata: { actionClass: 'READ_ONLY' },
         handler: async ({ path, baseContent, maxChars = MAX_FILE_CHARS }) => {
-          const current = await workspace.read(path, maxChars);
+          const current = await readCompleteText(workspace, path, { maxChars });
           const diff = unifiedTextDiff(baseContent, current.content, current.path);
           return {
             ok: true,
@@ -293,15 +316,19 @@ export const registerExecutorTools = (registry, executor, {
     }
     registry.register({
       name: 'file.patch',
-      description: 'Apply bounded exact replacements to one authorized workspace file with an optional stale-content digest check.',
+      description: 'Apply bounded exact replacements to a complete authorized workspace file (up to 256 KiB UTF-8). Optional expectedDigest accepts sha256:hex or the same 64 hex digits and rejects stale content.',
       inputSchema: patchInputSchema,
       outputSchema: patchOutputSchema,
       readOnly: false,
-      metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.WRITE_FILE },
+      metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
       handler: async ({ path, expectedDigest, replacements }) => {
-        const current = await workspace.read(path, MAX_FILE_CHARS);
+        const current = await readCompleteText(workspace, path, { maxBytes: MAX_PATCH_TEXT });
         const content = applyTextPatch(current.content, replacements, expectedDigest);
-        const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, (lease) => executor.writeFile({ path: current.path, content }, { lease }));
+        const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
+          const latest = await workspace.read(current.path);
+          if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');
+          return executor.writeFile({ path: current.path, content }, { lease });
+        });
         return {
           ...writeResult,
           action: 'patch_file',
@@ -318,7 +345,8 @@ export const registerExecutorTools = (registry, executor, {
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
-    metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.TEST },
+    metadata: { ...effectMetadata(CAPABILITIES.TEST),
+      ...(executor instanceof RestrictedWindowsExecutor ? { processObservationPolicy: 'RESTRICTED_WINDOWS_NO_PRELOAD' } : {}) },
     handler: async (input) => executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }))
   });
   if (networkAdapter) {
@@ -329,7 +357,7 @@ export const registerExecutorTools = (registry, executor, {
       inputSchema: networkInputSchema,
       outputSchema: networkOutputSchema,
       readOnly: false,
-      metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.NETWORK },
+      metadata: effectMetadata(CAPABILITIES.NETWORK),
       handler: async (input) => executeWithLease(CAPABILITIES.NETWORK, input, (lease) => networkAdapter.request(input, { lease }))
     });
   }

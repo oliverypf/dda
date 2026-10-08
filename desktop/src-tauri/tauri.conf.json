@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hmCodex",
-  "mainBinaryName": "hmcodex-desktop",
+  "productName": "dda",
+  "mainBinaryName": "dda-desktop",
   "version": "0.1.0",
   "identifier": "com.hmcodex.desktop",
   "build": {
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "hmCodex",
+        "title": "dda",
         "width": 1440,
         "height": 900,
         "minWidth": 720,
@@ -30,10 +30,15 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "dda",
     "targets": ["msi", "nsis"],
     "windows": {
+      "wix": {
+        "upgradeCode": "10fec2aa-b588-528e-9951-92bb36312b9d"
+      },
       "nsis": {
-        "installMode": "perMachine"
+        "installMode": "perMachine",
+        "template": "installer-brand-compat.nsi"
       }
     },
     "resources": {
@@ -44,7 +49,7 @@
       "../../runtime/model-config.example.json": "runtime/model-config.example.json"
     },
     "icon": ["icons/app-icon.png", "icons/icon.ico"],
-    "shortDescription": "Local read-only hmCodex workbench",
+    "shortDescription": "Local read-only dda workbench",
     "longDescription": "A Windows-first local workbench for read-only project inspection and task timelines."
   }
 }

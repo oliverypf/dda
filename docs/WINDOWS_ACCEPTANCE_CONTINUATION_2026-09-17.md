@@ -48,10 +48,10 @@
 
 ## 竞品基线（官方公开资料，2026-09-17）
 
-- OpenAI Codex CLI 明确提供 Suggest、Auto Edit、Full Auto 三种批准模式，并在执行前展示待批准的编辑和命令；hmCodex 已有 READ ONLY/CONTROLLED 与 Approval 基础，但当前界面尚未把“待批准动作清单、影响范围、执行前后 diff”做成完整可审阅流程。
-- GitHub Copilot cloud agent 会展示会话进度、读取的文件和变更，并通过 Pull Request 进入人工 review；Copilot code review 支持评论、建议修改和一键应用。hmCodex 有时间线、Verifier、Approval 摘要，但缺少同等完整的变更 review/评论/逐块应用闭环。
+- OpenAI Codex CLI 明确提供 Suggest、Auto Edit、Full Auto 三种批准模式，并在执行前展示待批准的编辑和命令；dda 已有 READ ONLY/CONTROLLED 与 Approval 基础，但当前界面尚未把“待批准动作清单、影响范围、执行前后 diff”做成完整可审阅流程。
+- GitHub Copilot cloud agent 会展示会话进度、读取的文件和变更，并通过 Pull Request 进入人工 review；Copilot code review 支持评论、建议修改和一键应用。dda 有时间线、Verifier、Approval 摘要，但缺少同等完整的变更 review/评论/逐块应用闭环。
 
-竞品对比结论：hmCodex 的安全状态、运行事件和本地只读边界是已有差异化基础；相对成熟竞品，当前最大短板是“可审阅变更界面”和“从提案到执行再到验证的连续证据链”没有完整落到 UI。
+竞品对比结论：dda 的安全状态、运行事件和本地只读边界是已有差异化基础；相对成熟竞品，当前最大短板是“可审阅变更界面”和“从提案到执行再到验证的连续证据链”没有完整落到 UI。
 
 
 ## 本轮修复

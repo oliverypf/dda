@@ -53,7 +53,12 @@ export class RoleBindingResolver {
   resolve({ roles = {}, taskClass = 'unknown', defaultModelId, profileRegistry, mode = 'READ_ONLY', bindings = {}, requireEligible = false, risk = 'LOW' } = {}) {
     const resolvedRoles = {};
     const rejected = [];
-    const roleNames = [...new Set([...Object.keys(roles), ...Object.keys(bindings)])].filter((role) => ROLES.includes(role));
+    // Include explicitly configured bindings even when the static route does
+    // not request that role for the first attempt. Recovery may need a bound
+    // alternate (for example critic as the strong-model fallback), and
+    // dropping it here would silently collapse escalation back to the active
+    // provider.
+    const roleNames = [...new Set([...Object.keys(roles), ...Object.keys(bindings), ...Object.keys(this.#defaultBindings)])].filter((role) => ROLES.includes(role));
     for (const role of roleNames) {
       const spec = normalizeSpec(bindings[role] ?? this.#defaultBindings[role] ?? roles[role], defaultModelId);
       if (spec.kind === 'DETERMINISTIC') {

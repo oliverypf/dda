@@ -1,4 +1,4 @@
-# hmCodex 安全模型
+# dda 安全模型
 
 版本：v1.1  
 状态：Phase 1.5 发布阻断规范
@@ -146,7 +146,7 @@ interface PolicyLease {
 - token 由不可预测随机数和本地/网关密钥签发，数据库只存 token HMAC digest；
 - token 绑定 intent、主体、Executor、workspace snapshot、policy version、有效期和连接 channel；
 - Executor Adapter 在发送动作的最后一刻 compare-and-set 消费 lease；远端 Executor 可验证时必须再次验证；
-- 如果 Codex App Server 不理解 hmCodex lease，`CodexAppServerAdapter` 必须在自身受信边界内原子验证并将 lease 与唯一 RPC request/turn item 绑定；
+- 如果 Codex App Server 不理解 dda lease，`CodexAppServerAdapter` 必须在自身受信边界内原子验证并将 lease 与唯一 RPC request/turn item 绑定；
 - lease 不可转让、扩 scope、延长、复活或复用；
 - Pause/Cancel/断线身份变化/策略收紧/Profile 隔离立即撤销；
 - 不能确认是否执行时标记 outcome unknown，禁止用同一 lease 重试。

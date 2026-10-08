@@ -237,7 +237,7 @@ test('resolves Jev decision settings without changing the model route', () => {
   assert.deepEqual(resolveDecisionConfig({ env: {} }), {
     enabled: true,
     enforce: true,
-    endpoint: 'https://api.typesafe.ai/v1/system_one',
+    endpoint: 'https://api.typesafe.ai/v1/systemone',
     apiKeyEnv: 'JEV_API_KEY',
     model: 'jev-latest',
     timeoutMs: 1200,
@@ -311,7 +311,7 @@ test('resolves extended Jev decision flags independently', () => {
   }), {
     enabled: true,
     enforce: true,
-    endpoint: 'https://api.typesafe.ai/v1/system_one',
+    endpoint: 'https://api.typesafe.ai/v1/systemone',
     apiKeyEnv: 'JEV_API_KEY',
     model: 'jev-latest',
     timeoutMs: 1200,

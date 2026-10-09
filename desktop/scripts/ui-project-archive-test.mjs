@@ -70,8 +70,10 @@ check('catalog and thread archive retained',JSON.parse(beforeReload.catalog).len
 await page.reload();await page.locator('.workspace-identity strong').waitFor();await page.waitForTimeout(300);
 check('reload keeps archived project hidden',await page.locator('[data-project-group="project-a"]').count()===0);
 check('reload does not select archived default',(await page.locator('.workspace-identity strong').innerText())!=='项目甲');
-await page.locator('[data-page="archived"][data-action="navigate"]').click();
-await page.locator('[data-action="restore-project"][data-project-id="project-a"]').last().click();
+await page.locator('[data-action="open-settings"]').first().click();
+await page.locator('[data-action="settings-section"]').filter({hasText:'已归档'}).click();
+await page.locator('[data-settings-dialog] [data-action="restore-project"][data-project-id="project-a"]').click();
+await page.locator('.settings-back').click();
 check('restored project appears',await page.locator('[data-project-group="project-a"]').count()===1);
 check('restored project expanded',await page.locator('[data-project-group="project-a"] [data-thread-id="a-live"]').first().isVisible());
 check('individually archived thread stays hidden',await page.locator('[data-project-group="project-a"] [data-thread-id="a-archived"]').count()===0);
@@ -80,7 +82,10 @@ const discovered=page.locator('[data-project-group]').filter({has:page.locator('
 const discoveredId=await discovered.getAttribute('data-project-group');
 await discovered.locator('[data-action="archive-project"]').click();
 check('discovered project archive',await page.locator(`[data-project-group=${JSON.stringify(discoveredId)}]`).count()===0);
-await page.locator('[data-page="archived"][data-action="navigate"]').click();await page.locator(`[data-action="restore-project"][data-project-id=${JSON.stringify(discoveredId)}]`).last().click();
+await page.locator('[data-action="open-settings"]').first().click();
+await page.locator('[data-action="settings-section"]').filter({hasText:'已归档'}).click();
+await page.locator(`[data-settings-dialog] [data-action="restore-project"][data-project-id=${JSON.stringify(discoveredId)}]`).click();
+await page.locator('.settings-back').click();
 check('discovered project restore',await page.locator(`[data-project-group=${JSON.stringify(discoveredId)}] [data-thread-id="c-live"]`).first().isVisible());
 // Failed local storage persistence must not remove a project.
 await page.evaluate(()=>{window.__setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='hmcodex.projectArchives.v1')throw new Error('quota');return window.__setItem.call(this,k,v)}});

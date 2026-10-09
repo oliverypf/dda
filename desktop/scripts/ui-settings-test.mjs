@@ -6,8 +6,8 @@ import { createRequire } from 'node:module';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
-const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const output = fileURLToPath(new URL('../../.codex-tmp/settings-ui/', import.meta.url));
+const root = resolve(process.env.HMCODEX_UI_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url)));
+const output = resolve(process.env.HMCODEX_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/settings-ui/', import.meta.url)));
 const server = createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;

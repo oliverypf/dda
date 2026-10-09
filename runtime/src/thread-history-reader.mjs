@@ -12,7 +12,7 @@ const historyKinds = [
   'TaskRunCreated', 'RunStateChanged', 'ModelRouteResolved', 'RoleContextsAllocated',
   'WorkspaceSnapshotCreated', 'PlanStepStateChanged', 'ToolInvocationCompleted',
   'VerificationCompleted', 'SemanticVerificationCompleted', 'CouncilPlanReviewCompleted',
-  'TaskRunCompleted', 'TaskRunFailed', 'ApprovalRequested', 'ApprovalResolved',
+  'TaskRunCompleted', 'TaskRunFailed', 'TaskHarnessProgress', 'ApprovalRequested', 'ApprovalResolved',
   'ActionIntentCreated', 'LeaseIssued', 'LeaseClaimed', 'LeaseConsumed', 'LeaseFailed',
   'CandidateSelected', 'CandidateVerificationCompleted', 'FeedbackFactRecorded'
 ];

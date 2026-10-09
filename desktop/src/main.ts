@@ -341,8 +341,8 @@ let taskBudget: TaskBudget = (() => {
   } catch { return {}; }
 })();
 let taskActionNotice = '';
+let composerPromptError = '';
 const primaryPages: Record<string, { title: string; description: string }> = {
-  archived: { title: '已归档', description: '查看或恢复已归档的项目和会话，配置与历史内容仍保留。' },
   workbench: { title: '工作台', description: '' },
   runs: { title: '运行记录', description: '历史运行、状态和证据将在此处集中查看。' },
   workspace: { title: '工作区', description: '授权工作区、快照和文件证据将在此处集中查看。' },
@@ -367,6 +367,7 @@ const settingsSections = {
   memory: { title: '记忆与后台整理', description: '查看记忆状态、后台整理和治理数量。', icon: 'heart-pulse' },
   personalization: { title: '隐私/保留与个性化', description: '设置回复习惯，并查看敏感数据与保留策略状态。', icon: 'user-round' },
   storage: { title: '存储', description: '查看配置路径、投影版本和持久化状态。', icon: 'file-cog' },
+  archive: { title: '已归档', description: '查看和恢复本机归档的项目与会话。归档只在列表中隐藏，不删除配置与历史。', icon: 'archive' },
   accessibility: { title: '无障碍', description: '查看键盘、字体、对比度和减少动画支持状态。', icon: 'settings' },
   diagnostics: { title: '开发诊断', description: '查看支持包、错误恢复和诊断入口。', icon: 'gauge' },
 };
@@ -684,6 +685,12 @@ const syncSettingsView = (): void => {
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
+  const modelStack = dialog.querySelector<HTMLElement>('[data-settings-model-form]');
+  if (modelStack) {
+    // 归档是本机列表数据：模型配置读取失败或尚未配置时也必须能进入。
+    const modelPanels = [...modelStack.querySelectorAll<HTMLElement>('[data-settings-panel]')];
+    modelStack.hidden = query ? modelPanels.every((panel) => panel.hidden) : settingsSection === 'archive';
+  }
   const empty = dialog.querySelector<HTMLElement>('[data-settings-empty]');
   if (empty) empty.hidden = !query || matches > 0;
 };
@@ -700,6 +707,34 @@ const readOnlySettingsValue = (value: unknown, fallback = '未提供'): string =
   const text = String(value ?? '').trim();
   return text || fallback;
 };
+
+// 归档管理从主侧栏迁入设置。它只读本机归档标记，因此不依赖模型配置
+// 是否读取成功；所有按钮都是 type="button" 且位于 model-settings 表单之外，
+// 点击归档操作绝不会触发模型配置保存。
+function renderSettingsArchivePanel(): string {
+  const archivedProjects = Object.entries(projectArchives)
+    .map(([id, record]) => ({ id, name: record.name, path: record.path, archivedAtMs: record.archivedAtMs }))
+    .sort((a, b) => b.archivedAtMs - a.archivedAtMs);
+  const archivedThreads = model.threads.filter((thread) => isThreadArchived(thread.id))
+    .slice().sort((a, b) => threadArchives[b.id] - threadArchives[a.id]);
+  const archivedThreadTotal = Object.keys(threadArchives).length;
+  return `<section class="settings-group" id="settings-panel-archive" data-settings-panel="archive" aria-label="${escapeHtml(settingsSections.archive.title)}">
+    ${renderArchiveNotice()}
+    <h3>已归档项目</h3>
+    <div class="settings-card"><div class="settings-field settings-field-readonly"><span>已归档项目</span><output>${archivedProjects.length} 个项目已归档，配置与会话保留</output></div></div>
+    <div class="run-history-list">${archivedProjects.map((item) => `<article class="run-history-row">
+      <div class="run-history-copy"><strong>${escapeHtml(item.name || '未命名项目')}</strong><span>${escapeHtml(item.path)}</span><small>归档于 ${escapeHtml(new Date(item.archivedAtMs).toLocaleString('zh-CN'))}</small></div>
+      <div class="governance-actions"><button class="governance-button governance-button-primary" type="button" data-action="restore-project" data-project-id="${escapeHtml(item.id)}">恢复项目</button></div>
+    </article>`).join('') || '<div class="page-status page-status-empty"><strong>暂无已归档项目</strong><span>在项目行点击“归档”，即可收起暂时不用的项目。</span></div>'}</div>
+    <h3>已归档会话</h3>
+    <div class="settings-card"><div class="settings-field settings-field-readonly"><span>已归档会话</span><output>${archivedThreads.length} / ${archivedThreadTotal} 个会话已归档，历史内容保留</output></div></div>
+    <div class="run-history-list">${archivedThreads.map((thread) => `<article class="run-history-row">
+      <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(projectForThread(thread)?.name ?? (thread.cwd ? projectNameForPath(thread.cwd) : '未绑定项目'))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
+      <div class="governance-actions"><button class="governance-button" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" ${liveTaskRunning() ? 'disabled title="请等待当前任务结束后查看其他会话"' : ''}>查看会话</button><button class="governance-button governance-button-primary" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(thread.id)}">恢复到列表</button></div>
+    </article>`).join('') || `<div class="page-status page-status-empty"><strong>${archivedThreadTotal ? '归档会话尚未载入' : '暂无已归档会话'}</strong><span>${archivedThreadTotal ? '归档标记仍保留，等待历史会话加载。' : '点击会话旁的“归档”，即可收起暂时不用的会话。'}</span></div>`}</div>
+    <p class="settings-hint">${escapeHtml(settingsSections.archive.description)} “查看会话”会关闭设置并展示历史，不会自动恢复；“恢复到列表”会把会话重新放回项目列表，恢复项目也不会恢复单独归档的会话。</p>
+  </section>`;
+}
 
 function renderSettingsReadOnlyPanel(section: SettingsSection): string {
   let rows: Array<[string, string]> = [];
@@ -814,9 +849,10 @@ const renderSettingsModal = (): string => {
           <div><h2 id="settings-title">${settingsSections[settingsSection].title}</h2><p data-settings-description>${settingsSections[settingsSection].description}</p></div>
           <button class="icon-button" type="button" data-action="close-settings" title="关闭" aria-label="关闭设置"><i data-lucide="x-circle"></i></button>
         </header>
+        <div data-settings-model-form>
         ${settingsLoading || !config
           ? settingsError
-            ? `<div class="settings-form"><div class="settings-message settings-message-error" role="alert">${escapeHtml(settingsError)}</div><button class="secondary-button" data-action="open-settings">重试读取</button></div>`
+            ? `<div class="settings-message settings-message-error" role="alert">${escapeHtml(settingsError)}</div><button class="secondary-button" data-action="open-settings">重试读取</button>`
             : '<div class="settings-loading"><i data-lucide="loader-circle" class="spin"></i><span>正在读取模型配置…</span></div>'
           : `<form class="settings-form" data-form="model-settings" novalidate>
               <div class="settings-panels">\r\n              ${renderSettingsReadOnlyPanel('connection')}\r\n              ${renderSettingsReadOnlyPanel('workspace')}\r\n              ${renderSettingsReadOnlyPanel('plugins')}\r\n              ${renderSettingsReadOnlyPanel('memory')}\r\n              ${renderSettingsReadOnlyPanel('storage')}\r\n              ${renderSettingsReadOnlyPanel('accessibility')}\r\n              ${renderSettingsReadOnlyPanel('diagnostics')}
@@ -868,7 +904,7 @@ const renderSettingsModal = (): string => {
                   <label class="settings-field"><span>FAIL 阈值（0-1）</span><input name="verifierFailThreshold" type="number" min="0" max="1" step="0.01" value="${escapeHtml(verifierValues.verifierFailThreshold)}"></label>
                 </div>
                 </div><p class="settings-hint">留空即使用运行时默认值（重复 2 次、最大比较 32、支点 2、上限 60000 字符、PASS 0.9 / FAIL 0.5）。清空全部项会从配置文件移除该段。</p>
-              </section><p class="settings-empty" data-settings-empty hidden>没有找到匹配的设置，请尝试“中文”“模型”或“验证”。</p>
+              </section>
               </div>
               <div class="settings-save-area" aria-live="polite">
               ${settingsConfigPath ? `<p class="settings-path" title="${escapeHtml(settingsConfigPath)}">${escapeHtml(settingsConfigPath)}</p>` : ''}
@@ -879,6 +915,9 @@ const renderSettingsModal = (): string => {
                 <button class="send-button" type="submit" ${settingsSaving || !desktopBridge.isNative() ? 'disabled' : ''}>${settingsSaving ? '保存中…' : '保存配置'}</button>
               </footer></div>
             </form>`}
+        </div>
+        <div class="settings-form settings-archive">${renderSettingsArchivePanel()}</div>
+        <p class="settings-empty" data-settings-empty hidden>没有找到匹配的设置，请尝试“已归档”“模型”或“验证”。</p>
       </div></section>
     </div>`;
 };
@@ -1058,6 +1097,7 @@ const toolDisplayLabel = (value: unknown): string => {
   const labels: Record<string, string> = {
     'workspace.list': '查看工作区目录',
     'workspace.read': '读取工作区文件',
+    'workspace.focus': '定位源码片段',
     'workspace.snapshot': '记录工作区快照',
     'shell.execute': '执行命令',
     'file.read': '读取文件',
@@ -2056,8 +2096,7 @@ const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project
     <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}</span>
   </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`).join('') : '<div class="project-empty">暂无会话</div>'}
 </div>`;
-const renderArchiveNavigation = (): string => `<button class="nav-item ${activePage === 'archived' ? 'active' : ''}" data-action="navigate" data-page="archived"><i data-lucide="history"></i><span>已归档</span><span class="archive-count">${Object.keys(threadArchives).length + Object.keys(projectArchives).length}</span></button>
-  ${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
+const renderArchiveNotice = (): string => `${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" type="button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
 const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}`;
 const renderProjectThreadList = (): string => {
   const activeProjectId = currentProjectId();
@@ -2079,7 +2118,7 @@ const renderProjectThreadList = (): string => {
 
 const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string }>();
 const updateThreadList = (): void => {
-  patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNavigation);
+  patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNotice);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
   if (!list) return;
   const navigationRail = app.querySelector<HTMLElement>('.navigation-rail');
@@ -2990,24 +3029,7 @@ const renderRunsPage = (): string => {
     <button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>`;
 };
 
-const renderArchivedThreadsPage = (): string => {
-  const threads = model.threads.filter(thread => isThreadArchived(thread.id))
-    .slice().sort((a, b) => threadArchives[b.id] - threadArchives[a.id]);
-  const archivedProjects = Object.entries(projectArchives).map(([id, record]) => ({ id, name: record.name, path: record.path, archivedAtMs: record.archivedAtMs })).sort((a, b) => b.archivedAtMs - a.archivedAtMs);
-  return `<div class="page-placeholder"><h1>已归档</h1>
-    <p class="panel-purpose">归档只在本机隐藏项目和会话，不删除项目配置、会话和历史内容。恢复后会重新出现在左侧项目列表中。</p>
-    <h2>已归档项目</h2>
-    <div class="run-history-list">${archivedProjects.map((item) => `<article class="run-history-row">
-      <div class="run-history-copy"><strong>${escapeHtml(item.name || '未命名项目')}</strong><span>${escapeHtml(item.path)}</span><small>归档于 ${escapeHtml(new Date(item.archivedAtMs).toLocaleString('zh-CN'))}</small></div>
-      <div class="governance-actions"><button class="governance-button governance-button-primary" data-action="restore-project" data-project-id="${escapeHtml(item.id)}">恢复项目</button></div>
-    </article>`).join('') || '<div class="page-status page-status-empty"><strong>暂无已归档项目</strong><span>在左侧项目行点击“归档”，即可收起暂时不用的项目。</span></div>'}</div>
-    <h2>已归档会话</h2>
-    <div class="run-history-list">${threads.map(thread => `<article class="run-history-row">
-      <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(projectForThread(thread)?.name ?? (thread.cwd ? projectNameForPath(thread.cwd) : '未绑定项目'))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
-      <div class="governance-actions"><button class="governance-button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" ${liveTaskRunning() ? 'disabled title="请等待当前任务结束后查看其他会话"' : ''}>查看会话</button><button class="governance-button governance-button-primary" data-action="restore-thread" data-thread-id="${escapeHtml(thread.id)}">恢复到列表</button></div>
-    </article>`).join('') || `<div class="page-status page-status-empty"><strong>${Object.keys(threadArchives).length ? '归档会话尚未载入' : '暂无已归档会话'}</strong><span>${Object.keys(threadArchives).length ? '归档标记仍保留，等待历史会话加载。' : '点击左侧会话旁的“归档”，即可收起暂时不用的会话。'}</span></div>`}</div>
-  </div>`;
-};
+
 
 const renderPageStatus = (page: string): string => {
   const meta = primaryPages[page] ?? { title: '页面', description: '内容正在准备。' };
@@ -3195,6 +3217,8 @@ const renderLiveView = (): void => {
   syncMemoryActionControls();
 };
 const render = (): void => {
+  const promptError = app.querySelector<HTMLElement>('#composer-prompt-error');
+  if (promptError) { promptError.hidden = !composerPromptError; promptError.textContent = composerPromptError; }
   app.querySelectorAll<HTMLDetailsElement>('details[data-disclosure-id]').forEach(detail => contextDisclosureState.set(detail.dataset.disclosureId!, detail.open));
   if (historyView && activePage === 'workbench' && !model.activeRun && !settingsVisible
     && !projectPickerVisible && !projectNameDialog && !projectEditDialog && !app.querySelector('.project-picker-backdrop')) {
@@ -3257,7 +3281,7 @@ const render = (): void => {
         </div>
 
         <div class="rail-footer">
-          <div data-archive-navigation>${renderArchiveNavigation()}</div>
+          <div data-archive-navigation>${renderArchiveNotice()}</div>
           <button class="nav-item ${settingsVisible ? 'active' : ''}" data-action="open-settings" aria-label="模型设置"><i data-lucide="settings"></i><span>设置</span></button>
           <div class="version-label">v${escapeHtml(model.runtime.version)} · ${controlled ? '受控模式' : '只读模式'}</div>
         </div>
@@ -3290,7 +3314,7 @@ const render = (): void => {
 
         <section class="transcript" aria-label="任务时间线">
           <div class="transcript-inner" data-region="conversation">
-            ${activePage === 'archived' ? renderArchivedThreadsPage() : activePage === 'runs' ? renderRunsPage() : activePage === 'diagnostics' ? renderDiagnosticsPage() : activePage === 'workspace' ? renderWorkspacePage() : activePage === 'memory' ? renderMemoryPage() : activePage === 'safety' ? renderSafetyPage() : activePage !== 'workbench' ? renderPageStatus(activePage) : ''}
+            ${activePage === 'runs' ? renderRunsPage() : activePage === 'diagnostics' ? renderDiagnosticsPage() : activePage === 'workspace' ? renderWorkspacePage() : activePage === 'memory' ? renderMemoryPage() : activePage === 'safety' ? renderSafetyPage() : activePage !== 'workbench' ? renderPageStatus(activePage) : ''}
             ${activePage === 'workbench' ? `
             <div data-live-workbench>
               <div class="live-region" data-live-region="route"></div>
@@ -3312,7 +3336,7 @@ const render = (): void => {
         <footer class="composer-wrap">
           <div class="composer-cache" data-model-cache="composer" role="status" aria-label="缓存命中率">${renderComposerCache()}</div>
           <form class="composer" data-form="composer">
-            <textarea name="prompt" rows="2" maxlength="8000" placeholder="${escapeHtml(model.composer.placeholder)}" ${canCompose ? '' : 'disabled'}></textarea>
+            <textarea name="prompt" rows="2" aria-describedby="composer-prompt-error" placeholder="${escapeHtml(model.composer.placeholder)}" ${canCompose ? '' : 'disabled'}></textarea>
             <div class="composer-bottom">
               <div class="composer-context">
                 <span><i data-lucide="shield-check"></i>${controlled ? '受控执行，逐项审批' : '只读分析'}</span>
@@ -3324,6 +3348,7 @@ const render = (): void => {
               </div>
             </div>
           </form>
+          <p id="composer-prompt-error" role="alert" class="settings-message settings-message-error" ${composerPromptError ? '' : 'hidden'}>${escapeHtml(composerPromptError)}</p>
           <p class="composer-note">${controlled ? '受控模式只允许已配置范围；每个命令或写入仍需单次审批。' : '当前为只读模式，不会执行命令、修改文件或发起外部网络操作。'}</p>
         </footer>
       </main>
@@ -3586,7 +3611,7 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
 };
 
 const loadPageDetails = async (): Promise<void> => {
-  if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics', 'archived'].includes(activePage)) return;
+  if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics'].includes(activePage)) return;
   // Recovery must own the command slot before optional dashboard rebuilds.
   await Promise.all([historyStartupReady, runtimeHydrationReady]);
   if (running) return;
@@ -3764,6 +3789,19 @@ const runtimeEventText = (event: RuntimeEvent): string => {
   return humanizeCode(event.kind, '运行时事件');
 };
 
+const harnessProgressText = (payload: Record<string, unknown>): string => {
+  const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const verification = payload.verification && typeof payload.verification === 'object'
+    ? payload.verification as Record<string, unknown> : undefined;
+  const providerErrors = Array.isArray(verification?.providerErrors)
+    ? verification.providerErrors.filter((value): value is string => typeof value === 'string') : [];
+  return [
+    `已完成 ${count(payload.toolResults)} 次工具调用，其中 ${count(payload.successfulWrites)} 次写入成功；最近一次写入后又读取 ${count(payload.inspectionsSinceWrite)} 次。`,
+    providerErrors.length ? `验证服务异常：${providerErrors.join('、')}。已保留改动和失败记录，尚未确认任务完成。` : '',
+    verification?.nextAction === 'RESTORE_VERIFICATION_SERVICE' ? '请恢复验证服务后继续。' : ''
+  ].filter(Boolean).join('\n');
+};
+
 const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined => {
   const payload = event.payload ?? {};
   const text = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
@@ -3790,6 +3828,8 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
     digest: typeof payload.digest === 'string' ? payload.digest : typeof payload.outputDigest === 'string' ? payload.outputDigest : typeof payload.snapshotDigest === 'string' ? payload.snapshotDigest : undefined
   };
   switch (persistedKind) {
+    case 'TaskHarnessProgress':
+      return { ...common, kind: 'STATUS', title: '执行记录', body: harnessProgressText(payload), status: 'COMPLETE' };
     case 'TaskRunCreated':
       return { ...common, kind: 'STATUS', title: '任务已创建', body: '已恢复该次任务的结构化运行记录。', status: 'COMPLETE' };
     case 'RunStateChanged':
@@ -4039,6 +4079,15 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   // sequence and Rust watchdog timestamp, but must not pollute the user-facing
   // task timeline or mutate the task state projection.
   if (event.kind === 'runtime.heartbeat') return;
+  if (event.kind === 'harness.progress') {
+    const itemId = `harness-progress-${event.runId}`;
+    const item: TimelineItem = { itemId, runId: event.runId, kind: 'STATUS', title: '执行记录',
+      body: harnessProgressText(payload), status: 'COMPLETE', createdAtMs: event.emittedAtMs };
+    if (running) taskProgressMessage = item.body;
+    update(model.timeline.some(candidate => candidate.itemId === itemId)
+      ? replaceTimelineItem(model, itemId, item) : appendTimelineItem(model, item));
+    return;
+  }
   if (event.kind === 'runtime.phase') {
     const phases: Record<string, string> = {
       INITIALIZING: '正在启动任务', STORAGE_CONFIGURATION: '正在准备本地记录',
@@ -5014,6 +5063,12 @@ const runMockTask = async (prompt: string): Promise<void> => {
 
 const runCordisTask = async (prompt: string, modelOverride?: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
   if (running || workspaceChanging) return;
+  if (prompt.trim().length > 8000) {
+    composerPromptError = `需求共有 ${prompt.trim().length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
+    render();
+    return;
+  }
+  composerPromptError = '';
   // An archived project must never receive a new run silently. Check the
   // target project (the workspace root, or the cwd of the thread this call
   // resumes) before any run state or archive state is modified, so viewing an
@@ -5024,6 +5079,9 @@ const runCordisTask = async (prompt: string, modelOverride?: string, extraOption
   const archivedTargetId = archivedProjectIdForRoot(targetThread?.cwd) || archivedProjectIdForRoot(model.workspace.rootPath);
   if (archivedTargetId) {
     taskActionNotice = '此项目已归档，请先恢复项目后再开始任务。';
+    // Reuse the always-visible archive notice so the block reason shows in the
+    // user-visible area even when the task options panel is collapsed.
+    threadArchiveNotice = { text: '此项目已归档，请先恢复项目后再开始任务。', error: true };
     render();
     return;
   }
@@ -5600,7 +5658,7 @@ app.addEventListener('click', (event) => {
     changeThreadArchive(actionElement?.dataset.threadId ?? '', action === 'archive-thread');
     return;
   }
-  if (action === 'select-thread') void selectThread(actionElement?.dataset.threadId ?? '');
+  if (action === 'select-thread') { captureSettingsDraft(); if (settingsVisible) closeSettings(); void selectThread(actionElement?.dataset.threadId ?? ''); }
   if (action === 'refresh-execution-state') void refreshExecutionState();
   if (action === 'refresh-governance') void refreshGovernance();
   if (action === 'memory-action' || action === 'run-dream' || action === 'start-dream-maintenance' || action === 'stop-dream-maintenance' || action === 'plugin-action' || action === 'evolution-action') {
@@ -5842,6 +5900,12 @@ app.addEventListener('submit', (event) => {
   const data = new FormData(form);
   const prompt = String(data.get('prompt') ?? '').trim();
   if (!prompt || !model.composer.enabled || running || workspaceChanging) return;
+  if (prompt.length > 8000) {
+    composerPromptError = `需求共有 ${prompt.length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
+    render();
+    return;
+  }
+  composerPromptError = '';
   taskActionNotice = '';
   historyView = undefined;
   lastSubmitReceipt = { id: `cmd-${Date.now().toString(36)}`, prompt, status: 'pending', atMs: Date.now() };

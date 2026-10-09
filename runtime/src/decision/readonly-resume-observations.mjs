@@ -1,7 +1,7 @@
 import { readonlyRegistryObservation } from './registry-observation.mjs';
 const unwrap = event => event?.payload?.payload ?? event?.payload;
 const digest = value => typeof value === 'string' && /^sha256:[a-f0-9]{64}$/u.test(value);
-const readonly = new Set(['workspace.read', 'workspace.list']);
+const readonly = new Set(['workspace.read', 'workspace.list', 'workspace.focus']);
 const path = value => typeof value === 'string' && /^[A-Za-z0-9_.\\/ -]{1,160}$/u.test(value)
   && !value.replaceAll('\\', '/').startsWith('/') && !value.replaceAll('\\', '/').split('/').includes('..') ? value : undefined;
 

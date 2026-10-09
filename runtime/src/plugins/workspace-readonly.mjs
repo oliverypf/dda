@@ -5,6 +5,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { resolve, relative, sep, isAbsolute } from 'node:path';
 import { cordisPlugin } from './cordis-plugin.mjs';
 import { preferMappedPath } from '../windows-path.mjs';
+import { uniqueExcerptOffset } from '../task-harness.mjs';
 
 const MAX_ENTRIES = 180;
 // UNC workspaces can spend several seconds resolving real paths and reading
@@ -251,14 +252,14 @@ export class ReadonlyWorkspace {
     }
   }
 
-  async readMatching(relativePath, findText, maxChars = MAX_READ_CHARS, offsetChars = 0) {
+  async readMatching(relativePath, findText, maxChars = MAX_READ_CHARS, offsetChars = 0, requireUnique = false) {
     if (typeof findText !== 'string' || findText.length < 1 || findText.length > 512) {
       throw new Error('WORKSPACE_INVALID_FIND_TEXT');
     }
-    return this.read(relativePath, maxChars, offsetChars, findText);
+    return this.read(relativePath, maxChars, offsetChars, findText, requireUnique);
   }
 
-  async read(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0, findText) {
+  async read(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0, findText, requireUnique = false) {
     if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > MAX_READ_CHARS) {
       throw new Error('WORKSPACE_INVALID_READ_LIMIT');
     }
@@ -272,7 +273,8 @@ export class ReadonlyWorkspace {
     const bytes = await readFile(target.real).catch((error) => { logWorkspaceFailure('read.file', relativePath, this.root, error); throw new Error('WORKSPACE_READ_FAILED'); });
     const content = decodeText(bytes);
     if (content === undefined) throw new Error(`WORKSPACE_BINARY_FILE:${path}`);
-    const match = findText === undefined ? undefined : content.indexOf(findText, offsetChars);
+    const match = findText === undefined ? undefined : requireUnique
+      ? uniqueExcerptOffset(content, findText, offsetChars) : content.indexOf(findText, offsetChars);
     const start = match === undefined ? offsetChars : match < 0 ? content.length : match;
     return {
       path,

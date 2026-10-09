@@ -5,7 +5,10 @@ import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, verifiedToolDeci
 import { toolWorkspaceDecisionEvidence } from './decision/workspace-context.mjs';
 import { readonlyRegistryObservation } from './decision/registry-observation.mjs';
 import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
-import { canRetryVerificationOnly } from './decision/verification-retry.mjs';
+import { canRetryVerificationOnly, verificationProviderFailure } from './decision/verification-retry.mjs';
+import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
+import { runSupervisionCommand } from './task-supervision.mjs';
+import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
@@ -407,7 +410,7 @@ const manifests = () => {
 };
 
 async function runTask() {
-  const prompt = arg('--prompt', '');
+  const prompt = validateTaskPrompt(arg('--prompt', ''));
   const workspaceRoot = canonicalWorkspacePath(arg('--workspace', ''));
   const mode = executionMode();
   const releaseChannel = resolveReleaseChannel();
@@ -457,7 +460,9 @@ async function runTask() {
   let activeSnapshotDigest;
   let initialGitObservation;
   let eventSequence = 0;
+  const harnessProgress = createTaskProgress();
   const emitEvent = (kind, payload = {}) => {
+    harnessProgress.observe({ kind, payload, emittedAtMs: Date.now() });
     if (eventOutput !== 'stdout') return;
     const event = {
       type: 'runtime_event',
@@ -2922,6 +2927,10 @@ async function runTask() {
     const resumedReadonlyActions = resumeRequested ? readonlyResumeObservations({ events: priorEvents,
       sourceRunId: resumeSourceRunId, checkpointDigest: resumeSourceCheckpointDigest, threadId: thread.id,
       promptDigest: sha256Digest(prompt), mode }) : [];
+    const resumedWrites = resumeRequested ? await resumeWrittenFiles({ events: priorEvents,
+      sourceRunId: resumeSourceRunId, checkpointDigest: resumeSourceCheckpointDigest, threadId: thread.id,
+      promptDigest: sha256Digest(prompt), mode, workspace }) : [];
+    const resumedActions = [...resumedReadonlyActions, ...resumedWrites];
     const resumedReadonlyEventIds = new Set(resumedReadonlyActions.map(action => action.sourceEventId));
     const resumedReadonlyEvents = priorEvents.filter(event => resumedReadonlyEventIds.has(event.eventId));
     const priorVerificationEvent = priorEvents.findLast(event => event.runId === resumeSourceRunId && event.kind === 'VerificationCompleted');
@@ -2992,7 +3001,7 @@ async function runTask() {
     });
     let finalResult;
     let activeActionParentDecisionIds = [plannerDecision?.decisionId ?? allocationDecision.decisionId];
-    const recoveryLimitRaw = arg('--max-recovery-attempts', process.env.HMCODEX_MAX_RECOVERY_ATTEMPTS ?? '3');
+    const recoveryLimitRaw = arg('--max-recovery-attempts', process.env.HMCODEX_MAX_RECOVERY_ATTEMPTS ?? '1');
     const recoveryLimit = Number(recoveryLimitRaw);
     if (!Number.isInteger(recoveryLimit) || recoveryLimit < 1 || recoveryLimit > 8) {
       throw new Error('RECOVERY_ATTEMPT_LIMIT_INVALID');
@@ -3036,9 +3045,9 @@ async function runTask() {
       ].filter(Boolean).join('\n').slice(0, 6000);
       const recoveryRun = await runVerifierRecovery({
       maxAttempts: recoveryLimit,
-      initialActions: resumedReadonlyActions,
-      initialContext: resumedReadonlyActions.length ? createRecoveryContext({ status: priorVerification?.status ?? 'UNKNOWN', summary: 'Resume remaining work with prior actual read-only tool observations' },
-        { previousActions: resumedReadonlyActions }) : undefined,
+      initialActions: resumedActions,
+      initialContext: resumedActions.length ? createRecoveryContext({ status: priorVerification?.status ?? 'UNKNOWN', summary: 'Resume remaining work with prior actual tool observations; completed file writes were checked against current source digests' },
+        { previousActions: resumedActions }) : undefined,
       execute: async ({ attempt, recovery, previousActions = [] }) => {
         const verificationActions = [];
         const recoveryText = recovery
@@ -3118,7 +3127,7 @@ async function runTask() {
             const toolEvidence = await collectDecisionEvidence({ kinds: ['ToolInvocationCompleted', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
             const terminalToolEvidence = actionDecisionEvidence([...previousActions, ...verificationActions], { includeReadPaths: true });
             const toolEvidenceIds = toolEvidence.map((ref) => ref.evidenceId);
-            const toolReadOnly = call.name === 'workspace.list' || call.name === 'workspace.read';
+            const toolReadOnly = ['workspace.list', 'workspace.read', 'workspace.focus'].includes(call.name);
             const previousReadonlyObservation = decisionEngine.enabled
               ? readonlyRegistryObservation([...resumedReadonlyEvents, ...await listDurableRunEvents()]) : undefined;
             const workspaceEvidence = decisionEngine.enabled ? await toolWorkspaceDecisionEvidence({
@@ -3237,6 +3246,13 @@ async function runTask() {
           onToolResult: async (evidence) => {
             const action = verificationActions.find(item => item.id === evidence.id);
             if (action && ['SUCCEEDED', 'FAILED'].includes(action.state)) action.verifiedResult = evidence;
+            if (action?.state === 'SUCCEEDED' && evidence.writtenFile) {
+              action.path = evidence.writtenFile.path;
+              action.contentDigest = evidence.writtenFile.contentDigest;
+              await trajectory.append({ runId, kind: 'TaskFileWritten', payload: {
+                name: evidence.name, path: action.path, contentDigest: action.contentDigest, outputDigest: evidence.outputDigest
+              }, sensitivity: 'INTERNAL' });
+            }
           },
           onEvent: async (event) => {
             if (event.kind === 'model.text_delta' && typeof event.text === 'string') streamedResponseText += event.text;
@@ -3287,12 +3303,16 @@ async function runTask() {
               ...(event.argumentsDigest ? { argumentsDigest: event.argumentsDigest } : {}),
               ...(event.outputDigest ? { outputDigest: event.outputDigest } : {}),
               ...(event.outputChars !== undefined ? { outputChars: event.outputChars } : {}),
+              ...(event.inspectionCount !== undefined ? { inspectionCount: event.inspectionCount } : {}),
               ...(event.ok !== undefined ? { ok: event.ok } : {}),
               ...(event.errorCode ? { errorCode: event.errorCode } : {}),
               ...(event.message ? { message: String(event.message).slice(0, 640) } : {}),
               ...(event.mode ? { mode: String(event.mode).slice(0, 40) } : {}),
               ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {})
             });
+            if (event.kind === 'tool.result') {
+              emitEvent('harness.progress', harnessProgress.snapshot());
+            }
           }
         };
         // S2-12: a candidate-set executor binding fans out read-only drafts,
@@ -3729,6 +3749,11 @@ async function runTask() {
         if (canRetryVerificationOnly({ ruleStatus: ruleVerificationStatus, behaviorDecision, report: verification })) {
           verification = { ...verification, verificationOnlyRetry: true, nextAction: 'RETRY_VERIFICATION',
             summary: 'Execution evidence passed deterministic checks; retry only the unavailable semantic verification provider' };
+        } else {
+          const providerError = verificationProviderFailure({ behaviorDecision, report: verification });
+          if (providerError) verification = { ...verification, stopRecovery: true, providerError,
+            nextAction: 'RESTORE_VERIFICATION_SERVICE',
+            summary: `Verification service unavailable (${providerError}); preserve execution evidence and stop without replaying implementation` };
         }
         finalResult = result;
         finalVerification = verification;
@@ -3768,6 +3793,7 @@ async function runTask() {
           failureCodes: verification.failureCodes,
           checks: verificationChecks
         });
+        emitEvent('harness.progress', harnessProgress.snapshot());
         return verification;
       },
       diagnose: async ({ attempt, report, previousActions }) => {
@@ -4310,8 +4336,12 @@ async function runTask() {
       executionMode: mode
     });
     logger.info(`run finished | runId=${runId} | latencyMs=${Math.max(0, Date.now() - runStartedAtMs)} | toolRounds=${result.toolRounds} | toolCallCount=${result.toolCallCount} | mode=${mode}`);
+    emitEvent('harness.progress', harnessProgress.snapshot());
+    await trajectory.append({ runId, kind: 'TaskHarnessProgress', payload: harnessProgress.snapshot(), sensitivity: 'INTERNAL' })
+      .catch(error => logger.warn(`task progress persistence failed | runId=${runId} | error=${error?.code ?? error?.message}`));
     return {
       ok: true,
+      harness: harnessProgress.snapshot(),
       ...(resumeSourceRunId ? { resumedFromRunId: resumeSourceRunId } : {}),
       runId,
       threadId: thread.id,
@@ -4499,6 +4529,9 @@ async function runTask() {
     }).catch(() => {});
     await recordObjectiveFeedback({ status: failureStatus, event: failedTrajectoryEvent, verification: finalVerification }).catch(() => {});
     emitEvent('run.failed', trajectoryErrorPayload(error));
+    error.harness = harnessProgress.snapshot();
+    emitEvent('harness.progress', error.harness);
+    await trajectory.append({ runId, kind: 'TaskHarnessProgress', payload: error.harness, sensitivity: 'INTERNAL' }).catch(() => {});
     logger.error(`run failed | runId=${runId} | phase=${failurePhase} | status=${failureStatus} | error=${error instanceof Error ? `${error.message} | stack=${error.stack ?? ''}` : String(error)}`);
     for (const decisionId of decisionIds) {
       await decisionTrace.linkOutcome(decisionId, {
@@ -6556,7 +6589,9 @@ logger.install();
 }
 
 try {
-  const result = command === 'task'
+  const result = command === 'supervise'
+    ? await runSupervisionCommand()
+    : command === 'task'
     ? await runTask()
     : command === 'thread' || command === 'threads'
       ? await runThreadCommand()
@@ -6624,6 +6659,7 @@ try {
           : command === 'evolution' || command === 'evolutions'
             ? await runEvolutionCommand()
         : { ok: true, plugins: manifests() };
+  if (command === 'supervise' && result.ok === false) process.exitCode = 1;
   const output = `${JSON.stringify(result)}\n`;
   if (command === 'task') {
     await flushStdout(output);
@@ -6631,7 +6667,7 @@ try {
   }
   writeStdout(output);
 } catch (error) {
-  const output = `${JSON.stringify({ ok: false, ...(taskResponseRunId ? { runId: taskResponseRunId } : {}), error: error instanceof Error ? error.message : String(error), plugins: manifests() })}\n`;
+  const output = `${JSON.stringify({ ok: false, ...(taskResponseRunId ? { runId: taskResponseRunId } : {}), error: error instanceof Error ? error.message : String(error), ...(error?.harness ? { harness: error.harness } : {}), plugins: manifests() })}\n`;
   if (command === 'task') {
     try { await flushStdout(output); } finally { process.exit(1); }
   }

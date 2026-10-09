@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { boundedPrompt, recoveryPrompt, scopedPath, approveWrite, prepare, adoptionPlan, digest } from './supervise-dda-task.mjs';
+import { boundedPrompt, recoveryAttemptLimit, recoveryPrompt, focusedPrompt, summarizeEvents, scopedPath, approveWrite, prepare, adoptionPlan, digest } from './supervise-dda-task.mjs';
 
 test('oversized task instructions are rejected rather than silently losing the tail', () => {
   assert.equal(boundedPrompt('  需求  '), '需求');
@@ -16,6 +16,16 @@ test('workspace path cannot escape or target the root', () => {
   assert.equal(scopedPath(root, 'src/main.ts'), resolve(root, 'src/main.ts'));
   for (const path of ['..', '../elsewhere', '.', root]) assert.throws(() => scopedPath(root, path), /PATH_OUTSIDE/);
 });
+test('supervised runs use one execution-and-verification attempt by default', () => {
+  assert.equal(recoveryAttemptLimit(), 1);
+  assert.equal(recoveryAttemptLimit({ maxRecoveryAttempts: 2 }), 2);
+  for (const maxRecoveryAttempts of [0, -1, 9, 1.5, '2']) assert.throws(() => recoveryAttemptLimit({ maxRecoveryAttempts }), /INVALID_RECOVERY/);
+});
+test('unknown verification provider errors remain visible and are never marked as a pass', () => {
+  const summary = summarizeEvents(JSON.stringify({ kind: 'verification.completed', payload: { status: 'UNCERTAIN', checks: [{ status: 'UNKNOWN', message: 'JEV_HTTP_451' }] } }));
+  assert.deepEqual(summary.verification, { status: 'UNCERTAIN', providerErrors: ['JEV_HTTP_451'] });
+  assert.equal(summary.runtimeResult, null);
+});
 test('recovery carries the real failure and existing edits forward without claiming success', () => {
   const result = { code: 1, finalResult: { ok: false, error: 'fetch failed' }, changedFiles: ['src/main.ts'], validationStatus: 'not_independently_verified' };
   const prompt = recoveryPrompt('Move archives into settings.', result, 'Build found an unresolved old renderer reference.');
@@ -26,6 +36,22 @@ test('recovery carries the real failure and existing edits forward without claim
   assert.match(prompt, /unresolved old renderer/);
   assert.throws(() => recoveryPrompt('goal', result, ''), /RECOVERY_FEEDBACK_REQUIRED/);
   assert.throws(() => recoveryPrompt('x'.repeat(7999), result, 'remaining work'), /PROMPT_SIZE/);
+});
+test('heartbeats are not confused with implementation progress or successful completion', () => {
+  const events = [
+    { kind: 'tool.result', emittedAtMs: 1, payload: { name: 'workspace.read', ok: true } },
+    { kind: 'runtime.heartbeat', emittedAtMs: 2 },
+    { kind: 'tool.result', emittedAtMs: 3, payload: { name: 'file.patch', ok: true } },
+    { kind: 'tool.result', emittedAtMs: 4, payload: { name: 'workspace.read', ok: true } },
+    { kind: 'runtime.heartbeat', emittedAtMs: 5 },
+    { ok: false, error: 'fetch failed' }
+  ].map(e => JSON.stringify(e)).join('\n');
+  const summary = summarizeEvents(events + '\n{"partial":');
+  assert.equal(summary.heartbeats, 2);
+  assert.equal(summary.inspectionsSinceWrite, 1);
+  assert.equal(summary.successfulWrites, 1);
+  assert.equal(summary.latestActivity.atMs, 4);
+  assert.deepEqual(summary.runtimeResult, { ok: false, error: 'fetch failed' });
 });
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'dda-supervision-'));
@@ -43,6 +69,16 @@ test('prepare preserves current working bytes and refuses to overwrite an existi
   const spec = await fixture(t);
   assert.equal(await readFile(join(spec.workspace, 'src/main.ts'), 'utf8'), 'existing uncommitted work');
   await assert.rejects(prepare(spec), /EEXIST/);
+});
+test('focused handoff quotes actual uniquely located source with its hash', async t => {
+  const spec = await fixture(t);
+  const task = { goal: 'Fix the remaining error', instructions: 'Preserve previous work', excerpts: [{ path: 'src/main.ts', findText: 'existing', maxChars: 80 }] };
+  const prompt = await focusedPrompt(spec, task);
+  assert.match(prompt, /existing uncommitted work/);
+  assert.ok(prompt.includes(digest('existing uncommitted work')));
+  await assert.rejects(focusedPrompt(spec, { ...task, excerpts: [{ ...task.excerpts[0], findText: 'missing' }] }), /EXCERPT_NOT_FOUND/);
+  await writeFile(join(spec.workspace, 'src/main.ts'), 'existing existing');
+  await assert.rejects(focusedPrompt(spec, task), /EXCERPT_AMBIGUOUS/);
 });
 test('only explicitly allowed existing file writes receive approval', async t => {
   const spec = await fixture(t);

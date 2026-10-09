@@ -71,7 +71,8 @@ const assertFocusCycle = async () => {
   for (const key of ['Tab', 'Shift+Tab']) {
     for (let i = 0; i < count; i++) {
       await page.keyboard.press(key);
-      assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-settings-dialog]'))), true, `${key} stays in dialog`);
+      const focused = await page.evaluate(() => ({ inDialog: Boolean(document.activeElement?.closest('[data-settings-dialog]')), tag: document.activeElement?.tagName, action: document.activeElement?.getAttribute('data-action'), name: document.activeElement?.getAttribute('name') }));
+      assert.equal(focused.inDialog, true, `${key} stays in dialog (${i + 1}/${count}: ${JSON.stringify(focused)})`);
     }
     assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('settings-back')), true, `${key} wraps exactly once`);
   }

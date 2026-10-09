@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { rename, unlink, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { rename, unlink, writeFile, readFile } from 'node:fs/promises';
+import { randomUUID, createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { ExecutorPort } from './executor-port.mjs';
 import {
@@ -216,19 +216,32 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
     // existing file; the bounded fallback keeps that platform behavior
     // functional while retaining the atomic path for new files.
     const temporaryPath = `${authorization.path.absolutePath}.hmcodex-${randomUUID()}.tmp`;
+    const checkSource = async () => {
+      const refreshed = await this.#monitor.canonicalPath(request.path, { forWrite: true });
+      if (refreshed.absolutePath !== authorization.path.absolutePath) throw new SafetyError('EXECUTOR_WRITE_TARGET_CHANGED');
+      if (request.expectedDigest !== undefined) {
+        const expected = typeof request.expectedDigest === 'string'
+          ? request.expectedDigest.toLowerCase().replace(/^(?!sha256:)/, 'sha256:') : request.expectedDigest;
+        const actual = refreshed.exists ? `sha256:${createHash('sha256').update(await readFile(refreshed.absolutePath)).digest('hex')}` : null;
+        if (actual !== expected) throw new SafetyError('WRITE_STALE_DIGEST');
+      }
+      return refreshed;
+    };
     try {
+      await checkSource();
       await writeFile(temporaryPath, request.content, { encoding: 'utf8', flag: 'wx' });
       try {
+        await checkSource();
         await rename(temporaryPath, authorization.path.absolutePath);
       } catch (error) {
         if (!['EEXIST', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) throw error;
         // Re-resolve before the non-atomic Windows replacement fallback so a
         // race cannot swap the target for a link after authorization.
-        const refreshed = await this.#monitor.canonicalPath(request.path, { forWrite: true });
-        if (refreshed.absolutePath !== authorization.path.absolutePath) throw new SafetyError('EXECUTOR_WRITE_TARGET_CHANGED');
+        const refreshed = await checkSource();
         await writeFile(refreshed.absolutePath, request.content, { encoding: 'utf8', flag: 'w' });
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof SafetyError) throw error;
       throw new SafetyError('EXECUTOR_WRITE_FAILED');
     } finally {
       await unlink(temporaryPath).catch(() => {});

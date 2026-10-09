@@ -1398,6 +1398,13 @@ async fn run_model_task(
     lease_commands: Option<Vec<String>>,
     lease_network_targets: Option<serde_json::Value>,
 ) -> Result<RuntimeTaskResponse, String> {
+    let prompt_length = prompt.trim().encode_utf16().count();
+    if prompt_length == 0 {
+        return Err("TASK_EMPTY: 请填写任务需求".to_string());
+    }
+    if prompt_length > 8000 {
+        return Err(format!("TASK_PROMPT_TOO_LONG:{prompt_length}:8000：需求超过 8000 字符，请拆分后提交；原文未被截断"));
+    }
     let state = state.inner().clone();
     reserve_runtime_launch(&state)?;
     let cleanup_state = state.clone();

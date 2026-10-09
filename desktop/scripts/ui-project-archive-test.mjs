@@ -72,7 +72,7 @@ check('reload keeps archived project hidden',await page.locator('[data-project-g
 check('reload does not select archived default',(await page.locator('.workspace-identity strong').innerText())!=='项目甲');
 await page.locator('[data-action="open-settings"]').first().click();
 await page.locator('[data-action="settings-section"]').filter({hasText:'已归档'}).click();
-await page.locator('[data-settings-dialog] [data-action="restore-project"][data-project-id="project-a"]').click();
+await page.locator('[data-settings-dialog] .run-history-row [data-action="restore-project"][data-project-id="project-a"]').click();
 await page.locator('.settings-back').click();
 check('restored project appears',await page.locator('[data-project-group="project-a"]').count()===1);
 check('restored project expanded',await page.locator('[data-project-group="project-a"] [data-thread-id="a-live"]').first().isVisible());
@@ -84,7 +84,7 @@ await discovered.locator('[data-action="archive-project"]').click();
 check('discovered project archive',await page.locator(`[data-project-group=${JSON.stringify(discoveredId)}]`).count()===0);
 await page.locator('[data-action="open-settings"]').first().click();
 await page.locator('[data-action="settings-section"]').filter({hasText:'已归档'}).click();
-await page.locator(`[data-settings-dialog] [data-action="restore-project"][data-project-id=${JSON.stringify(discoveredId)}]`).click();
+await page.locator(`[data-settings-dialog] .run-history-row [data-action="restore-project"][data-project-id=${JSON.stringify(discoveredId)}]`).click();
 await page.locator('.settings-back').click();
 check('discovered project restore',await page.locator(`[data-project-group=${JSON.stringify(discoveredId)}] [data-thread-id="c-live"]`).first().isVisible());
 // Failed local storage persistence must not remove a project.
@@ -111,7 +111,9 @@ await runPage.waitForFunction(()=>!document.querySelector('textarea[name="prompt
 await runPage.locator('textarea[name="prompt"]').fill('second');await runPage.locator('textarea[name="prompt"]').press('Enter');
 await runPage.waitForTimeout(300);
 check('archived project cannot start another task',await runPage.evaluate(()=>window.__supervisor.calls.filter(c=>c.cmd==='run_model_task').length===1));
-check('blocked archived project explains recovery',(await runPage.locator('body').innerText()).includes('此项目已归档'));
+const blockedText=await runPage.locator('body').innerText();
+check('blocked archived project explains recovery',blockedText.includes('此项目已归档'),blockedText.includes('此项目已归档')?undefined:blockedText);
+await runPage.screenshot({path:resolve(output,'blocked-task.png')});
 await runningContext.close();
 } catch(error){check('test flow completed',false,String(error))}finally{await browser.close();await new Promise(done=>server.close(done))}
 writeFileSync(resolve(output,'report.json'),JSON.stringify({backend:'fixture',frontend:root,results},null,2));console.log(JSON.stringify(results,null,2));process.exitCode=results.every(r=>r.pass)?0:1;

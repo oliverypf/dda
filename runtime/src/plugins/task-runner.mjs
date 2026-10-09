@@ -8,8 +8,8 @@ import { cordisPlugin } from './cordis-plugin.mjs';
 import { recoveryContinuationText } from '../task-recovery-controller.mjs';
 import { proposedToolDecisionClaim, toolResultDecisionClaim } from '../decision/evidence-claim.mjs';
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
+import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
 
-const MAX_PROMPT_CHARS = 8000;
 // 工具轮数上限可通过 HMCODEX_MAX_TOOL_ROUNDS 调整（1-24），默认 8：
 // 只读分析大仓库时 4 轮往往不够，会直接触发 TOOL_LOOP_LIMIT。
 // 工具轮数：默认不限制，模型停止调用工具时自然结束（与通用 agent 循环一致）。
@@ -115,8 +115,9 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
     async run({ prompt, workspace, historyContext = '', recovery, signal, onToolCall, onToolResult, onEvent, mode = 'READ_ONLY', modelProvider, maxToolRounds, maxTokens }) {
       const provider = modelProvider ?? ctx.modelProvider;
       if (!provider || typeof provider.stream !== 'function') throw new Error('MODEL_PROVIDER_UNAVAILABLE');
-      const boundedPrompt = String(prompt ?? '').trim().slice(0, MAX_PROMPT_CHARS);
-      if (!boundedPrompt) throw new Error('TASK_EMPTY');
+      // runTask validates the original 8000-character user goal. Allow room
+      // for the host's plan step here without silently dropping its tail.
+      const boundedPrompt = validateTaskPrompt(prompt, MAX_INTERNAL_PROMPT_CHARS);
       const stableCache = process.env.HMCODEX_PROMPT_CACHE !== 'off';
       const sorted = (items, key) => stableCache ? items.slice().sort((a, b) => String(a[key]) < String(b[key]) ? -1 : String(a[key]) > String(b[key]) ? 1 : 0) : items;
       const snapshotText = workspace.granted
@@ -156,6 +157,8 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const failedToolRequests = new Map();
       const failedToolKinds = new Map();
       const observedEvidence = new Set();
+      const pathKey = path => process.platform === 'win32' ? path.replaceAll('\\', '/').toLowerCase() : path.replaceAll('\\', '/');
+      const observedFileDigests = new Map((workspace.sections ?? []).map(section => [pathKey(section.path), section.digest]));
       let noNewWorkspaceEvidenceRounds = 0;
       let inspectionsSinceProgressCheckpoint = 0;
       const canOfferImplementationCheckpoint = mode === 'CONTROLLED'
@@ -305,7 +308,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             } else {
             try {
               let finalArguments = rawArguments;
-              if ((call.name === 'workspace.read' || call.name === 'workspace.list') && typeof rawArguments?.path === 'string') {
+              if ((['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)) && typeof rawArguments?.path === 'string') {
                 try {
                   finalArguments = { ...rawArguments, path: normalizeWorkspacePathArg(rawArguments.path, workspace.root) };
                 } catch (normalizeError) {
@@ -316,7 +319,16 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                   logger.info(`workspace path normalized | tool=${call.name} | from=${String(rawArguments.path).slice(0, 200)} | to=${finalArguments.path}`);
                 }
               }
+              if (call.name === 'file.write' && finalArguments.expectedDigest === undefined
+                && typeof finalArguments.path === 'string' && observedFileDigests.has(pathKey(finalArguments.path))) {
+                finalArguments = { ...finalArguments, expectedDigest: observedFileDigests.get(pathKey(finalArguments.path)) };
+              }
               output = await ctx.toolRegistry.invoke(call.name, finalArguments);
+              if (output?.path && output.ok !== false) {
+                const currentDigest = ['workspace.read', 'workspace.focus'].includes(call.name) ? output.digest
+                  : ['file.write', 'file.patch'].includes(call.name) ? output.contentDigest : undefined;
+                if (currentDigest) observedFileDigests.set(pathKey(output.path), currentDigest);
+              }
               if (output?.ok === false) {
                 isError = true;
                 processFailureCode = call.name === 'test.execute' && Number.isInteger(output.exitCode)
@@ -335,17 +347,21 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               const baseMessage = errorCode.includes('WORKSPACE_PATH_FORBIDDEN') || errorCode.includes('WORKSPACE_INVALID_PATH')
                 ? `Use a path relative to the authorized workspace; received ${originalPath || '<missing>'}.`
                 : safeErrorMessage(error, errorCode);
-              const availablePaths = (call.name === 'workspace.read' || call.name === 'workspace.list') && workspace.entries?.length
+              const availablePaths = (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)) && workspace.entries?.length
                 ? ` Available snapshot paths: ${workspace.entries.slice(0, 24).map((entry) => entry.path).join(', ')}`
                 : '';
               output = { errorCode, message: `${baseMessage}${availablePaths}` };
+              if (['WRITE_STALE_DIGEST', 'PATCH_STALE_DIGEST'].includes(errorCode)) output = {
+                errorCode, nextAction: 'READ_CURRENT_FILE_AND_REPLAN',
+                message: 'The file changed since the observed source or approval request. This write was refused. Read the current file with workspace.focus/read, preserve the other edits and prepare a new small patch; do not repeat the stale write.'
+              };
               if (errorCode === 'SAFETY_COMMAND_NOT_ALLOWED' && ['test.execute', 'shell.execute'].includes(call.name)) {
                 const approvedCommands = definition?.metadata?.approvedCommands;
                 output = { ...output, nextAction: 'USE_APPROVED_COMMAND_OR_WORKSPACE_TOOL',
                   ...(Array.isArray(approvedCommands) ? { approvedCommands: [...approvedCommands] } : {}),
                   message: `${baseMessage} The command was rejected; do not repeat it unchanged or bypass the restriction. ${Array.isArray(approvedCommands) ? `Lease-approved executables: ${JSON.stringify(approvedCommands)}. ` : ''}Use workspace.list/workspace.read for inspection, or choose an approved executable with separate args and a workspace-relative cwd. Additional executor restrictions still apply; if none fits, report the missing capability.` };
               }
-              if ((failures >= 2 || kindFailures >= 3) && (call.name === 'workspace.list' || call.name === 'workspace.read')) {
+              if ((failures >= 2 || kindFailures >= 3) && (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name))) {
                 const rawPath = typeof rawArguments?.path === 'string' ? rawArguments.path.slice(0, 160) : '';
                 stopAfterResult = new Error(`TOOL_REPEATED_FAILURE:${call.name}:${errorCode}${rawPath ? ` path=${rawPath}` : ''}`);
               }
@@ -371,7 +387,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 }
               : { outputDigest: resultDigest, outputChars: JSON.stringify(output).length })
           };
-          if (!isError && (call.name === 'workspace.list' || call.name === 'workspace.read')) {
+          if (!isError && (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name))) {
             // Paths are intentionally excluded so repeatedly listing different
             // aliases of the same directory still counts as no new evidence.
             const evidenceValue = output && typeof output === 'object'
@@ -389,6 +405,8 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           if ((!isError || processFailureCode) && typeof onToolResult === 'function') {
             const encoded = JSON.stringify(output);
             await onToolResult({ id: call.id, name: call.name, outputDigest: resultDigest,
+              ...(!isError && ['file.write', 'file.patch'].includes(call.name)
+                ? { writtenFile: { path: output.path, contentDigest: output.contentDigest } } : {}),
               preview: encoded.slice(0, 2048), truncated: encoded.length > 2048,
               decisionClaim: toolResultDecisionClaim(call.name, output),
               ...(call.name === 'test.execute' && toolDefinition?.metadata?.processObservationPolicy === 'RESTRICTED_WINDOWS_NO_PRELOAD'
@@ -409,7 +427,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             text: `HOST_PROGRESS_CHECKPOINT: ${count} successful new workspace inspection results since the previous checkpoint or successful file.write/file.patch. This does not establish whether other commands modified files. Reassess the original goal and identify the exact evidence still missing; avoid another broad reread. If the user requested implementation and you have enough evidence, make a small scoped change and verify it. For analysis-only goals, continue scoped analysis or report findings. This checkpoint grants no permissions, requires no mutation, and is not evidence of completion.` }] }));
           await onEvent?.({ kind: 'harness.progress_checkpoint', round, inspectionCount: count });
         }
-        const workspaceEvidenceCalls = calls.filter((call) => call.name === 'workspace.list' || call.name === 'workspace.read');
+        const workspaceEvidenceCalls = calls.filter((call) => ['workspace.list', 'workspace.read', 'workspace.focus'].includes(call.name));
         if (workspaceEvidenceCalls.length > 0 && workspaceEvidenceCalls.length === calls.length) {
           noNewWorkspaceEvidenceRounds = roundProducedNewWorkspaceEvidence ? 0 : noNewWorkspaceEvidenceRounds + 1;
           if (noNewWorkspaceEvidenceRounds >= 4) {

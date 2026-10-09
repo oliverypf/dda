@@ -447,7 +447,7 @@ export class RuleVerifier {
         // The same read before and after a write can verify both the repair
         // and preservation of untouched tests. A changed actual read digest
         // is also new evidence. Side effects retain their original identity.
-        const readObservation = ['workspace.read', 'workspace.list', 'file.diff'].includes(action.name ?? action.tool)
+        const readObservation = ['workspace.read', 'workspace.list', 'workspace.focus', 'file.diff'].includes(action.name ?? action.tool)
           && actualOutput;
         const key = readObservation ? `${fingerprint}:${workspaceWriteEpoch}:${action.outputDigest}` : fingerprint;
         if (seen.has(key)) duplicateIndexes.push(`${seen.get(key)}-${index}`);

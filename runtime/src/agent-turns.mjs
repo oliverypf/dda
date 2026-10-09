@@ -1,9 +1,9 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from './task-harness.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { compareVerifiedCandidates, extractProcessScore, mapContinuousScoreToVerdict, rankVerifiedCandidates, normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
 
 const SCHEMA_VERSION = '1.0';
-const MAX_PROMPT_CHARS = 8000;
 const MAX_CONTEXT_CHARS = 12000;
 const MAX_OUTPUT_CHARS = 24000;
 const MAX_SCORE_POSITIONS = 16384;
@@ -301,8 +301,9 @@ export const runIsolatedModelTurn = async ({
   if (!TURN_ROLES.has(role)) fail('AGENT_TURN_ROLE_INVALID');
   if (!provider || typeof provider.stream !== 'function') fail('MODEL_PROVIDER_UNAVAILABLE');
   if (!Number.isInteger(maxOutputChars) || maxOutputChars < 1 || maxOutputChars > MAX_OUTPUT_CHARS) fail('AGENT_TURN_OUTPUT_LIMIT_INVALID');
-  const boundedPrompt = bounded(prompt, MAX_PROMPT_CHARS);
+  const boundedPrompt = String(prompt ?? '').trim();
   if (!boundedPrompt) fail('AGENT_TURN_PROMPT_EMPTY');
+  validateTaskPrompt(boundedPrompt, MAX_INTERNAL_PROMPT_CHARS);
   const boundedContext = bounded(context, MAX_CONTEXT_CHARS);
   const messages = [createUserMessage({
     content: [{ type: 'text', text: [boundedPrompt, boundedContext].filter(Boolean).join('\n\n') }],

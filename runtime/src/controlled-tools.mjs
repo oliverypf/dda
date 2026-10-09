@@ -54,7 +54,8 @@ const writeInputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', minLength: 1, maxLength: MAX_PATH_LENGTH },
-    content: { type: 'string', maxLength: MAX_FILE_CHARS }
+    content: { type: 'string', maxLength: MAX_FILE_CHARS },
+    expectedDigest: { type: ['string', 'null'], pattern: '^(sha256:)?[a-fA-F0-9]{64}$' }
   },
   required: ['path', 'content'],
   additionalProperties: false
@@ -302,12 +303,26 @@ export const registerExecutorTools = (registry, executor, {
   });
   registry.register({
     name: 'file.write',
-    description: 'Write UTF-8 text to one explicitly approved file in the workspace.',
+    description: 'Write UTF-8 text to one explicitly approved file in the workspace. Supply expectedDigest from the latest workspace read (null for a new file). The host checks the source version before and after approval; a conflict requires a fresh read.',
     inputSchema: writeInputSchema,
     outputSchema: writeOutputSchema,
     readOnly: false,
     metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
-    handler: async (input) => executeWithLease(CAPABILITIES.WRITE_FILE, input, (lease) => executor.writeFile(input, { lease }))
+    handler: async (input) => {
+      let request = input;
+      if (workspace && typeof workspace.read === 'function') {
+        let current;
+        try { current = (await workspace.read(input.path, 1)).digest; }
+        catch (error) {
+          if (!String(error.message).startsWith('WORKSPACE_NOT_FOUND:')) throw error;
+          current = null;
+        }
+        const expected = typeof input.expectedDigest === 'string' ? input.expectedDigest.toLowerCase().replace(/^(?!sha256:)/, 'sha256:') : input.expectedDigest;
+        if (expected !== undefined && expected !== current) throw new TextPatchError('WRITE_STALE_DIGEST');
+        request = { ...input, expectedDigest: current };
+      }
+      return executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }));
+    }
   });
   if (workspace && typeof workspace.read === 'function') {
     if (includeReadOnlyPatchTools) {
@@ -346,7 +361,7 @@ export const registerExecutorTools = (registry, executor, {
         const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
           const latest = await workspace.read(current.path);
           if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');
-          return executor.writeFile({ path: current.path, content }, { lease });
+          return executor.writeFile({ path: current.path, content, expectedDigest: current.digest }, { lease });
         });
         return {
           ...writeResult,

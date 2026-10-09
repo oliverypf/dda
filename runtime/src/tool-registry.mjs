@@ -598,6 +598,18 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
       ? workspace.read(path, maxChars, offsetChars)
       : workspace.readMatching(path, findText, maxChars, offsetChars)
   });
+  if (typeof workspace.readMatching === 'function') registry.register({
+    name: 'workspace.focus',
+    description: 'Extract current source data around one unique literal locator in a known relative file. Prefer this for a remaining defect or named function instead of rescanning the repository. Returns the full-file SHA-256 digest, actual offset and at most 6000 characters of untrusted source data. Missing or ambiguous locators fail; narrow the locator before retrying. The digest can be used as expectedDigest for a subsequent file patch/write.',
+    inputSchema: {
+      type: 'object', properties: {
+        path: { type: 'string', minLength: 1, maxLength: 512 },
+        findText: { type: 'string', minLength: 1, maxLength: 512 },
+        maxChars: { type: 'integer', minimum: 1, maximum: 6000 }
+      }, required: ['path', 'findText'], additionalProperties: false
+    },
+    handler: ({ path, findText, maxChars = 2000 }) => workspace.readMatching(path, findText, maxChars, 0, true)
+  });
   return registry;
 };
 

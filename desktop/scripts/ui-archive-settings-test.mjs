@@ -90,9 +90,10 @@ try {
     await page.locator('[data-action="archive-project"][data-project-id="project-a"]').click();
     await open(page); await archived(page).click();
     check('settings contains project and thread lists', await archivePanel(page).isVisible());
-    await archivePanel(page).locator('[data-action="restore-project"][data-project-id="project-a"]').click();
+    await page.screenshot({ path: resolve(output, 'archive-settings.png') });
+    await archivePanel(page).locator('.run-history-row [data-action="restore-project"][data-project-id="project-a"]').click();
     check('project restore keeps settings open', await page.locator('[data-settings-dialog]').isVisible());
-    check('restored project removed from archive panel', await archivePanel(page).locator('[data-action="restore-project"]').count() === 0);
+    check('restored project removed from archive panel', await archivePanel(page).locator('.run-history-row [data-action="restore-project"]').count() === 0);
     check('individual thread archive preserved', await archivePanel(page).locator('[data-action="restore-thread"][data-thread-id="a-archived"]').isVisible());
     await archivePanel(page).locator('[data-action="restore-thread"][data-thread-id="a-archived"]').click();
     check('thread restore keeps settings open', await page.locator('[data-settings-dialog]').isVisible());
@@ -107,13 +108,14 @@ try {
     await page.locator('.settings-search').fill('已归档');
     check('settings search finds archives', await archivePanel(page).isVisible());
     await archived(page).click();
-    await archivePanel(page).locator('[data-action="restore-project"]').click();
+    await archivePanel(page).locator('.run-history-row [data-action="restore-project"]').click();
     await page.locator('[data-action="settings-section"][data-section="model"]').click();
     check('archive restore preserves settings draft', await page.locator('input[name="model"]').inputValue() === 'my-unsaved-model');
     await archived(page).click();
     await archivePanel(page).locator('[data-action="select-thread"][data-thread-id="a-archived"]').click();
     await page.locator('[data-settings-dialog]').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => window.__archiveSettings.calls.some(c => c.cmd === 'get_thread' && c.args.threadId === 'a-archived'));
+    await page.waitForFunction(() => window.__archiveSettings.calls.some(c => c.cmd === 'list_thread_events' && c.args.threadId === 'a-archived'));
+    check('archived history is displayed', await page.locator('[data-history-thread-id="a-archived"]').count() > 0 || (await page.locator('body').innerText()).includes('甲的单独归档会话'));
     check('view history does not restore thread', await page.evaluate(() => JSON.parse(localStorage.getItem('hmcodex.threadArchives.v1'))['a-archived'] === 1));
   });
   for (const mode of ['configFailure', 'configPending']) await scenario(mode, { [mode]: true, archivedProject: true }, async page => {

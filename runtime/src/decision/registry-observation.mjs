@@ -14,7 +14,7 @@ export const readonlyRegistryObservation = (events = []) => {
       && data.invocationAttempted !== false && !PRE_REGISTRY_REFUSALS.has(data.errorCode);
   });
   const data = event?.payload?.payload ?? event?.payload;
-  if (!['workspace.read', 'workspace.list'].includes(data?.name)) return undefined;
+  if (!['workspace.read', 'workspace.list', 'workspace.focus'].includes(data?.name)) return undefined;
   const code = typeof data.errorCode === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/u.test(data.errorCode) ? data.errorCode : undefined;
   const path = relativeMessage(data.message);
   return { status: data.ok ? 'SUCCEEDED' : 'FAILED', ok: data.ok,

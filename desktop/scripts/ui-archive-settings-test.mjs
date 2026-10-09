@@ -131,7 +131,7 @@ try {
     await archivePanel(page).locator('[data-action="restore-project"]').click();
     check('failed restoration retains archived project', await archivePanel(page).locator('[data-action="restore-project"]').count() === 1);
     const visibleText = await page.locator('[data-settings-dialog]').innerText();
-    check('restore failure is visible within settings', /失败|无法|存储/.test(visibleText.replace('存储', '')));
+    check('restore failure is visible within settings', visibleText.includes('项目归档状态保存失败'));
     await page.evaluate(() => {
       Storage.prototype.setItem = window.__originalStorageWrite;
       localStorage.setItem('hmcodex.projectArchives.v1', '{}');

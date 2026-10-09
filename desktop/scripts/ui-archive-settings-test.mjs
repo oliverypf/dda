@@ -122,6 +122,23 @@ try {
     await archivePanel(page).locator('[data-action="restore-project"]').click();
     check(mode + ': restoration works', await archivePanel(page).locator('[data-action="restore-project"]').count() === 0);
   });
+  await scenario('restore-error-and-cross-window', { archivedProject: true }, async page => {
+    await open(page); await archived(page).click();
+    await page.evaluate(() => {
+      window.__originalStorageWrite = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) { if (key === 'hmcodex.projectArchives.v1') throw Error('quota'); return window.__originalStorageWrite.call(this, key, value); };
+    });
+    await archivePanel(page).locator('[data-action="restore-project"]').click();
+    check('failed restoration retains archived project', await archivePanel(page).locator('[data-action="restore-project"]').count() === 1);
+    const visibleText = await page.locator('[data-settings-dialog]').innerText();
+    check('restore failure is visible within settings', /失败|无法|存储/.test(visibleText.replace('存储', '')));
+    await page.evaluate(() => {
+      Storage.prototype.setItem = window.__originalStorageWrite;
+      localStorage.setItem('hmcodex.projectArchives.v1', '{}');
+      dispatchEvent(new StorageEvent('storage', { key: 'hmcodex.projectArchives.v1', newValue: '{}', storageArea: localStorage }));
+    });
+    check('cross-window restore refreshes settings list', await archivePanel(page).locator('[data-action="restore-project"]').count() === 0);
+  });
   await scenario('long-list-narrow', { many: true, viewport: { width: 780, height: 640 } }, async page => {
     await open(page); await archived(page).click();
     check('long list retains every archived project', await archivePanel(page).locator('[data-action="restore-project"]').count() === 45);

@@ -1245,7 +1245,8 @@ async function runTask() {
       endpoint: earlyDecisionConfig.endpoint,
       apiKey: earlyJevApiKey,
       model: earlyDecisionConfig.model,
-      timeoutMs: earlyDecisionConfig.timeoutMs
+      timeoutMs: earlyDecisionConfig.timeoutMs,
+      verificationTimeoutMs: earlyDecisionConfig.verificationTimeoutMs
     }) : undefined;
     decisionEngine = createDecisionEngine({
       client: earlyJevClient,
@@ -1640,7 +1641,8 @@ async function runTask() {
         endpoint: decisionConfig.endpoint,
         apiKey: jevApiKey,
         model: decisionConfig.model,
-        timeoutMs: decisionConfig.timeoutMs
+        timeoutMs: decisionConfig.timeoutMs,
+        verificationTimeoutMs: decisionConfig.verificationTimeoutMs
       })
     : undefined;
   decisionEngine = createDecisionEngine({
@@ -3564,6 +3566,8 @@ async function runTask() {
           failureCodes: semanticVerifierTurn.verdict.failureCodes,
           source: 'JEV_DECISION_PLANE', decisionType: 'VERIFY_BEHAVIOR',
           reasonCode: behaviorDecision.reasonCode,
+          ...(Number.isFinite(behaviorDecision.jevLatencyMs) ? { latencyMs: behaviorDecision.jevLatencyMs } : {}),
+          ...(Number.isFinite(behaviorDecision.timeoutMs) ? { timeoutMs: behaviorDecision.timeoutMs } : {}),
           evidenceRefs: behaviorEvidence.map((item) => item.id)
         });
         const decisionEvidence = await collectDecisionEvidence({

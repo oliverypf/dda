@@ -38,6 +38,7 @@
     "build:windows:full-local": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\"",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
     "test:ui:history": "node \"%npm_config_local_prefix%/scripts/ui-history-test.mjs\"",
+    "test:ui:project-archive": "node \"%npm_config_local_prefix%/scripts/ui-project-archive-test.mjs\"",
     "test:ui:memory": "node \"%npm_config_local_prefix%/scripts/ui-memory-test.mjs\"",
     "test:ui:workspace": "node \"%npm_config_local_prefix%/scripts/ui-workspace-test.mjs\"",
     "test:ui:spec-gaps": "node \"%npm_config_local_prefix%/scripts/ui-spec-gap-audit.mjs\"",

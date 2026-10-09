@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 
 const MAX_REPLACEMENTS = 32;
 export const MAX_PATCH_TEXT = 256 * 1024;
+// A small replacement can target a larger file. Keep patch/diff payloads
+// bounded separately from the executor's existing 1 MiB file-write ceiling.
+export const MAX_PATCH_FILE_BYTES = 1024 * 1024;
 export class TextPatchError extends Error {
   constructor(message) { super(message); this.name = 'TextPatchError'; this.code = message.split(':', 1)[0]; }
 }
@@ -20,7 +23,7 @@ export const applyTextPatch = (before, replacements, expectedDigest) => {
   if (typeof before !== 'string' || !Array.isArray(replacements) || replacements.length < 1 || replacements.length > MAX_REPLACEMENTS) {
     throw new TextPatchError('PATCH_INVALID');
   }
-  if (Buffer.byteLength(before, 'utf8') > MAX_PATCH_TEXT) throw new TextPatchError('PATCH_TOO_LARGE');
+  if (Buffer.byteLength(before, 'utf8') > MAX_PATCH_FILE_BYTES) throw new TextPatchError('PATCH_TOO_LARGE:source exceeds 1 MiB');
   const normalizedDigest = typeof expectedDigest === 'string' && /^[a-f0-9]{64}$/iu.test(expectedDigest)
     ? `sha256:${expectedDigest.toLowerCase()}` : expectedDigest;
   if (expectedDigest !== undefined && normalizedDigest !== digest(before)) throw new TextPatchError('PATCH_STALE_DIGEST');
@@ -45,7 +48,7 @@ export const applyTextPatch = (before, replacements, expectedDigest) => {
     } else {
       current = current.split(replacement.oldText).join(replacement.newText);
     }
-    if (Buffer.byteLength(current, 'utf8') > MAX_PATCH_TEXT) throw new TextPatchError('PATCH_TOO_LARGE');
+    if (Buffer.byteLength(current, 'utf8') > MAX_PATCH_FILE_BYTES) throw new TextPatchError('PATCH_TOO_LARGE:result exceeds 1 MiB');
   }
   return current;
 };

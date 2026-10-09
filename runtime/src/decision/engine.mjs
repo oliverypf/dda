@@ -351,11 +351,12 @@ export class DecisionEngine {
       const response = await this.#client.decide({
         state: normalizedState,
         questions: { verification: { type: 'choice', prompt: definition.prompt, choices: definition.choices, context: { ruleStatus } } },
-        signal
+        signal, purpose: 'verification'
       });
       return { ...exactChoice(response.answers?.verification, VERIFICATION_DECISIONS, 'UNCERTAIN', { latencyMs: Number(response.latencyMs) || 0 }), decisionType: 'VERIFY_BEHAVIOR', state: normalizedState, jevLatencyMs: Number(response.latencyMs) || 0 };
     } catch (error) {
-      return { decision: 'UNCERTAIN', confidence: 0.2, source: 'rule', fallbackUsed: true, reasonCode: error?.code ?? 'JEV_REQUEST_FAILED', decisionType: 'VERIFY_BEHAVIOR', state: normalizedState };
+      return { decision: 'UNCERTAIN', confidence: 0.2, source: 'rule', fallbackUsed: true, reasonCode: error?.code ?? 'JEV_REQUEST_FAILED', decisionType: 'VERIFY_BEHAVIOR', state: normalizedState,
+        jevLatencyMs: Number(error?.latencyMs) || 0, ...(Number.isFinite(error?.timeoutMs) ? { timeoutMs: error.timeoutMs } : {}) };
     }
   }
 

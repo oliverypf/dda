@@ -98,7 +98,7 @@ const ROLE_BINDING_KEYS = new Set(['selector', 'modelId', 'allowList', 'required
 const CANDIDATE_BINDING_KEYS = new Set(['bindingId', 'modelId', 'expectedCost', 'expectedLatencyMs', 'expectedTokens']);
 const FANOUT_BUDGET_KEYS = new Set(['maxCandidates', 'maxConcurrency', 'maxCost', 'maxTokens']);
 const VERIFIER_KEYS = new Set(['criteria', 'repetitions', 'maxComparisons', 'pivots', 'seed', 'maxPromptChars', 'passThreshold', 'failThreshold']);
-const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']);
+const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'verificationTimeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']);
 const MODEL_ENTRY_KEYS = new Set(['id', 'modelId', 'provider', 'protocol', 'model', 'baseURL', 'endpoint', 'apiKeyEnv', 'headers', 'sessionHeader', 'capabilities', 'roles', 'costPer1kTokens', 'latencyMs', 'state', 'version']);
 
 const clone = (value) => structuredClone(value);
@@ -308,6 +308,8 @@ const validateDecisionConfig = (input) => {
   const maxStateChars = input.maxStateChars === undefined
     ? undefined
     : validateBoundedInteger(input.maxStateChars, 'decision.maxStateChars', 1000, 32000);
+  const verificationTimeoutMs = input.verificationTimeoutMs === undefined
+    ? undefined : validateBoundedInteger(input.verificationTimeoutMs, 'decision.verificationTimeoutMs', 100, 60000);
   return {
     ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
     ...(input.enforce === undefined ? {} : { enforce: input.enforce }),
@@ -315,6 +317,7 @@ const validateDecisionConfig = (input) => {
     ...(apiKeyEnv ? { apiKeyEnv } : {}),
     ...(model ? { model } : {}),
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(verificationTimeoutMs === undefined ? {} : { verificationTimeoutMs }),
     ...(maxStateChars === undefined ? {} : { maxStateChars }),
     ...(input.classificationEnabled === undefined ? {} : { classificationEnabled: input.classificationEnabled }),
     ...(input.routeSelectionEnabled === undefined ? {} : { routeSelectionEnabled: input.routeSelectionEnabled }),
@@ -527,10 +530,11 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
   const apiKeyEnv = configured.apiKeyEnv ?? envValue('HMCODEX_JEV_API_KEY_ENV') ?? 'JEV_API_KEY';
   const model = configured.model ?? envValue('HMCODEX_JEV_MODEL') ?? 'jev-latest';
   const timeoutMs = configured.timeoutMs ?? Number(envValue('HMCODEX_JEV_TIMEOUT_MS') ?? 1200);
+  const verificationTimeoutMs = configured.verificationTimeoutMs ?? Number(envValue('HMCODEX_JEV_VERIFICATION_TIMEOUT_MS') ?? 15000);
   const maxStateChars = configured.maxStateChars ?? Number(envValue('HMCODEX_JEV_MAX_STATE_CHARS') ?? 16000);
   const featureFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName];
   return validateDecisionConfig({
-    enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, maxStateChars,
+    enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, verificationTimeoutMs, maxStateChars,
     classificationEnabled: featureFlag('HMCODEX_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
     routeSelectionEnabled: featureFlag('HMCODEX_JEV_ROUTE_ENABLED', 'routeSelectionEnabled'),
     topologyEnabled: featureFlag('HMCODEX_JEV_TOPOLOGY_ENABLED', 'topologyEnabled'),

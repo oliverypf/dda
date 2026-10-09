@@ -1,5 +1,5 @@
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
-import { applyTextPatch, MAX_PATCH_TEXT, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
+import { applyTextPatch, MAX_PATCH_TEXT, MAX_PATCH_FILE_BYTES, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
 import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
 
 const MAX_COMMAND_LENGTH = 4096;
@@ -7,6 +7,16 @@ const MAX_ARGUMENTS = 128;
 const MAX_ARGUMENT_LENGTH = 4096;
 const MAX_PATH_LENGTH = 512;
 const MAX_FILE_CHARS = 1024 * 1024;
+
+// Bound JSON-encoded UTF-8, including escaping, before returning a successful
+// write. A large preview must not turn an applied mutation into a tool error.
+const diffPreview = (before, after, path) => {
+  const full = unifiedTextDiff(before, after, path);
+  let diff = full;
+  while (Buffer.byteLength(JSON.stringify(diff), 'utf8') > 24 * 1024) diff = diff.slice(0, Math.floor(diff.length / 2));
+  if (/[\uD800-\uDBFF]$/u.test(diff)) diff = diff.slice(0, -1);
+  return { diff, diffTruncated: diff.length < full.length || full.length >= MAX_PATCH_TEXT };
+};
 
 // Use the workspace API's own page size. A truncated read is never a complete
 // patch source: stitching pages must retain one full-file digest throughout.
@@ -128,6 +138,7 @@ const patchOutputSchema = {
     beforeDigest: { type: 'string' },
     afterDigest: { type: 'string' },
     diff: { type: 'string' },
+    diffTruncated: { type: 'boolean' },
     bytesWritten: { type: 'integer', minimum: 0 },
     contentDigest: { type: 'string' },
     lease: { type: ['string', 'null'] }
@@ -145,7 +156,8 @@ const diffOutputSchema = {
     beforeDigest: { type: 'string' },
     afterDigest: { type: 'string' },
     changed: { type: 'boolean' },
-    diff: { type: 'string' }
+    diff: { type: 'string' },
+    diffTruncated: { type: 'boolean' }
   },
   required: ['ok', 'action', 'path', 'beforeDigest', 'afterDigest', 'changed', 'diff'],
   additionalProperties: false
@@ -226,6 +238,8 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
   };
   provider.canLease = capability => monitor?.mode === EXECUTION_MODES.CONTROLLED && approvedCapabilities.has(capability)
     && (![CAPABILITIES.SHELL, CAPABILITIES.TEST].includes(capability) || approvedCommands.length > 0);
+  // Model-facing guidance is a snapshot, never an authorization mechanism.
+  Object.defineProperty(provider, 'approvedCommands', { value: Object.freeze([...approvedCommands]) });
   return provider;
 };
 
@@ -249,6 +263,11 @@ export const registerExecutorTools = (registry, executor, {
   const getLease = typeof leaseProvider === 'function' ? leaseProvider : () => undefined;
   const effectMetadata = capability => ({ actionClass: 'SIDE_EFFECT', capability,
     ...(typeof leaseProvider?.canLease === 'function' ? { available: leaseProvider.canLease(capability) } : {}) });
+  const commandMetadata = capability => ({ ...effectMetadata(capability),
+    ...(Array.isArray(leaseProvider?.approvedCommands) ? { approvedCommands: leaseProvider.approvedCommands } : {}) });
+  const commandGuidance = Array.isArray(leaseProvider?.approvedCommands)
+    ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}; executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. Use workspace.list/workspace.read for inspection. Do not substitute an unapproved shell or bypass a denied command.`
+    : '';
   const executeWithLease = async (capability, input, operation) => {
     let lease;
     try {
@@ -274,11 +293,11 @@ export const registerExecutorTools = (registry, executor, {
 
   registry.register({
     name: 'shell.execute',
-    description: 'Run one explicitly approved executable in the authorized workspace.',
+    description: 'Run one explicitly approved executable in the authorized workspace.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
-    metadata: effectMetadata(CAPABILITIES.SHELL),
+    metadata: commandMetadata(CAPABILITIES.SHELL),
     handler: async (input) => executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }))
   });
   registry.register({
@@ -301,28 +320,28 @@ export const registerExecutorTools = (registry, executor, {
         metadata: { actionClass: 'READ_ONLY' },
         handler: async ({ path, baseContent, maxChars = MAX_FILE_CHARS }) => {
           const current = await readCompleteText(workspace, path, { maxChars });
-          const diff = unifiedTextDiff(baseContent, current.content, current.path);
+          const preview = diffPreview(baseContent, current.content, current.path);
           return {
             ok: true,
             action: 'diff_file',
             path: current.path,
             beforeDigest: textDigest(baseContent),
             afterDigest: current.digest,
-            changed: diff.length > 0,
-            diff
+            changed: baseContent !== current.content,
+            ...preview
           };
         }
       });
     }
     registry.register({
       name: 'file.patch',
-      description: 'Apply bounded exact replacements to a complete authorized workspace file (up to 256 KiB UTF-8). Optional expectedDigest accepts sha256:hex or the same 64 hex digits and rejects stale content.',
+      description: 'Apply small exact replacements to a complete authorized workspace file (source and result up to 1 MiB UTF-8; each replacement up to 256 KiB). Prefer small separate patches within tool-call argument limits. Optional expectedDigest accepts sha256:hex or the same 64 hex digits and rejects stale content.',
       inputSchema: patchInputSchema,
       outputSchema: patchOutputSchema,
       readOnly: false,
       metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
       handler: async ({ path, expectedDigest, replacements }) => {
-        const current = await readCompleteText(workspace, path, { maxBytes: MAX_PATCH_TEXT });
+        const current = await readCompleteText(workspace, path, { maxBytes: MAX_PATCH_FILE_BYTES });
         const content = applyTextPatch(current.content, replacements, expectedDigest);
         const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
           const latest = await workspace.read(current.path);
@@ -334,18 +353,18 @@ export const registerExecutorTools = (registry, executor, {
           action: 'patch_file',
           beforeDigest: current.digest,
           afterDigest: textDigest(content),
-          diff: unifiedTextDiff(current.content, content, current.path)
+          ...diffPreview(current.content, content, current.path)
         };
       }
     });
   }
   registry.register({
     name: 'test.execute',
-    description: 'Run one explicitly approved test command in the authorized workspace.',
+    description: 'Run one explicitly approved test command in the authorized workspace.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
-    metadata: { ...effectMetadata(CAPABILITIES.TEST),
+    metadata: { ...commandMetadata(CAPABILITIES.TEST),
       ...(executor instanceof RestrictedWindowsExecutor ? { processObservationPolicy: 'RESTRICTED_WINDOWS_NO_PRELOAD' } : {}) },
     handler: async (input) => executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }))
   });

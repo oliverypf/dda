@@ -11,6 +11,7 @@
     "start": "node src/index.mjs",
     "test": "node --test --test-concurrency=6",
     "test:parallel": "node --test --test-concurrency=6",
+    "test:harness-supervision": "node --test test/tool-availability.test.mjs test/task-runner-tools.test.mjs test/controlled-tools.test.mjs test/patch-workspace.test.mjs test/workspace-symbol-read.test.mjs test/workspace-readonly.test.mjs test/tool-registry.test.mjs",
     "test:serial": "node --test --test-concurrency=1"
   },
   "dependencies": {

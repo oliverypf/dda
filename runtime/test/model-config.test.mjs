@@ -241,6 +241,7 @@ test('resolves Jev decision settings without changing the model route', () => {
     apiKeyEnv: 'JEV_API_KEY',
     model: 'jev-latest',
     timeoutMs: 1200,
+    verificationTimeoutMs: 15000,
     maxStateChars: 16000
   });
 
@@ -272,6 +273,7 @@ test('resolves Jev decision settings without changing the model route', () => {
     apiKeyEnv: 'FILE_JEV_KEY',
     model: 'jev-file',
     timeoutMs: 900,
+    verificationTimeoutMs: 15000,
     maxStateChars: 8000
   });
 
@@ -292,11 +294,18 @@ test('resolves Jev decision settings without changing the model route', () => {
     apiKeyEnv: 'ENV_JEV_KEY',
     model: 'jev-env',
     timeoutMs: 500,
+    verificationTimeoutMs: 15000,
     maxStateChars: 4000
   });
 });
 
 test('rejects invalid Jev environment overrides', () => {
+  for (const value of ['99', '60001', 'NaN']) {
+    assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: value } }), /decision.verificationTimeoutMs/);
+  }
+  assert.equal(resolveDecisionConfig({ env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 30000);
+  assert.equal(resolveDecisionConfig({ fileConfig: { decision: { verificationTimeoutMs: 20000 } },
+    env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 20000);
   assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_TIMEOUT_MS: '12' } }), /MODEL_CONFIG_INVALID_FIELD:decision.timeoutMs/);
   assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_MAX_STATE_CHARS: '999' } }), /MODEL_CONFIG_INVALID_FIELD:decision.maxStateChars/);
   assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_API_KEY_ENV: 'not-a-valid-name' } }), /MODEL_CONFIG_INVALID_FIELD:decision.apiKeyEnv/);
@@ -315,6 +324,7 @@ test('resolves extended Jev decision flags independently', () => {
     apiKeyEnv: 'JEV_API_KEY',
     model: 'jev-latest',
     timeoutMs: 1200,
+    verificationTimeoutMs: 15000,
     maxStateChars: 16000,
     recoveryDirectionEnabled: true,
     contextPackEnabled: true

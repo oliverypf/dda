@@ -64,15 +64,18 @@ export class JevClient {
   #apiKey;
   #model;
   #timeoutMs;
+  #verificationTimeoutMs;
   #fetch;
 
-  constructor({ endpoint = DEFAULT_ENDPOINT, apiKey, model = DEFAULT_MODEL, timeoutMs = 1200, fetchImpl = globalThis.fetch } = {}) {
+  constructor({ endpoint = DEFAULT_ENDPOINT, apiKey, model = DEFAULT_MODEL, timeoutMs = 1200, verificationTimeoutMs = 15000, fetchImpl = globalThis.fetch } = {}) {
     if (typeof endpoint !== 'string' || !endpoint.trim()) throw new Error('JEV_ENDPOINT_REQUIRED');
     if (typeof fetchImpl !== 'function') throw new Error('JEV_FETCH_UNAVAILABLE');
     this.#endpoint = endpoint.trim();
     this.#apiKey = typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : undefined;
     this.#model = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
     this.#timeoutMs = Number.isFinite(Number(timeoutMs)) ? Math.max(100, Math.min(10000, Math.trunc(Number(timeoutMs)))) : 1200;
+    this.#verificationTimeoutMs = Number.isFinite(Number(verificationTimeoutMs))
+      ? Math.max(100, Math.min(60000, Math.trunc(Number(verificationTimeoutMs)))) : 15000;
     this.#fetch = fetchImpl;
   }
 
@@ -80,20 +83,24 @@ export class JevClient {
   get endpoint() { return this.#endpoint; }
   get model() { return this.#model; }
 
-  async decide({ state, questions, signal } = {}) {
+  async decide({ state, questions, signal, purpose } = {}) {
     if (!this.#apiKey) throw errorWithCode('JEV_CREDENTIAL_MISSING');
     if (!state || typeof state !== 'object' || Array.isArray(state)) throw errorWithCode('JEV_STATE_INVALID');
     if (!questions || typeof questions !== 'object' || Array.isArray(questions) || !Object.keys(questions).length) {
       throw errorWithCode('JEV_QUESTIONS_INVALID');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(errorWithCode('JEV_TIMEOUT')), this.#timeoutMs);
+    // Semantic verification gets its own bounded budget. Fast action gates
+    // retain their original deadline; neither deadline grants a positive verdict.
+    const timeoutMs = purpose === 'verification' ? this.#verificationTimeoutMs : this.#timeoutMs;
+    const timeout = setTimeout(() => controller.abort(errorWithCode('JEV_TIMEOUT')), timeoutMs);
     timeout.unref?.();
     const abort = () => controller.abort(signal?.reason ?? errorWithCode('JEV_CANCELLED'));
     if (signal?.aborted) abort();
     else signal?.addEventListener?.('abort', abort, { once: true });
     const startedAtMs = Date.now();
     try {
+      if (controller.signal.aborted) throw controller.signal.reason;
       const response = await this.#fetch(this.#endpoint, {
         method: 'POST',
         headers: {
@@ -109,6 +116,7 @@ export class JevClient {
         signal: controller.signal
       });
       const raw = await response.text();
+      if (controller.signal.aborted) throw controller.signal.reason;
       if (!response.ok) throw errorWithCode(`JEV_HTTP_${response.status}`);
       if (raw.length > MAX_RESPONSE_CHARS) throw errorWithCode('JEV_RESPONSE_TOO_LARGE');
       const payload = parseJson(raw);
@@ -123,13 +131,13 @@ export class JevClient {
           ? { usage: { inputTokens: payload.usage.input_tokens, outputTokens: payload.usage.output_tokens, source: 'PROVIDER_USAGE' } } : {})
       };
     } catch (error) {
+      let failure;
       if (error?.name === 'AbortError' || controller.signal.aborted) {
-        const reason = controller.signal.reason;
-        if (reason?.code === 'JEV_CANCELLED') throw reason;
-        throw errorWithCode(reason?.code ?? 'JEV_TIMEOUT', error);
-      }
-      if (error?.code?.startsWith?.('JEV_')) throw error;
-      throw errorWithCode('JEV_REQUEST_FAILED', error);
+        failure = errorWithCode(signal?.aborted ? 'JEV_CANCELLED' : 'JEV_TIMEOUT', error);
+      } else failure = error?.code?.startsWith?.('JEV_') ? error : errorWithCode('JEV_REQUEST_FAILED', error);
+      failure.latencyMs = Math.max(0, Date.now() - startedAtMs);
+      failure.timeoutMs = timeoutMs;
+      throw failure;
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener?.('abort', abort);
@@ -138,4 +146,4 @@ export class JevClient {
 }
 
 export const createJevClient = (options) => new JevClient(options);
-export const jevDefaults = Object.freeze({ endpoint: DEFAULT_ENDPOINT, model: DEFAULT_MODEL, timeoutMs: 1200 });
+export const jevDefaults = Object.freeze({ endpoint: DEFAULT_ENDPOINT, model: DEFAULT_MODEL, timeoutMs: 1200, verificationTimeoutMs: 15000 });

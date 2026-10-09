@@ -14,6 +14,51 @@ const workspace = {
   sections: []
 };
 
+for (const scenario of [
+  { mode: 'CONTROLLED', mutate: false, checkpoints: 1 },
+  { mode: 'READ_ONLY', mutate: false, checkpoints: 0 },
+  { mode: 'CONTROLLED', mutate: true, checkpoints: 0 }
+]) {
+  test(`inspection harness is advisory and mode-aware (${scenario.mode}, mutation=${scenario.mutate})`, async t => {
+    const registry = new ToolRegistry({ allowSideEffects: true });
+    const schema = { type: 'object', properties: { page: { type: 'integer' } }, required: ['page'] };
+    registry.register({ name: 'workspace.read', description: 'Read a fixture page', readOnly: true,
+      inputSchema: schema, handler: ({ page }) => ({ path: 'fixture.txt', content: `page ${page}` }) });
+    let mutations = 0;
+    registry.register({ name: 'file.write', description: 'Record a simulated mutation', readOnly: false,
+      inputSchema: schema, handler: () => { mutations++; return { ok: true }; } });
+    const root = new Context(); t.after(() => root.fiber.dispose());
+    await root.plugin(toolRegistryPlugin(registry));
+    let rounds = 0;
+    const toolCount = scenario.mutate ? 9 : 8;
+    await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', { provider: 'fixture', protocol: 'fixture', model: 'progress-fixture',
+      async *stream(request) {
+        rounds++;
+        if (rounds <= toolCount) yield { type: 'tool-call', id: `call-${rounds}`,
+          name: scenario.mutate && rounds === 5 ? 'file.write' : 'workspace.read', arguments: JSON.stringify({ page: rounds }) };
+        else {
+          const checkpoints = request.messages.filter(message => message.role === 'user'
+            && JSON.stringify(message.content).includes('HOST_PROGRESS_CHECKPOINT:'));
+          assert.equal(checkpoints.length, scenario.checkpoints);
+          if (checkpoints.length) {
+            assert.match(JSON.stringify(checkpoints[0].content), /grants no permissions/u);
+            assert.match(JSON.stringify(checkpoints[0].content), /analysis-only goals/u);
+          }
+          assert.equal(request.messages.filter(message => message.source?.kind === 'tool').length, toolCount);
+          yield { type: 'text-delta', text: 'Report only the observed results.' };
+        }
+        yield { type: 'finish', reason: { kind: rounds <= toolCount ? 'tool-calls' : 'stop' } };
+      }
+    }), 'progress-fixture'));
+    await root.plugin(taskRunnerPlugin);
+    const events = [];
+    await root.taskRunner.run({ prompt: 'Perform the requested scoped task.', workspace, mode: scenario.mode, onEvent: e => events.push(e) });
+    assert.equal(events.filter(e => e.kind === 'harness.progress_checkpoint').length, scenario.checkpoints);
+    assert.equal(events.filter(e => e.kind === 'tool.result').length, toolCount);
+    assert.equal(mutations, scenario.mutate ? 1 : 0, 'checkpoint itself never invokes a mutation');
+  });
+}
+
 for (const sample of [
   { name: 'test.execute', output: { ok: false, exitCode: 1, stdout: 'assertion failed', stderr: '', timedOut: false, aborted: false }, code: 'TEST_CHECK_FAILED', verifierStatus: 'CONTINUE' },
   { name: 'test.execute', output: { ok: false, exitCode: null, stdout: '', stderr: '', timedOut: true, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },

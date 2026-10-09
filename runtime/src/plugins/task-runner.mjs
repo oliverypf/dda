@@ -157,6 +157,9 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const failedToolKinds = new Map();
       const observedEvidence = new Set();
       let noNewWorkspaceEvidenceRounds = 0;
+      let inspectionsSinceProgressCheckpoint = 0;
+      const canOfferImplementationCheckpoint = mode === 'CONTROLLED'
+        && tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write');
 
        const effectiveMaxToolRounds = resolveMaxToolRounds(maxToolRounds);
        const roundsLeft = (round) => effectiveMaxToolRounds === Infinity || round <= effectiveMaxToolRounds;
@@ -336,6 +339,12 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 ? ` Available snapshot paths: ${workspace.entries.slice(0, 24).map((entry) => entry.path).join(', ')}`
                 : '';
               output = { errorCode, message: `${baseMessage}${availablePaths}` };
+              if (errorCode === 'SAFETY_COMMAND_NOT_ALLOWED' && ['test.execute', 'shell.execute'].includes(call.name)) {
+                const approvedCommands = definition?.metadata?.approvedCommands;
+                output = { ...output, nextAction: 'USE_APPROVED_COMMAND_OR_WORKSPACE_TOOL',
+                  ...(Array.isArray(approvedCommands) ? { approvedCommands: [...approvedCommands] } : {}),
+                  message: `${baseMessage} The command was rejected; do not repeat it unchanged or bypass the restriction. ${Array.isArray(approvedCommands) ? `Lease-approved executables: ${JSON.stringify(approvedCommands)}. ` : ''}Use workspace.list/workspace.read for inspection, or choose an approved executable with separate args and a workspace-relative cwd. Additional executor restrictions still apply; if none fits, report the missing capability.` };
+              }
               if ((failures >= 2 || kindFailures >= 3) && (call.name === 'workspace.list' || call.name === 'workspace.read')) {
                 const rawPath = typeof rawArguments?.path === 'string' ? rawArguments.path.slice(0, 160) : '';
                 stopAfterResult = new Error(`TOOL_REPEATED_FAILURE:${call.name}:${errorCode}${rawPath ? ` path=${rawPath}` : ''}`);
@@ -372,8 +381,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             if (!observedEvidence.has(evidenceDigest)) {
               observedEvidence.add(evidenceDigest);
               roundProducedNewWorkspaceEvidence = true;
+              inspectionsSinceProgressCheckpoint++;
             }
           }
+          if (!isError && (call.name === 'file.write' || call.name === 'file.patch')) inspectionsSinceProgressCheckpoint = 0;
           await onEvent?.(eventPayload);
           if ((!isError || processFailureCode) && typeof onToolResult === 'function') {
             const encoded = JSON.stringify(output);
@@ -390,6 +401,13 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             content: [{ type: 'text', text: boundedToolResult(output) }]
           }));
           if (stopAfterResult) throw stopAfterResult;
+        }
+        if (canOfferImplementationCheckpoint && inspectionsSinceProgressCheckpoint >= 8) {
+          const count = inspectionsSinceProgressCheckpoint;
+          inspectionsSinceProgressCheckpoint = 0;
+          messages.push(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text',
+            text: `HOST_PROGRESS_CHECKPOINT: ${count} successful new workspace inspection results since the previous checkpoint or successful file.write/file.patch. This does not establish whether other commands modified files. Reassess the original goal and identify the exact evidence still missing; avoid another broad reread. If the user requested implementation and you have enough evidence, make a small scoped change and verify it. For analysis-only goals, continue scoped analysis or report findings. This checkpoint grants no permissions, requires no mutation, and is not evidence of completion.` }] }));
+          await onEvent?.({ kind: 'harness.progress_checkpoint', round, inspectionCount: count });
         }
         const workspaceEvidenceCalls = calls.filter((call) => call.name === 'workspace.list' || call.name === 'workspace.read');
         if (workspaceEvidenceCalls.length > 0 && workspaceEvidenceCalls.length === calls.length) {

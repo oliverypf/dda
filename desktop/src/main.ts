@@ -342,7 +342,7 @@ let taskBudget: TaskBudget = (() => {
 })();
 let taskActionNotice = '';
 const primaryPages: Record<string, { title: string; description: string }> = {
-  archived: { title: '已归档会话', description: '查看或恢复已归档的会话，历史内容仍保留。' },
+  archived: { title: '已归档', description: '查看或恢复已归档的项目和会话，配置与历史内容仍保留。' },
   workbench: { title: '工作台', description: '' },
   runs: { title: '运行记录', description: '历史运行、状态和证据将在此处集中查看。' },
   workspace: { title: '工作区', description: '授权工作区、快照和文件证据将在此处集中查看。' },
@@ -395,7 +395,7 @@ const PROJECTS_STORAGE_KEY = 'hmcodex.projects.v1';
 const LAST_PROJECT_STORAGE_KEY = 'hmcodex.lastProjectId';
 const PROJECT_ORDER_STORAGE_KEY = 'hmcodex.projectOrder.v1';
 const THREAD_ARCHIVE_STORAGE_KEY = 'hmcodex.threadArchives.v1';
-let threadArchiveNotice: { text: string; error?: boolean; undoId?: string } | undefined;
+let threadArchiveNotice: { text: string; error?: boolean; undoId?: string; undoProjectId?: string } | undefined;
 const readThreadArchives = (): Record<string, number> => {
   const value: unknown = JSON.parse(localStorage.getItem(THREAD_ARCHIVE_STORAGE_KEY) ?? '{}');
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -425,6 +425,42 @@ const writeThreadArchive = (id: string, archived: boolean): boolean => {
   }
 };
 const threadArchiveBlocked = (id: string): boolean => model.activeThreadId === id && (running || liveTaskRunning());
+const PROJECT_ARCHIVE_STORAGE_KEY = 'hmcodex.projectArchives.v1';
+interface ProjectArchiveRecord { name: string; path: string; archivedAtMs: number; }
+const readProjectArchives = (): Record<string, ProjectArchiveRecord> => {
+  const value: unknown = JSON.parse(localStorage.getItem(PROJECT_ARCHIVE_STORAGE_KEY) ?? '{}');
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.entries(value).some(([id, record]) => !id || !record || typeof record !== 'object' || Array.isArray(record)
+      || typeof (record as ProjectArchiveRecord).name !== 'string'
+      || typeof (record as ProjectArchiveRecord).path !== 'string'
+      || typeof (record as ProjectArchiveRecord).archivedAtMs !== 'number'
+      || !Number.isFinite((record as ProjectArchiveRecord).archivedAtMs)
+      || (record as ProjectArchiveRecord).archivedAtMs < 0)) {
+    throw new Error('INVALID_PROJECT_ARCHIVES');
+  }
+  return Object.fromEntries(Object.entries(value)) as Record<string, ProjectArchiveRecord>;
+};
+let projectArchives: Record<string, ProjectArchiveRecord> = (() => {
+  try { return readProjectArchives(); }
+  catch { threadArchiveNotice = { text: '无法读取本机项目归档状态，请检查本地存储后重试。', error: true }; return {}; }
+})();
+const isProjectArchived = (id?: string): boolean => Boolean(id && id !== PROJECTLESS_ID && Object.hasOwn(projectArchives, id));
+// Project archive is local list metadata like thread archives: the project
+// bookmark, its sessions and their history are never deleted or modified.
+const writeProjectArchive = (id: string, record: ProjectArchiveRecord | null): boolean => {
+  try {
+    const next = readProjectArchives();
+    if (record) next[id] = record;
+    else delete next[id];
+    localStorage.setItem(PROJECT_ARCHIVE_STORAGE_KEY, JSON.stringify(next));
+    projectArchives = next;
+    return true;
+  } catch {
+    threadArchiveNotice = { text: '项目归档状态保存失败，未更改项目。请检查本地存储后重试。', error: true };
+    return false;
+  }
+};
+const projectArchiveBlocked = (id: string): boolean => Boolean(id) && (running || liveTaskRunning()) && currentProjectId() === id;
 const PROJECTLESS_ID = '__projectless__';
 let projectCatalog: ProjectBookmark[] = (() => {
   try {
@@ -490,7 +526,7 @@ const projectForThread = (thread: HarnessReadModel['threads'][number]): ProjectB
 const hasPersistedTurn = (thread: HarnessReadModel['threads'][number]): boolean => thread.turnCount > 0;
 const projectGroups = (): ProjectGroup[] => {
   const visibleThreads = model.threads.filter(thread => hasPersistedTurn(thread) && !isThreadArchived(thread.id));
-  const groups: ProjectGroup[] = projectCatalog.map((project) => ({
+  const groups: ProjectGroup[] = projectCatalog.filter((project) => !isProjectArchived(project.id)).map((project) => ({
     id: project.id, name: project.name, path: project.path,
     threads: visibleThreads.filter((thread) => Boolean(thread.cwd && projectTargetPaths(project).some((target) => sameWorkspaceRoot(thread.cwd!, target)))),
     discovered: false
@@ -501,7 +537,7 @@ const projectGroups = (): ProjectGroup[] => {
   for (const thread of visibleThreads) {
     const path = thread.cwd?.trim();
     if (!path) { projectless.threads.push(thread); continue; }
-    if (projectForThread(thread)) continue;
+    if (projectForThread(thread) || isProjectArchived(projectIdForPath(path))) continue;
     const id = projectIdForPath(path);
     if (projectIds.has(id)) continue;
     const existing = discovered.get(id);
@@ -541,7 +577,7 @@ const currentProjectName = (): string => {
 const renderProjectPicker = (): string => {
   if (!projectPickerVisible) return '';
   const groups = projectGroups();
-  const preferred = projectCatalog.find((project) => project.id === lastProjectId);
+  const preferred = projectCatalog.find((project) => project.id === lastProjectId && !isProjectArchived(project.id));
   return `<div class="project-picker-backdrop" role="presentation">
     <section class="project-picker-card" role="dialog" aria-modal="true" aria-labelledby="project-picker-title">
       <header class="project-picker-header">
@@ -2020,9 +2056,9 @@ const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project
     <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}</span>
   </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`).join('') : '<div class="project-empty">暂无会话</div>'}
 </div>`;
-const renderArchiveNavigation = (): string => `<button class="nav-item ${activePage === 'archived' ? 'active' : ''}" data-action="navigate" data-page="archived"><i data-lucide="history"></i><span>已归档</span><span class="archive-count">${Object.keys(threadArchives).length}</span></button>
-  ${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}</div>` : ''}`;
-const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${running}:${liveTaskRunning()}`;
+const renderArchiveNavigation = (): string => `<button class="nav-item ${activePage === 'archived' ? 'active' : ''}" data-action="navigate" data-page="archived"><i data-lucide="history"></i><span>已归档</span><span class="archive-count">${Object.keys(threadArchives).length + Object.keys(projectArchives).length}</span></button>
+  ${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
+const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}`;
 const renderProjectThreadList = (): string => {
   const activeProjectId = currentProjectId();
   return projectGroups().map((group) => {
@@ -2035,7 +2071,7 @@ const renderProjectThreadList = (): string => {
         <i data-lucide="${open ? 'folder-open' : 'folder'}"></i>
         <span class="project-header-copy"><strong>${escapeHtml(group.name)}</strong></span>
         <i class="project-chevron" data-lucide="${open ? 'chevron-down' : 'chevron-right'}"></i>
-      </button>${edit}</div>
+      </button>${group.id !== PROJECTLESS_ID ? `<button class="icon-button small project-archive-button" type="button" data-action="archive-project" data-project-id="${escapeHtml(group.id)}" ${projectArchiveBlocked(group.id) ? 'disabled' : ''} title="${projectArchiveBlocked(group.id) ? '任务结束后可归档' : '归档项目（配置与会话保留）'}" aria-label="归档项目：${escapeHtml(group.name)}"><i data-lucide="archive" aria-hidden="true"></i></button>` : ''}${edit}</div>
       ${open ? projectThreadsHtml(group) : ''}
     </section>`;
   }).join('');
@@ -2043,7 +2079,7 @@ const renderProjectThreadList = (): string => {
 
 const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string }>();
 const updateThreadList = (): void => {
-  patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, threadArchiveNotice, activePage], renderArchiveNavigation);
+  patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNavigation);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
   if (!list) return;
   const navigationRail = app.querySelector<HTMLElement>('.navigation-rail');
@@ -2957,8 +2993,15 @@ const renderRunsPage = (): string => {
 const renderArchivedThreadsPage = (): string => {
   const threads = model.threads.filter(thread => isThreadArchived(thread.id))
     .slice().sort((a, b) => threadArchives[b.id] - threadArchives[a.id]);
-  return `<div class="page-placeholder"><h1>已归档会话</h1>
-    <p class="panel-purpose">归档只在本机隐藏会话，不删除历史内容。恢复后会重新出现在左侧项目列表中。</p>
+  const archivedProjects = Object.entries(projectArchives).map(([id, record]) => ({ id, name: record.name, path: record.path, archivedAtMs: record.archivedAtMs })).sort((a, b) => b.archivedAtMs - a.archivedAtMs);
+  return `<div class="page-placeholder"><h1>已归档</h1>
+    <p class="panel-purpose">归档只在本机隐藏项目和会话，不删除项目配置、会话和历史内容。恢复后会重新出现在左侧项目列表中。</p>
+    <h2>已归档项目</h2>
+    <div class="run-history-list">${archivedProjects.map((item) => `<article class="run-history-row">
+      <div class="run-history-copy"><strong>${escapeHtml(item.name || '未命名项目')}</strong><span>${escapeHtml(item.path)}</span><small>归档于 ${escapeHtml(new Date(item.archivedAtMs).toLocaleString('zh-CN'))}</small></div>
+      <div class="governance-actions"><button class="governance-button governance-button-primary" data-action="restore-project" data-project-id="${escapeHtml(item.id)}">恢复项目</button></div>
+    </article>`).join('') || '<div class="page-status page-status-empty"><strong>暂无已归档项目</strong><span>在左侧项目行点击“归档”，即可收起暂时不用的项目。</span></div>'}</div>
+    <h2>已归档会话</h2>
     <div class="run-history-list">${threads.map(thread => `<article class="run-history-row">
       <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(projectForThread(thread)?.name ?? (thread.cwd ? projectNameForPath(thread.cwd) : '未绑定项目'))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
       <div class="governance-actions"><button class="governance-button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" ${liveTaskRunning() ? 'disabled title="请等待当前任务结束后查看其他会话"' : ''}>查看会话</button><button class="governance-button governance-button-primary" data-action="restore-thread" data-thread-id="${escapeHtml(thread.id)}">恢复到列表</button></div>
@@ -4308,6 +4351,71 @@ const changeThreadArchive = (id: string, archived: boolean): void => {
   } else render();
 };
 
+// Resolve whether a workspace root still belongs to an archived project.
+// Matching must cover saved projects with custom IDs, multi-path projects and
+// auto-discovered directories, so refreshing the window cannot silently
+// re-select an archived project through any of those id shapes.
+const archivedProjectIdForRoot = (root?: string | null): string => {
+  const target = root?.trim();
+  if (!target) return '';
+  const saved = projectCatalog.find((project) => projectTargetPaths(project).some((item) => sameWorkspaceRoot(item, target)));
+  const id = saved?.id ?? projectIdForPath(target);
+  return isProjectArchived(id) ? id : '';
+};
+// An archived project must stop receiving new tasks silently. An idle window
+// drops the current thread focus, the remembered project and the workspace
+// selection, falling back to the unbound state. Callers must only invoke this
+// while no task is running so an archive can never interrupt a live run.
+const detachArchivedProjectSelection = (id: string): void => {
+  focusedRunId = null;
+  try { localStorage.removeItem('hmcodex.focusedRunId'); } catch { /* storage may be unavailable */ }
+  taskActionNotice = '';
+  taskExportNotice = undefined;
+  if (lastProjectId === id || isProjectArchived(lastProjectId)) {
+    try { localStorage.removeItem(LAST_PROJECT_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+    lastProjectId = '';
+  }
+  update(clearWorkspace(model));
+  resetToNewTask();
+  persistNavigation();
+};
+const changeProjectArchive = (id: string, archived: boolean): void => {
+  const known = projectCatalog.find((item) => item.id === id) ?? projectGroups().find((group) => group.id === id);
+  if (!id || id === PROJECTLESS_ID || (!known && !isProjectArchived(id))) return;
+  if (archived && projectArchiveBlocked(id)) {
+    threadArchiveNotice = { text: '此项目正在运行，请等任务结束后再归档。', error: true };
+    render();
+    return;
+  }
+  const record: ProjectArchiveRecord | null = archived
+    ? { name: known?.name ?? '未命名项目', path: known?.path ?? '', archivedAtMs: Date.now() }
+    : null;
+  if (!writeProjectArchive(id, record)) { render(); return; }
+  threadArchiveNotice = archived
+    ? { text: `项目“${known?.name ?? ''}”已归档，配置和会话保留。`, undoProjectId: id }
+    : { text: '项目已恢复到左侧列表。' };
+  if (archived && lastProjectId === id) {
+    try { localStorage.removeItem(LAST_PROJECT_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+    lastProjectId = '';
+  }
+  if (archived) {
+    expandedProjectIds.delete(id);
+    collapsedProjectIds.delete(id);
+  } else {
+    // Restoring a project must reveal its ordinary sessions immediately:
+    // expand the project group and the projects section. Individually
+    // archived sessions keep their own archive state, order and config.
+    expandedProjectIds.add(id);
+    collapsedProjectIds.delete(id);
+    projectsSectionCollapsed = false;
+    try { localStorage.setItem('hmcodex.projectsSectionCollapsed', 'false'); } catch { /* storage may be unavailable */ }
+  }
+  if (archived && currentProjectId() === id && !running && !liveTaskRunning()) {
+    // Idle windows clear the whole selection so the top bar and composer can
+    // no longer keep sending new tasks to the archived project.
+    detachArchivedProjectSelection(id);
+  } else render();
+};
 const restoreArchivedThreadForRun = (id?: string): boolean => {
   if (!id || !isThreadArchived(id)) return true;
   if (!writeThreadArchive(id, false)) { render(); return false; }
@@ -4317,9 +4425,16 @@ const restoreArchivedThreadForRun = (id?: string): boolean => {
 };
 
 window.addEventListener('storage', event => {
-  if (event.key !== THREAD_ARCHIVE_STORAGE_KEY && event.key !== null) return;
-  try { threadArchives = readThreadArchives(); threadArchiveNotice = undefined; }
-  catch { threadArchiveNotice = { text: '无法读取更新后的归档状态，请检查本地存储。', error: true }; }
+  if (event.key !== THREAD_ARCHIVE_STORAGE_KEY && event.key !== PROJECT_ARCHIVE_STORAGE_KEY && event.key !== null) return;
+  try { threadArchives = readThreadArchives(); projectArchives = readProjectArchives(); threadArchiveNotice = undefined; }
+  catch { threadArchiveNotice = { text: '无法读取更新后的归档状态，请检查本地存储。', error: true }; render(); return; }
+  // A project archived from another window must stop receiving new tasks
+  // here as well. Only an idle window drops its selection; a running task is
+  // never interrupted by an archive written in a different window.
+  if (event.key === PROJECT_ARCHIVE_STORAGE_KEY || event.key === null) {
+    const detached = currentProjectId();
+    if (isProjectArchived(detached) && !running && !liveTaskRunning()) detachArchivedProjectSelection(detached);
+  }
   render();
 });
 
@@ -4560,6 +4675,19 @@ const loadDefaultWorkspace = async (): Promise<void> => {
   try {
     const grant = await desktopBridge.defaultWorkspace();
     if (!grant) return;
+    // A refreshed window must not re-select an archived project just because
+    // the backend default workspace (or the remembered last project) still
+    // points at it. The project stays archived; the app falls back to the
+    // unbound state instead of auto-restoring it.
+    const archivedDefault = archivedProjectIdForRoot(grant.rootPath);
+    if (archivedDefault) {
+      if (lastProjectId === archivedDefault || isProjectArchived(lastProjectId)) {
+        try { localStorage.removeItem(LAST_PROJECT_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+        lastProjectId = '';
+      }
+      update(clearWorkspace(model));
+      return;
+    }
     applyWorkspaceGrant(grant);
     const entries = await desktopBridge.listWorkspace('');
     let next = setWorkspace(model, grant.rootLabel, '', entries, grant.rootPath);
@@ -4886,6 +5014,19 @@ const runMockTask = async (prompt: string): Promise<void> => {
 
 const runCordisTask = async (prompt: string, modelOverride?: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
   if (running || workspaceChanging) return;
+  // An archived project must never receive a new run silently. Check the
+  // target project (the workspace root, or the cwd of the thread this call
+  // resumes) before any run state or archive state is modified, so viewing an
+  // archived session cannot restart work in an archived project and the check
+  // never un-archives anything or interrupts a task already in flight.
+  const targetThreadId = extraOptions.threadId ?? model.activeThreadId;
+  const targetThread = targetThreadId ? model.threads.find((thread) => thread.id === targetThreadId) : undefined;
+  const archivedTargetId = archivedProjectIdForRoot(targetThread?.cwd) || archivedProjectIdForRoot(model.workspace.rootPath);
+  if (archivedTargetId) {
+    taskActionNotice = '此项目已归档，请先恢复项目后再开始任务。';
+    render();
+    return;
+  }
   if (!restoreArchivedThreadForRun(extraOptions.threadId ?? model.activeThreadId)) return;
   // Acquire the local run lock before awaiting event subscription setup. A
   // rapid double-submit during startup must not create two overlapping
@@ -5451,6 +5592,10 @@ app.addEventListener('click', (event) => {
     render();
   }
   if (action === 'workspace-up') void workspaceUp();
+  if (action === 'archive-project' || action === 'restore-project') {
+    changeProjectArchive(actionElement?.dataset.projectId ?? '', action === 'archive-project');
+    return;
+  }
   if (action === 'archive-thread' || action === 'restore-thread') {
     changeThreadArchive(actionElement?.dataset.threadId ?? '', action === 'archive-thread');
     return;

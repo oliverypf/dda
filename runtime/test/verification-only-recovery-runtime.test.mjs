@@ -59,8 +59,8 @@ test('semantic requests retain evidence once and preserve an actual negative cho
   assert.equal(actual.decision, 'FAIL'); assert.equal(actual.confidence, 0.05);
 });
 
-for (const [mode, eventual] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], ['CONTROLLED', 'FAIL'], ['CONTROLLED', 'SERVICE_FAILURE']]) {
-  test(`native ${mode} workflow re-verifies after HTTP503 without another executor turn (${eventual})`, async t => {
+for (const [mode, eventual, delayed = false] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], ['CONTROLLED', 'FAIL'], ['CONTROLLED', 'SERVICE_FAILURE'], ['CONTROLLED', 'PASS', true]]) {
+  test(`native ${mode} workflow verifies without another executor turn (${eventual}, delayed=${delayed})`, async t => {
     const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-verification-only-proof-'));
     const marker = 'GOAL_VERIFICATION_ONLY_ACTUAL_EVIDENCE';
     await writeFile(join(workspace, 'README.md'), marker);
@@ -75,7 +75,8 @@ for (const [mode, eventual] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], [
         if (body.questions.verification) {
           verifierCalls++; verificationStates.push(body.state);
           assert.equal(body.questions.verification.instructions.context.evidence, undefined);
-          if (verifierCalls === 1 || eventual === 'SERVICE_FAILURE') { response.writeHead(eventual === 'SERVICE_FAILURE' ? 529 : 503).end('{}'); return; }
+          if (delayed) await new Promise(resolve => setTimeout(resolve, 650));
+          else if (verifierCalls === 1 || eventual === 'SERVICE_FAILURE') { response.writeHead(eventual === 'SERVICE_FAILURE' ? 529 : 503).end('{}'); return; }
         }
         const answers = {};
         for (const [name, question] of Object.entries(body.questions)) {
@@ -104,7 +105,7 @@ for (const [mode, eventual] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], [
     const port = await listenOnFetchablePort(server);
     const config = join(workspace, 'model-config.json'), trajectory = join(workspace, 'trajectory.jsonl'), store = join(workspace, 'harness.db');
     await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'fixture', endpoint: `http://127.0.0.1:${port}/model`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY',
-      decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY', timeoutMs: 5000 } }));
+      decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY', timeoutMs: delayed ? 200 : 5000, verificationTimeoutMs: 5000 } }));
     const env = { GOAL_VERIFY_ONLY_FIX_KEY: 'local-only-key', HMCODEX_DATA_DIR: workspace, HMCODEX_HARNESS_EVENT_STORE: store,
       HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' };
     const args = ['src/index.mjs', 'task', '--config', config, '--workspace', workspace, '--trajectory-store', trajectory, '--thread-store', join(workspace, 'threads.json'),
@@ -116,12 +117,12 @@ for (const [mode, eventual] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], [
     assert.equal(result.timedOut, false, result.stderr);
     assert.equal(payload?.ok, eventual === 'PASS', result.stdout.slice(-1000) + result.stderr);
     assert.equal(modelCalls, mode === 'READ_ONLY' ? 2 : 3, 'transport verification recovery must not invoke the executor again');
-    assert.equal(verifierCalls, 2);
+    assert.equal(verifierCalls, delayed ? 1 : 2);
     const eventsResult = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'harness-events', 'list', '--trajectory-store', trajectory,
       '--harness-event-store', store, '--run-id', payload.runId, '--limit', '500'], { cwd: stagedRuntime, env, timeoutMs: 30000 });
     const events = parseLines(eventsResult.stdout).at(-1)?.events ?? [];
-    assert.equal(events.filter(event => event.kind === 'VerificationRetryStarted').length, 1);
+    assert.equal(events.filter(event => event.kind === 'VerificationRetryStarted').length, delayed ? 0 : 1);
     assert.equal(events.filter(event => event.kind === 'ToolInvocationCompleted').length, mode === 'READ_ONLY' ? 1 : 2, 'durable native receipts are not duplicated');
-    assert.equal(verificationStates[1].evidence.length, verificationStates[0].evidence.length);
+    if (!delayed) assert.equal(verificationStates[1].evidence.length, verificationStates[0].evidence.length);
   });
 }

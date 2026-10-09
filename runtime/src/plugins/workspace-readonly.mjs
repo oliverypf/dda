@@ -251,7 +251,14 @@ export class ReadonlyWorkspace {
     }
   }
 
-  async read(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0) {
+  async readMatching(relativePath, findText, maxChars = MAX_READ_CHARS, offsetChars = 0) {
+    if (typeof findText !== 'string' || findText.length < 1 || findText.length > 512) {
+      throw new Error('WORKSPACE_INVALID_FIND_TEXT');
+    }
+    return this.read(relativePath, maxChars, offsetChars, findText);
+  }
+
+  async read(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0, findText) {
     if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > MAX_READ_CHARS) {
       throw new Error('WORKSPACE_INVALID_READ_LIMIT');
     }
@@ -265,12 +272,15 @@ export class ReadonlyWorkspace {
     const bytes = await readFile(target.real).catch((error) => { logWorkspaceFailure('read.file', relativePath, this.root, error); throw new Error('WORKSPACE_READ_FAILED'); });
     const content = decodeText(bytes);
     if (content === undefined) throw new Error(`WORKSPACE_BINARY_FILE:${path}`);
+    const match = findText === undefined ? undefined : content.indexOf(findText, offsetChars);
+    const start = match === undefined ? offsetChars : match < 0 ? content.length : match;
     return {
       path,
       sizeBytes: bytes.byteLength,
       digest: digest(bytes),
-      content: content.slice(offsetChars, offsetChars + maxChars),
-      truncated: offsetChars + maxChars < content.length
+      content: content.slice(start, start + maxChars),
+      truncated: start + maxChars < content.length,
+      ...(match === undefined ? {} : { found: match >= 0, offsetChars: start })
     };
   }
 }

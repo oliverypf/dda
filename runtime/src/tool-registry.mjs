@@ -581,18 +581,22 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   });
   registry.register({
     name: 'workspace.read',
-    description: "Read a bounded UTF-8 text file from the authorized workspace. path MUST be relative, such as README.md or src/main.ts; never pass a drive-letter or UNC absolute path. For files larger than 32KB, use offsetChars to read the next window.",
+    description: "Read a bounded UTF-8 text file from the authorized workspace. path MUST be relative, such as README.md or src/main.ts; never pass a drive-letter or UNC absolute path. For files larger than 32KB, use offsetChars to read the next window."
+      + (typeof workspace.readMatching === 'function' ? ' To locate a named function or known text, pass findText (literal, not regex) and a small maxChars instead of scanning every page. Returns found and the actual offsetChars of the first match at or after the requested offset. Continue from returned offsetChars + content.length; a missing match returns found:false and empty content.' : ''),
     inputSchema: {
       type: 'object',
       properties: {
         path: { type: 'string', minLength: 1, maxLength: 512 },
         maxChars: { type: 'integer', minimum: 1, maximum: 32768 },
-        offsetChars: { type: 'integer', minimum: 0 }
+        offsetChars: { type: 'integer', minimum: 0 },
+        ...(typeof workspace.readMatching === 'function' ? { findText: { type: 'string', minLength: 1, maxLength: 512 } } : {})
       },
       required: ['path'],
       additionalProperties: false
     },
-    handler: ({ path, maxChars = 32768, offsetChars = 0 }) => workspace.read(path, maxChars, offsetChars)
+    handler: ({ path, maxChars = 32768, offsetChars = 0, findText }) => findText === undefined
+      ? workspace.read(path, maxChars, offsetChars)
+      : workspace.readMatching(path, findText, maxChars, offsetChars)
   });
   return registry;
 };

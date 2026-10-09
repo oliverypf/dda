@@ -47,20 +47,47 @@ test('history uses a stable cursor across runs, equal timestamps, new writes, an
   await threads.setCheckpoint(b.id, { runId: 'unfinished', phase: 'PLANNING', plan: { steps: [] } });
   await events.append({ runId: 'unfinished', kind: 'TaskRunCreated' });
   const unfinished = await readThreadHistory({ ...options, threadId: b.id });
-  assert.equal(unfinished.thread.resumable, true);
+  assert.equal(unfinished.thread.resumable, false);
+  assert.equal(unfinished.thread.resumeMode, 'INVALID');
   assert.ok(unfinished.events.some((event) => event.runId === 'unfinished'));
   const summaries = await readThreadHistory({ harnessPath, listOnly: true });
   const projected = await createThreadStore({ eventStore: createHarnessEventStore({ storagePath: harnessPath }) }).list();
   assert.deepEqual(summaries.threads, projected.map(({ turns, checkpoint, ...thread }) => ({ ...thread,
-    turnCount: turns.length, resumable: Boolean(checkpoint?.plan) })));
+    turnCount: turns.length, resumable: false, resumeMode: thread.id === b.id ? 'INVALID' : 'NONE' })));
   assert.ok(!JSON.stringify(summaries).includes('private-turn'));
   await threads.clearCheckpoint(b.id, { state: 'PAUSED' });
   assert.equal((await readThreadHistory({ harnessPath, threadId: b.id, summariesOnly: true })).thread.resumable, false);
+  assert.equal((await readThreadHistory({ harnessPath, threadId: b.id, summariesOnly: true })).thread.resumeMode, 'NONE');
   const db = openHarnessDatabase(harnessPath);
   db.prepare("UPDATE trajectory_events SET envelope=json_set(envelope, '$.payload.ordinal', 999) WHERE event_id=?")
     .run(afterPurge.events[0].eventId);
   db.close();
   await assert.rejects(readThreadHistory(options), /DIGEST_INVALID/);
+});
+
+test('history distinguishes a real plan, preparation, invalid progress and absent checkpoints', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-resume-modes-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const threads = createThreadStore({ eventStore: createHarnessEventStore({ storagePath: harnessPath }) });
+  for (const [resumeMode, plan, phase] of [
+    ['PLAN', { steps: [{ stepId: 'inspect', actionKind: 'READ', dependencies: [] }] }, 'EXECUTING'],
+    ['PREPARATION', [{ id: 'classify', status: 'RUNNING', actionDigest: `sha256:${'a'.repeat(64)}` }], 'PLANNING'],
+    ['INVALID', { steps: [] }, 'PLANNING'],
+    ['NONE', undefined, undefined]
+  ]) {
+    const thread = await threads.create({ cwd: directory });
+    if (plan) await threads.setCheckpoint(thread.id, { runId: `mode-${resumeMode}`, phase, plan });
+    const expected = ['PLAN', 'PREPARATION'].includes(resumeMode);
+    for (const summariesOnly of [false, true]) {
+      const result = await readThreadHistory({ harnessPath, threadId: thread.id, summariesOnly });
+      assert.equal(result.thread.resumeMode, resumeMode);
+      assert.equal(result.thread.resumable, expected);
+    }
+    const list = await readThreadHistory({ harnessPath, listOnly: true });
+    assert.equal(list.threads.find(item => item.id === thread.id).resumeMode, resumeMode);
+    assert.equal(list.threads.find(item => item.id === thread.id).resumable, expected);
+  }
 });
 
 test('page parameters reject invalid limits and malformed cursors', () => {

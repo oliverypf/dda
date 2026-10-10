@@ -1,6 +1,16 @@
-# dda Linux CLI
+# dda CLI
 
-Linux 端是无界面终端程序，命令名为 `dda`（兼容别名 `hmcodex`）。它不包含 Tauri、Web UI 或 ArkUI，只负责参数、JSONL、审批输入、退出码和进程生命周期。任务、安全、模型和事件仍由 `runtime/` 执行。
+`dda`（兼容别名 `hmcodex`）是无界面终端程序，同一套 Node 入口可以在 Linux、Windows 和鸿蒙 PC 上运行。它不包含 Tauri、Web UI 或 ArkUI，只负责参数、JSONL、审批输入、退出码和进程生命周期。任务、安全、模型和事件仍由 `runtime/` 执行。
+
+启动时按当前系统选择平台：
+
+| 系统 | 平台标识 | 数据目录 |
+| --- | --- | --- |
+| Linux | `linux-cli` | XDG，默认 `~/.local/share/hmcodex` |
+| Windows | `windows-cli` | `%LOCALAPPDATA%\hmCodex`，与桌面端共用 |
+| 鸿蒙 PC | `harmonyos-cli` | 有 XDG 或 `HOME` 时使用同一套家目录布局 |
+
+鸿蒙 PC 如果 Node 把 `process.platform` 报成 `linux`，只要系统描述、`OHOS_SDK_HOME` 或 `HARMONYOS_SDK_HOME` 能看出鸿蒙，仍会使用 `harmonyos-cli`。也可以显式设置 `HMCODEX_PLATFORM`。鸿蒙上的 ArkUI 应用仍是独立客户端；这个 CLI 只在该机器提供 Node.js 24 或更新版本时运行。
 
 ## 要求
 
@@ -17,7 +27,7 @@ chmod +x linux-cli/bin/dda.mjs
 node linux-cli/bin/dda.mjs --version
 ```
 
-也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。发布形态目前是仓库内的 Node 入口；deb、AppImage、ARM64、musl 和单文件打包还没有做。
+也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。Windows 可以使用 `linux-cli/bin/dda.cmd`。发布形态目前是仓库内的 Node 入口；deb、AppImage、ARM64、musl 和单文件打包还没有做。
 
 ## 数据目录
 
@@ -33,7 +43,7 @@ node linux-cli/bin/dda.mjs --version
 
 `--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。API key 只从配置里声明的环境变量读取，不会写入配置、事件或支持信息。
 
-Windows 仍使用 `%LOCALAPPDATA%\hmCodex`。只有 `HMCODEX_PLATFORM=linux-cli` 时才切换到上面的布局。
+Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `HMCODEX_PLATFORM` 的 runtime 仍保持原来的 Windows 目录规则，避免在 Linux 上跑 Windows 测试时改掉路径。
 
 ## 命令
 

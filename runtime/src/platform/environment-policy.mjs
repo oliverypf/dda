@@ -10,7 +10,18 @@ const RUNTIME_ALLOW = [
   /^TERM$/u,
   /^SHELL$/u,
   /^TMPDIR$/u,
-  /^TZ$/u
+  /^TZ$/u,
+  /^USERPROFILE$/u,
+  /^APPDATA$/u,
+  /^LOCALAPPDATA$/u,
+  /^HOMEDRIVE$/u,
+  /^HOMEPATH$/u,
+  /^SystemRoot$/u,
+  /^WINDIR$/u,
+  /^TEMP$/u,
+  /^TMP$/u,
+  /^PATHEXT$/u,
+  /^COMSPEC$/u
 ];
 
 const SECRET_KEY = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTHORIZATION)(?:_|$)/iu;

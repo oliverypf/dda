@@ -1274,7 +1274,9 @@ async function runTask() {
     return feedbackRegistry.submit({
       runId, taskId: runId, threadId: thread.id, outcomeId,
       modelIdentity: identity,
-      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: process.env.HMCODEX_PLATFORM === 'linux-cli' ? 'LINUX' : 'WINDOWS', policyClass: resolveReleaseChannel() },
+      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: process.env.HMCODEX_PLATFORM === 'linux-cli'
+        ? 'LINUX'
+        : process.env.HMCODEX_PLATFORM === 'harmonyos-cli' ? 'HARMONYOS' : 'WINDOWS', policyClass: resolveReleaseChannel() },
       sourceType: 'SYSTEM', outcomeStatus: status, dimensions,
       evidenceRefs: [event.eventId, ...(finalVerificationEventId ? [finalVerificationEventId] : [])],
       reasonCodes: [taskLevel ? 'TASK_LEVEL_ATTRIBUTION' : 'OBJECTIVE_OUTCOME'],

@@ -6,14 +6,17 @@ import { join, resolve } from 'node:path';
  * Path authority for dda stores.
  *
  * Windows keeps the historical `%LOCALAPPDATA%\hmCodex` layout, including when
- * `HMCODEX_DATA_DIR` is set. Linux CLI opts in with `HMCODEX_PLATFORM=linux-cli`
- * and then uses one XDG root for every store. Host OS alone must not flip the
- * layout: the Windows runtime test suite runs on Linux.
+ * `HMCODEX_DATA_DIR` is set. Portable CLI hosts (`linux-cli`, `harmonyos-cli`,
+ * and the explicit `harmonyos` identity) use one XDG root for every store.
+ * Host OS alone must not flip the layout: the Windows runtime test suite runs
+ * on Linux.
  */
 
 export const LINUX_CLI_PLATFORM = 'linux-cli';
+const PORTABLE_CLI_PLATFORMS = new Set(['linux-cli', 'harmonyos-cli', 'harmonyos']);
 
-export const isLinuxCliPlatform = (env = process.env) => env.HMCODEX_PLATFORM === LINUX_CLI_PLATFORM;
+export const isLinuxCliPlatform = (env = process.env) => PORTABLE_CLI_PLATFORMS.has(env.HMCODEX_PLATFORM);
+export const isPortableCliPlatform = isLinuxCliPlatform;
 
 const joinPlatform = (root, ...parts) => {
   if (typeof root === 'string' && root.includes('\\') && !root.includes('/')) {
@@ -42,8 +45,19 @@ const xdgPath = (env, name, homeFallback, leaf) => {
   return base ? join(base, leaf) : undefined;
 };
 
+const windowsDataRoot = (env, dataOverride, windowsCli) => {
+  if (dataOverride) return dataOverride;
+  if (env.LOCALAPPDATA) return env.LOCALAPPDATA;
+  if (!windowsCli && env.APPDATA) return env.APPDATA;
+  const profile = env.USERPROFILE || env.HOME;
+  if (windowsCli && profile) return joinPlatform(profile, 'AppData', 'Local');
+  return env.APPDATA;
+};
+
 export function createPlatformPaths(env = process.env, options = {}) {
-  const linux = options.platform ? options.platform === LINUX_CLI_PLATFORM : isLinuxCliPlatform(env);
+  const requested = options.platform ?? env.HMCODEX_PLATFORM;
+  const portable = requested ? PORTABLE_CLI_PLATFORMS.has(requested) : isLinuxCliPlatform(env);
+  const windowsCli = requested === 'windows-cli';
   const dataOverride = typeof options.dataDir === 'string' && options.dataDir.trim()
     ? options.dataDir.trim()
     : (typeof env.HMCODEX_DATA_DIR === 'string' ? env.HMCODEX_DATA_DIR.trim() : '');
@@ -52,8 +66,10 @@ export function createPlatformPaths(env = process.env, options = {}) {
     : (typeof env.HMCODEX_MODEL_CONFIG === 'string' ? env.HMCODEX_MODEL_CONFIG.trim() : '');
 
   const configDir = () => {
-    if (!linux) {
-      const root = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
+    if (!portable) {
+      const root = windowsCli
+        ? windowsDataRoot(env, '', true)
+        : (env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME);
       return root ? joinPlatform(root, 'hmCodex') : undefined;
     }
     if (options.configDir) return resolve(options.configDir);
@@ -61,8 +77,8 @@ export function createPlatformPaths(env = process.env, options = {}) {
   };
 
   const dataDir = () => {
-    if (!linux) {
-      const root = dataOverride || env.LOCALAPPDATA || env.APPDATA;
+    if (!portable) {
+      const root = windowsDataRoot(env, dataOverride, windowsCli);
       return root ? joinPlatform(root, 'hmCodex') : undefined;
     }
     if (dataOverride) return resolve(dataOverride);
@@ -70,18 +86,20 @@ export function createPlatformPaths(env = process.env, options = {}) {
   };
 
   const stateDir = () => {
-    if (!linux) return dataDir();
+    if (!portable) return dataDir();
     if (options.stateDir) return resolve(options.stateDir);
     return xdgPath(env, 'XDG_STATE_HOME', ['.local', 'state'], 'hmcodex');
   };
 
-  const cacheDir = () => linux
+  const cacheDir = () => portable
     ? xdgPath(env, 'XDG_CACHE_HOME', ['.cache'], 'hmcodex')
     : dataDir();
 
   const logDir = () => {
-    if (!linux) {
-      const root = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
+    if (!portable) {
+      const root = windowsCli
+        ? windowsDataRoot(env, '', true)
+        : (env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME);
       return root ? joinPlatform(root, 'hmCodex', 'logs') : undefined;
     }
     const state = stateDir();
@@ -90,13 +108,15 @@ export function createPlatformPaths(env = process.env, options = {}) {
 
   const pluginDir = () => {
     const data = dataDir();
-    return data ? join(data, 'plugins') : undefined;
+    return data ? joinPlatform(data, 'plugins') : undefined;
   };
 
   const modelConfigPath = () => {
-    if (linux && configOverride) return resolve(configOverride);
-    if (!linux) {
-      const root = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
+    if (portable && configOverride) return resolve(configOverride);
+    if (!portable) {
+      const root = windowsCli
+        ? windowsDataRoot(env, '', true)
+        : (env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME);
       return root ? joinPlatform(root, 'hmCodex', 'model-config.json') : undefined;
     }
     const dir = configDir();
@@ -112,7 +132,7 @@ export function createPlatformPaths(env = process.env, options = {}) {
   };
 
   return {
-    platform: linux ? LINUX_CLI_PLATFORM : 'windows-desktop',
+    platform: requested || (portable ? LINUX_CLI_PLATFORM : 'windows-desktop'),
     configDir,
     dataDir,
     stateDir,

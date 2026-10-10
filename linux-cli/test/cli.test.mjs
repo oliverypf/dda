@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { approvalResponse } from '../src/approval.mjs';
 import { main } from '../src/main.mjs';
 import { migrateDataDirectory } from '../src/migrate.mjs';
+import { isBlockedWorkspacePath, resolveWorkspace } from '../src/workspace.mjs';
 
 const capture = () => ({ text: '', write(chunk) { this.text += chunk; return true; } });
 
@@ -43,6 +44,49 @@ test('usage and version stay on the contract exit codes', async () => {
   const payload = JSON.parse(version.stdout);
   assert.equal(payload.platform, 'linux-cli');
   assert.equal(payload.protocol, '1.0');
+});
+
+test('the same entry selects Windows and HarmonyOS hosts', async () => {
+  const { env } = await isolatedEnv();
+  const windows = await run(['--version', '--format', 'jsonl'], env, { platform: 'win32', release: '10.0.22631' });
+  assert.equal(JSON.parse(windows.stdout).platform, 'windows-cli');
+
+  const harmony = await run(['--version', '--format', 'jsonl'], env, { platform: 'linux', release: '5.10.97-ohos' });
+  assert.equal(JSON.parse(harmony.stdout).platform, 'harmonyos-cli');
+
+  const explicit = await run(['--version', '--format', 'jsonl'], { ...env, HMCODEX_PLATFORM: 'linux-cli' }, {
+    platform: 'win32',
+    release: 'OpenHarmony 5.0'
+  });
+  assert.equal(JSON.parse(explicit.stdout).platform, 'linux-cli');
+
+  assert.equal(isBlockedWorkspacePath('C:\\Windows\\System32', 'windows-cli'), true);
+  assert.throws(() => resolveWorkspace('C:\\Windows', 'windows-cli'), /WORKSPACE_PATH_FORBIDDEN/);
+  assert.equal(isBlockedWorkspacePath('/system/bin', 'harmonyos-cli'), true);
+  assert.equal(isBlockedWorkspacePath('/proc/self', 'linux-cli'), true);
+});
+
+test('support-info follows the detected Windows and HarmonyOS profiles', async () => {
+  const { env, root } = await isolatedEnv();
+  const windows = await run(['support-info', '--format', 'jsonl', '--data-dir', join(root, 'win-data')], {
+    ...env,
+    LOCALAPPDATA: join(root, 'Local')
+  }, { platform: 'win32', release: '10.0.22631' });
+  assert.equal(windows.code, 0, windows.stderr + windows.stdout);
+  const windowsPayload = JSON.parse(windows.stdout);
+  assert.equal(windowsPayload.platform, 'windows-cli');
+  assert.equal(windowsPayload.executor, 'restricted-windows');
+  assert.equal(windowsPayload.dataRoot, join(root, 'win-data', 'hmCodex'));
+
+  const harmony = await run(['support-info', '--format', 'jsonl', '--data-dir', join(root, 'ohos-data')], env, {
+    platform: 'linux',
+    release: 'OpenHarmony-5.0.0'
+  });
+  assert.equal(harmony.code, 0, harmony.stderr + harmony.stdout);
+  const harmonyPayload = JSON.parse(harmony.stdout);
+  assert.equal(harmonyPayload.platform, 'harmonyos-cli');
+  assert.equal(harmonyPayload.executor, 'harmonyos-posix');
+  assert.equal(harmonyPayload.dataRoot, join(root, 'ohos-data'));
 });
 
 test('health runs without a display and prints one JSON object', async () => {

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -77,7 +77,10 @@ export function createProcessSupervisor({ platform = process.platform, registryP
       if (!record?.pid) return;
       record.cancelState = 'TERMINATING';
       const pid = record.pid;
-      if (platform === 'win32' || !record.pgid) {
+      if (platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
+        record.child.kill('SIGTERM');
+      } else if (!record.pgid) {
         record.child.kill('SIGTERM');
       } else {
         try { process.kill(-pid, 'SIGTERM'); } catch { record.child.kill('SIGTERM'); }

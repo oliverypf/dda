@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
+import { release } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTaskCancelRegistry } from '../../runtime/src/task-cancel-registry.mjs';
 import { buildRuntimeEnv, redactText } from '../../runtime/src/platform/environment-policy.mjs';
 import { createPlatformPaths, directoryPermission, ensurePlatformDirs } from '../../runtime/src/platform/paths.mjs';
-import { releaseChannelForPolicy, resolvePlatformIdentity } from '../../runtime/src/platform/platform-identity.mjs';
+import { detectCliHost, releaseChannelForPolicy, resolvePlatformIdentity } from '../../runtime/src/platform/platform-identity.mjs';
 import { createProcessSupervisor, reclaimRecordedProcesses } from '../../runtime/src/platform/process-supervisor.mjs';
 import { describeApproval } from './approval.mjs';
 import { EXIT, errorResult, exitCodeForError, messageForCode } from './exit-codes.mjs';
@@ -44,6 +45,9 @@ const HELP = `dda <command> [subcommand] [options]
 
 默认执行模式是 READ_ONLY。CONTROLLED 必须显式指定，并且在没有终端时只能使用
 --approval-mode jsonl 或 deny。
+
+同一入口可在 Linux、Windows 和鸿蒙 PC 上运行。平台由当前系统决定，也可以用
+HMCODEX_PLATFORM=linux-cli|windows-cli|harmonyos-cli 显式指定。
 `;
 
 async function runtimePackageVersion() {
@@ -82,6 +86,11 @@ export async function main(argv, io = {}) {
   const stderr = io.stderr ?? process.stderr;
   const env = io.env ?? process.env;
   const isTTY = io.isTTY ?? Boolean(stderr.isTTY);
+  const host = detectCliHost({
+    env,
+    platform: io.platform ?? process.platform,
+    release: io.release ?? release()
+  });
   const emitJson = (value) => writeJson(stdout, value);
 
   let parsed;
@@ -112,7 +121,7 @@ export async function main(argv, io = {}) {
       cli: CLI_VERSION,
       runtime: await runtimePackageVersion(),
       protocol: PROTOCOL_VERSION,
-      platform: 'linux-cli'
+      platform: host
     };
     if (format === 'jsonl') emitJson({ ok: true, ...version });
     else stdout.write(`dda ${version.cli}\nruntime ${version.runtime}\nprotocol ${version.protocol}\nplatform ${version.platform}\n`);
@@ -122,7 +131,7 @@ export async function main(argv, io = {}) {
 
   const pathEnv = {
     ...env,
-    HMCODEX_PLATFORM: 'linux-cli',
+    HMCODEX_PLATFORM: host,
     ...(parsed.options.dataDir ? { HMCODEX_DATA_DIR: parsed.options.dataDir } : {}),
     ...(parsed.options.config ? { HMCODEX_MODEL_CONFIG: parsed.options.config } : {})
   };
@@ -152,13 +161,13 @@ export async function main(argv, io = {}) {
   if (parsed.command === 'task' || parsed.command === 'tools' || (parsed.command === 'thread' && parsed.subcommand === 'create')) {
     if (!parsed.options.workspace) return reportError(parsed.command === 'task' ? 'ARGUMENT_INVALID' : 'WORKSPACE_NOT_FOUND');
     try {
-      workspace = resolveWorkspace(parsed.options.workspace);
+      workspace = resolveWorkspace(parsed.options.workspace, host);
     } catch (error) {
       return reportError(error.code ?? 'WORKSPACE_NOT_FOUND');
     }
   } else if (parsed.options.workspace) {
     try {
-      workspace = resolveWorkspace(parsed.options.workspace);
+      workspace = resolveWorkspace(parsed.options.workspace, host);
     } catch (error) {
       return reportError(error.code ?? 'WORKSPACE_NOT_FOUND');
     }
@@ -179,7 +188,7 @@ export async function main(argv, io = {}) {
   const configPath = parsed.options.config ?? (env.HMCODEX_MODEL_CONFIG?.trim() || undefined);
   const keyNames = await providerKeyNames(configPath ?? paths.modelConfigPath());
   const childEnv = buildRuntimeEnv(env, { extraKeys: keyNames });
-  childEnv.HMCODEX_PLATFORM = 'linux-cli';
+  childEnv.HMCODEX_PLATFORM = host;
   childEnv.HMCODEX_RELEASE_CHANNEL = releaseChannelForPolicy(executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY');
   childEnv.HMCODEX_DATA_DIR = paths.dataDir();
   delete childEnv.HMCODEX_BAKED_RELEASE_CHANNEL;
@@ -219,7 +228,7 @@ export async function main(argv, io = {}) {
       return;
     }
     const registry = createTaskCancelRegistry({ storagePath: `${paths.resolveStore('trajectory.jsonl')}.cancels.json` });
-    void registry.request(active.runId, { reason: 'SIGINT', requestedBy: 'linux-cli' }).catch(() => undefined);
+    void registry.request(active.runId, { reason: 'SIGINT', requestedBy: host }).catch(() => undefined);
   };
   const onSigterm = () => {
     cancelSignal = 'SIGTERM';
@@ -288,7 +297,7 @@ export async function main(argv, io = {}) {
       return exitCodeForError(code);
     }
     if (parsed.command === 'support-info') {
-      const payload = supportInfo(result, paths, policy);
+      const payload = supportInfo(result, paths, policy, host);
       if (format === 'jsonl') emitJson(payload);
       else stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
       return EXIT.SUCCESS;
@@ -316,9 +325,9 @@ export async function main(argv, io = {}) {
   }
 }
 
-function supportInfo(runtimeResult, paths, policy) {
+function supportInfo(runtimeResult, paths, policy, host) {
   const identity = resolvePlatformIdentity({
-    HMCODEX_PLATFORM: 'linux-cli',
+    HMCODEX_PLATFORM: host,
     HMCODEX_RELEASE_CHANNEL: releaseChannelForPolicy(policy)
   });
   return {

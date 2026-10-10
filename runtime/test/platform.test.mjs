@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { buildChildEnv, buildRuntimeEnv } from '../src/platform/environment-policy.mjs';
 import { LinuxPosixExecutor } from '../src/platform/executor.mjs';
 import { createPlatformPaths } from '../src/platform/paths.mjs';
-import { policyChannelForRelease, resolvePlatformIdentity } from '../src/platform/platform-identity.mjs';
+import { detectCliHost, policyChannelForRelease, resolvePlatformIdentity } from '../src/platform/platform-identity.mjs';
 import { createProcessSupervisor, reclaimRecordedProcesses } from '../src/platform/process-supervisor.mjs';
 
 test('Windows store layout stays under hmCodex unless the Linux platform is selected', () => {
@@ -66,6 +66,57 @@ test('runtime environment keeps provider keys only when named and drops other se
   assert.equal(env.HMCODEX_API_KEY, undefined);
   assert.throws(() => buildChildEnv({ API_TOKEN: 'x' }), /CHILD_ENV_INVALID/);
   assert.deepEqual(buildChildEnv({ LANG: 'C' }), { LANG: 'C' });
+});
+
+test('windows and HarmonyOS CLI hosts keep their own data roots', () => {
+  const windows = createPlatformPaths({
+    HMCODEX_PLATFORM: 'windows-cli',
+    USERPROFILE: 'C:\\Users\\tester'
+  });
+  assert.equal(windows.platform, 'windows-cli');
+  assert.equal(windows.dataDir(), 'C:\\Users\\tester\\AppData\\Local\\hmCodex');
+  assert.equal(windows.configDir(), 'C:\\Users\\tester\\AppData\\Local\\hmCodex');
+  assert.equal(windows.modelConfigPath(), 'C:\\Users\\tester\\AppData\\Local\\hmCodex\\model-config.json');
+  assert.equal(windows.resolveStore('threads.json'), 'C:\\Users\\tester\\AppData\\Local\\hmCodex\\threads.json');
+
+  const shared = createPlatformPaths({
+    HMCODEX_PLATFORM: 'windows-cli',
+    LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
+    HMCODEX_DATA_DIR: 'D:\\data'
+  });
+  assert.equal(shared.resolveStore('threads.json'), 'D:\\data\\hmCodex\\threads.json');
+
+  const harmony = createPlatformPaths({
+    HMCODEX_PLATFORM: 'harmonyos-cli',
+    HOME: '/home/tester',
+    HMCODEX_DATA_DIR: '/srv/dda'
+  });
+  assert.equal(harmony.platform, 'harmonyos-cli');
+  assert.equal(harmony.dataDir(), '/srv/dda');
+  assert.equal(harmony.modelConfigPath(), '/home/tester/.config/hmcodex/model-config.json');
+  assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'harmonyos-cli' }).executor, 'harmonyos-posix');
+  assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'windows-cli' }).executor, 'restricted-windows');
+});
+
+test('CLI host detection follows Windows, Linux, and HarmonyOS markers', () => {
+  assert.equal(detectCliHost({ env: {}, platform: 'win32', release: '10.0.22631' }), 'windows-cli');
+  assert.equal(detectCliHost({ env: {}, platform: 'linux', release: '6.8.0-generic' }), 'linux-cli');
+  assert.equal(detectCliHost({
+    env: {},
+    platform: 'linux',
+    release: '5.10.97-ohos'
+  }), 'harmonyos-cli');
+  assert.equal(detectCliHost({
+    env: { OHOS_SDK_HOME: '/opt/ohos' },
+    platform: 'linux',
+    release: '6.8.0'
+  }), 'harmonyos-cli');
+  assert.equal(detectCliHost({
+    env: { HMCODEX_PLATFORM: 'linux-cli' },
+    platform: 'win32',
+    release: 'OpenHarmony 5.0'
+  }), 'linux-cli');
+  assert.equal(detectCliHost({ env: { HMCODEX_PLATFORM: 'windows-desktop' }, platform: 'linux' }), 'windows-desktop');
 });
 
 test('platform identity stays windows-desktop until linux-cli is requested', () => {

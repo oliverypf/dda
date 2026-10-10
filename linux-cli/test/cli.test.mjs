@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { approvalResponse } from '../src/approval.mjs';
@@ -158,6 +158,26 @@ test('approval digest mismatch and a missing TTY cannot approve', () => {
   });
   assert.equal(granted.approved, true);
   assert.equal(granted.message.approved, true);
+});
+
+test('migrate-data plans and copies into a fresh data directory', async () => {
+  const { env, root } = await isolatedEnv();
+  const source = join(root, 'old');
+  const target = join(root, 'new');
+  await mkdir(source, { recursive: true });
+  await writeFile(join(source, 'threads.json'), '{"threads":[]}\n');
+  const planned = await run(['migrate-data', '--from', source, '--data-dir', target, '--format', 'jsonl'], env);
+  assert.equal(planned.code, 0, planned.stderr + planned.stdout);
+  const plannedPayload = JSON.parse(planned.stdout);
+  assert.equal(plannedPayload.status, 'PLANNED');
+  assert.equal(plannedPayload.filesCopied, 0);
+  const applied = await run(['migrate-data', '--from', source, '--data-dir', target, '--apply', '--format', 'jsonl'], env);
+  assert.equal(applied.code, 0, applied.stderr + applied.stdout);
+  const appliedPayload = JSON.parse(applied.stdout);
+  assert.equal(appliedPayload.status, 'COMPLETED');
+  assert.equal(appliedPayload.digestVerified, true);
+  assert.equal(appliedPayload.filesCopied, 1);
+  assert.equal(await readFile(join(target, 'threads.json'), 'utf8'), '{"threads":[]}\n');
 });
 
 test('migration stops when the target already has data', async () => {

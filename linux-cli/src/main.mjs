@@ -137,12 +137,9 @@ export async function main(argv, io = {}) {
   };
   const paths = createPlatformPaths(pathEnv);
   if (!paths.dataDir() || !paths.configDir()) return reportError('STORAGE_ERROR');
-  try {
-    await ensurePlatformDirs(paths);
-  } catch (error) {
-    return reportError(error?.code === 'ENOSPC' ? 'ENOSPC' : 'STORAGE_ERROR');
-  }
 
+  // Directory setup creates dataDir/plugins. That must not happen before
+  // migrate-data, or a fresh target is reported as TARGET_NONEMPTY.
   if (parsed.command === 'migrate-data') {
     if (!parsed.options.from) return reportError('ARGUMENT_INVALID');
     const report = await migrateDataDirectory({
@@ -154,6 +151,12 @@ export async function main(argv, io = {}) {
     if (report.status === 'FAILED') return EXIT.STORAGE_ERROR;
     if (report.status === 'STOPPED') return EXIT.STORAGE_ERROR;
     return EXIT.SUCCESS;
+  }
+
+  try {
+    await ensurePlatformDirs(paths);
+  } catch (error) {
+    return reportError(error?.code === 'ENOSPC' ? 'ENOSPC' : 'STORAGE_ERROR');
   }
 
   const executionMode = parsed.options.executionMode ?? 'READ_ONLY';

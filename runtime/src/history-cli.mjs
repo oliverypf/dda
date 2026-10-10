@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertReleaseHarnessStore, resolveReleaseChannel } from './release-channel.mjs';
 import { readThreadHistory } from './thread-history-reader.mjs';
+import { resolveStoreFile } from './platform/paths.mjs';
 
 // Shared by index.mjs and the desktop's lightweight, read-only entry point.
 // Never import the execution harness, model clients, or recovery controllers here.
@@ -19,8 +20,7 @@ export async function runHistoryCommand(command, args = process.argv.slice(3)) {
     throw new Error('HISTORY_READ_COMMAND_REQUIRED');
   }
   const releaseChannel = resolveReleaseChannel();
-  const root = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  const defaultPath = (name) => root ? join(root, 'hmCodex', name) : undefined;
+  const defaultPath = (name) => resolveStoreFile(name);
   const trajectoryPath = value('--trajectory-store') ?? process.env.HMCODEX_TRAJECTORY_STORE ?? defaultPath('trajectory.jsonl');
   const scopedTrajectory = value('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
   const harnessPath = assertReleaseHarnessStore(value('--harness-event-store') ?? process.env.HMCODEX_HARNESS_EVENT_STORE

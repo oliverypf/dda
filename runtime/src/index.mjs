@@ -64,7 +64,8 @@ import { assessBayesian, rankSafeCandidates } from './bayesian-assessment.mjs';
 import { createModelScenarioProfileRegistry } from './model-scenario-profile.mjs';
 import { evaluateDecisionTrace, exportLearningSample } from './decision-evaluation.mjs';
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegistry } from './runtime-safety-monitor.mjs';
-import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
+import { createPlatformExecutor } from './platform/executor.mjs';
+import { resolveStoreFile } from './platform/paths.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
@@ -254,20 +255,11 @@ const executionOptions = (mode) => ({
       : {})
 });
 
-const defaultEvolutionStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'evolution-proposals.json') : undefined;
-};
+const defaultEvolutionStore = () => resolveStoreFile('evolution-proposals.json');
 
-const defaultEvolutionEvaluationStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'evolution-evaluations.json') : undefined;
-};
+const defaultEvolutionEvaluationStore = () => resolveStoreFile('evolution-evaluations.json');
 
-const defaultTrajectoryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'trajectory.jsonl') : undefined;
-};
+const defaultTrajectoryStore = () => resolveStoreFile('trajectory.jsonl');
 
 const auditSigningOptions = () => {
   const keyEnv = argValue('--audit-signing-key-env') ?? process.env.HMCODEX_GIT_AUDIT_SIGNING_KEY_ENV ?? 'HMCODEX_GIT_AUDIT_SIGNING_KEY';
@@ -276,15 +268,9 @@ const auditSigningOptions = () => {
   return key ? { signingKey: key, signingKeyRef: keyEnv } : {};
 };
 
-const defaultGitAuditStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'git-audit.json') : undefined;
-};
+const defaultGitAuditStore = () => resolveStoreFile('git-audit.json');
 
-const defaultHarnessEventStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'hmcodex.db') : undefined;
-};
+const defaultHarnessEventStore = () => resolveStoreFile('hmcodex.db');
 
 // Task execution and recovery must resolve the same authority for an identical
 // trajectory scope. Legacy storage remains a pre-Phase-1 compatibility path.
@@ -294,70 +280,19 @@ const taskHarnessEventStore = (trajectoryPath, scopedTrajectory) => assertReleas
       : resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY' && trajectoryPath ? `${trajectoryPath}.db` : undefined))
 );
 
-const defaultThreadStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'threads.json') : undefined;
-};
-
-const defaultRoleContextStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'role-contexts.json') : undefined;
-};
-
-const defaultMemoryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'memory.json') : undefined;
-};
-
-const defaultDreamStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'dream-runs.json') : undefined;
-};
-
-const defaultFeedbackStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'feedback.json') : undefined;
-};
-
-const defaultModelScenarioProfileStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-scenario-profiles.json') : undefined;
-};
-
-const defaultDecisionTraceStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'decision-trace.json') : undefined;
-};
-
-const defaultProfileStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'profiles.json') : undefined;
-};
-
-const defaultModelRegistryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-registry.json') : undefined;
-};
-
-const defaultCreditBlameStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'credit-blame.json') : undefined;
-};
-
-const defaultModelEgressStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-egress.json') : undefined;
-};
-
-const defaultPluginGovernanceStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'plugin-governance.json') : undefined;
-};
-
-const defaultPluginRoot = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'plugins') : undefined;
-};
+const defaultThreadStore = () => resolveStoreFile('threads.json');
+const defaultRoleContextStore = () => resolveStoreFile('role-contexts.json');
+const defaultMemoryStore = () => resolveStoreFile('memory.json');
+const defaultDreamStore = () => resolveStoreFile('dream-runs.json');
+const defaultFeedbackStore = () => resolveStoreFile('feedback.json');
+const defaultModelScenarioProfileStore = () => resolveStoreFile('model-scenario-profiles.json');
+const defaultDecisionTraceStore = () => resolveStoreFile('decision-trace.json');
+const defaultProfileStore = () => resolveStoreFile('profiles.json');
+const defaultModelRegistryStore = () => resolveStoreFile('model-registry.json');
+const defaultCreditBlameStore = () => resolveStoreFile('credit-blame.json');
+const defaultModelEgressStore = () => resolveStoreFile('model-egress.json');
+const defaultPluginGovernanceStore = () => resolveStoreFile('plugin-governance.json');
+const defaultPluginRoot = () => resolveStoreFile('plugins');
 
 const safeRuntimeMessage = (error, fallback = '') => {
   const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
@@ -1339,7 +1274,7 @@ async function runTask() {
     return feedbackRegistry.submit({
       runId, taskId: runId, threadId: thread.id, outcomeId,
       modelIdentity: identity,
-      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: 'WINDOWS', policyClass: resolveReleaseChannel() },
+      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: process.env.HMCODEX_PLATFORM === 'linux-cli' ? 'LINUX' : 'WINDOWS', policyClass: resolveReleaseChannel() },
       sourceType: 'SYSTEM', outcomeStatus: status, dimensions,
       evidenceRefs: [event.eventId, ...(finalVerificationEventId ? [finalVerificationEventId] : [])],
       reasonCodes: [taskLevel ? 'TASK_LEVEL_ATTRIBUTION' : 'OBJECTIVE_OUTCOME'],
@@ -2006,7 +1941,7 @@ async function runTask() {
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...executionOptions(mode)
   });
-  const executor = new RestrictedWindowsExecutor({ monitor });
+  const executor = createPlatformExecutor({ monitor });
   const networkAdapter = new RestrictedNetworkAdapter({ monitor });
   const leaseTtlRaw = arg('--lease-ttl-ms', process.env.HMCODEX_LEASE_TTL_MS);
   const leaseTtlMs = leaseTtlRaw === undefined ? undefined : Number(leaseTtlRaw);

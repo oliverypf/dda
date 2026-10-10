@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { normalizeCustomInstructions } from './custom-instructions.mjs';
 import { normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
+import { createPlatformPaths } from './platform/paths.mjs';
 
 // The continuous-verifier budget and criteria are operator configuration, not
 // constants. They are validated by the same normaliser the verifier itself
@@ -70,10 +70,7 @@ export const normalizeLegacyModelAlias = ({ provider, model, baseURL, endpoint }
   return model;
 };
 
-export const defaultModelConfigPath = (env = process.env) => {
-  const dataRoot = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-config.json') : undefined;
-};
+export const defaultModelConfigPath = (env = process.env) => createPlatformPaths(env).modelConfigPath();
 
 const MAX_CONFIG_CHARS = 32 * 1024;
 const ALLOWED_KEYS = new Set([

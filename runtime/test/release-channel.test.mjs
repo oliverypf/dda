@@ -17,6 +17,10 @@ test('Phase 1 denies controlled modes and unknown channels fail closed', () => {
     assert.throws(() => assertReleaseExecutionMode('READ_ONLY', channel), /RELEASE_CHANNEL_INVALID/);
   }
   for (const channel of RELEASE_CHANNELS) assert.equal(resolveReleaseChannel(channel), channel);
+  assert.equal(resolveReleaseChannel('LINUX_CLI_READ_ONLY'), 'WINDOWS_PHASE1_READ_ONLY');
+  assert.equal(resolveReleaseChannel('LINUX_CLI_CONTROLLED'), 'WINDOWS_FULL_LOCAL');
+  assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_READ_ONLY/);
+  assert.equal(assertReleaseHarnessStore('hmcodex.db', 'LINUX_CLI_READ_ONLY'), 'hmcodex.db');
 });
 
 test('Phase 1 requires a durable SQLite task store', async () => {

@@ -216,7 +216,8 @@ test('the default OpenCode key is forwarded without a config and other secrets s
   assert.equal(child.OPENCODE_GO_API_KEY, 'go-key');
   assert.equal(child.AWS_SECRET_ACCESS_KEY, undefined);
   assert.equal(child.STRAY_API_TOKEN, undefined);
-  assert.deepEqual(await providerKeyNames(undefined), ['OPENCODE_GO_API_KEY']);
+  assert.deepEqual(await providerKeyNames(undefined), ['OPENCODE_GO_API_KEY', 'JEV_API_KEY']);
+  assert.ok(names.includes('JEV_API_KEY'));
 
   const configPath = join(root, 'model-config.json');
   await writeFile(configPath, JSON.stringify({
@@ -238,10 +239,23 @@ test('the default OpenCode key is forwarded without a config and other secrets s
   assert.equal(configuredEnv.DECISION_KEY, 'decision');
   assert.equal(configuredEnv.MODEL_KEY, 'model');
   assert.equal(configuredEnv.AWS_SECRET_ACCESS_KEY, undefined);
+  assert.equal(configured.includes('JEV_API_KEY'), false);
+
+  const openRouterConfig = join(root, 'openrouter.json');
+  await writeFile(openRouterConfig, JSON.stringify({
+    decision: { endpoint: 'https://openrouter.ai/api/v1/systemone', model: 'jev-latest', apiKeyEnv: 'OPENROUTER_API_KEY' }
+  }));
+  const openRouterEnv = buildRuntimeEnv({
+    OPENROUTER_API_KEY: 'router',
+    JEV_API_KEY: 'jev'
+  }, { extraKeys: await providerKeyNames(openRouterConfig) });
+  assert.equal(openRouterEnv.OPENROUTER_API_KEY, 'router');
+  assert.equal(openRouterEnv.JEV_API_KEY, undefined);
 
   const omitted = join(root, 'omitted.json');
   await writeFile(omitted, JSON.stringify({ provider: 'openai-chat', model: 'mimo-v2.5-pro' }));
   assert.ok((await providerKeyNames(omitted)).includes('OPENCODE_GO_API_KEY'));
+  assert.ok((await providerKeyNames(omitted)).includes('JEV_API_KEY'));
 });
 
 test('task uses OPENCODE_GO_API_KEY from the environment when no model config exists', async (t) => {

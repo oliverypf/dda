@@ -109,7 +109,17 @@ decision model such as `jev-latest` / `typesafe/jev-1.13`. Do not use
 `typesafe/jev-router`: it is a chat-completions router that forwards to other
 models, and the System One endpoint rejects it with HTTP 400.
 
-Without a `decision` block the runtime targets TypeSafe direct with
+Jev is an explicit per-deployment opt-in. The decision plane counts as
+configured when the local `model-config.json` has a `decision` block or the
+environment sets any `HMCODEX_JEV_*` variable (for example
+`HMCODEX_JEV_ENABLED=1`, or `HMCODEX_JEV_ENDPOINT` plus
+`HMCODEX_JEV_API_KEY_ENV`). Once configured, `enabled` defaults to true and Jev
+runs when the named credential variable is set. A bare `JEV_API_KEY` alone does
+not enable Jev, and `HMCODEX_JEV_ENABLED=0` / `decision.enabled: false` turns a
+configured deployment off. The task result reports the effective state in
+`decisionLayer.enabled` and `decisionLayer.configured`.
+
+Without an endpoint override the runtime targets TypeSafe direct with
 `JEV_API_KEY`. The `dda` CLI forwards the credential variable each plane
 actually uses: the one named by the config (`apiKeyEnv`) or by
 `HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`, plus the

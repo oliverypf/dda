@@ -13,7 +13,7 @@ import { readonlyResumeObservations } from './decision/readonly-resume-observati
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { defaultModelConfigPath, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
+import { defaultModelConfigPath, isDecisionPlaneConfigured, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
 import { logger } from './logger.mjs';
 import { createTrajectoryStore, sha256Digest, parseLegacyTrajectoryEvents } from './trajectory-store.mjs';
 import { createGitObserver } from './git-observer.mjs';
@@ -1195,6 +1195,7 @@ async function runTask() {
   let strongModelProvider;
   let decisionEngine;
   let decisionConfig;
+  let decisionPlaneConfigured = false;
   // Classification can run before model-role resolution. Build a bounded
   // Jev client from environment defaults here; the full file-backed config is
   // resolved later before provider allocation and replaces this instance.
@@ -1210,7 +1211,10 @@ async function runTask() {
     }) : undefined;
     decisionEngine = createDecisionEngine({
       client: earlyJevClient,
-      enabled: earlyDecisionConfig.classificationEnabled && earlyDecisionConfig.enabled && Boolean(earlyJevApiKey),
+      enabled: earlyDecisionConfig.classificationEnabled === true
+        && isDecisionPlaneConfigured({ env: process.env })
+        && earlyDecisionConfig.enabled
+        && Boolean(earlyJevApiKey),
       enforce: earlyDecisionConfig.enforce,
       config: earlyDecisionConfig
     });
@@ -1588,8 +1592,9 @@ async function runTask() {
   const fileConfig = await loadModelConfig(configuredPath, {
     required: configArgument !== undefined || environmentConfigPath !== undefined
   });
-  const decisionExplicitlyConfigured = Boolean(fileConfig?.decision)
-    || process.env.HMCODEX_JEV_ENABLED !== undefined;
+  // Jev is opt-in per deployment: a `decision` block or any HMCODEX_JEV_*
+  // variable. A bare JEV_API_KEY alone does not enable it.
+  const decisionExplicitlyConfigured = isDecisionPlaneConfigured({ fileConfig, env: process.env });
   const modelConfig = resolveModelConfig({
     fileConfig,
     overrides: modelOverridesFromArgs()
@@ -1605,6 +1610,7 @@ async function runTask() {
         verificationTimeoutMs: decisionConfig.verificationTimeoutMs
       })
     : undefined;
+  decisionPlaneConfigured = decisionExplicitlyConfigured;
   decisionEngine = createDecisionEngine({
     client: jevClient,
     enabled: decisionExplicitlyConfigured && decisionConfig.enabled && Boolean(jevApiKey),
@@ -4393,7 +4399,7 @@ async function runTask() {
       decisionLayer: {
         enabled: decisionEngine?.enabled ?? false,
         enforce: decisionEngine?.enforce ?? false,
-        configured: decisionConfig?.enabled ?? false,
+        configured: decisionPlaneConfigured && (decisionConfig?.enabled ?? false),
         evaluations: decisionLayerEvaluations,
         last: decisionEngine?.summary?.()
       },

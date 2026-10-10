@@ -47,7 +47,14 @@ Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `HMCOD
 
 ## Jev 决策
 
-Jev 默认开启，直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
+Jev 需要每个部署显式开启，满足下面任一条件才算“已配置”：
+
+- 部署本地的 `model-config.json` 里有 `decision` 块；
+- 环境里设置了任意 `HMCODEX_JEV_*` 变量，例如 `HMCODEX_JEV_ENABLED=1`，或 `HMCODEX_JEV_ENDPOINT` + `HMCODEX_JEV_API_KEY_ENV`。
+
+已配置后 `enabled` 默认为 true，再加上对应密钥变量有值，runtime 才会真正调用 Jev。只设置 `JEV_API_KEY` 不会开启 Jev。`HMCODEX_JEV_ENABLED=0` 或 `decision.enabled: false` 可以在已配置的部署里关掉它。没开启、缺密钥、超时或返回无效时，决策层记为规则兜底（`source: rule`），保持保守：只读工具可以继续，副作用仍走审批，行为判定为 `UNCERTAIN`。任务结果里的 `decisionLayer.enabled` / `configured` 反映实际状态。
+
+未改写端点时，默认直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
 
 如需换到别的 System One 主机（例如 OpenRouter），在部署本地的 `model-config.json` 里写 `decision` 块，为新端点命名 `apiKeyEnv`；完整的文件示例见 `runtime/model-config.example.json`。
 
@@ -76,13 +83,21 @@ dda task --workspace /path/to/project --prompt "运行测试" \
   --execution-mode CONTROLLED --approval-mode deny
 ```
 
-没有 TTY 时，`CONTROLLED` 只能使用 `--approval-mode jsonl` 或 `deny`。`jsonl` 从 stdin 读取：
+受控动作还需要部署环境授予租约范围，例如 `HMCODEX_LEASE_CAPABILITIES=shell.execute`、`HMCODEX_LEASE_COMMANDS=node`；没授予的能力直接返回 `SAFETY_LEASE_REQUIRED`，不会进入审批。
+
+三种审批方式：
+
+- `prompt`：stdin 和 stderr 都是终端时才可用，也是这种情况下的默认值。CLI 在 stderr 显示 requestId、digest、风险、命令/路径和过期时间，然后问 `[y/N]`。只有 `y` / `yes` 批准；其他输入、Ctrl-D 或 stdin 关闭都算拒绝。多个请求按顺序逐个询问。
+- `jsonl`：从 stdin 逐行读取下面的消息，按 `requestId` 匹配等待中的请求。stdin 结束时，所有还在等待的请求立即拒绝，不会一直等到过期。
+- `deny`：每个请求都立即拒绝。
 
 ```json
 {"type":"approval_response","requestId":"approval-123","approved":true,"displayedDigest":"sha256:..."}
 ```
 
-digest 不一致会拒绝。CLI 不保存“以后自动批准”。
+digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。没有 TTY 又没指定 `jsonl` / `deny` 时直接返回 `APPROVAL_UNAVAILABLE`（退出码 5）。审批被拒绝或过期后任务失败，退出码是 5，jsonl 结果带 `"approval":"DECLINED"`。CLI 不保存“以后自动批准”。
+
+当前限制：`CONTROLLED` 在 Linux 上映射到 `WINDOWS_FULL_LOCAL` 通道，还没有按 Phase 1.5 门禁通道单独验收；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机还没验证。
 
 ## 退出码
 
@@ -106,6 +121,8 @@ digest 不一致会拒绝。CLI 不保存“以后自动批准”。
 ```bash
 node --test linux-cli/test/*.test.mjs runtime/test/platform.test.mjs runtime/test/release-channel.test.mjs
 ```
+
+`linux-cli/test/controlled-approval.test.mjs` 用假模型服务端到端覆盖 deny、jsonl 批准、digest 不一致、stdin 结束、终端 y/n，以及通过 `bin/dda.mjs` 的 stdin 审批。`linux-cli/test/jev-opt-in.test.mjs` 覆盖 Jev 的显式开启规则。
 
 ## 还未做
 

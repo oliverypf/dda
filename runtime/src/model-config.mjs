@@ -511,6 +511,23 @@ const parseBoolean = (value) => {
   return undefined;
 };
 
+/**
+ * Jev is an explicit opt-in per deployment. The decision plane counts as
+ * configured when the model config file has a `decision` block or the
+ * environment sets any HMCODEX_JEV_* variable (for example
+ * HMCODEX_JEV_ENABLED=1 or HMCODEX_JEV_ENDPOINT + HMCODEX_JEV_API_KEY_ENV).
+ * A bare JEV_API_KEY in the environment is not a configuration: it does not
+ * by itself turn Jev on. Jev then runs only when the resolved `enabled` is
+ * true and the named credential variable is set; otherwise the engine records
+ * a rule fallback and stays conservative.
+ */
+export const isDecisionPlaneConfigured = ({ fileConfig = {}, env = process.env } = {}) => {
+  const decision = fileConfig?.decision;
+  if (decision && typeof decision === 'object' && !Array.isArray(decision)) return true;
+  return Object.entries(env ?? {}).some(([name, value]) => name.startsWith('HMCODEX_JEV_')
+    && typeof value === 'string' && value.trim() !== '');
+};
+
 /** Resolve the optional Jev decision plane without changing the model route. */
 export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {}) => {
   const configured = fileConfig?.decision ?? {};
@@ -518,9 +535,11 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
     const value = env?.[name];
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   };
-  // Jev is the default Decision Plane. Without a credential the engine still
-  // fails closed to its bounded conservative fallbacks; it never revives the
-  // removed LLM verifier path.
+  // `enabled` defaults to true once the deployment configured the decision
+  // plane (see isDecisionPlaneConfigured); the runtime still requires that
+  // explicit configuration and a credential before Jev is consulted. Without
+  // them the engine fails closed to its bounded conservative fallbacks; it
+  // never revives the removed LLM verifier path.
   const enabled = parseBoolean(envValue('HMCODEX_JEV_ENABLED')) ?? configured.enabled ?? true;
   const enforce = parseBoolean(envValue('HMCODEX_JEV_ENFORCE')) ?? configured.enforce ?? enabled;
   const endpoint = configured.endpoint ?? envValue('HMCODEX_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/systemone';

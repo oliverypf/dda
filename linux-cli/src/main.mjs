@@ -59,22 +59,29 @@ async function runtimePackageVersion() {
   }
 }
 
-async function providerKeyNames(configPath) {
-  if (!configPath) return [];
-  try {
-    const parsed = JSON.parse(await readFile(configPath, 'utf8'));
-    const names = [];
-    if (typeof parsed.apiKeyEnv === 'string') names.push(parsed.apiKeyEnv);
-    if (typeof parsed.decision?.apiKeyEnv === 'string') names.push(parsed.decision.apiKeyEnv);
-    if (Array.isArray(parsed.models)) {
-      for (const model of parsed.models) {
-        if (typeof model?.apiKeyEnv === 'string') names.push(model.apiKeyEnv);
+// Matches runtime DEFAULT_MODEL_CONFIG.apiKeyEnv. That route reads this
+// variable when no config file names a credential, so the CLI forwards it
+// even if model-config.json is missing. The string is inlined so the CLI
+// process does not import the model-config module.
+const DEFAULT_PROVIDER_KEY_ENV = 'OPENCODE_GO_API_KEY';
+
+export async function providerKeyNames(configPath) {
+  const names = [DEFAULT_PROVIDER_KEY_ENV];
+  if (configPath) {
+    try {
+      const parsed = JSON.parse(await readFile(configPath, 'utf8'));
+      if (typeof parsed.apiKeyEnv === 'string') names.push(parsed.apiKeyEnv);
+      if (typeof parsed.decision?.apiKeyEnv === 'string') names.push(parsed.decision.apiKeyEnv);
+      if (Array.isArray(parsed.models)) {
+        for (const model of parsed.models) {
+          if (typeof model?.apiKeyEnv === 'string') names.push(model.apiKeyEnv);
+        }
       }
+    } catch {
+      // A missing or unreadable config still uses the runtime default key.
     }
-    return names.filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name));
-  } catch {
-    return [];
   }
+  return [...new Set(names.filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)))];
 }
 
 function writeJson(stream, value) {

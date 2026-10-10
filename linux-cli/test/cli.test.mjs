@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buildRuntimeEnv } from '../../runtime/src/platform/environment-policy.mjs';
+import { listenOnFetchablePort } from '../../runtime/test/helpers/listen-loopback.mjs';
 import { approvalResponse } from '../src/approval.mjs';
-import { main } from '../src/main.mjs';
+import { main, providerKeyNames } from '../src/main.mjs';
 import { migrateDataDirectory } from '../src/migrate.mjs';
 import { isBlockedWorkspacePath, resolveWorkspace } from '../src/workspace.mjs';
 
@@ -196,4 +199,88 @@ test('migration stops when the target already has data', async () => {
   assert.equal(completed.status, 'COMPLETED');
   assert.equal(completed.digestVerified, true);
   assert.equal(completed.filesCopied, 1);
+});
+
+test('the default OpenCode key is forwarded without a config and other secrets stay stripped', async () => {
+  const { root } = await isolatedEnv();
+  const missing = join(root, 'missing-model-config.json');
+  const names = await providerKeyNames(missing);
+  assert.ok(names.includes('OPENCODE_GO_API_KEY'));
+  const child = buildRuntimeEnv({
+    PATH: '/usr/bin',
+    HOME: join(root, 'home'),
+    OPENCODE_GO_API_KEY: 'go-key',
+    AWS_SECRET_ACCESS_KEY: 'aws-secret',
+    STRAY_API_TOKEN: 'stray-token'
+  }, { extraKeys: names });
+  assert.equal(child.OPENCODE_GO_API_KEY, 'go-key');
+  assert.equal(child.AWS_SECRET_ACCESS_KEY, undefined);
+  assert.equal(child.STRAY_API_TOKEN, undefined);
+  assert.deepEqual(await providerKeyNames(undefined), ['OPENCODE_GO_API_KEY']);
+
+  const configPath = join(root, 'model-config.json');
+  await writeFile(configPath, JSON.stringify({
+    provider: 'openai-chat',
+    apiKeyEnv: 'CUSTOM_PROVIDER_KEY',
+    decision: { apiKeyEnv: 'DECISION_KEY' },
+    models: [{ apiKeyEnv: 'MODEL_KEY' }, { apiKeyEnv: 'not a key' }]
+  }));
+  const configured = await providerKeyNames(configPath);
+  const configuredEnv = buildRuntimeEnv({
+    OPENCODE_GO_API_KEY: 'go-key',
+    CUSTOM_PROVIDER_KEY: 'custom',
+    DECISION_KEY: 'decision',
+    MODEL_KEY: 'model',
+    AWS_SECRET_ACCESS_KEY: 'aws-secret'
+  }, { extraKeys: configured });
+  assert.equal(configuredEnv.OPENCODE_GO_API_KEY, 'go-key');
+  assert.equal(configuredEnv.CUSTOM_PROVIDER_KEY, 'custom');
+  assert.equal(configuredEnv.DECISION_KEY, 'decision');
+  assert.equal(configuredEnv.MODEL_KEY, 'model');
+  assert.equal(configuredEnv.AWS_SECRET_ACCESS_KEY, undefined);
+
+  const omitted = join(root, 'omitted.json');
+  await writeFile(omitted, JSON.stringify({ provider: 'openai-chat', model: 'mimo-v2.5-pro' }));
+  assert.ok((await providerKeyNames(omitted)).includes('OPENCODE_GO_API_KEY'));
+});
+
+test('task uses OPENCODE_GO_API_KEY from the environment when no model config exists', async (t) => {
+  const { env, root } = await isolatedEnv();
+  const workspace = join(root, 'workspace');
+  await mkdir(workspace, { recursive: true });
+  const secret = 'go-key-from-env';
+  const stray = 'stray-secret-value';
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requests.push({
+      authorization: request.headers.authorization,
+      body: Buffer.concat(chunks).toString('utf8'),
+      headers: request.headers
+    });
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' }, finish_reason: null }] })}\n\n`);
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+    response.end('data: [DONE]\n\n');
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = await listenOnFetchablePort(server);
+  const result = await run([
+    'task', '--workspace', workspace, '--prompt', 'reply with ok', '--format', 'jsonl', '--data-dir', join(root, 'task-data')
+  ], {
+    ...env,
+    OPENCODE_GO_API_KEY: secret,
+    AWS_SECRET_ACCESS_KEY: stray,
+    STRAY_API_TOKEN: stray,
+    HMCODEX_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`
+  });
+  const output = result.stdout + result.stderr;
+  assert.equal(result.code, 0, output);
+  assert.doesNotMatch(output, /MISSING_CREDENTIAL:OPENCODE_GO_API_KEY/);
+  assert.equal(output.includes(secret), false);
+  assert.equal(output.includes(stray), false);
+  assert.ok(requests.length >= 1, output);
+  assert.equal(requests[0].authorization, `Bearer ${secret}`);
+  assert.equal(JSON.stringify(requests).includes(stray), false);
 });

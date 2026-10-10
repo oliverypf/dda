@@ -41,7 +41,7 @@ node linux-cli/bin/dda.mjs --version
 | 缓存 | `${XDG_CACHE_HOME:-$HOME/.cache}/hmcodex/` |
 | 日志 | `${XDG_STATE_HOME:-$HOME/.local/state}/hmcodex/logs/` |
 
-`--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。API key 只从配置里声明的环境变量读取，不会写入配置、事件或支持信息。
+`--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。没有配置文件时，runtime 默认的 `OPENCODE_GO_API_KEY` 仍会传给子进程；配置文件里声明的其它 `apiKeyEnv` 也会传递。未声明的密钥环境变量会被去掉。API key 不会写入配置、事件或支持信息。
 
 Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `HMCODEX_PLATFORM` 的 runtime 仍保持原来的 Windows 目录规则，避免在 Linux 上跑 Windows 测试时改掉路径。
 

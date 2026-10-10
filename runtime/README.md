@@ -99,9 +99,9 @@ variable:
   "decision": {
     "enabled": true,
     "enforce": true,
-    "endpoint": "https://api.typesafe.ai/v1/system_one",
+    "endpoint": "https://openrouter.ai/api/v1/systemone",
     "model": "jev-latest",
-    "apiKeyEnv": "JEV_API_KEY",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
     "timeoutMs": 1200,
     "maxStateChars": 16000,
     "classificationEnabled": false,
@@ -114,6 +114,26 @@ variable:
   }
 }
 ```
+
+Jev speaks the official System One protocol (`POST .../systemone` with
+`{model, state, questions}`); no adapter is needed. Two endpoints accept it:
+
+| Route | `endpoint` | `apiKeyEnv` | `model` |
+| --- | --- | --- | --- |
+| OpenRouter | `https://openrouter.ai/api/v1/systemone` | `OPENROUTER_API_KEY` | `jev-latest` or `typesafe/jev-1.13` |
+| TypeSafe direct | `https://api.typesafe.ai/v1/systemone` | `JEV_API_KEY` | `jev-latest` |
+
+The path is `systemone`; `system_one` returns 404. On OpenRouter, use a
+decision model such as `jev-latest` / `typesafe/jev-1.13`. Do not use
+`typesafe/jev-router`: it is a chat-completions router that forwards to other
+models, and the System One endpoint rejects it with HTTP 400.
+
+Without a `decision` block the runtime targets TypeSafe direct with
+`JEV_API_KEY`. To use OpenRouter, put the `decision` block in
+`model-config.json`; the `dda` CLI forwards only the key variables it can see
+in the config (plus the `OPENCODE_GO_API_KEY` and `JEV_API_KEY` defaults), and
+it does not forward `HMCODEX_JEV_API_KEY_ENV`, so setting environment
+variables alone does not switch Jev to OpenRouter.
 
 `enforce` applies the bounded Jev result to recovery and tool execution. A
 `BLOCK` or `REQUEST_EVIDENCE` action is refused before `ToolRegistry.invoke`;

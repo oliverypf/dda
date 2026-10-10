@@ -9,9 +9,9 @@
   "decision": {
     "enabled": true,
     "enforce": true,
-    "endpoint": "https://api.typesafe.ai/v1/system_one",
+    "endpoint": "https://openrouter.ai/api/v1/systemone",
     "model": "jev-latest",
-    "apiKeyEnv": "JEV_API_KEY",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
     "timeoutMs": 1200,
     "maxStateChars": 16000,
     "classificationEnabled": false,

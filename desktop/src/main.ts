@@ -876,7 +876,7 @@ const renderSettingsModal = (): string => {
                   <label class="settings-field"><span>启用 Jev</span><select name="decisionEnabled"><option value="true" ${decision.enabled !== false ? 'selected' : ''}>启用</option><option value="false" ${decision.enabled === false ? 'selected' : ''}>停用</option></select></label>
                   <label class="settings-field"><span>Jev 模型</span><input name="decisionModel" value="${escapeHtml(decision.model ?? 'jev-latest')}" required maxlength="200" spellcheck="false"></label>
                 </div>
-                <label class="settings-field"><span>Jev Endpoint（含端口）</span><input name="decisionEndpoint" value="${escapeHtml(decision.endpoint ?? 'https://api.typesafe.ai/v1/system_one')}" required maxlength="2000" placeholder="例如 http://127.0.0.1:8787/decide"></label>
+                <label class="settings-field"><span>Jev Endpoint（含端口）</span><input name="decisionEndpoint" value="${escapeHtml(decision.endpoint ?? 'https://api.typesafe.ai/v1/systemone')}" required maxlength="2000" placeholder="例如 http://127.0.0.1:8787/decide"></label>
                 <div class="settings-grid">
                   <label class="settings-field"><span>Jev API Key 环境变量</span><input name="decisionApiKeyEnv" value="${escapeHtml(decision.apiKeyEnv ?? 'JEV_API_KEY')}" required maxlength="120" spellcheck="false"></label>
                   <label class="settings-field"><span>请求超时（毫秒）</span><input name="decisionTimeoutMs" type="number" min="100" max="10000" step="100" value="${escapeHtml(String(decision.timeoutMs ?? 1200))}"></label>

@@ -64,9 +64,10 @@ async function runtimePackageVersion() {
 // only while the model route is still the shipped default. The string is
 // inlined so the CLI process does not import the model-config module.
 const DEFAULT_PROVIDER_KEY_ENV = 'OPENCODE_GO_API_KEY';
-// Matches the runtime resolveDecisionConfig default. Jev is enabled by
-// default, so its key is forwarded whenever the decision route is still the
-// default TypeSafe host.
+// Matches the runtime resolveDecisionConfig default key name. Jev itself is an
+// explicit per-deployment opt-in (a `decision` block or HMCODEX_JEV_*), but
+// the key is still forwarded while the decision route targets the default
+// TypeSafe host, so an opted-in deployment works without a config file.
 const DEFAULT_DECISION_KEY_ENV = 'JEV_API_KEY';
 // Mirror runtime DEFAULT_MODEL_CONFIG.baseURL and the resolveDecisionConfig
 // default endpoint. A default key is only forwarded while its plane still
@@ -147,6 +148,10 @@ export async function main(argv, io = {}) {
   const stderr = io.stderr ?? process.stderr;
   const env = io.env ?? process.env;
   const isTTY = io.isTTY ?? Boolean(stderr.isTTY);
+  // Terminal approval needs a human on both ends: questions go to stderr and
+  // answers come from stdin. A piped stdin can never answer a y/N prompt.
+  const stdin = io.stdin ?? process.stdin;
+  const approvalTTY = io.approvalTTY ?? (isTTY && Boolean(stdin?.isTTY));
   const host = detectCliHost({
     env,
     platform: io.platform ?? process.platform,
@@ -245,8 +250,12 @@ export async function main(argv, io = {}) {
 
   let approvalMode;
   if (parsed.command === 'task' && executionMode === 'CONTROLLED') {
-    approvalMode = parsed.options.approvalMode ?? (isTTY ? 'prompt' : undefined);
-    if (!approvalMode || (approvalMode === 'prompt' && !isTTY)) return reportError('APPROVAL_UNAVAILABLE');
+    approvalMode = parsed.options.approvalMode ?? (approvalTTY ? 'prompt' : undefined);
+    if (!approvalMode || (approvalMode === 'prompt' && !approvalTTY)) return reportError('APPROVAL_UNAVAILABLE');
+    // A mode that needs host input but has no reader would leave every
+    // request pending until it expires; fail early instead.
+    if (approvalMode === 'prompt' && typeof io.readApprovalLine !== 'function') return reportError('APPROVAL_UNAVAILABLE');
+    if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
   }
 
   const configPath = parsed.options.config ?? (env.HMCODEX_MODEL_CONFIG?.trim() || undefined);
@@ -305,6 +314,9 @@ export async function main(argv, io = {}) {
 
   const seen = new Set();
   let finalResult;
+  // A CONTROLLED task that fails after a declined or expired approval exits
+  // with the contract's approval code (5), not a generic runtime error.
+  let approvalDeclined = false;
   const policy = executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY';
   try {
     const outcome = await runRuntimeCommand({
@@ -316,7 +328,7 @@ export async function main(argv, io = {}) {
       cwd: workspace ?? paths.dataDir(),
       timeoutMs: parsed.options.timeoutMs ? Number(parsed.options.timeoutMs) : undefined,
       approvalMode,
-      tty: isTTY,
+      tty: approvalTTY,
       approvalInput: io.approvalInput,
       readApprovalLine: io.readApprovalLine,
       onReady: (record) => { active.record = record; },
@@ -329,15 +341,19 @@ export async function main(argv, io = {}) {
           const key = `${event.runId}:${event.sequence}:${event.eventId ?? ''}`;
           if (seen.has(key)) return;
           seen.add(key);
+          if (event.kind === 'approval.resolved' && event.payload?.state && event.payload.state !== 'APPROVED') approvalDeclined = true;
           if (format === 'jsonl') emitJson(event);
           else if (!parsed.options.quiet && event.kind !== 'runtime.heartbeat') stderr.write(`${humanEventLine(event)}\n`);
-          if (format === 'human' && event.kind === 'approval.requested' && approvalMode === 'prompt') stderr.write(`${describeApproval(event)}\n`);
+          if (event.kind === 'approval.requested' && approvalMode === 'prompt') stderr.write(`${describeApproval(event)}\n`);
           return;
         }
         finalResult = event;
         if (format === 'jsonl' && parsed.command === 'task') {
           emitJson(event.ok === false
-            ? errorResult(typeof event.error === 'string' ? event.error : 'RUNTIME_ERROR', { runId: event.runId })
+            ? errorResult(typeof event.error === 'string' ? event.error : 'RUNTIME_ERROR', {
+                runId: event.runId,
+                ...(approvalDeclined ? { approval: 'DECLINED' } : {})
+              })
             : event);
         }
       }
@@ -357,8 +373,11 @@ export async function main(argv, io = {}) {
     if (result.ok === false) {
       const code = typeof result.error === 'string' ? result.error : result.error?.code ?? 'RUNTIME_ERROR';
       if (format === 'jsonl' && parsed.command !== 'task') emitJson(errorResult(code, { runId: result.runId }));
-      if (format === 'human') stderr.write(redactText(`错误  ${code}  ${messageForCode(code)}\n`));
-      return exitCodeForError(code);
+      if (format === 'human') {
+        const shown = approvalDeclined ? 'APPROVAL_DENIED' : code;
+        stderr.write(redactText(`错误  ${shown}  ${messageForCode(shown)}\n`));
+      }
+      return approvalDeclined ? EXIT.APPROVAL_DENIED : exitCodeForError(code);
     }
     if (parsed.command === 'support-info') {
       const payload = supportInfo(result, paths, policy, host);

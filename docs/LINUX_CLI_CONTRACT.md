@@ -1,7 +1,7 @@
 # Linux CLI 命令与输出契约
 
 版本：v1.0
-状态：已实现
+状态：Linux 上已实现并有端到端测试（含 CONTROLLED 审批的 deny / jsonl / prompt）；Windows / 鸿蒙未做真机验证；安装包未做
 前提：Linux 终端程序、无图形界面、复用现有 runtime
 
 ## 1. 契约原则
@@ -278,6 +278,12 @@ JSONL 审批输入格式：
 - CLI 不得缓存“以后自动批准”状态。
 
 TTY 模式可以把 `y/N` 转换成同一 JSONL 消息，但不能绕过 digest、过期时间和 runtime 状态机。
+
+当前实现：
+
+- `prompt` 要求 stdin 和 stderr 都是 TTY；只有 `y` / `yes` 批准，其他输入、EOF 或终端关闭都按拒绝回给 runtime；
+- `jsonl` 按 `requestId` 匹配等待中的请求；无法匹配或无法解析的行按拒绝处理最早的等待请求；stdin 结束时所有等待请求立即拒绝；
+- 拒绝或过期后任务以退出码 `5` 结束。
 
 ## 9. 安全和隐私
 

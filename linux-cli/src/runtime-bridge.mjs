@@ -44,21 +44,36 @@ export async function runRuntimeCommand({
   let runId;
   let timedOut = false;
   const pending = [];
+  let approvalInputClosed = false;
   const writeApproval = (message) => {
     if (!message || !record.child.stdin.writable) return;
     record.child.stdin.write(`${JSON.stringify(message)}\n`);
   };
+  const deny = (event) => writeApproval(approvalResponse({ request: event, mode: 'deny' }).message);
   const handleApproval = (event) => {
     if (!approvalMode) return;
     if (approvalMode === 'deny') {
-      writeApproval(approvalResponse({ request: event, mode: 'deny' }).message);
+      deny(event);
       return;
     }
     if (approvalMode === 'prompt') {
-      void Promise.resolve(readApprovalLine?.(event)).then((line) => {
+      if (typeof readApprovalLine !== 'function') {
+        deny(event);
+        return;
+      }
+      void Promise.resolve(readApprovalLine(event)).then((line) => {
         const decision = approvalResponse({ request: event, mode: 'prompt', tty, input: line ?? 'n' });
-        writeApproval(decision.message);
-      }).catch(() => writeApproval(approvalResponse({ request: event, mode: 'deny' }).message));
+        // An unavailable channel (for example no TTY) still answers the
+        // runtime with an explicit denial instead of leaving it waiting.
+        if (decision.message) writeApproval(decision.message);
+        else deny(event);
+      }).catch(() => deny(event));
+      return;
+    }
+    // jsonl: wait for a host line. If the host input already ended nobody can
+    // answer, so deny now instead of waiting for the approval to expire.
+    if (approvalInputClosed) {
+      deny(event);
       return;
     }
     pending.push(event);
@@ -79,17 +94,36 @@ export async function runRuntimeCommand({
     }
     if (typeof parsed.runId === 'string') runId = parsed.runId;
     objects.push(parsed);
-    if (parsed.type === 'runtime_event' && parsed.kind === 'approval.requested') handleApproval(parsed);
+    const isApproval = parsed.type === 'runtime_event' && parsed.kind === 'approval.requested';
+    // Register deny/jsonl handling before the event reaches the host, so a
+    // host that answers as soon as it sees the request cannot race it. The
+    // terminal prompt is asked after the caller rendered the details.
+    if (isApproval && approvalMode !== 'prompt') handleApproval(parsed);
     onStdout?.(parsed);
+    if (isApproval && approvalMode === 'prompt') handleApproval(parsed);
   });
   const stderrReader = readLines(record.child.stderr, (line) => onStderr?.(line));
+  let approvalReader;
   if (approvalMode === 'jsonl' && approvalInput) {
-    readLines(approvalInput, (line) => {
-      const event = pending.shift();
+    approvalReader = readLines(approvalInput, (line) => {
+      if (!line.trim()) return;
+      let requestId;
+      try { requestId = JSON.parse(line)?.requestId; } catch { requestId = undefined; }
+      // Answer the request the host named; anything unmatched or malformed
+      // fails closed against the oldest pending request.
+      const index = pending.findIndex((event) => (event?.payload?.requestId ?? event?.requestId) === requestId);
+      const [event] = pending.splice(index === -1 ? 0 : index, 1);
       if (!event) return;
       const decision = approvalResponse({ request: event, mode: 'jsonl', tty, input: line });
-      writeApproval(decision.message);
+      if (decision.message) writeApproval(decision.message);
+      else deny(event);
     });
+    approvalReader.once?.('close', () => {
+      approvalInputClosed = true;
+      for (const event of pending.splice(0)) deny(event);
+    });
+  } else if (approvalMode === 'jsonl') {
+    approvalInputClosed = true;
   }
   let timer;
   if (Number.isInteger(timeoutMs) && timeoutMs > 0) {
@@ -109,6 +143,7 @@ export async function runRuntimeCommand({
     if (timer) clearTimeout(timer);
     stdoutReader.close();
     stderrReader.close();
+    approvalReader?.close();
     record.child.stdin?.end?.();
   }
   return { supervisor, record, objects, protocolError, runId, timedOut, exitCode, signal };

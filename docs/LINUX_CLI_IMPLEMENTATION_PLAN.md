@@ -1,7 +1,7 @@
 # Linux CLI 实施计划
 
 版本：v1.0
-状态：L1–L4 基线已实现
+状态：L1、L2 基线已实现；L3 终端审批已接入 `dda` 入口并有 Linux 端到端测试，但 `CONTROLLED` 仍映射到 `WINDOWS_FULL_LOCAL`，未按 Phase 1.5 通道验收；L4 只有从仓库运行的入口，安装包（tar.gz / npm 等）尚未交付
 目标平台：Linux 无界面 CLI
 适用实现：现有 Node/Cordis runtime、`contracts/v1`、Linux CLI 应用层和 Linux 平台适配层
 

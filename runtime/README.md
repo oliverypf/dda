@@ -90,30 +90,11 @@ The Agent Loop uses Jev as the Decision Plane. Jev receives bounded evidence
 and finite choices for recovery, candidate selection, tool/action gating, and
 behavior verification; it cannot call tools, grant permissions, or invent
 commands. Planner and Executor remain the existing Execution Plane, while
-deterministic rules and Runtime Safety remain hard boundaries. Enable it in
-`model-config.json` and provide the key through the declared environment
-variable:
-
-```json
-{
-  "decision": {
-    "enabled": true,
-    "enforce": true,
-    "endpoint": "https://openrouter.ai/api/v1/systemone",
-    "model": "jev-latest",
-    "apiKeyEnv": "OPENROUTER_API_KEY",
-    "timeoutMs": 1200,
-    "maxStateChars": 16000,
-    "classificationEnabled": false,
-    "routeSelectionEnabled": false,
-    "topologyEnabled": false,
-    "planReviewEnabled": false,
-    "diagnosisEnabled": false,
-    "recoveryDirectionEnabled": false,
-    "contextPackEnabled": false
-  }
-}
-```
+deterministic rules and Runtime Safety remain hard boundaries. Keys and
+endpoints are supplied by the deployment environment, not committed here;
+configure the `decision` block in a local `model-config.json`. See
+`model-config.example.json` for a full decision block (an OpenRouter System One
+route), and provide the credential through the variable it names.
 
 Jev speaks the official System One protocol (`POST .../systemone` with
 `{model, state, questions}`); no adapter is needed. Two endpoints accept it:
@@ -129,11 +110,13 @@ decision model such as `jev-latest` / `typesafe/jev-1.13`. Do not use
 models, and the System One endpoint rejects it with HTTP 400.
 
 Without a `decision` block the runtime targets TypeSafe direct with
-`JEV_API_KEY`. To use OpenRouter, put the `decision` block in
-`model-config.json`; the `dda` CLI forwards only the key variables it can see
-in the config (plus the `OPENCODE_GO_API_KEY` and `JEV_API_KEY` defaults), and
-it does not forward `HMCODEX_JEV_API_KEY_ENV`, so setting environment
-variables alone does not switch Jev to OpenRouter.
+`JEV_API_KEY`. The `dda` CLI forwards the credential variable each plane
+actually uses: the one named by the config (`apiKeyEnv`) or by
+`HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`, plus the
+`OPENCODE_GO_API_KEY` / `JEV_API_KEY` defaults, but only while that plane still
+targets its default host. A default key is never forwarded to an overridden
+`HMCODEX_MODEL_ENDPOINT` / `HMCODEX_JEV_ENDPOINT`, so a custom host must name
+its own key variable.
 
 `enforce` applies the bounded Jev result to recovery and tool execution. A
 `BLOCK` or `REQUEST_EVIDENCE` action is refused before `ToolRegistry.invoke`;

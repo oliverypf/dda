@@ -41,30 +41,19 @@ node linux-cli/bin/dda.mjs --version
 | 缓存 | `${XDG_CACHE_HOME:-$HOME/.cache}/hmcodex/` |
 | 日志 | `${XDG_STATE_HOME:-$HOME/.local/state}/hmcodex/logs/` |
 
-`--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。没有配置文件时，runtime 默认的 `OPENCODE_GO_API_KEY` 和 Jev 默认的 `JEV_API_KEY` 仍会传给子进程；配置文件里声明的其它 `apiKeyEnv` 也会传递。未声明的密钥环境变量会被去掉。API key 不会写入配置、事件或支持信息。
+`--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。密钥只在对应平面仍指向默认主机时才自动传递：模型平面默认传 `OPENCODE_GO_API_KEY`，Jev 平面默认传 `JEV_API_KEY`。一旦用配置或 `HMCODEX_MODEL_ENDPOINT` / `HMCODEX_JEV_ENDPOINT` 改写了端点，就必须用 `apiKeyEnv`（或 `HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`）为该主机显式命名密钥变量——默认密钥不会被发到被改写的主机。被命名的密钥变量会传给子进程，未声明的密钥环境变量会被去掉。API key 不会写入配置、事件或支持信息。
 
 Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `HMCODEX_PLATFORM` 的 runtime 仍保持原来的 Windows 目录规则，避免在 Linux 上跑 Windows 测试时改掉路径。
 
-## Jev 决策（OpenRouter）
+## Jev 决策
 
-Jev 默认开启，走官方 System One 接口。用 OpenRouter 时在 `model-config.json` 里写 `decision` 块，不需要额外适配层：
+Jev 默认开启，直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
 
-```json
-{
-  "apiKeyEnv": "OPENCODE_GO_API_KEY",
-  "decision": {
-    "enabled": true,
-    "endpoint": "https://openrouter.ai/api/v1/systemone",
-    "model": "jev-latest",
-    "apiKeyEnv": "OPENROUTER_API_KEY"
-  }
-}
-```
+如需换到别的 System One 主机（例如 OpenRouter），在部署本地的 `model-config.json` 里写 `decision` 块，为新端点命名 `apiKeyEnv`；完整的文件示例见 `runtime/model-config.example.json`。
 
 - 路径是 `systemone`，写成 `system_one` 会 404。
 - `model` 用 `jev-latest` 或 `typesafe/jev-1.13`。`typesafe/jev-router` 是聊天路由模型，System One 接口会返回 400，不要用在这里。
-- 直连 TypeSafe 时 endpoint 为 `https://api.typesafe.ai/v1/systemone`，密钥变量为 `JEV_API_KEY`。
-- 只设环境变量不够：CLI 只传配置里声明的密钥变量（外加上面两个默认值），`HMCODEX_JEV_API_KEY_ENV` 不会传给子进程。要切到 OpenRouter，请写 `decision` 块。完整示例见 `runtime/model-config.example.json`。
+- 改写端点后，默认的 `JEV_API_KEY` 不会被发到新主机；用 `decision.apiKeyEnv` 或 `HMCODEX_JEV_API_KEY_ENV` 命名该主机要用的密钥变量。
 
 ## 命令
 

@@ -19,9 +19,76 @@ export function uniqueExcerptOffset(source, findText, offsetChars = 0) {
 
 const inspections = new Set(['workspace.read', 'workspace.list', 'workspace.focus']);
 const writes = new Set(['file.patch', 'file.write']);
+
+// Stable, non-masking diagnosis for the recovery-aware consumers (planner and
+// supervisor). These describe what stopped the attempt without rewriting the
+// observed counts, and never suggest replaying a possibly side-effecting write.
+const RECOVERY_ADVICE = Object.freeze({
+  TOOL_LOOP_LIMIT: {
+    class: 'TOOL_LOOP_LIMIT',
+    action: 'NARROW_SCOPE',
+    advice: 'Execution hit the tool-round limit while inspecting or patching. Re-issue one small, scoped change with an explicit locator instead of re-scanning; rely on the excerpts supplied by the harness. Do not re-apply writes already recorded as successful.',
+    replayWrites: false
+  },
+  APPROVAL_EXPIRED: {
+    class: 'APPROVAL_EXPIRED',
+    action: 'REQUEST_APPROVAL_AGAIN',
+    advice: 'A write approval expired or was denied before execution. Re-request approval for the single affected path; do not assume the write landed.',
+    replayWrites: false
+  },
+  WORKSPACE_HANDLER_REPEATED_FAILURE: {
+    class: 'WORKSPACE_HANDLER_REPEATED_FAILURE',
+    action: 'INSPECT_HANDLER_STATE',
+    advice: 'The workspace handler failed repeatedly on the same operation. Inspect the handler/target state before retrying; the failing call did not succeed and its effect is unknown.',
+    replayWrites: false
+  }
+});
+export const FAILURE_CLASSES = Object.freeze(Object.keys(RECOVERY_ADVICE));
+
+// A run-stop/failure code maps to exactly one recovery class. Only codes that
+// are unambiguous here are classified; anything else stays unclassified so a
+// real failure is never masked by a guessed suggestion.
+const RUN_FAILURE_CODES = Object.freeze({
+  TOOL_LOOP_LIMIT: 'TOOL_LOOP_LIMIT',
+  TOOL_ROUND_LIMIT: 'TOOL_LOOP_LIMIT',
+  MAX_TOOL_ROUNDS: 'TOOL_LOOP_LIMIT',
+  APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
+  APPROVAL_TIMEOUT: 'APPROVAL_EXPIRED',
+  APPROVAL_DENIED: 'APPROVAL_EXPIRED'
+});
+
+// Consecutive failures on the same inspection tool before we treat the handler
+// itself as the problem. Kept small so the signal is stable, not noisy.
+const REPEATED_HANDLER_FAILURE_THRESHOLD = 3;
+
+function recoveryAdvice(failureClass) {
+  const entry = RECOVERY_ADVICE[failureClass];
+  return { failureClass: entry.class, nextAction: entry.action, advice: entry.advice, replayWrites: entry.replayWrites };
+}
+
+function classifyRecovery(state) {
+  const runtimeError = state.runtimeResult && state.runtimeResult.ok === false
+    ? String(state.runtimeResult.error ?? '')
+    : '';
+  const runtimeClass = RUN_FAILURE_CODES[runtimeError];
+  if (runtimeClass) return recoveryAdvice(runtimeClass);
+
+  // Repeated identical workspace-handler failures are recoverable guidance,
+  // not a fabricated success: the underlying error count is left intact.
+  const tail = state.inspectionFailures ?? [];
+  if (tail.length >= REPEATED_HANDLER_FAILURE_THRESHOLD) {
+    const last = tail[tail.length - 1];
+    const sameName = tail.slice(-REPEATED_HANDLER_FAILURE_THRESHOLD).every(entry => entry.name === last.name);
+    if (sameName && inspections.has(last.name)) {
+      return { ...recoveryAdvice('WORKSPACE_HANDLER_REPEATED_FAILURE'), toolName: last.name };
+    }
+  }
+  return null;
+}
+
 export function createTaskProgress() {
   const state = { heartbeats: 0, toolResults: 0, inspectionsSinceWrite: 0, successfulWrites: 0,
-    latestActivity: null, runtimeResult: null, verification: null, errors: [] };
+    latestActivity: null, runtimeResult: null, verification: null, errors: [], inspectionFailures: [] };
   return {
     observe(event) {
       if (!event || typeof event !== 'object') return;
@@ -49,9 +116,21 @@ export function createTaskProgress() {
       else if (p.ok === false) {
         state.errors.push({ name: p.name, errorCode: p.errorCode });
         state.errors = state.errors.slice(-32);
+        // Track only consecutive failures of the same inspection handler so a
+        // transient blip does not masquerade as a repeated handler failure.
+        const last = state.inspectionFailures[state.inspectionFailures.length - 1];
+        state.inspectionFailures = last && last.name === p.name
+          ? [...state.inspectionFailures, { name: p.name, errorCode: p.errorCode }].slice(-REPEATED_HANDLER_FAILURE_THRESHOLD)
+          : [{ name: p.name, errorCode: p.errorCode }];
       }
+      // A successful tool result breaks any repeated-failure streak.
+      if (p.ok === true) state.inspectionFailures = [];
     },
-    snapshot: () => structuredClone(state)
+    snapshot: () => {
+      const copied = structuredClone(state);
+      const recovery = classifyRecovery(copied);
+      return recovery ? { ...copied, recovery } : copied;
+    }
   };
 }
 

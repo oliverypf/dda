@@ -61,33 +61,81 @@ async function runtimePackageVersion() {
 
 // Matches runtime DEFAULT_MODEL_CONFIG.apiKeyEnv. That route reads this
 // variable when no config file names a credential, so the CLI forwards it
-// even if model-config.json is missing. The string is inlined so the CLI
-// process does not import the model-config module.
+// only while the model route is still the shipped default. The string is
+// inlined so the CLI process does not import the model-config module.
 const DEFAULT_PROVIDER_KEY_ENV = 'OPENCODE_GO_API_KEY';
 // Matches the runtime resolveDecisionConfig default. Jev is enabled by
-// default, so its key is forwarded whenever the config does not name another
-// variable for the decision plane.
+// default, so its key is forwarded whenever the decision route is still the
+// default TypeSafe host.
 const DEFAULT_DECISION_KEY_ENV = 'JEV_API_KEY';
+// Mirror runtime DEFAULT_MODEL_CONFIG.baseURL and the resolveDecisionConfig
+// default endpoint. A default key is only forwarded while its plane still
+// targets the host the key belongs to, so an overridden endpoint never
+// receives the shipped OpenCode/TypeSafe credential.
+const DEFAULT_MODEL_BASE_URL = 'https://opencode.ai/zen/go/v1';
+const DEFAULT_DECISION_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
+const KEY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+// HMCODEX_*_API_KEY_ENV variables hold the *name* of a credential variable,
+// not a secret, so the value points the CLI at a secret to forward.
+const KEY_ENV_POINTER_PATTERN = /^HMCODEX_[A-Z0-9_]*_KEY_ENV$/u;
 
-export async function providerKeyNames(configPath) {
-  const names = [DEFAULT_PROVIDER_KEY_ENV];
-  let decisionKeyEnv = DEFAULT_DECISION_KEY_ENV;
+// Decide which credential variables the runtime child is allowed to see. The
+// explicitly named key for each plane is always forwarded; the shipped default
+// key is forwarded only while that plane still targets its default host, so an
+// overridden HMCODEX_MODEL_ENDPOINT / HMCODEX_JEV_ENDPOINT never receives the
+// default OpenCode/TypeSafe secret.
+export async function providerKeyNames(configPath, env = {}) {
+  let fileConfig = {};
   if (configPath) {
     try {
       const parsed = JSON.parse(await readFile(configPath, 'utf8'));
-      if (typeof parsed.apiKeyEnv === 'string') names.push(parsed.apiKeyEnv);
-      if (typeof parsed.decision?.apiKeyEnv === 'string') decisionKeyEnv = parsed.decision.apiKeyEnv;
-      if (Array.isArray(parsed.models)) {
-        for (const model of parsed.models) {
-          if (typeof model?.apiKeyEnv === 'string') names.push(model.apiKeyEnv);
-        }
-      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fileConfig = parsed;
     } catch {
       // A missing or unreadable config still uses the runtime default keys.
     }
   }
-  names.push(decisionKeyEnv);
-  return [...new Set(names.filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)))];
+  const envValue = (name) => {
+    const value = env?.[name];
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  };
+  const fileString = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+
+  const names = [];
+
+  // Model plane. The runtime resolves the credential variable as
+  // config.apiKeyEnv -> HMCODEX_MODEL_API_KEY_ENV -> OPENCODE_GO_API_KEY.
+  const modelApiKeyEnv = fileString(fileConfig.apiKeyEnv) ?? envValue('HMCODEX_MODEL_API_KEY_ENV');
+  const modelBaseURL = fileString(fileConfig.baseURL) ?? envValue('HMCODEX_MODEL_BASE_URL') ?? DEFAULT_MODEL_BASE_URL;
+  const modelEndpoint = fileString(fileConfig.endpoint) ?? envValue('HMCODEX_MODEL_ENDPOINT');
+  const modelRouteIsDefault = modelBaseURL === DEFAULT_MODEL_BASE_URL && modelEndpoint === undefined;
+  if (modelRouteIsDefault || modelApiKeyEnv === DEFAULT_PROVIDER_KEY_ENV) names.push(DEFAULT_PROVIDER_KEY_ENV);
+  if (modelApiKeyEnv) names.push(modelApiKeyEnv);
+
+  // Decision (Jev) plane. The runtime resolves the variable as
+  // decision.apiKeyEnv -> HMCODEX_JEV_API_KEY_ENV -> JEV_API_KEY.
+  const decision = (fileConfig.decision && typeof fileConfig.decision === 'object' && !Array.isArray(fileConfig.decision))
+    ? fileConfig.decision
+    : {};
+  const decisionApiKeyEnv = fileString(decision.apiKeyEnv) ?? envValue('HMCODEX_JEV_API_KEY_ENV');
+  const decisionEndpoint = fileString(decision.endpoint) ?? envValue('HMCODEX_JEV_ENDPOINT') ?? DEFAULT_DECISION_ENDPOINT;
+  const decisionRouteIsDefault = decisionEndpoint === DEFAULT_DECISION_ENDPOINT;
+  if (decisionRouteIsDefault || decisionApiKeyEnv === DEFAULT_DECISION_KEY_ENV) names.push(DEFAULT_DECISION_KEY_ENV);
+  if (decisionApiKeyEnv) names.push(decisionApiKeyEnv);
+
+  // Registry entries name their own credential variable.
+  if (Array.isArray(fileConfig.models)) {
+    for (const model of fileConfig.models) {
+      if (typeof model?.apiKeyEnv === 'string') names.push(model.apiKeyEnv);
+    }
+  }
+
+  // Any HMCODEX_*_API_KEY_ENV points at a secret the runtime will read for a
+  // provider (for example the OpenViking context plane), so forward the target.
+  for (const [key, value] of Object.entries(env ?? {})) {
+    if (KEY_ENV_POINTER_PATTERN.test(key) && typeof value === 'string' && value.trim()) names.push(value.trim());
+  }
+
+  return [...new Set(names.filter((name) => KEY_NAME_PATTERN.test(name)))];
 }
 
 function writeJson(stream, value) {
@@ -202,7 +250,7 @@ export async function main(argv, io = {}) {
   }
 
   const configPath = parsed.options.config ?? (env.HMCODEX_MODEL_CONFIG?.trim() || undefined);
-  const keyNames = await providerKeyNames(configPath ?? paths.modelConfigPath());
+  const keyNames = await providerKeyNames(configPath ?? paths.modelConfigPath(), env);
   const childEnv = buildRuntimeEnv(env, { extraKeys: keyNames });
   childEnv.HMCODEX_PLATFORM = host;
   childEnv.HMCODEX_RELEASE_CHANNEL = releaseChannelForPolicy(executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY');

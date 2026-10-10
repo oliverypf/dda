@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { resolve, relative, sep, isAbsolute } from 'node:path';
 import { cordisPlugin } from './cordis-plugin.mjs';
-import { preferMappedPath } from '../windows-path.mjs';
+import { preferMappedPath } from '../platform/workspace-path.mjs';
 import { uniqueExcerptOffset } from '../task-harness.mjs';
 
 const MAX_ENTRIES = 180;

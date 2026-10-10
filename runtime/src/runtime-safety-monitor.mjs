@@ -3,7 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync
 import { lstat, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { canonicalMappedPath, preferMappedPath } from './windows-path.mjs';
+import { DEFAULT_RELEASE_CHANNEL } from './release-channel.mjs';
+import { canonicalMappedPath, preferMappedPath } from './platform/workspace-path.mjs';
 
 /**
  * The safety monitor is the policy boundary for every operation that can
@@ -423,7 +424,7 @@ export class PolicyLease {
     this.#monitorId = monitorId;
     this.#releaseChannel = typeof releaseChannel === 'string' && releaseChannel.trim()
       ? releaseChannel.trim().slice(0, 80)
-      : 'WINDOWS_MVP_PRE_PHASE1';
+      : DEFAULT_RELEASE_CHANNEL;
     this.#workspaceRoot = workspaceRoot;
     this.#workspaceLeaseRegistry = workspaceLeaseRegistry instanceof WorkspaceLeaseRegistry ? workspaceLeaseRegistry : undefined;
   }
@@ -491,7 +492,7 @@ export class RuntimeSafetyMonitor {
     this.#workspaceRoot = options.workspaceRoot ? resolve(String(options.workspaceRoot)) : undefined;
     this.#releaseChannel = typeof options.releaseChannel === 'string' && options.releaseChannel.trim()
       ? options.releaseChannel.trim().slice(0, 80)
-      : 'WINDOWS_MVP_PRE_PHASE1';
+      : DEFAULT_RELEASE_CHANNEL;
     const allowlist = options.commandAllowlist ?? options.allowedCommands ?? DEFAULT_COMMANDS;
     if (Array.isArray(allowlist)) {
       const commands = normalizeStringList(allowlist, 'commandAllowlist');

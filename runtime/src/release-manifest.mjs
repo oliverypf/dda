@@ -13,13 +13,10 @@ import { join } from 'node:path';
 
 /**
  * Channels that permit controlled execution, and therefore qualify as a release
- * candidate. The phase-2 target WINDOWS_FULL_LOCAL runs controlled tasks, so the
- * release supply-chain gate must accept it alongside WINDOWS_PHASE1_5_CONTROLLED.
- * Hardcoding the phase-1.5 channel previously blocked the phase-2 candidate on
- * its own target channel.
+ * candidate. The list lives on the release-channel policy layer so a new
+ * controlled alias does not need another hardcoded gate here.
  */
-export const CONTROLLED_RELEASE_CHANNELS = Object.freeze(['WINDOWS_PHASE1_5_CONTROLLED', 'WINDOWS_FULL_LOCAL']);
-export const isControlledReleaseChannel = (channel) => CONTROLLED_RELEASE_CHANNELS.includes(channel);
+export { CONTROLLED_RELEASE_CHANNELS, isControlledRelease as isControlledReleaseChannel } from './release-channel.mjs';
 const canonicalJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value && typeof value === 'object') {

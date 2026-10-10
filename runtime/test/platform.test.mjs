@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { buildChildEnv, buildRuntimeEnv } from '../src/platform/environment-policy.mjs';
 import { LinuxPosixExecutor } from '../src/platform/executor.mjs';
 import { createPlatformPaths } from '../src/platform/paths.mjs';
-import { detectCliHost, policyChannelForRelease, resolvePlatformIdentity } from '../src/platform/platform-identity.mjs';
+import { detectCliHost, executorDescriptor, policyChannelForRelease, resolvePlatformIdentity, scenarioPlatform } from '../src/platform/platform-identity.mjs';
 import { createProcessSupervisor, reclaimRecordedProcesses } from '../src/platform/process-supervisor.mjs';
 
 test('Windows store layout stays under hmCodex unless the Linux platform is selected', () => {
@@ -122,6 +122,12 @@ test('CLI host detection follows Windows, Linux, and HarmonyOS markers', () => {
 test('platform identity stays windows-desktop until linux-cli is requested', () => {
   assert.equal(resolvePlatformIdentity({}).platform, 'windows-desktop');
   assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'linux-cli', HMCODEX_RELEASE_CHANNEL: 'LINUX_CLI_READ_ONLY' }).executor, 'linux-posix');
+  assert.equal(executorDescriptor({}).pluginId, 'executor-windows');
+  assert.equal(executorDescriptor({ HMCODEX_PLATFORM: 'linux-cli' }).id, 'linux-posix@0.1.0');
+  assert.equal(executorDescriptor({ HMCODEX_PLATFORM: 'harmonyos-cli' }).pluginId, 'executor-harmonyos');
+  assert.equal(scenarioPlatform({}), 'WINDOWS');
+  assert.equal(scenarioPlatform({ HMCODEX_PLATFORM: 'linux-cli' }), 'LINUX');
+  assert.equal(scenarioPlatform({ HMCODEX_PLATFORM: 'harmonyos-cli' }), 'HARMONYOS');
   assert.equal(policyChannelForRelease('LINUX_CLI_CONTROLLED'), 'CONTROLLED');
   assert.equal(policyChannelForRelease('WINDOWS_PHASE1_READ_ONLY'), 'READ_ONLY');
 });

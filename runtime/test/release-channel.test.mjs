@@ -5,7 +5,7 @@ import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertReleaseExecutionMode, assertReleaseHarnessStore, resolveReleaseChannel, RELEASE_CHANNELS } from '../src/release-channel.mjs';
+import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isControlledRelease, isReadOnlyRelease, resolveReleaseChannel, RELEASE_CHANNELS } from '../src/release-channel.mjs';
 
 test('Phase 1 denies controlled modes and unknown channels fail closed', () => {
   assert.equal(assertReleaseExecutionMode('READ_ONLY', 'WINDOWS_PHASE1_READ_ONLY'), 'READ_ONLY');
@@ -21,6 +21,12 @@ test('Phase 1 denies controlled modes and unknown channels fail closed', () => {
   assert.equal(resolveReleaseChannel('LINUX_CLI_CONTROLLED'), 'WINDOWS_FULL_LOCAL');
   assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_READ_ONLY/);
   assert.equal(assertReleaseHarnessStore('hmcodex.db', 'LINUX_CLI_READ_ONLY'), 'hmcodex.db');
+  assert.equal(isReadOnlyRelease('LINUX_CLI_READ_ONLY'), true);
+  assert.equal(isReadOnlyRelease('WINDOWS_FULL_LOCAL'), false);
+  assert.equal(isControlledRelease('LINUX_CLI_CONTROLLED'), true);
+  assert.equal(isControlledRelease(undefined), false);
+  assert.equal(isApprovedRelease('WINDOWS_MVP_PRE_PHASE1'), false);
+  assert.equal(isApprovedRelease('WINDOWS_FULL_LOCAL'), true);
 });
 
 test('Phase 1 requires a durable SQLite task store', async () => {

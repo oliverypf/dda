@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { resolveReleaseChannel } from './release-channel.mjs';
+import { DEFAULT_RELEASE_CHANNEL, resolveReleaseChannel } from './release-channel.mjs';
 import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 
 const SCHEMA_VERSION = '1.0';
@@ -28,7 +28,7 @@ const safeText = (value, max = 512) => typeof value === 'string' ? value.replace
 const safeId = (value, max = 240) => typeof value === 'string' && value.trim()
   ? value.trim().replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max)
   : undefined;
-const safeChannel = (value) => typeof value === 'string' && value.trim() ? resolveReleaseChannel(value.trim()) : 'WINDOWS_MVP_PRE_PHASE1';
+const safeChannel = (value) => typeof value === 'string' && value.trim() ? resolveReleaseChannel(value.trim()) : DEFAULT_RELEASE_CHANNEL;
 const digestOptional = (value) => value === undefined ? undefined : digest(value);
 const reference = (recordId, recordType) => {
   if (typeof recordId !== 'string' || !recordId.trim()) throw new Error(`EXECUTION_${recordType.toUpperCase()}_REQUIRED`);

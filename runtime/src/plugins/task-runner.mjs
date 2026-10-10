@@ -1,7 +1,7 @@
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { canonicalJson } from '../model-tool-calls.mjs';
 import { logger } from '../logger.mjs';
-import { canonicalMappedPath } from '../windows-path.mjs';
+import { canonicalMappedPath } from '../platform/workspace-path.mjs';
 import { isAbsolute, relative, sep } from 'node:path';
 import { sha256Digest } from '../trajectory-store.mjs';
 import { cordisPlugin } from './cordis-plugin.mjs';

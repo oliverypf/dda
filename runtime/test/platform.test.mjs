@@ -56,7 +56,9 @@ test('runtime environment keeps provider keys only when named and drops other se
     AWS_SECRET_ACCESS_KEY: 'nope',
     OPENCODE_GO_API_KEY: 'secret-value',
     HMCODEX_DATA_DIR: '/data',
-    HMCODEX_API_KEY: 'hidden'
+    HMCODEX_API_KEY: 'hidden',
+    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    HMCODEX_JEV_API_KEY_ENV: 'JEV_API_KEY'
   }, { extraKeys: ['OPENCODE_GO_API_KEY'] });
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(env.HMCODEX_DATA_DIR, '/data');
@@ -64,6 +66,9 @@ test('runtime environment keeps provider keys only when named and drops other se
   assert.equal(env.DISPLAY, undefined);
   assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
   assert.equal(env.HMCODEX_API_KEY, undefined);
+  // A _KEY_ENV pointer names a variable, not a secret, so it passes the filter.
+  assert.equal(env.HMCODEX_MODEL_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
+  assert.equal(env.HMCODEX_JEV_API_KEY_ENV, 'JEV_API_KEY');
   assert.throws(() => buildChildEnv({ API_TOKEN: 'x' }), /CHILD_ENV_INVALID/);
   assert.deepEqual(buildChildEnv({ LANG: 'C' }), { LANG: 'C' });
 });

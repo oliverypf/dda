@@ -1,0 +1,97 @@
+✔ resume enters recovery and blocks an interrupted side effect (7400.66125ms)
+✔ a long model answer retains literal reported values after the real 500-character boundary (9.378125ms)
+✔ native process status and the end of a large test log survive without malformed JSON (1.957344ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (1.105ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (8.791562ms)
+✔ tool policy distinguishes configured capability from a required host execution check (2.600156ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (1.790781ms)
+✔ file edits carry the actual proposed change as bounded untrusted data (2.17125ms)
+✔ an actual failed process preserves stderr evidence when stdout is empty (0.9175ms)
+✔ failure router keeps assertion failures in the test failure lane (4.748438ms)
+✔ evidence and stop rules block premature success (1.039532ms)
+✔ Jev client normalizes finite-choice answers and sends no tool surface (5.200938ms)
+✔ decision engine batches unresolved Jev questions and returns a finite control action (4.6825ms)
+✔ decision engine fails closed to conservative recovery when Jev is unavailable (2.013906ms)
+✔ decision engine records fallback when an enabled Jev request fails (1.617656ms)
+✔ decision state honors the configured size limit (4.054688ms)
+✔ Jev owns candidate selection and action gating without a model verifier role (46.910937ms)
+✔ action gates retain host hard blocks and actual Jev refusals while avoiding duplicate instruction evidence (1.876094ms)
+✔ automatic test context reads current authorized files rather than stale snapshot contents (277.155157ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'private-store.mjs',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-decision-context-policy-IbLRXL',
+  error: 'WORKSPACE_EXCLUDED_PATH:private-store.mjs'
+}
+✔ context collection preserves workspace exclusions and never follows opaque or escaped proposals (44.086718ms)
+✔ actual failed and successful tests remain visible after a long chain and state compaction (18.591875ms)
+✔ verifier recovery continues past the already observed initial failure instead of replaying it (8978.832968ms)
+✔ definite failure retries through Jev and upgrades to the bound strong model (13991.747969ms)
+✔ decision observations keep only bounded terminal host facts (21.27875ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (9188.502343ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (12085.97125ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (12341.442344ms)
+✔ a repeated restricted syntax diagnosis ends through an actual full test without bypassing leases (14342.633594ms)
+✔ native one-shot executor receipts agree with both supported Node request forms (3476.856094ms)
+✔ normalization retains rejection of unrecognized process semantics and private scope (2.213437ms)
+✔ safe Node request forms share one bounded untrusted preview without claiming a lease or execution (18.392031ms)
+✔ real one-shot executor semantics still agree with every request preview (2464.942969ms)
+✔ full command strings collect current authorized fixture files, while excluded data stays absent (137.349531ms)
+✔ private overrides, inline code, outside paths, preloads and ambiguous commands are not normalized as bounded tests (1.792657ms)
+✔ Node process scope distinguishes default discovery, targeted tests and syntax diagnosis without implying execution (16.566719ms)
+✔ a killed read-only runtime resumes pending work without repeating completed steps (11912.699218ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-GG5bVi
+✔ a killed controlled write remains blocked when resumed in read-only mode (9641.582813ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-lStv2C
+✔ a read-only source does not authorize replay after upgrading the resume mode (7145.990937ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-FixPp1
+✔ a killed read-only runtime resumes with the phase-one SQLite event store (16600.298593ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-6Dd6CG
+✔ a durable readonly registry failure is an observed error, never a missing future result (21.870625ms)
+✔ proposals, pre-registry refusals and other tool outcomes cannot masquerade as readonly execution (1.551407ms)
+✔ checkpoint lineage carries actual prior read failure without copying arbitrary messages or commands (4.628906ms)
+✔ unknown modes, changed goals, wrong checkpoints, metadata refusals and any actual side effects do not become resume facts (3.277031ms)
+✔ later checkpoints preserve validated earlier read observations across the same thread lineage (1.057343ms)
+✔ continuation records bounded action outcomes without commands, arguments, errors or output contents (8.696562ms)
+✔ action metadata cannot inject instructions into host continuation (6.200781ms)
+✔ a later successful identical test resolves its failure without losing the trace (23.392031ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (5.435312ms)
+✔ rule verifier requires bounded non-empty output (1.18375ms)
+✔ task coordinator enforces transitions and optimistic version (5.088281ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.760937ms)
+✔ rule verifier detects repeated actions and stops with STALLED (6.719218ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (9.784531ms)
+✔ one repeated syntax diagnosis can recover only through a later actual full test (9.378282ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (2.629062ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (2.282812ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.622968ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.584844ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.683281ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (4.576562ms)
+✔ recovers CONTINUE reports and stops after a successful verification (18.091875ms)
+✔ does not recover hard failures or exceed the configured budget (2.272969ms)
+✔ recovery context contains only bounded verifier facts and action digests (1.39375ms)
+✔ terminal FAIL report stops recovery without another execute (1.127031ms)
+✔ terminal CANCELLED report also stops recovery without retry (2.362031ms)
+✔ stops before another execution when recovery selects stop and report (1.73625ms)
+✔ pauses before another execution when recovery requests user input (3.990781ms)
+✔ verification transport recovery reuses one execution and does not duplicate action observations (13.27ms)
+✔ hard failure and unresolved service uncertainty never become successful results (1.655469ms)
+✔ only deterministic success plus actual transient provider failure qualifies for re-verification (1.211094ms)
+✔ semantic requests retain evidence once and preserve an actual negative choice (5.232812ms)
+✔ native READ_ONLY workflow re-verifies after HTTP503 without another executor turn (PASS) (12718.962344ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (PASS) (18267.623907ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (FAIL) (16815.440625ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (SERVICE_FAILURE) (19760.026875ms)
+✔ settled workspace I/O preserves its value or original error and releases the timer (12.518125ms)
+✔ pending workspace I/O still reaches its unchanged deadline and classification (70.883438ms)
+✔ native workspace I/O exits after completion without reducing the 60-second I/O deadline (4567.201719ms)
+ℹ tests 78
+ℹ suites 0
+ℹ pass 78
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 73137.532656
+

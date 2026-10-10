@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-10-07T18:10:31.781Z",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "executable": {
+    "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\debug\\hmcodex-desktop.exe",
+    "sha256": "99bf433cfe955bf52bc7fdaebe2fb8586dae52e07ba429a752e90cd60d8a542a",
+    "modifiedAt": "2026-10-07T17:54:29.943Z"
+  },
+  "desktop": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0
+  },
+  "wheelCheck": {
+    "fixtureTasks": 80,
+    "method": "CDP Input.dispatchMouseEvent mouseWheel from the current position to the last task; no scrollTop assignment is used to reach the end.",
+    "lastTaskVisible": true,
+    "outerRailPositionPreserved": true,
+    "fixturePositionRestoredAfterAssertions": true,
+    "scope": "Existing native desktop viewport; no new narrow-window or mobile viewport is claimed."
+  },
+  "log": {
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NATIVE_WHEEL_TO_END_2026-10-08.log",
+    "sha256": "67f3b15e6eafac47cb29c2c1b73f3e36bfba3d187b68cff37467b44320e0ca68"
+  },
+  "testSource": {
+    "path": "C:\\Users\\User\\hmCodex-local\\desktop\\scripts\\ui-functional-test.mjs",
+    "sha256": "ed21f3b9ca5b44ef5a8abeaf44ece40fee822886ce1a3e380f1fbd63ce2e1dca"
+  },
+  "screenshot": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NATIVE_WHEEL_TO_END_2026-10-08.png"
+}

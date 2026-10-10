@@ -1,0 +1,20 @@
+✔ verifier recovery continues past the already observed initial failure instead of replaying it (7317.000625ms)
+✔ definite failure retries through Jev and upgrades to the bound strong model (13042.174531ms)
+✔ continuation records bounded action outcomes without commands, arguments, errors or output contents (8.186719ms)
+✔ action metadata cannot inject instructions into host continuation (4.630312ms)
+✔ recovers CONTINUE reports and stops after a successful verification (17.365313ms)
+✔ does not recover hard failures or exceed the configured budget (2.3675ms)
+✔ recovery context contains only bounded verifier facts and action digests (0.869062ms)
+✔ terminal FAIL report stops recovery without another execute (0.626875ms)
+✔ terminal CANCELLED report also stops recovery without retry (0.529843ms)
+✔ stops before another execution when recovery selects stop and report (0.86375ms)
+✔ pauses before another execution when recovery requests user input (3.365625ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20982.023437
+

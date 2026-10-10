@@ -1,0 +1,32 @@
+hmCodex UI functional tests · exe=C:/Users/User/hmCodex-local/desktop/src-tauri/target/x86_64-pc-windows-msvc/debug/hmcodex-desktop.exe · port=9476 · pid=19816
+PASS  T00V 指定原生 WebView 视口 — 1280x474 CSS pixels; native window chrome is not resized
+PASS  T00 发布渠道标记
+PASS  T00A 空会话不进入项目树 — 0-turn threads hidden
+PASS  T01 初始渲染与只读门控 — title/connection/run-state/composer/mode/cancel
+PASS  T01A 工作台空闲刷新不重建右侧上下文面板 — context panel preserved
+PASS  T01B 主导航移动到右侧 — primary navigation is on the right
+PASS  T02 上下文面板开关 — open/close
+PASS  T03 工作区目录导航与三态变更证据 — \\?\C:\Users\User\AppData\Local\Temp\hmcodex-ui-model-fixture-JRgHlf · entered src + returned
+PASS  T04 文件只读预览 — README.md · sha256:c06e06893f0…
+PASS  T05 READ ONLY 模式不可切换 — 受控模式 ⇄ 只读模式
+PASS  T06 新建任务重置 — idle/composer reset
+PASS  T07 线程选择与时间线恢复 — seeded checkpoint is verified by T07R
+PASS  T01C 原生项目树 80 任务滚轮与末项可达 — native wheel reaches the last task without moving the brand or outer rail
+PASS  T07R 预置中断任务从 checkpoint 继续 — checkpoint restored; planner unchanged; executor advanced
+PASS  T08 会话不加载全局审计分页 — 3 thread timeline items
+PASS  T09 治理面板刷新 — 5 governance groups
+PASS  T10 执行状态刷新 — refresh accepted
+PASS  T11 无界面渲染错误 — no render error
+PASS  NAV runs — active navigation and visible content
+PASS  NAV workspace — active navigation and visible content
+PASS  NAV memory — active navigation and visible content
+PASS  NAV safety — active navigation and visible content
+PASS  NAV diagnostics — active navigation and visible content
+PASS  NAV workbench — active navigation and visible content
+PASS  T13 真实任务终态与时间线渲染 — 只读检查完成
+检查完成，可查看时间线证据或发起新任务。 · 3 timeline items · 81 threads
+PASS  T15 必失败任务点击重试升级后成功 — FAILED -> retry strong-executor-fixture -> SUCCEEDED; 2 strong calls; actual file evidence received
+PASS  T14 任务价值摘要六项操作入口 — six actions present; budget, verification, decision, gated retry and export exercised
+PASS  T12 真实任务取消流程 — running -> cancelled -> idle
+
+Summary: 28 passed, 0 failed, 0 skipped

@@ -1,0 +1,222 @@
+{
+  "schemaVersion": "1.0",
+  "contexts": [
+    {
+      "contextId": "role-context-7aea71bd-03be-43b8-ba7e-9c6a9bc2f7b6-1",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "role": "planner",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 21156,
+      "runtimeInstanceId": "runtime-382caaa0-1ddf-4744-bac4-97f569c8cd17",
+      "metadata": {
+        "binding": "default",
+        "resolvedBinding": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        },
+        "provider": "openai",
+        "protocol": "responses"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+      "bindingSnapshot": {
+        "role": "planner",
+        "requested": "default",
+        "resolved": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:c8685ecbb02341779b5b7e022a9ee5c662a11262b95ac5cdd76e83cfa4bac8b0",
+      "createdAtMs": 1791391735532,
+      "updatedAtMs": 1791391790087
+    },
+    {
+      "contextId": "role-context-5bcd4a8c-5b60-4a5e-886e-9e51da0813ac-3",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "role": "verifier",
+      "model": "rule",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 21156,
+      "runtimeInstanceId": "runtime-382caaa0-1ddf-4744-bac4-97f569c8cd17",
+      "metadata": {
+        "binding": "rule",
+        "resolvedBinding": {
+          "role": "verifier",
+          "kind": "DETERMINISTIC",
+          "provider": "rule",
+          "protocol": "deterministic",
+          "selector": "PINNED"
+        },
+        "provider": "rule",
+        "protocol": "deterministic"
+      },
+      "adapterIdentity": {
+        "provider": "rule",
+        "protocol": "deterministic",
+        "model": "rule"
+      },
+      "adapterIdentityDigest": "sha256:4bb9d3c18c771491ce37863b73bdf38f819e591fb946e5bddd2338d95fcb3c42",
+      "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+      "bindingSnapshot": {
+        "role": "verifier",
+        "requested": "rule",
+        "resolved": {
+          "role": "verifier",
+          "kind": "DETERMINISTIC",
+          "provider": "rule",
+          "protocol": "deterministic",
+          "selector": "PINNED"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:72c101b3547dba89895eb55da694c8fadf75c4defe6f06253a08128cb1612543",
+      "createdAtMs": 1791391735533,
+      "updatedAtMs": 1791391790180
+    },
+    {
+      "contextId": "role-context-97a1bc82-2429-419a-b13a-ff6aabe56efb-2",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "role": "executor",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 21156,
+      "runtimeInstanceId": "runtime-382caaa0-1ddf-4744-bac4-97f569c8cd17",
+      "metadata": {
+        "binding": "default",
+        "resolvedBinding": {
+          "role": "executor",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        },
+        "provider": "openai",
+        "protocol": "responses"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+      "bindingSnapshot": {
+        "role": "executor",
+        "requested": "default",
+        "resolved": {
+          "role": "executor",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:d69e515759cef1f0bd595e1eca364ca2d555d39e07c5aeb3a46c3a052c187457",
+      "createdAtMs": 1791391735533,
+      "updatedAtMs": 1791391790131
+    },
+    {
+      "contextId": "role-context-990c12d1-1969-4cd1-9ba9-ab4f11377e61-4",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "role": "council-planner",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 21156,
+      "runtimeInstanceId": "runtime-382caaa0-1ddf-4744-bac4-97f569c8cd17",
+      "metadata": {
+        "purpose": "PLAN_REVIEW",
+        "isolation": "DEDICATED"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+      "bindingSnapshot": {
+        "role": "council-planner",
+        "requested": {
+          "role": "planner",
+          "purpose": "PLAN_REVIEW"
+        },
+        "resolved": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:47cd6f33c74015c800b802b1d150c6a9a57c0fcf0ba1f0067df0f6d4e027112c",
+      "createdAtMs": 1791391735671,
+      "updatedAtMs": 1791391790225
+    },
+    {
+      "contextId": "role-context-3abc41b6-9ae6-4332-8ee8-ff0502223c5b-5",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "role": "council-critic",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 21156,
+      "runtimeInstanceId": "runtime-382caaa0-1ddf-4744-bac4-97f569c8cd17",
+      "metadata": {
+        "purpose": "PLAN_REVIEW",
+        "isolation": "DEDICATED"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+      "bindingSnapshot": {
+        "role": "council-critic",
+        "requested": {
+          "role": "planner",
+          "purpose": "PLAN_REVIEW"
+        },
+        "resolved": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:33bb88d1781a83c6c0fccfa8d7deab8084583fe663e227602d5c417cbabda6c4",
+      "createdAtMs": 1791391735712,
+      "updatedAtMs": 1791391790271
+    }
+  ]
+}

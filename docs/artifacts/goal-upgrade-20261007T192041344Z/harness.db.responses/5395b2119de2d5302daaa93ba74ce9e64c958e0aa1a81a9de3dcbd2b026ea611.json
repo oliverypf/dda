@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+  "text": "**Remaining goal complete.** Fresh evidence obtained via `workspace.read` of `README.md`:\n\n- **Path:** README.md (43 bytes)\n- **Digest:** sha256:f9b959688f087d51b050d14d09ddbc04998b45905a7b30cbf38b4420aecf5d37 — matches the snapshot's selected-file digest\n- **Exact evidence marker:** `GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117cf95b0`\n- **Truncated:** false\n\nStage accounting per the continuation facts:\n1. `workspace.read` of `missing-evidence.txt` — already attempted, recorded FAILED (`WORKSPACE_NOT_FOUND`, args digest sha256:d6b2ee73…). Not retried; the previously recorded failure is preserved and not bypassed.\n2. `workspace.read` of `README.md` — newly executed in this recovery round, succeeded, and yielded the marker above.\n\nThe workspace remained read-only throughout. The goal marker is reported from actual tool evidence, not from the snapshot preview alone.",
+  "outputDigest": "sha256:3ceeecc4570172532b67b2ebf4209b8e6d9aee73b96a6d679211a9e1e1a35b51"
+}

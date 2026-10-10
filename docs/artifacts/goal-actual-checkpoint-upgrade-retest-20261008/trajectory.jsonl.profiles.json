@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "1.0",
+  "profiles": [
+    {
+      "profileId": "profile-2282f051-8707-4a6b-bc9a-b9db6e3f2059",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-flash",
+      "capabilityId": "task.test",
+      "version": 1,
+      "stats": {
+        "sampleCount": 1,
+        "successCount": 0,
+        "partialCount": 0,
+        "failureCount": 1,
+        "cancelledCount": 0,
+        "unknownCount": 0,
+        "qualityMean": 0,
+        "safetyMean": null,
+        "safetyMin": null,
+        "latencyMeanMs": 25968,
+        "costMean": null
+      },
+      "eligibility": {
+        "status": "CONSERVATIVE",
+        "eligible": false,
+        "minSamples": 3,
+        "minQuality": 0.6,
+        "minSafety": 0.9,
+        "reasonCodes": [
+          "INSUFFICIENT_SAMPLES",
+          "QUALITY_BELOW_THRESHOLD",
+          "FAILURE_OBSERVED"
+        ]
+      },
+      "evidenceCount": 1,
+      "updatedAtMs": 1791394608059,
+      "profileDigest": "sha256:5c6dc7acc50d57b299ae89ffbbe30ecc33b4663ebdc6d035682d477a2f789c8b"
+    },
+    {
+      "profileId": "profile-26ff4a97-bd69-42f9-969e-ae5f5fae750f",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-pro",
+      "capabilityId": "task.test",
+      "version": 1,
+      "stats": {
+        "sampleCount": 1,
+        "successCount": 0,
+        "partialCount": 0,
+        "failureCount": 1,
+        "cancelledCount": 0,
+        "unknownCount": 0,
+        "qualityMean": 0,
+        "safetyMean": null,
+        "safetyMin": null,
+        "latencyMeanMs": 32502,
+        "costMean": null
+      },
+      "eligibility": {
+        "status": "CONSERVATIVE",
+        "eligible": false,
+        "minSamples": 3,
+        "minQuality": 0.6,
+        "minSafety": 0.9,
+        "reasonCodes": [
+          "INSUFFICIENT_SAMPLES",
+          "QUALITY_BELOW_THRESHOLD",
+          "FAILURE_OBSERVED"
+        ]
+      },
+      "evidenceCount": 1,
+      "updatedAtMs": 1791394644945,
+      "profileDigest": "sha256:3daa3a12108c9a4c9717bc40247d71a6a01ccadcd713eca5cd2e223ef9ace87d"
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "profile-evidence-00c131cd-37d2-4546-9552-758a2e11e711",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-flash",
+      "capabilityId": "task.test",
+      "runId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+      "outcomeId": "task-outcome-run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+      "outcome": "FAILED",
+      "quality": 0,
+      "latencyMs": 25968,
+      "observedAtMs": 1791394608058,
+      "evidenceDigest": "sha256:324ca019ff2a89bd6b9e8f3d8c305659ce377d998265f2a202603752ab5e9a4f"
+    },
+    {
+      "evidenceId": "profile-evidence-ce2ce915-8088-441e-81c8-a4dca06eb5f0",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-pro",
+      "capabilityId": "task.test",
+      "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "outcomeId": "task-outcome-run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "outcome": "FAILED",
+      "quality": 0,
+      "latencyMs": 32502,
+      "observedAtMs": 1791394644943,
+      "evidenceDigest": "sha256:c741055133518148bcdd2483734d7327fd1f293381e2771840f1ceddf2498bd5"
+    }
+  ]
+}

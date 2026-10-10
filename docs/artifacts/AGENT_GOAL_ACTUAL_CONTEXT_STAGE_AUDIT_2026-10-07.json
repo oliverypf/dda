@@ -1,0 +1,350 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T14:25:35.388Z",
+  "sourceReport": "docs/artifacts/AGENT_GOAL_ACTUAL_CONTEXT_LIVE_2026-10-07.json",
+  "sourceReportSha256": "34781b536b66cb80353484b037f4a55c5e2da5d0b53cc873a6470f6a3b6a6fc5",
+  "batchId": "20261007T140521038Z-c0f0b5b7",
+  "runtimeSourceSha256": "131cda99127581ee244e793f7adcc16e02a987ea9de620b5d98917b3aec29dc7",
+  "stage": "CONTEXT_AND_READ_EPOCH_BEFORE_LITERAL_GATE_CLARIFICATION",
+  "batchProcessExitCode": 1,
+  "singleClientDiagnostic": true,
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 4,
+      "successes": 1,
+      "successRate": 0.25,
+      "recoveryOpportunities": 4,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.25,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 73874,
+      "actualCost": null,
+      "estimatedCost": 0.012012061,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 19,
+      "modelCalls": 23,
+      "usageCoverage": {
+        "reportedRequests": 23,
+        "totalRequests": 23,
+        "knownTokenSubtotal": 73874,
+        "pricedRequests": 23,
+        "knownPricedSubtotal": 0.012012061
+      },
+      "toolCallCount": 20,
+      "wallMs": 395342
+    }
+  },
+  "rows": [
+    {
+      "runKey": "20261007T140521038Z-c0f0b5b7/1-code-normalize-001-hmcodex-runtime",
+      "status": "FAILED",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": true
+        }
+      },
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "firstActualTool": {
+        "name": "workspace.list",
+        "ok": true,
+        "exitCode": null,
+        "args": null
+      },
+      "actualSuccessfulTest": false,
+      "firstTestGate": {
+        "type": "choice",
+        "choice": "BLOCK",
+        "confidence": 0.05,
+        "probabilities": {
+          "ALLOW": 0.29,
+          "REQUIRE_APPROVAL": 0.25,
+          "REQUEST_EVIDENCE": 0.17,
+          "BLOCK": 0.29
+        }
+      },
+      "modelUsageCoverage": {
+        "reportedRequests": 7,
+        "totalRequests": 7,
+        "knownTokenSubtotal": 23648,
+        "pricedRequests": 7,
+        "knownPricedSubtotal": 0.003327808
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 11,
+        "succeededCalls": 11,
+        "usageComplete": true,
+        "inputTokens": 84034,
+        "outputTokens": 1006,
+        "estimatedCost": 0.003529428,
+        "wallMs": 12424.555780999988,
+        "latencyCoverage": {
+          "reportedRequests": 11,
+          "knownWallMsSubtotal": 12424.555780999988
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    },
+    {
+      "runKey": "20261007T140521038Z-c0f0b5b7/1-code-feature-001-hmcodex-runtime",
+      "status": "FAILED",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": true
+        }
+      },
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "firstActualTool": {
+        "name": "workspace.read",
+        "ok": true,
+        "exitCode": null,
+        "args": null
+      },
+      "actualSuccessfulTest": false,
+      "firstTestGate": {
+        "type": "choice",
+        "choice": "BLOCK",
+        "confidence": 0.21,
+        "probabilities": {
+          "ALLOW": 0.26,
+          "REQUEST_EVIDENCE": 0.15,
+          "REQUIRE_APPROVAL": 0.18,
+          "BLOCK": 0.41000000000000003
+        }
+      },
+      "modelUsageCoverage": {
+        "reportedRequests": 6,
+        "totalRequests": 6,
+        "knownTokenSubtotal": 18469,
+        "pricedRequests": 6,
+        "knownPricedSubtotal": 0.0029548680000000003
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 8,
+        "succeededCalls": 8,
+        "usageComplete": true,
+        "inputTokens": 48584,
+        "outputTokens": 838,
+        "estimatedCost": 0.0020405280000000002,
+        "wallMs": 8154.077343000012,
+        "latencyCoverage": {
+          "reportedRequests": 8,
+          "knownWallMsSubtotal": 8154.077343000012
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    },
+    {
+      "runKey": "20261007T140521038Z-c0f0b5b7/2-code-normalize-001-hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "firstActualTool": {
+        "name": "test.execute",
+        "ok": false,
+        "exitCode": 1,
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ]
+      },
+      "actualSuccessfulTest": true,
+      "firstTestGate": {
+        "type": "choice",
+        "choice": "ALLOW",
+        "confidence": 0.05,
+        "probabilities": {
+          "ALLOW": 0.29,
+          "BLOCK": 0.29,
+          "REQUEST_EVIDENCE": 0.17,
+          "REQUIRE_APPROVAL": 0.25
+        }
+      },
+      "modelUsageCoverage": {
+        "reportedRequests": 4,
+        "totalRequests": 4,
+        "knownTokenSubtotal": 11825,
+        "pricedRequests": 4,
+        "knownPricedSubtotal": 0.002237582
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 4,
+        "succeededCalls": 4,
+        "usageComplete": true,
+        "inputTokens": 24578,
+        "outputTokens": 208,
+        "estimatedCost": 0.001032276,
+        "wallMs": 5923.925780999998,
+        "latencyCoverage": {
+          "reportedRequests": 4,
+          "knownWallMsSubtotal": 5923.925780999998
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    },
+    {
+      "runKey": "20261007T140521038Z-c0f0b5b7/2-code-feature-001-hmcodex-runtime",
+      "status": "FAILED",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": true
+        }
+      },
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "firstActualTool": {
+        "name": "workspace.read",
+        "ok": true,
+        "exitCode": null,
+        "args": null
+      },
+      "actualSuccessfulTest": false,
+      "firstTestGate": {
+        "type": "choice",
+        "choice": "BLOCK",
+        "confidence": 0.16,
+        "probabilities": {
+          "REQUEST_EVIDENCE": 0.13,
+          "REQUIRE_APPROVAL": 0.19,
+          "ALLOW": 0.31,
+          "BLOCK": 0.37
+        }
+      },
+      "modelUsageCoverage": {
+        "reportedRequests": 6,
+        "totalRequests": 6,
+        "knownTokenSubtotal": 19932,
+        "pricedRequests": 6,
+        "knownPricedSubtotal": 0.003491803
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 9,
+        "succeededCalls": 9,
+        "usageComplete": true,
+        "inputTokens": 59380,
+        "outputTokens": 896,
+        "estimatedCost": 0.0024939600000000004,
+        "wallMs": 7669.272187000082,
+        "latencyCoverage": {
+          "reportedRequests": 9,
+          "knownWallMsSubtotal": 7669.272187000082
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    }
+  ],
+  "claims": {
+    "total": 185,
+    "validBoundedJson": 185
+  },
+  "requestCorrelation": {
+    "modelRequests": 23,
+    "modelRequestsWithReturnedIds": 23,
+    "jevRequests": 32,
+    "jevRequestsWithReturnedIds": 0,
+    "actualChargeUnknown": true
+  },
+  "decision": {
+    "calls": 32,
+    "successfulCalls": 32,
+    "inputTokens": 216576,
+    "outputTokens": 2948,
+    "estimatedApiPriceUsd": 0.009096192,
+    "proxyWallMs": 34171.83109200008,
+    "actualCashCharge": null
+  },
+  "engineering": {
+    "runtime": {
+      "passed": 647,
+      "failed": 0,
+      "skipped": 1,
+      "log": "docs/artifacts/GOAL_ACTUAL_CONTEXT_FULL_RUNTIME_2026-10-07.log"
+    },
+    "native": {
+      "passed": 27,
+      "failed": 0,
+      "log": "docs/artifacts/GOAL_ACTUAL_CONTEXT_NATIVE_2026-10-07.log"
+    },
+    "scripts": {
+      "passed": 53,
+      "failed": 0,
+      "log": "docs/artifacts/GOAL_ACTUAL_CONTEXT_SCRIPTS_2026-10-07.log"
+    },
+    "debugExeSha256": "1c3e81b56b2cd126e030e65d9c92f592b32caa15e83ee3e6fd279e95d4b68546"
+  },
+  "goalStatus": "active",
+  "limitations": [
+    "Later criterion edits belong to a new runtime source; these rows are not their verification.",
+    "No paired client controls, current-source Jev ablation, real strong upgrade, actual invoice or human activity benefit has been demonstrated by this diagnostic."
+  ]
+}

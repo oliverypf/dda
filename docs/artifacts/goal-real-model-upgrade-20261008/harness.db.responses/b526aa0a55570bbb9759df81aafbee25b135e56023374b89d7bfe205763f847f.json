@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+  "text": "Read completed with a real workspace read tool (`workspace.read`), fresh evidence this recovery attempt.\n\n**Result:** `README.md` read succeeded — size 40 bytes, not truncated.\n\n**Exact evidence marker:** `GOAL_ACTUAL_TWO_MODEL_RECOVERY_20261008`\n\nDetails:\n- Path: `README.md`\n- Content (exact): `GOAL_ACTUAL_TWO_MODEL_RECOVERY_20261008\\n`\n- sha256: `e7beb50eb0d92859ff45a4e63248a12a0db19c453db027451ac9c27b9b57c0ba` (matches the workspace snapshot digest for this file)\n\nThe remaining goal — read README.md and report its exact evidence marker — is complete; the earlier missing-file step was not repeated.",
+  "outputDigest": "sha256:962bd8ca9e8db38c9ef7c8e969fb7c9b1e47ed146b963b388f09fb173b0151ad"
+}

@@ -1,0 +1,12 @@
+{
+  "date":"2026-10-03",
+  "kind":"code_task_codex_vs_hmcodex",
+  "task":{"id":"normalize-name-001","description":"trim and lowercase strings; throw TypeError for non-string input; run existing tests without changing tests"},
+  "conditions":{
+    "ordinary-codex":{"runs":1,"successes":1,"successRate":1,"reworkCount":0,"testsPassed":2,"testsTotal":2,"manualInterventions":0,"evidence":"Codex CLI session 01a100c5-fd4b-71e2-8af5-eb63fb9f5927; name.mjs edited; node --test 2/2"},
+    "hmcodex-controlled-fixture":{"runs":1,"successes":1,"successRate":1,"reworkCount":0,"testsPassed":2,"testsTotal":2,"manualInterventions":0,"toolRounds":2,"toolCallCount":2,"elapsedMs":4559,"executionMode":"CONTROLLED","evidence":"local OpenAI-compatible fixture; runtime wrote name.mjs, ran node --test, and verification returned 2/2"}
+  },
+  "comparison":{"successRateDelta":0,"reworkCountDelta":0,"testPassRateDelta":0,"interpretation":"both conditions succeeded once; this is a capability smoke test, not a production quality claim"},
+  "validity":"VALID_CAPABILITY_SMOKE",
+  "caveats":["n=1 per condition; not statistically meaningful","ordinary Codex used the local Codex CLI/model, hmCodex used a deterministic OpenAI-compatible fixture to isolate runtime execution","current Windows Phase 1 channel remains read-only; controlled result used the approved WINDOWS_PHASE1_5_CONTROLLED channel","the earlier DeepSeek controlled failure exposed and motivated the tool-name encoding fix"]
+}

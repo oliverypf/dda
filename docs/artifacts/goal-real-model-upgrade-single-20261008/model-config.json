@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "provider": "openai",
+  "protocol": "responses",
+  "model": "mimo-v2.6-flash",
+  "endpoint": "http://127.0.0.1:59398/responses",
+  "apiKeyEnv": "HMCODEX_REAL_UPGRADE_LOCAL_KEY",
+  "models": [
+    {
+      "id": "mimo-v2.6-flash",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "endpoint": "http://127.0.0.1:59398/responses",
+      "apiKeyEnv": "HMCODEX_REAL_UPGRADE_LOCAL_KEY"
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-pro",
+      "endpoint": "http://127.0.0.1:59399/responses",
+      "apiKeyEnv": "HMCODEX_REAL_UPGRADE_LOCAL_KEY"
+    }
+  ],
+  "roleBindings": {
+    "planner": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-flash"
+    },
+    "executor": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-flash"
+    },
+    "critic": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-pro"
+    }
+  },
+  "decision": {
+    "enabled": true,
+    "enforce": true,
+    "endpoint": "http://127.0.0.1:59400/jev",
+    "apiKeyEnv": "HMCODEX_REAL_UPGRADE_JEV_LOCAL_KEY",
+    "model": "jev-latest",
+    "timeoutMs": 5000,
+    "diagnosisEnabled": true,
+    "recoveryDirectionEnabled": true
+  }
+}

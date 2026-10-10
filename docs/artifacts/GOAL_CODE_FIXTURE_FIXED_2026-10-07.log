@@ -1,0 +1,43 @@
+{"event":"CASE_START","runKey":"20261007T062347348Z-fbc2fdc5/1-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791354228061}
+ordinary-codex code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T062347348Z-fbc2fdc5/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791354329056}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=4 errors=1
+{
+  "batchId": "20261007T062347348Z-fbc2fdc5",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CODE_FIXTURE_FIXED_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 1,
+      "successes": 1,
+      "successRate": 1,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 96,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "pricingBasis": null,
+      "toolRounds": 3,
+      "toolCallCount": 3,
+      "wallMs": 99814
+    },
+    "hmcodex-runtime": {
+      "runs": 1,
+      "successes": 1,
+      "successRate": 1,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 144,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "pricingBasis": null,
+      "toolRounds": 4,
+      "toolCallCount": 4,
+      "wallMs": 24769
+    }
+  }
+}

@@ -1,0 +1,86 @@
+
+> hmcodex-desktop@0.1.0 test:ui:execution
+> node "%npm_config_local_prefix%/scripts/ui-execution-test.mjs"
+
+{"roleBurst":{"handlerMs":5.200000001117587,"rootWrites":0,"navWrites":0}}
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "role burst coalesces and preserves shell",
+      "handlerMs": 5.200000001117587,
+      "rootWrites": 0,
+      "navWrites": 0
+    },
+    {
+      "name": "event replay and paint must not produce tasks over 50ms",
+      "pass": true,
+      "longTasks": []
+    },
+    {
+      "name": "unchanged labels and saved threads receive no DOM mutations",
+      "staticMutations": 0
+    },
+    {
+      "name": "1024 mixed role/text deltas preserve exact output and row identity",
+      "longTasks": []
+    },
+    {
+      "name": "600 collapsed events mount on demand and preserve disclosure state"
+    },
+    {
+      "name": "tool execution is readable in the conversation timeline while running and after completion"
+    },
+    {
+      "name": "approvals remain responsive during streaming"
+    },
+    {
+      "name": "approval arrival preserves the same on-screen reading anchor"
+    },
+    {
+      "name": "high-risk approval buttons have keyboard order, visible reject focus and direct Enter rejection"
+    },
+    {
+      "name": "high-risk confirmation defaults to return; Enter and Escape cannot accidentally approve; explicit approval dispatches once; expiration dismisses stale confirmation"
+    },
+    {
+      "name": "approval waits for policy lease before showing authorization; expired request has no actions"
+    },
+    {
+      "name": "local expiration disables both locations and rejects stale clicks before the timer fires"
+    },
+    {
+      "name": "reading position and settings survive live events"
+    },
+    {
+      "name": "completion visible while audit reads are still pending"
+    },
+    {
+      "name": "completed live task refreshes cache and displays real zero hits"
+    },
+    {
+      "name": "new task retains focus and accepts typing after expanding execution details"
+    },
+    {
+      "name": "mobile cancellation responsive; late events discarded; settled reader unlocks composer"
+    },
+    {
+      "name": "nonstream response completes promptly while viewing another page"
+    },
+    {
+      "name": "controlled mode label matches selection and cancellation does not promise rollback or no side effects"
+    },
+    {
+      "name": "failed, unknown, required abstention and missing verification never become successful runs"
+    },
+    {
+      "name": "per-check verifier report preserves all four statuses, safe text and evidence references, explicit missing metadata and new-task isolation"
+    },
+    {
+      "name": "run.failed retains checks after failed bridge response; malformed entries are ignored and unsupported statuses remain unknown"
+    },
+    {
+      "name": "submission waits for acknowledgement; pre-acknowledgement failure remains unconfirmed; execution failure preserves accepted receipt"
+    }
+  ]
+}

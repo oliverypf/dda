@@ -1,0 +1,440 @@
+{
+  "schemaVersion": "1.0",
+  "records": [
+    {
+      "allocationId": "allocation-d1f9ae12-e8d4-463a-a04a-c7be0373fad8",
+      "decisionId": "decision-9779934e-bfac-49d2-a58f-a7359171157b",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "classifier",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868264,
+      "allocationDigest": "sha256:3f5a18f1ea156aab96c9942c996259795e11f533b7146014be24ef754f18e5b7"
+    },
+    {
+      "allocationId": "allocation-816eb4cc-bee1-4798-9fa3-d822a98cc64a",
+      "decisionId": "decision-74a00af2-4e52-4f9f-8d69-8b35b9cc7f4c",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "router",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:c20b16d21ef906a00b567d686a307ff526dc4750d658661440aca56d51f389c3"
+    },
+    {
+      "allocationId": "allocation-389a2c32-6428-4f1c-8c58-2b9192e0381e",
+      "decisionId": "decision-d3d2794f-069e-481d-b4ec-0a4a30163647",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "coordinator",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:147eb38a46c514d771c885cd426e409dbaf77c33238f1f83d76a823068c990dc"
+    },
+    {
+      "allocationId": "allocation-f7cb5d60-a0f0-4f8c-a485-c2e2f9037506",
+      "decisionId": "decision-fc279c5a-6a20-42e5-bf13-fbac84e7821a",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "planner",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:d1f049b79e5702c7557ffad77e3eb8214b41adf68eaa2fa335dacb56f899f218"
+    },
+    {
+      "allocationId": "allocation-02e6d234-ba0c-438d-a6a3-7a8f56fe3a3e",
+      "decisionId": "decision-a4e853ca-a08a-4a05-9edb-17c6ad872c7b",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "executor",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:e492f3aea79d20fe54ed5ce58650b6c3175992d818a84437c89eee6b96f1c1d4"
+    },
+    {
+      "allocationId": "allocation-560f1fbf-8a04-4fd3-b98c-ce87c975db1a",
+      "decisionId": "decision-338ef5b5-d881-492e-a0f2-e22939bb63e7",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:f673b7d66caa19b4a7ba67541e1cb8fab2cf201d37acb5de064be2cb2f01e2e5"
+    },
+    {
+      "allocationId": "allocation-d19e846b-e852-4179-a5fe-7b0bc0193446",
+      "decisionId": "decision-a7987355-a106-49c3-8c87-b876fd65903a",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:e51ec7193b7976452d878c3aa795707eee53ba65d017a2655c2944cb6e4a3951"
+    },
+    {
+      "allocationId": "allocation-e11eb1cc-3ecb-4647-9239-a96cabdecfa1",
+      "decisionId": "decision-400ce047-a50f-4de0-b4e4-94f4bcd7cfda",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:9c9bb80b9b0798d2e764bf6bc466281e186b5c15e7f3db77441b033a70c2a409"
+    },
+    {
+      "allocationId": "allocation-0912c643-14c2-4360-9e7e-1f8c615a30eb",
+      "decisionId": "decision-51c1d474-6a29-490f-9c62-51d64bd81774",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:bd77b7691f4db6b876314117159697074264598fc833a69a4ac8960a12a92a6f"
+    },
+    {
+      "allocationId": "allocation-dea2758a-ec84-4864-beaa-558f8dbeaf5d",
+      "decisionId": "decision-226aa0d6-d06d-4f67-a1c2-87d6481ca0f6",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868265,
+      "allocationDigest": "sha256:b3de14dfa1f36b4b363b095583d70c8cfd4f22a0bfee8bc69df27501256db556"
+    },
+    {
+      "allocationId": "allocation-817bdfc2-3876-4359-9b7a-c73fb5988278",
+      "decisionId": "decision-420e3243-fc1f-4fd6-8d92-583c45699686",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "verifier",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868267,
+      "allocationDigest": "sha256:d13f6dde8b39e16bafef0e8e74119a7004215f17447a8cdda4da158792323851"
+    },
+    {
+      "allocationId": "allocation-dc5d9267-a896-4736-b530-f2c676e8f186",
+      "decisionId": "decision-089f23fe-8811-4287-b0aa-709aa8d5e679",
+      "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "role": "MemoryConsolidator",
+      "outcomeId": "task-outcome-run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+      "credit": 0,
+      "blame": 0.08333333333333333,
+      "evidenceRefs": [
+        "event-3c35542b-2889-4a70-885b-06c389007259"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400868268,
+      "allocationDigest": "sha256:21f3d15c38db40ecefc102afdd9a70377639136fea1089d0b00651f12da2ede3"
+    },
+    {
+      "allocationId": "allocation-d4813a48-0a7b-4444-8118-cf2903b5e7e3",
+      "decisionId": "decision-5e08a12c-07a1-4f9f-89a0-1cc93bb2b01b",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "classifier",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912153,
+      "allocationDigest": "sha256:9c307861dc06846be55012d51099e649a16e2249fe617d91c580e5cad71d5b1e"
+    },
+    {
+      "allocationId": "allocation-a1d45ca2-8850-4aed-873d-1101ede87fca",
+      "decisionId": "decision-146a7675-f517-4812-b6f7-050e734311de",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "router",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:0d5d19fd844082ddf4f998a2988a0ad7116f999875abe3ef4fdf90790b0dddee"
+    },
+    {
+      "allocationId": "allocation-63941d88-5d81-46af-adbd-d95192d595ce",
+      "decisionId": "decision-2a0eec08-7022-45e8-afda-c2ca1be7c18a",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "coordinator",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:54ef3a421344e9776de5fc7e7e7bf90424731cdfe62c2f4d60a1bf3a3b111d2a"
+    },
+    {
+      "allocationId": "allocation-8baf99db-75cc-4846-814b-7dcfa5b5ab1a",
+      "decisionId": "decision-e87ff369-b8ad-4721-b9af-0e0ccee838db",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "planner",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:2c0352033d0a55c133e167def9a20c2cb3b10c328e3f15e71bd20a4c8abfa811"
+    },
+    {
+      "allocationId": "allocation-11bde91b-045a-40fd-bffc-8504b138fca2",
+      "decisionId": "decision-2ecb5866-376d-43bd-a8f5-47484242600b",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "executor",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:4febab1561f0ff00057e13319a668eac49fefe78e900ed031222ef063d308ab6"
+    },
+    {
+      "allocationId": "allocation-1a5d17f6-1277-4309-a5fe-54e8883f8885",
+      "decisionId": "decision-a9da47aa-41ff-49f8-bee3-348191312596",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:c2ca7724e1a988410d3abcd77cf5ffc5dead1491c9491e095a8537173ed855ac"
+    },
+    {
+      "allocationId": "allocation-371d8fbe-f7e5-4c33-82dd-e220c78479db",
+      "decisionId": "decision-deff75fc-bf5b-47ad-83df-649136e35a9c",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:fe97c1d4700a3bd882aef8ace94c3f37a911753f5242a96781983de0410cf857"
+    },
+    {
+      "allocationId": "allocation-96a1b68c-70fb-44a7-ba5f-9f8e20cc4eaa",
+      "decisionId": "decision-316721a9-1560-443f-b8db-0d95072687c2",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:2e6e67c6f40d0ed92a18da429211263ce112ef2715a9f4a19bd322eb049220ff"
+    },
+    {
+      "allocationId": "allocation-077cefe8-0e74-40fd-a4ff-3281ab443997",
+      "decisionId": "decision-55d6f8d9-081c-4441-91b7-3642ad3095cb",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:36b8e4c2164535714cabf2f9f449ec3600e9baf6f2fdbfcad34e11c6116280bb"
+    },
+    {
+      "allocationId": "allocation-f530f64a-d869-4a12-8b08-037d02dd3d94",
+      "decisionId": "decision-0cc86d6b-154b-49d0-8aa6-2ba5e3d82909",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:e8b8a1a128120522d06a91a9c62d6edb46def3b80f6839b32d92746680de6135"
+    },
+    {
+      "allocationId": "allocation-e3eaee42-14fe-4104-86c7-fdc276374d1b",
+      "decisionId": "decision-222c12f5-9801-4fe1-a273-ac10d35e622f",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "verifier",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:abf01c51bd00436ee2bf00e010ef3253663b834bdc731c337d76b189c15315fd"
+    },
+    {
+      "allocationId": "allocation-cfd2a2ff-185c-4c5c-8b45-f7c18af3f68f",
+      "decisionId": "decision-886c71b4-77df-4894-abe1-69ce5e0c4784",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:971b3c90859c02e8ca2b34cd642b3fe7dff4f434fb0e36c4e54a2155c5f40d7c"
+    },
+    {
+      "allocationId": "allocation-16662008-5d9d-40e3-b98d-5e4547872906",
+      "decisionId": "decision-3feecb19-8c93-46c0-9cae-9c7a1b7bf33b",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:685b3d2c36630e73dac01409825d01d3bbc89ee4ed5db19380e030a0cdbff0e3"
+    },
+    {
+      "allocationId": "allocation-79b3de2d-8f87-4411-a06b-a3d5471219cc",
+      "decisionId": "decision-63b82d06-0873-4ce4-b865-b51649d30f6f",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:c3f6f913a5fe2503764dc12ec04b56232891035c94c626ee3926944099df92a3"
+    },
+    {
+      "allocationId": "allocation-5521bb31-092c-48c2-bbc2-8d35e9180939",
+      "decisionId": "decision-75f1a063-9950-4a54-9edf-f78ec94cb81e",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:b5a63969d68ad3b6401bcc529c93715ffd825d0e7e011a623e2b279f47b159b8"
+    },
+    {
+      "allocationId": "allocation-5c672ef4-930a-496c-a1b2-542de8b9aa10",
+      "decisionId": "decision-ac0d5cfa-1d65-4cb7-a352-c925d832c303",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "decision-engine",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:993e202675d8b9995f0481ae3a365d3b5ef6b233b1ebf85d4d514a1b97a3c202"
+    },
+    {
+      "allocationId": "allocation-cd70cb42-9e9b-4926-acd2-7e0d7ff0d34f",
+      "decisionId": "decision-1ac2263f-ae82-401e-b3d3-7b697aa22aab",
+      "runId": "run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "role": "verifier",
+      "outcomeId": "task-outcome-run-cf135071-be15-423c-b7f0-b0c37713f419",
+      "credit": 0.058823529411764705,
+      "blame": 0,
+      "evidenceRefs": [
+        "event-486638f1-797c-4d7e-ba4c-f9d83e91054c"
+      ],
+      "allocationMethod": "CAUSAL_EQUAL_SHARE",
+      "createdAtMs": 1791400912154,
+      "allocationDigest": "sha256:fd9b6521ea56aad6389aa5eee84b000c473bbb4ec67b129937f84aec08d2ba58"
+    }
+  ]
+}

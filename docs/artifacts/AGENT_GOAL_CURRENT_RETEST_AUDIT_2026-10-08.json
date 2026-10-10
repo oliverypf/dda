@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-10-07T18:03:09.852Z",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "executable": {
+    "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\debug\\hmcodex-desktop.exe",
+    "sha256": "99bf433cfe955bf52bc7fdaebe2fb8586dae52e07ba429a752e90cd60d8a542a",
+    "modifiedAt": "2026-10-07T17:54:29.943Z"
+  },
+  "regressions": {
+    "runtime": {
+      "passed": 666,
+      "failed": 0,
+      "optionalSkipped": 1
+    },
+    "nativeDesktop": {
+      "passed": 27,
+      "failed": 0
+    },
+    "goalScripts": {
+      "passed": 38,
+      "failed": 0
+    },
+    "build": {
+      "succeeded": true
+    },
+    "evidence": [
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_VERIFICATION_FIX_FULL_RUNTIME_FINAL_2026-10-08.log",
+        "sha256": "070304c3f73fd62e8bc199f2df3472d79dc71d68743c7a76c81bfa4aa1c59c96"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_VERIFICATION_FIX_BUILD_FINAL_2026-10-08.log",
+        "sha256": "90c80683c00438de84115532f3ba6e80caddb7bbb2b964ccbddbc915549315ba"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_VERIFICATION_FINAL_NATIVE_2026-10-08.log",
+        "sha256": "a6244bf0142d54ae45ac0fc1ebf19f957a622949ac8b0c64fb0c424e17622845"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_VERIFICATION_COMPLETE_SCRIPT_SUITE_2026-10-08.log",
+        "sha256": "7fd2ebaa33a2dd89c0b692e899a578de00cf884ee11f114a9906f63ab1d52bea"
+      }
+    ]
+  },
+  "sourceChanges": [
+    "Native Node command normalization and digest-bound test acceptance",
+    "Single-copy verification evidence and transport-only verification retry without executor replay",
+    "Verified read-only checkpoint lineage observations passed into resumed recovery",
+    "Reusable live checkpoint/model-upgrade and automatic Jev-recovery tests integrated into the validation entry"
+  ],
+  "goals": [
+    {
+      "id": "checkpoint-continuation",
+      "status": "VERIFIED",
+      "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_VERIFICATION_FINAL_NATIVE_2026-10-08.log",
+      "scope": "Native desktop and actual interrupted child-process recovery; prior durable checkpoints and read-only observations remain verified."
+    },
+    {
+      "id": "preset-failure-recovery-upgrade-jev",
+      "status": "VERIFIED_FLOW",
+      "manualUpgradeEvidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_UPGRADE_ENTRY_LIVE_2026-10-08.json",
+      "automaticRecoveryEvidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_AUTOMATIC_RECOVERY_LIVE_2026-10-08.json",
+      "manualUpgradePassed": true,
+      "realAutomaticRecoveryPassed": true,
+      "automaticStrongModelSelectionProven": false,
+      "scope": "Actual Flash missing-file failure; same-checkpoint explicit Pro continuation passed. Separate real Jev recovery stayed on Flash and succeeded. Local fixture covers automatic strong-model routing."
+    },
+    {
+      "id": "continuous-fixed-task-comparison-and-economics",
+      "status": "AUTOMATION_READY_CURRENT_COMPARISON_RUNNING",
+      "plannedCurrentRuns": 48,
+      "series": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_COMPARE_SERIES_2026-10-08.json",
+      "seriesStatusAtAudit": "RUNNING",
+      "metrics": [
+        "successRate",
+        "recoverySuccessRate",
+        "manualInterventionMinutes",
+        "token",
+        "actualCost",
+        "estimatedQuotaOrApiPrice",
+        "toolRounds",
+        "modelCalls",
+        "wallMs"
+      ],
+      "productAdvantageProven": false,
+      "actualCashSavings": null,
+      "humanSavingsMinutes": null
+    }
+  ],
+  "historicalFullComparison": {
+    "source": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+    "gradingProtocol": "2.1-NATIVE_COMMAND_DIGEST_AND_FIXTURE_TEST",
+    "hmCodexSuccesses": 8,
+    "ordinaryCodexSuccesses": 9,
+    "runsPerCondition": 12,
+    "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_TEST_ACCEPTANCE_ARCHIVED_REGRADE_2026-10-08.json",
+    "currentSourceExperiment": false
+  },
+  "remaining": [
+    "Complete the frozen-current-source 24-run ordinary Codex comparison and separate 24-run Jev on/off ablation.",
+    "Assess all failures and timeouts, complete usage coverage and success-conditioned resource results before drawing an advantage conclusion.",
+    "Real automatic selection of the stronger model remains unobserved; do not substitute explicit user selection or local fixture routing.",
+    "Import actual billing and measured human activity if a cash or labor savings conclusion is required."
+  ],
+  "limitations": [
+    "Small preset tasks and two repeats per task do not establish general engineering superiority.",
+    "Third-party model fallback tools in the installed Codex CLI differ from native GPT Codex.",
+    "Subscription quota price is not cash billing; absent usage and human evidence stay unknown."
+  ]
+}

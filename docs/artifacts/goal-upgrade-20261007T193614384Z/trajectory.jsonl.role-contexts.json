@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "1.0",
+  "contexts": [
+    {
+      "contextId": "role-context-69ce2673-46df-42db-b328-dff494a9c262-1",
+      "runId": "run-9aafc233-35df-430b-b7ee-2e01a38636c1",
+      "role": "planner",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 13504,
+      "runtimeInstanceId": "runtime-2cc734e9-eb4e-4d77-8d45-d40ea35f46bb",
+      "metadata": {
+        "binding": "default",
+        "resolvedBinding": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        },
+        "provider": "openai",
+        "protocol": "responses"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-cd66ffe8-8b1d-451d-b357-45ed0e0d9069",
+      "bindingSnapshot": {
+        "role": "planner",
+        "requested": "default",
+        "resolved": {
+          "role": "planner",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:c8685ecbb02341779b5b7e022a9ee5c662a11262b95ac5cdd76e83cfa4bac8b0",
+      "createdAtMs": 1791401777423,
+      "updatedAtMs": 1791401814230
+    },
+    {
+      "contextId": "role-context-7aeeb7eb-ffeb-4682-8095-2e5f3cb0acc0-2",
+      "runId": "run-9aafc233-35df-430b-b7ee-2e01a38636c1",
+      "role": "executor",
+      "model": "mimo-v2.6-flash",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 13504,
+      "runtimeInstanceId": "runtime-2cc734e9-eb4e-4d77-8d45-d40ea35f46bb",
+      "metadata": {
+        "binding": "default",
+        "resolvedBinding": {
+          "role": "executor",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        },
+        "provider": "openai",
+        "protocol": "responses"
+      },
+      "adapterIdentity": {
+        "provider": "openai",
+        "protocol": "responses",
+        "model": "mimo-v2.6-flash"
+      },
+      "adapterIdentityDigest": "sha256:2c471d5ecb7b613f386d6de0d834bc47dd8697e0593353f969e371c548a019a0",
+      "threadId": "thread-cd66ffe8-8b1d-451d-b357-45ed0e0d9069",
+      "bindingSnapshot": {
+        "role": "executor",
+        "requested": "default",
+        "resolved": {
+          "role": "executor",
+          "kind": "MODEL",
+          "selector": "PINNED",
+          "modelId": "mimo-v2.6-flash",
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:d69e515759cef1f0bd595e1eca364ca2d555d39e07c5aeb3a46c3a052c187457",
+      "createdAtMs": 1791401777423,
+      "updatedAtMs": 1791401814287
+    },
+    {
+      "contextId": "role-context-6da30bc3-f5df-4132-8843-56abc9aaf20c-3",
+      "runId": "run-9aafc233-35df-430b-b7ee-2e01a38636c1",
+      "role": "verifier",
+      "model": "rule",
+      "isolation": "DEDICATED",
+      "state": "CLOSED",
+      "ownerPid": 13504,
+      "runtimeInstanceId": "runtime-2cc734e9-eb4e-4d77-8d45-d40ea35f46bb",
+      "metadata": {
+        "binding": "rule",
+        "resolvedBinding": {
+          "role": "verifier",
+          "kind": "DETERMINISTIC",
+          "provider": "rule",
+          "protocol": "deterministic",
+          "selector": "PINNED"
+        },
+        "provider": "rule",
+        "protocol": "deterministic"
+      },
+      "adapterIdentity": {
+        "provider": "rule",
+        "protocol": "deterministic",
+        "model": "rule"
+      },
+      "adapterIdentityDigest": "sha256:4bb9d3c18c771491ce37863b73bdf38f819e591fb946e5bddd2338d95fcb3c42",
+      "threadId": "thread-cd66ffe8-8b1d-451d-b357-45ed0e0d9069",
+      "bindingSnapshot": {
+        "role": "verifier",
+        "requested": "rule",
+        "resolved": {
+          "role": "verifier",
+          "kind": "DETERMINISTIC",
+          "provider": "rule",
+          "protocol": "deterministic",
+          "selector": "PINNED"
+        }
+      },
+      "bindingSnapshotDigest": "sha256:72c101b3547dba89895eb55da694c8fadf75c4defe6f06253a08128cb1612543",
+      "createdAtMs": 1791401777423,
+      "updatedAtMs": 1791401814329
+    }
+  ]
+}

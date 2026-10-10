@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "threads": [
+    {
+      "id": "thread-f73bd92d-e77d-4c87-8f00-d5124262dbc7",
+      "title": "This is a preset read-only recovery test. Success requires a real workspace.read of README.md and reporting its exact evidence marker. In the initial executor attempt, invoke only workspace.read of missing-evidence.txt as the first tool, re",
+      "cwd": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-actual-checkpoint-upgrade-2cRlUN",
+      "turns": [
+        {
+          "id": "turn-c5777ff5-8be7-4bfa-bf74-541f2160f72e",
+          "runId": "run-8893163b-9678-4a4c-ae63-45245ea0c0f8",
+          "summary": "state=FAILED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | errorDigest=sha256:aed86ddbba95c8f72c0d3fc4f2f32406551e571e921b9a2ba26c3844c4cb4858",
+          "state": "FAILED",
+          "atMs": 1791395137991
+        },
+        {
+          "id": "turn-57d56490-9fef-4768-856b-131e3406d716",
+          "runId": "run-f359f4de-d20e-4d05-a8c9-4728a0897b29",
+          "summary": "state=SUCCEEDED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | outputDigest=sha256:b1cb37154f6fb4fa9caef050ff4cdae22de6994b0f5c190fc86389a930d9adb3 | toolRounds=1 | toolCalls=1",
+          "state": "SUCCEEDED",
+          "atMs": 1791395170469
+        }
+      ],
+      "state": "COMPLETED",
+      "createdAtMs": 1791395121451,
+      "updatedAtMs": 1791395170469
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{"event":"CASE_START","runKey":"20261007T140521038Z-c0f0b5b7/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791381921676}
+hmcodex-runtime code-normalize-001 FAILED tools=7 errors=0
+{"event":"CASE_START","runKey":"20261007T140521038Z-c0f0b5b7/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791382114354}
+hmcodex-runtime code-feature-001 FAILED tools=5 errors=0
+{"event":"CASE_START","runKey":"20261007T140521038Z-c0f0b5b7/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791382218317}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T140521038Z-c0f0b5b7/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791382260491}
+hmcodex-runtime code-feature-001 FAILED tools=5 errors=0
+{
+  "batchId": "20261007T140521038Z-c0f0b5b7",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_ACTUAL_CONTEXT_LIVE_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 4,
+      "successes": 1,
+      "successRate": 0.25,
+      "recoveryOpportunities": 4,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.25,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 73874,
+      "actualCost": null,
+      "estimatedCost": 0.012012061,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 19,
+      "modelCalls": 23,
+      "usageCoverage": {
+        "reportedRequests": 23,
+        "totalRequests": 23,
+        "knownTokenSubtotal": 73874,
+        "pricedRequests": 23,
+        "knownPricedSubtotal": 0.012012061
+      },
+      "toolCallCount": 20,
+      "wallMs": 395342
+    }
+  }
+}

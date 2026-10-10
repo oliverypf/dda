@@ -1,0 +1,65 @@
+✔ decision observations keep only bounded terminal host facts (6.587187ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (5019.688907ms)
+✖ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (10747.190781ms)
+✔ a later successful identical test resolves its failure without losing the trace (12.913125ms)
+✖ host-deferred proposals do not become permanent execution failures or duplicate effects (4.079063ms)
+✔ rule verifier requires bounded non-empty output (1.085ms)
+✔ task coordinator enforces transitions and optimistic version (3.970469ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.236719ms)
+✔ rule verifier detects repeated actions and stops with STALLED (1.349219ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.311875ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.904844ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.807031ms)
+✔ rule verifier does not treat empty evidence containers as proof (3.541093ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.894687ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (2.033281ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 13
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16320.584219
+
+✖ failing tests:
+
+test at test\jev-tool-evidence.test.mjs:117:1
+✖ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (10747.190781ms)
+  AssertionError [ERR_ASSERTION]: de-cordis","os":["windows"]},"contributions":[{"id":"dream-scheduler.contribution","type":"skill","entrypoint":"dream-scheduler","capabilities":["memory.dream.schedule"],"permissions":["trajectory.read.redacted"],"permissionCeiling":"READ_ONLY"}],"digest":"sha256:5e3a408c6f7f94558b4394d87df175db6d0f58fc4034bd72709ee5035a478ac8","lifecycle":"ACTIVE","source":"BUNDLED_SIGNED"},{"schemaVersion":"1.0","id":"evolution-registry","name":"Evolution Proposal Registry","version":"0.1.0","publisher":{"id":"com.hmcodex","displayName":"dda"},"pluginApi":">=1.0 <2.0","harnessProtocol":">=1.0 <2.0","platform":{"kind":"node-cordis","os":["windows"]},"contributions":[{"id":"evolution-registry.contribution","type":"skill","entrypoint":"evolution-registry","capabilities":["profile.propose-update"],"permissions":["trajectory.read.redacted"],"permissionCeiling":"READ_ONLY"}],"digest":"sha256:d0ea296f7d25a16e70f3439544a935b5472aa655ab520c60a5bd0cf7445f1fe4","lifecycle":"ACTIVE","source":"BUNDLED_SIGNED"}]}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/jev-tool-evidence.test.mjs:184:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\rule-verifier.test.mjs:19:1
+✖ host-deferred proposals do not become permanent execution failures or duplicate effects (4.079063ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'FAIL' !== 'PASS'
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/rule-verifier.test.mjs:25:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'FAIL',
+    expected: 'PASS',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

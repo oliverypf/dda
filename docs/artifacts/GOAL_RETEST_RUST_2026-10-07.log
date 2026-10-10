@@ -1,0 +1,35 @@
+   Compiling hmcodex-desktop v0.1.0 (C:\Users\User\hmCodex-local\desktop\src-tauri)
+   Compiling tauri v2.11.5
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.69s
+     Running unittests src\lib.rs (target\x86_64-pc-windows-msvc\debug\deps\hmcodex_desktop_lib-074125e81c665dc8.exe)
+
+running 26 tests
+test desktop_log_tests::civil_from_days_matches_known_dates ... ok
+test tests::detects_a_stale_runtime_heartbeat_with_a_bounded_timeout ... ok
+test desktop_log_tests::iso_utc_from_ms_formats_known_instant ... ok
+test desktop_log_tests::desktop_log_dir_targets_hmcodex_logs ... ok
+test tests::forwards_runtime_events_only_for_the_active_process ... ok
+test tests::cancelling_without_an_active_runtime_is_a_noop ... ok
+test tests::cancellation_can_target_a_reserved_runtime_launch ... ok
+test tests::extracts_last_runtime_phase_for_watchdog_diagnostics ... ok
+test tests::model_config_rejects_embedded_credentials_and_invalid_env_names ... ok
+test tests::only_read_only_history_commands_bypass_the_runtime_write_lock ... ok
+test tests::phase1_release_gate_rejects_controlled_and_invalid_channels ... ok
+test tests::model_config_migrates_retired_opencode_go_model_alias ... ok
+test tests::model_config_uses_runtime_json_field_names ... ok
+test tests::rejects_absolute_and_parent_paths ... ok
+test tests::rejects_links_that_resolve_outside_the_workspace ... ok
+test tests::rejects_ungranted_workspace ... ok
+test tests::parses_runtime_health_route_without_credentials ... ok
+test tests::reports_idle_runtime_process_status ... ok
+test tests::task_response_preserves_runtime_identity_for_desktop ... ok
+test tests::model_config_save_preserves_advanced_fields_and_replaces_existing_file ... ok
+test tests::model_config_custom_instructions_round_trip_and_clear ... ok
+test tests::model_config_save_round_trips_verifier_section ... ok
+test tests::lists_directories_before_files ... ok
+test tests::runtime_command_lock_serializes_dashboard_and_task_slots ... ok
+test tests::suppresses_binary_content ... ok
+test tests::truncates_preview_and_hashes_returned_bytes ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+

@@ -1,0 +1,42 @@
+✔ defaults to READ_ONLY and refuses every side effect before spawning (19.482343ms)
+✔ issues at most one workspace-mutating lease until execution releases it (19.609532ms)
+✔ network leases do not claim the writable workspace slot (5.988593ms)
+✔ workspace lock state is shared across independent registries (17.316093ms)
+✔ workspace lock rejects a competing child process and recovers after release (500.919687ms)
+✔ runs an allowlisted command with bounded, redacted output in CONTROLLED mode (333.288907ms)
+✔ binds lease channels and keeps cross-monitor leases fail-closed (2.88875ms)
+✔ requires and consumes a one-shot lease for a non-allowlisted command (321.441406ms)
+✔ rejects expired, forged, and cross-monitor leases (138.524531ms)
+✔ writes only inside the canonical workspace and records a digest, never content (8.458594ms)
+✔ writes an existing workspace file and blocks traversal and sensitive paths (18.029688ms)
+✔ rejects Git metadata and symlinked workspace paths before lease consumption (13.053437ms)
+✔ test execution is scoped to a child directory and timeout is bounded (5862.863437ms)
+✔ timeout clears a detached grandchild process tree (2657.154375ms)
+✖ the model sees only lease-eligible effects; hidden effects still fail closed when guessed (463.377344ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 14
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10487.590313
+
+✖ failing tests:
+
+test at test\tool-availability.test.mjs:13:1
+✖ the model sees only lease-eligible effects; hidden effects still fail closed when guessed (463.377344ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== ''
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/.codex-tmp/goal-runtime-api-fixes-20261007/test/tool-availability.test.mjs:45:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

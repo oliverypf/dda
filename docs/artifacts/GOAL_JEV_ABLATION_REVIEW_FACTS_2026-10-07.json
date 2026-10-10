@@ -1,0 +1,294 @@
+{
+  "schemaVersion": "1.0",
+  "sourceReport": "AGENT_GOAL_JEV_ABLATION_2026-10-07.json",
+  "batchId": "20261007T110629419Z-b67a743d",
+  "runtimeSourceSha256": "a51d19434c4cdd6676ea4aa8a25019035307deaf486a63b831977410a7b62683",
+  "model": "mimo-v2.6-pro",
+  "conditions": {
+    "hmcodex-jev-off": {
+      "runs": 12,
+      "successes": 12,
+      "successRate": 1,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 28,
+      "modelCalls": 47,
+      "usageCoverage": {
+        "reportedRequests": 42,
+        "totalRequests": 47,
+        "knownTokenSubtotal": 101104,
+        "pricedRequests": 42,
+        "knownPricedSubtotal": 0.02261913
+      },
+      "toolCallCount": 31,
+      "wallMs": 577527
+    },
+    "hmcodex-jev-on": {
+      "runs": 12,
+      "successes": 7,
+      "successRate": 0.5833333333333334,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 4,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 36,
+      "modelCalls": 69,
+      "usageCoverage": {
+        "reportedRequests": 49,
+        "totalRequests": 69,
+        "knownTokenSubtotal": 131470,
+        "pricedRequests": 49,
+        "knownPricedSubtotal": 0.024644925
+      },
+      "toolCallCount": 35,
+      "wallMs": 918056
+    }
+  },
+  "ablation": {
+    "method": "One frozen source, one upstream model, identical paired task files, alternating off/on order.",
+    "pairs": [
+      {
+        "iteration": 1,
+        "taskId": "inspect-readme-001",
+        "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 1,
+        "taskId": "inspect-layout-001",
+        "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 1,
+        "taskId": "recoverable-read-001",
+        "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "FAILED"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-normalize-001",
+        "initialDigest": "5f9649b4aa09dc2cb328aee7b7aa266eef055a8f27229cb6dcd23469a80893ea",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-syntax-001",
+        "initialDigest": "ffec0c8c31010286fff298a633653f4ec7738a207af4941aa9408dffed90e05f",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "FAILED"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-feature-001",
+        "initialDigest": "45468187a2062aebe536ab1447b430da9babaa4968223ac1a8bb77912fe1f4ea",
+        "offRunKey": "20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-readme-001",
+        "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "FAILED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-layout-001",
+        "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "recoverable-read-001",
+        "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "code-normalize-001",
+        "initialDigest": "beab72917a3d36464b304e3b1016e44947d73f763e70fab7da05c1b1ecbcb483",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "SUCCEEDED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "code-syntax-001",
+        "initialDigest": "f71a1bcf8769af9c996ea9b05a051ab4487108e85118970246f7d6c4ee602136",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "FAILED"
+      },
+      {
+        "iteration": 2,
+        "taskId": "code-feature-001",
+        "initialDigest": "b592701307ada09e3e0f6d29647cd856e7c43a4deac521886437f33721b28182",
+        "offRunKey": "20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-off",
+        "onRunKey": "20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-on",
+        "offStatus": "SUCCEEDED",
+        "onStatus": "FAILED"
+      }
+    ],
+    "pairCount": 12,
+    "assignedOnRuns": 12,
+    "activatedOnRuns": 11,
+    "decision": {
+      "calls": 70,
+      "succeededCalls": 50,
+      "wallMs": 145711.6581219999,
+      "inputTokens": null,
+      "outputTokens": null,
+      "estimatedApiCost": null,
+      "actualCost": null
+    },
+    "limitations": [
+      "All failed and timed-out runs are included in their assigned condition.",
+      "Decision API-price estimates and language-model subscription quota are separate quantities, not combined invoices.",
+      "Small samples and provider/network timing variation limit causal attribution. Human savings and cash charges remain unverified."
+    ]
+  },
+  "contentAudit": {
+    "cases": 24,
+    "contentFound": 22,
+    "passed": false
+  },
+  "wallRatioOnOverOff": 1.589633038801649,
+  "claimChecks": [
+    {
+      "sequence": 3,
+      "id": "model-answer-1",
+      "claimLength": 500,
+      "validJson": false
+    },
+    {
+      "sequence": 10,
+      "id": "model-answer-2",
+      "claimLength": 500,
+      "validJson": false
+    }
+  ],
+  "failures": [
+    {
+      "iteration": 1,
+      "taskId": "recoverable-read-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:UNCERTAIN",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-syntax-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:FAIL",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": false,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "inspect-readme-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "MODEL_HTTP_ERROR:502:fetch failed",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-syntax-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:FAIL",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-feature-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "MODEL_HTTP_ERROR:502:fetch failed",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": false,
+        "actualSuccessfulTest": false,
+        "actualInjectedFailure": false,
+        "successfulToolAfterFailure": false,
+        "workspaceScopeRespected": false
+      }
+    }
+  ]
+}

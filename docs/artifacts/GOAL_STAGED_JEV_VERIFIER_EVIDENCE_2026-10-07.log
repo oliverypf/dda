@@ -1,0 +1,23 @@
+✔ failure router keeps assertion failures in the test failure lane (3.719219ms)
+✔ evidence and stop rules block premature success (0.679219ms)
+✔ Jev client normalizes finite-choice answers and sends no tool surface (3.154219ms)
+✔ decision engine batches unresolved Jev questions and returns a finite control action (3.108125ms)
+✔ decision engine fails closed to conservative recovery when Jev is unavailable (1.180157ms)
+✔ decision engine records fallback when an enabled Jev request fails (0.998125ms)
+✔ decision state honors the configured size limit (1.361875ms)
+✔ Jev owns candidate selection and action gating without a model verifier role (11.337343ms)
+✔ verifier recovery continues past the already observed initial failure instead of replaying it (2507.386094ms)
+✔ definite failure retries through Jev and upgrades to the bound strong model (5686.754063ms)
+✔ default Jev route and translated finite questions satisfy the current official API contract (1.548437ms)
+✔ an empty or ambiguous internal choice set is rejected without sending a request (0.955ms)
+✔ finite option descriptions are forwarded only for supplied choices (0.473437ms)
+✔ decision observations keep only bounded terminal host facts (1.4225ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2287.611719ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10673.630625

@@ -1,0 +1,45 @@
+✔ a later successful identical test resolves its failure without losing the trace (12.324687ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (3.378438ms)
+✔ rule verifier requires bounded non-empty output (0.814219ms)
+✔ task coordinator enforces transitions and optimistic version (4.127031ms)
+✔ rule verifier reports partial goal progress as CONTINUE (3.678437ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.566719ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (4.363438ms)
+✖ one repeated syntax diagnosis can recover only through a later actual full test (6.163594ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (2.079687ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (3.392812ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.571094ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.565625ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.644688ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (2.178906ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 13
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 559.2525
+
+✖ failing tests:
+
+test at runtime\test\rule-verifier.test.mjs:100:1
+✖ one repeated syntax diagnosis can recover only through a later actual full test (6.163594ms)
+  AssertionError [ERR_ASSERTION]: a later fresh full test proves the bounded diagnostic loop has ended
+  
+  'STALLED' !== 'PASS'
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/rule-verifier.test.mjs:110:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'STALLED',
+    expected: 'PASS',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

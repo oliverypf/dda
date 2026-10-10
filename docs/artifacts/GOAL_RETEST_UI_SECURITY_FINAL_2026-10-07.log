@@ -1,0 +1,8 @@
+
+> hmcodex-desktop@0.1.0 test:ui:security
+> node "%npm_config_local_prefix%/scripts/ui-security-test.mjs"
+
+hmCodex controlled UI security tests · exe=C:/Users/User/hmCodex-local/desktop/src-tauri/target/x86_64-pc-windows-msvc/debug/hmcodex-desktop.exe · port=9335
+PASS  S01 受控门与模式区分 — 受控模式
+PASS  S02 网络目标编辑器拒绝非法 JSON — 格式无效：需要 JSON 数组
+FAIL  S03 审批拒绝后无副作用 — WAIT_TIMEOUT: approval card; last=false

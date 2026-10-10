@@ -1,0 +1,21 @@
+hmCodex UI functional tests · exe=C:\Program Files\hmCodex\hmcodex-desktop.exe · port=9333 · pid=undefined
+node:events:487
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: spawn C:\Program Files\hmCodex\hmcodex-desktop.exe ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:287:19)
+    at onErrorNT (node:internal/child_process:525:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+Emitted 'error' event on ChildProcess instance at:
+    at ChildProcess._handle.onexit (node:internal/child_process:293:12)
+    at onErrorNT (node:internal/child_process:525:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'spawn C:\\Program Files\\hmCodex\\hmcodex-desktop.exe',
+  path: 'C:\\Program Files\\hmCodex\\hmcodex-desktop.exe',
+  spawnargs: []
+}
+
+Node.js v24.19.0

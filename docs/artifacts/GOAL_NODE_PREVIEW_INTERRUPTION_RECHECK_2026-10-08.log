@@ -1,0 +1,16 @@
+✔ a killed read-only runtime resumes pending work without repeating completed steps (7572.632187ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-ZJx9fe
+✔ a killed controlled write remains blocked when resumed in read-only mode (8387.932656ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-eOuesi
+✔ a read-only source does not authorize replay after upgrading the resume mode (6889.059688ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-x5BDJ1
+✔ a killed read-only runtime resumes with the phase-one SQLite event store (18654.603438ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-qs3ssT
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42056.243125

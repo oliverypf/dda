@@ -1,0 +1,11 @@
+
+> hmcodex-desktop@0.1.0 test:ui:disconnect
+> node "%npm_config_local_prefix%/scripts/ui-disconnect-test.mjs"
+
+hmCodex UI disconnect tests · exe=C:/Users/User/hmCodex-local/desktop/src-tauri/target/x86_64-pc-windows-msvc/debug/hmcodex-desktop.exe · port=9334 · fixture=http://127.0.0.1:47207/chat/completions
+disconnectedAppPid=14956
+PASS  T14 模型断线 UI 错误渲染 — 任务未完成
+recoveredAppPid=8368
+PASS  T15 恢复配置后任务可继续 — 只读检查完成
+
+Summary: 2 passed, 0 failed

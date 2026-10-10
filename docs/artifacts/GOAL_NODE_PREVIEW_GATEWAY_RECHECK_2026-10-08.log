@@ -1,0 +1,10 @@
+✔ upgrade preflight rejects missing config, duplicate model and missing credential before inference (22.535938ms)
+✔ a setup failure after opening the first gateway closes it and exits without hanging (769.034687ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1409.332813

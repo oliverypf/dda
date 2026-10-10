@@ -1,0 +1,11 @@
+✔ checkpoint lineage carries actual prior read failure without copying arbitrary messages or commands (4.645ms)
+✔ unknown modes, changed goals, wrong checkpoints, metadata refusals and any actual side effects do not become resume facts (3.508593ms)
+✔ later checkpoints preserve validated earlier read observations across the same thread lineage (1.025781ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 439.906094

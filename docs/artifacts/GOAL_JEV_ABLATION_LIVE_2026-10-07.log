@@ -1,0 +1,103 @@
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791371190742}
+hmcodex-jev-off inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791371213003}
+hmcodex-jev-on inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791371230689}
+hmcodex-jev-off inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791371264197}
+hmcodex-jev-on inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791371311711}
+hmcodex-jev-off recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791371400540}
+hmcodex-jev-on recoverable-read-001 FAILED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791371496107}
+hmcodex-jev-off code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791371551582}
+hmcodex-jev-on code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791371647344}
+hmcodex-jev-off code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791371700460}
+hmcodex-jev-on code-syntax-001 FAILED tools=9 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791371871874}
+hmcodex-jev-off code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791371917116}
+hmcodex-jev-on code-feature-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791371976204}
+hmcodex-jev-on inspect-readme-001 FAILED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791372038558}
+hmcodex-jev-off inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791372083472}
+hmcodex-jev-on inspect-layout-001 SUCCEEDED tools=2 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791372146063}
+hmcodex-jev-off inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-on","mode":"READ_ONLY","atMs":1791372176322}
+hmcodex-jev-on recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-off","mode":"READ_ONLY","atMs":1791372286161}
+hmcodex-jev-off recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791372345813}
+hmcodex-jev-on code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791372414611}
+hmcodex-jev-off code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791372461107}
+hmcodex-jev-on code-syntax-001 FAILED tools=5 errors=2
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791372571987}
+hmcodex-jev-off code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-on","mode":"CONTROLLED","atMs":1791372641359}
+hmcodex-jev-on code-feature-001 FAILED tools=0 errors=0
+{"event":"CASE_START","runKey":"20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-off","mode":"CONTROLLED","atMs":1791372682145}
+hmcodex-jev-off code-feature-001 SUCCEEDED tools=4 errors=1
+{
+  "batchId": "20261007T110629419Z-b67a743d",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_JEV_ABLATION_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-jev-off": {
+      "runs": 12,
+      "successes": 12,
+      "successRate": 1,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 28,
+      "modelCalls": 47,
+      "usageCoverage": {
+        "reportedRequests": 42,
+        "totalRequests": 47,
+        "knownTokenSubtotal": 101104,
+        "pricedRequests": 42,
+        "knownPricedSubtotal": 0.02261913
+      },
+      "toolCallCount": 31,
+      "wallMs": 577527
+    },
+    "hmcodex-jev-on": {
+      "runs": 12,
+      "successes": 7,
+      "successRate": 0.5833333333333334,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 4,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 36,
+      "modelCalls": 69,
+      "usageCoverage": {
+        "reportedRequests": 49,
+        "totalRequests": 69,
+        "knownTokenSubtotal": 131470,
+        "pricedRequests": 49,
+        "knownPricedSubtotal": 0.024644925
+      },
+      "toolCallCount": 35,
+      "wallMs": 918056
+    }
+  }
+}

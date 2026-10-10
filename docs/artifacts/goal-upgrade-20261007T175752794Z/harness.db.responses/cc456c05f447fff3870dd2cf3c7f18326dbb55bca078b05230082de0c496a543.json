@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+  "text": "Attempt ended in failure as prescribed.\n\n**Evidence:** `workspace.read` of `missing-evidence.txt` returned an actual error:\n- `errorCode: WORKSPACE_NOT_FOUND`\n- `message: \"missing-evidence.txt Available snapshot paths: README.md\"`\n\n**Result:** INCOMPLETE — the required evidence file `missing-evidence.txt` does not exist in the workspace, so no evidence marker could be collected from it. Per the attempt rules, I stopped here and did not read README.md.\n\nNo checkpoint restore or verifier-recovery signal with previously observed failure facts was provided to the host, so the continuation path (reading README.md and reporting its marker) was not triggered in this attempt. The workspace remains untouched (read-only).",
+  "outputDigest": "sha256:7c3350fafcd706cc4ddd9e830f97b3cfbdcfb5644357fbd2d35d4658b5bdacec"
+}

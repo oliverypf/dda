@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "3.0",
+  "batchId": "20261007T083913520Z-79bb0596",
+  "generatedAt": "2026-10-07T08:40:07.346Z",
+  "taskSetVersion": "3.1",
+  "suite": "all",
+  "taskSet": [
+    {
+      "taskId": "recoverable-read-001",
+      "prompt": "The recovery test requires an observable failed tool call. First invoke a tool that ONLY reads missing-evidence.txt and lets its missing-file error occur. Do not check existence, catch the error, or combine a fallback command in this first call. Only AFTER receiving that tool error, invoke a separate tool to read README.md and report its evidence marker.",
+      "acceptance": "marker",
+      "recoverable": true
+    }
+  ],
+  "codexVersion": "codex-cli 0.155.1",
+  "runtimeSourceSha256": "3def87b6716a96901539fdcc4c84939b54d81b4acfa51338b8ee030cf843e6e1",
+  "model": "mimo-v2.6-pro",
+  "mode": "live",
+  "decisionMode": "LIVE_JEV_HMCODEX_ONLY",
+  "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T083913520Z-79bb0596",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 1,
+      "successes": 0,
+      "successRate": 0,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": 0,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 5170,
+      "actualCost": null,
+      "estimatedCost": 0.001599205,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 2,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 5170,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.001599205
+      },
+      "toolCallCount": 1,
+      "wallMs": 52576
+    }
+  },
+  "rows": [
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T083913520Z-79bb0596",
+      "runKey": "20261007T083913520Z-79bb0596/1-recoverable-read-001-hmcodex-runtime",
+      "startedAtMs": 1791362354064,
+      "endedAtMs": 1791362407324,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "FAILED",
+      "runtimeSourceSha256": "3def87b6716a96901539fdcc4c84939b54d81b4acfa51338b8ee030cf843e6e1",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 1,
+      "inputTokens": 4125,
+      "outputTokens": 1045,
+      "totalTokens": 5170,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 5170,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.001599205
+      },
+      "cachedInputTokens": 2560,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.001599205,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 3,
+        "succeededCalls": 3,
+        "usageComplete": true,
+        "inputTokens": 7070,
+        "outputTokens": 553,
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "2c7dd530-11b7-4824-a4ed-822aaa9c1f52",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 2,
+      "toolCallCount": 1,
+      "wallMs": 52576,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": false,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "a66ee591cd8608aaba214987177824aabd1d6fc56bc6c4c9731089face39b621",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T083913520Z-79bb0596\\1-recoverable-read-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T08:40:07.325Z"
+    }
+  ],
+  "caveats": [
+    "This is a single-client diagnostic, not a paired comparison. Other batches cannot supply its control condition.",
+    "Selected clients use the configured actual upstream model through the shared protocol adapter. Missing usage or billing stays UNKNOWN.",
+    "hmCodex uses the real Jev service; raw decision usage is recorded separately. Priced usage covers the language model only; Jev cash charges remain unknown.",
+    "Published quota rates include separate cached-input prices. Quota consumption is not an invoice or per-task cash charge. Unknown billing stays unknown.",
+    "No humans are connected to this headless run; zero intervention time does not prove human time savings.",
+    "Plugins are disabled in the Codex control. Inspection is read-only; engineering tasks permit workspace edits with approved file/test capabilities. Both clients start from identical independent workspaces.",
+    "Fixed engineering tasks use independent behavior assertions, syntax and test commands, and immutable test-file checks. Larger samples and actual billing/manual-time evidence remain required for product ROI claims."
+  ],
+  "contentAudit": {
+    "passed": false,
+    "cases": 1,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T083913520Z-79bb0596\\content-audit.json"
+  }
+}

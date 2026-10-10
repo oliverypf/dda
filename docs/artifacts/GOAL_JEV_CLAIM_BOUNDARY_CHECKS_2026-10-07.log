@@ -1,0 +1,26 @@
+✔ multi-agent candidate runtime audits success (8472.945625ms)
+✔ multi-agent candidate runtime audits drafts-failed (8654.351875ms)
+✔ multi-agent candidate runtime audits judge-failed (9293.018281ms)
+✔ multi-agent candidate runtime audits configured (9903.70625ms)
+✔ a long model answer retains literal reported values after the real 500-character boundary (8.875313ms)
+✔ native process status and the end of a large test log survive without malformed JSON (1.474844ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (1.185782ms)
+✔ decision observations keep only bounded terminal host facts (5.426719ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (4959.89125ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (43.525781ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (12.475625ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (11.036875ms)
+✔ runs a model-requested tool and sends its result into the next round (8.03875ms)
+✔ READ_ONLY requests expose only read-only tools (7.910625ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (7.318438ms)
+✔ stops repeated workspace requests after four rounds without new evidence (21.055782ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (8.994063ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (16.870781ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36996.810781

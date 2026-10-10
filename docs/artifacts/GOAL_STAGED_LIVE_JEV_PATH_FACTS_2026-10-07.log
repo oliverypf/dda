@@ -1,0 +1,35 @@
+{"event":"CASE_START","runKey":"20261007T085312870Z-b547f376/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791363193528}
+hmcodex-runtime recoverable-read-001 TIMED_OUT tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T085312870Z-b547f376/2-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791363374464}
+hmcodex-runtime recoverable-read-001 FAILED tools=1 errors=1
+{
+  "batchId": "20261007T085312870Z-b547f376",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_STAGED_LIVE_JEV_PATH_FACTS_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 0,
+      "successRate": 0,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": 0,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 4,
+      "modelCalls": 9,
+      "usageCoverage": {
+        "reportedRequests": 6,
+        "totalRequests": 9,
+        "knownTokenSubtotal": 9620,
+        "pricedRequests": 6,
+        "knownPricedSubtotal": 0.0026855159999999998
+      },
+      "toolCallCount": 3,
+      "wallMs": 322554
+    }
+  }
+}

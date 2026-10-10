@@ -1,0 +1,47 @@
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791386191546}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386250960}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386294247}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=5 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386340351}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/2-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791386377939}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386437640}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=5 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/2-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386492492}
+hmcodex-runtime code-syntax-001 FAILED tools=14 errors=1
+{"event":"CASE_START","runKey":"20261007T151628814Z-d02bc679/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791386668851}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{
+  "batchId": "20261007T151628814Z-d02bc679",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_READ_OBSERVATION_LIVE_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 8,
+      "successes": 7,
+      "successRate": 0.875,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 7,
+      "recoverySuccessRate": 0.875,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 181862,
+      "actualCost": null,
+      "estimatedCost": 0.025405682,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 40,
+      "modelCalls": 50,
+      "usageCoverage": {
+        "reportedRequests": 50,
+        "totalRequests": 50,
+        "knownTokenSubtotal": 181862,
+        "pricedRequests": 50,
+        "knownPricedSubtotal": 0.025405682
+      },
+      "toolCallCount": 39,
+      "wallMs": 506951
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": "1.0",
+  "events": [
+    {
+      "schemaVersion": "1.0",
+      "eventId": "feedback-event-9effef17-a654-4034-9745-4be3f8238e9c",
+      "kind": "FeedbackSubmitted",
+      "feedback": {
+        "schemaVersion": "1.0",
+        "feedbackId": "feedback-9698303b-9563-48cf-992d-8945fb4dabf4",
+        "runId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+        "taskId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+        "threadId": "thread-d169eb49-5f48-4530-a776-782abe5e6b59",
+        "outcomeId": "task-outcome-run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+        "outcomeStatus": "FAILED",
+        "modelIdentity": {
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash",
+          "modelVersion": "unknown",
+          "role": "planner",
+          "pluginVersion": "unknown",
+          "modelRegistryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "candidateKey": "openai/responses/mimo-v2.6-flash/unknown/planner/unknown"
+        },
+        "scenario": {
+          "taskClass": "test",
+          "riskClass": "unknown",
+          "operationClass": "unknown",
+          "requiredCapabilities": [],
+          "workspaceCapabilityClass": "READ_ONLY",
+          "platform": "WINDOWS",
+          "policyClass": "WINDOWS_PHASE1_READ_ONLY",
+          "scenarioKey": "sha256:55dbf4a3f4694b4ac8da4c8e18019a0b5c23e9f35ca6f21c13e403cd5ed3b3e9"
+        },
+        "sourceType": "SYSTEM",
+        "dimensions": {
+          "quality": 1,
+          "objectiveSuccess": false,
+          "verifierPass": false,
+          "safetyIncident": false
+        },
+        "reasonCodes": [
+          "OBJECTIVE_OUTCOME"
+        ],
+        "evidenceRefs": [
+          "event-c56ab096-4da3-4da7-a2e8-18a270793825",
+          "event-d576e04f-6e47-4c3a-b43f-d47cfb67447a"
+        ],
+        "independenceGroup": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4/event-c56ab096-4da3-4da7-a2e8-18a270793825",
+        "submittedAtMs": 1791394607158,
+        "eventKind": "FeedbackSubmitted",
+        "recordDigest": "sha256:c5026c5593651df37abd4cbed1df5c78ffe5504d9315edc2a7ce2403ee33ac7c"
+      },
+      "requestDigest": "sha256:e4604bf4153084050ce69cf8c6ff03802d1ecf820deeeac74ce84ea4fab9fdb0",
+      "commandId": "objective-feedback:event-c56ab096-4da3-4da7-a2e8-18a270793825",
+      "atMs": 1791394607158
+    },
+    {
+      "schemaVersion": "1.0",
+      "eventId": "feedback-event-109595cb-bb57-47c0-8f4e-b03461b08547",
+      "kind": "FeedbackSubmitted",
+      "feedback": {
+        "schemaVersion": "1.0",
+        "feedbackId": "feedback-a1116c8f-a637-47f0-bdd3-748596da02a6",
+        "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+        "taskId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+        "threadId": "thread-d169eb49-5f48-4530-a776-782abe5e6b59",
+        "outcomeId": "task-outcome-run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+        "outcomeStatus": "FAILED",
+        "modelIdentity": {
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-pro",
+          "modelVersion": "unknown",
+          "role": "planner",
+          "pluginVersion": "unknown",
+          "modelRegistryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "candidateKey": "openai/responses/mimo-v2.6-pro/unknown/planner/unknown"
+        },
+        "scenario": {
+          "taskClass": "test",
+          "riskClass": "unknown",
+          "operationClass": "unknown",
+          "requiredCapabilities": [],
+          "workspaceCapabilityClass": "READ_ONLY",
+          "platform": "WINDOWS",
+          "policyClass": "WINDOWS_PHASE1_READ_ONLY",
+          "scenarioKey": "sha256:55dbf4a3f4694b4ac8da4c8e18019a0b5c23e9f35ca6f21c13e403cd5ed3b3e9"
+        },
+        "sourceType": "SYSTEM",
+        "dimensions": {
+          "quality": 1,
+          "objectiveSuccess": false,
+          "verifierPass": false,
+          "safetyIncident": false
+        },
+        "reasonCodes": [
+          "OBJECTIVE_OUTCOME"
+        ],
+        "evidenceRefs": [
+          "event-a04e6dec-84d7-414f-8d8f-74af9f82bc21",
+          "event-8d030560-1531-4731-a6fb-a0a12ea3bd2e"
+        ],
+        "independenceGroup": "run-e2c9735e-dee6-43ea-b969-5cc08430963f/event-a04e6dec-84d7-414f-8d8f-74af9f82bc21",
+        "submittedAtMs": 1791394643523,
+        "eventKind": "FeedbackSubmitted",
+        "recordDigest": "sha256:915f4a7e5f9db51e5dd6fe26b21bde41f9818d6ee425ba7a917289f0797bcab9"
+      },
+      "requestDigest": "sha256:affa37320ee7e68ee10e86cd30adddef7c0793d229ba2ea6a61148e9f4dca163",
+      "commandId": "objective-feedback:event-a04e6dec-84d7-414f-8d8f-74af9f82bc21",
+      "atMs": 1791394643523
+    }
+  ]
+}

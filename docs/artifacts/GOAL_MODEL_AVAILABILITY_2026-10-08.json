@@ -1,0 +1,39 @@
+{
+  "checkedAt": "2026-10-07T16:05:11.232Z",
+  "method": "Minimal same-account configured provider requests. Private headers and error bodies are excluded.",
+  "limitation": "Availability probes are not task recovery, model upgrading, economic comparisons or invoices.",
+  "rows": [
+    {
+      "model": "mimo-v2.6-pro",
+      "error": "TimeoutError",
+      "transportCode": null,
+      "wallMs": 10021,
+      "actualCost": null
+    },
+    {
+      "model": "mimo-v2.6-flash",
+      "status": 200,
+      "wallMs": 6099,
+      "upstreamModel": "mimo-v2.6-flash",
+      "upstreamRequestIds": {},
+      "upstreamResponseId": "b4f38c49-74de-4864-bda0-a410e76f2ee1_fc35ebc1a0f44207b5c96da4e09d0978",
+      "correlationMeasurement": "UPSTREAM_RETURNED_IDS",
+      "usage": {
+        "prompt_tokens": 11,
+        "completion_tokens": 14,
+        "total_tokens": 25,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 11
+        }
+      },
+      "responseMessagePresent": true,
+      "errorCode": null,
+      "errorResponseChars": null,
+      "errorResponseSha256": null,
+      "actualCost": null
+    }
+  ]
+}

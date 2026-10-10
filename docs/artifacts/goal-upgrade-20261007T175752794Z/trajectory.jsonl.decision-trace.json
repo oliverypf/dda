@@ -1,0 +1,4189 @@
+{
+  "schemaVersion": "1.0",
+  "decisions": [
+    {
+      "decisionId": "decision-e5f139b3-046d-4663-8586-616b1f214475",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "classification",
+      "parentDecisionIds": [],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-classifier",
+      "role": "classifier",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-classifier",
+      "bindingSnapshotId": "snapshot-e8bec795e604c7bf7cedd672452591393be3f2612d385d917f75c679400300f8",
+      "decisionType": "CLASSIFY_TASK",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-2c627060948974a7ff39bca65c304fcb6c88bd4106d2450270aa5f00804637be",
+      "featureSnapshotId": "snapshot-ae5e558dedb8b8463001059f8d09c179d09c79e3c77b12b74910e5acf98c8713",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "classify-inspect",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "classify-modify",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "classify-test",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "classify-unknown",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "task-classification-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-classification"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "classification-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395878562,
+      "status": "COMMITTED",
+      "selectedOptionId": "classify-test",
+      "recordDigest": "sha256:f47007c8c474362a7f84802368e55ee450aaf3900740e6583dd984e036b807e5",
+      "updatedAtMs": 1791395878657,
+      "committedAtMs": 1791395878657
+    },
+    {
+      "decisionId": "decision-9b1171da-6448-421d-bb38-e6e78ed53805",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "routing",
+      "parentDecisionIds": [
+        "decision-e5f139b3-046d-4663-8586-616b1f214475"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-router",
+      "role": "router",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-router",
+      "bindingSnapshotId": "snapshot-e8bec795e604c7bf7cedd672452591393be3f2612d385d917f75c679400300f8",
+      "decisionType": "SELECT_ROUTE",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-975274421a69d6c99a57c8cbbc05564ed0ee81fc1b7796d35d2aed8dd2e5a4fb",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "route-selected",
+          "actionKind": "ROUTE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "route-blocked",
+          "actionKind": "BLOCK_ROUTE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "POLICY_REJECTED"
+          ],
+          "rejectionReasonCodes": [
+            "POLICY_ALLOWED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "read-only-route-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-routing"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "route-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395878992,
+      "status": "COMMITTED",
+      "selectedOptionId": "route-selected",
+      "recordDigest": "sha256:ff3128d43ab1c182d3b9a59e70e5a5bfb11e55977f4deb1d4772db9a312ba69c",
+      "updatedAtMs": 1791395879049,
+      "committedAtMs": 1791395879049
+    },
+    {
+      "decisionId": "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "context-allocation",
+      "parentDecisionIds": [
+        "decision-9b1171da-6448-421d-bb38-e6e78ed53805"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-coordinator",
+      "role": "coordinator",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-coordinator",
+      "bindingSnapshotId": "snapshot-42367508219b9f98ca09d71719d3f24c49f68af603dd38011ac809afede5e57d",
+      "decisionType": "ALLOCATE_ROLE_CONTEXTS",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-8dde63f7422588d5593aa119518e1660fd67e6638e241b66833905fb882e168e",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "contexts-dedicated",
+          "actionKind": "ALLOCATE_CONTEXTS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "contexts-shared",
+          "actionKind": "ALLOCATE_CONTEXTS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "CONTEXT_CROSSTALK"
+          ],
+          "rejectionReasonCodes": [
+            "ROLE_ISOLATION_REQUIRED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "role-isolation-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-context-allocation"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "contexts-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395879788,
+      "status": "COMMITTED",
+      "selectedOptionId": "contexts-dedicated",
+      "recordDigest": "sha256:46a88a2abc3f6a6ca6e298e1b1a5825ccd19612522cbf224c40dde9d04a53d7f",
+      "updatedAtMs": 1791395879835,
+      "committedAtMs": 1791395879835
+    },
+    {
+      "decisionId": "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "planning",
+      "parentDecisionIds": [
+        "decision-69526f83-840c-4e22-897e-27d89e81c25e"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-planner",
+      "role": "planner",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-planner",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "CREATE_PLAN",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395880289,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        },
+        {
+          "evidenceId": "evidence-TaskClassified-run-event-1c33a657-f9aa-4351-9de9-1492466e7478",
+          "evidenceType": "TaskClassified",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395880289,
+          "eventId": "run-event-1c33a657-f9aa-4351-9de9-1492466e7478",
+          "artifactDigest": "sha256:8ac5be5e56956e5b504d8b38984e99d075f33c2a0a04ab57ac19659baee7e781"
+        },
+        {
+          "evidenceId": "evidence-RoleBindingsResolved-run-event-77d9ef10-90b4-4591-b04a-acd7fecf0812",
+          "evidenceType": "RoleBindingsResolved",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395880289,
+          "eventId": "run-event-77d9ef10-90b4-4591-b04a-acd7fecf0812",
+          "artifactDigest": "sha256:7a04e68cc3c98786e6ea0b5b3c0b81cc7077e8062a1278a50076c5b10a321bb3"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "plan-bounded-default",
+          "actionKind": "PLAN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+            "evidence-TaskClassified-run-event-1c33a657-f9aa-4351-9de9-1492466e7478",
+            "evidence-RoleBindingsResolved-run-event-77d9ef10-90b4-4591-b04a-acd7fecf0812"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "plan-abort",
+          "actionKind": "ABORT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "NO_EXECUTION"
+          ],
+          "rejectionReasonCodes": [
+            "BOUNDED_EXECUTION_REQUIRED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "single-agent-bounded-plan"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-planning"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "plan-sha256:ecbad2d07dfa240429762b457044c4cb942fff172307d6d8cfc2a770265433bf"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395880289,
+      "status": "COMMITTED",
+      "selectedOptionId": "plan-bounded-default",
+      "recordDigest": "sha256:2985550efd5a57f5f11fb9513de413554ed3ed2906175c53e343df8670f1f4e1",
+      "updatedAtMs": 1791395880348,
+      "committedAtMs": 1791395880348
+    },
+    {
+      "decisionId": "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-tool-1-call_65d71e10a1684593b2a29e82",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-executor",
+      "role": "executor",
+      "roleContextId": "role-context-79f4a978-9ac2-4ff8-9246-b1c321b64d9e-2",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "SELECT_TOOL_ACTION",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395889781,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "tool-call_65d71e10a1684593b2a29e82-selected",
+          "actionKind": "workspace.read",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "tool-call_65d71e10a1684593b2a29e82-no-tool",
+          "actionKind": "NO_TOOL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "UNVERIFIED_CLAIM"
+          ],
+          "rejectionReasonCodes": [
+            "EVIDENCE_GAP_REMAINS"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "evidence-backed-jev-action-gate"
+      ],
+      "reasonCodes": [
+        "JEV_CHOICE"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-tool-1-call_65d71e10a1684593b2a29e82"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "tool-1-call_65d71e10a1684593b2a29e82"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395890765,
+      "status": "COMMITTED",
+      "operationId": "operation-execute-1-call_65d71e10a1684593b2a29e82",
+      "selectedOptionId": "tool-call_65d71e10a1684593b2a29e82-selected",
+      "recordDigest": "sha256:8987761b45e9bc78526c171e5c0193a2961d34c9dca0b031a13f4875962a9161",
+      "updatedAtMs": 1791395890831,
+      "committedAtMs": 1791395890831
+    },
+    {
+      "decisionId": "decision-69539942-0e53-4977-ae70-444d8e634254",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-decision-1-failure_router",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "DECISION_FAILURE_ROUTER",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395904596,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "PERMISSION",
+          "actionKind": "PERMISSION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "TIMEOUT",
+          "actionKind": "TIMEOUT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "BAD_ASSUMPTION",
+          "actionKind": "BAD_ASSUMPTION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "ENVIRONMENT",
+          "actionKind": "ENVIRONMENT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.01
+        },
+        {
+          "optionId": "TEST_FAILURE",
+          "actionKind": "TEST_FAILURE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NONE",
+          "actionKind": "NONE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.03
+        },
+        {
+          "optionId": "DEPENDENCY",
+          "actionKind": "DEPENDENCY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "TOOL_ERROR",
+          "actionKind": "TOOL_ERROR",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 0.88
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-failure_router"
+        ],
+        "predictedOutcomeCode": "TOOL_ERROR",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-failure_router"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395905309,
+      "status": "COMMITTED",
+      "selectedOptionId": "TOOL_ERROR",
+      "claimedConfidence": 0.87,
+      "recordDigest": "sha256:5f9f944a44964d36dd36abbd08f00c4f977757fc028010c87d5c1e7df17b362d",
+      "updatedAtMs": 1791395905371,
+      "committedAtMs": 1791395905371
+    },
+    {
+      "decisionId": "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-decision-1-assess_evidence",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "DECISION_ASSESS_EVIDENCE",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395904596,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "SUFFICIENT",
+          "actionKind": "SUFFICIENT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.03
+        },
+        {
+          "optionId": "UNKNOWN",
+          "actionKind": "UNKNOWN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.29
+        },
+        {
+          "optionId": "MISSING_ENVIRONMENT_EVIDENCE",
+          "actionKind": "MISSING_ENVIRONMENT_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.03
+        },
+        {
+          "optionId": "CONFLICTING_EVIDENCE",
+          "actionKind": "CONFLICTING_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.03
+        },
+        {
+          "optionId": "MISSING_TEST_EVIDENCE",
+          "actionKind": "MISSING_TEST_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.23
+        },
+        {
+          "optionId": "MISSING_EXECUTION_EVIDENCE",
+          "actionKind": "MISSING_EXECUTION_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 0.39
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ],
+      "uncertaintyCodes": [
+        "DECISION_LOW_CONFIDENCE"
+      ],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-assess_evidence"
+        ],
+        "predictedOutcomeCode": "MISSING_EXECUTION_EVIDENCE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-assess_evidence"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395905430,
+      "status": "COMMITTED",
+      "selectedOptionId": "MISSING_EXECUTION_EVIDENCE",
+      "claimedConfidence": 0.27,
+      "recordDigest": "sha256:37d20f2e9bb1edb6e777fd497bba97891906d25e9fbe4f94928528ea5f5fa75c",
+      "updatedAtMs": 1791395905497,
+      "committedAtMs": 1791395905497
+    },
+    {
+      "decisionId": "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-decision-1-test_selector",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "DECISION_TEST_SELECTOR",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395904596,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "RUN_INTEGRATION_TEST",
+          "actionKind": "RUN_INTEGRATION_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_UNIT_TEST",
+          "actionKind": "RUN_UNIT_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_TYPECHECK",
+          "actionKind": "RUN_TYPECHECK",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_BUILD",
+          "actionKind": "RUN_BUILD",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_TARGETED_TEST",
+          "actionKind": "RUN_TARGETED_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_LINT",
+          "actionKind": "RUN_LINT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_FULL_TEST",
+          "actionKind": "RUN_FULL_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NONE",
+          "actionKind": "NONE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-test_selector"
+        ],
+        "predictedOutcomeCode": "NONE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-test_selector"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395905558,
+      "status": "COMMITTED",
+      "selectedOptionId": "NONE",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:43b8f386778321a7e1e3d399fdd44cb1a08b5314b43f4afd226f330f7a658b2f",
+      "updatedAtMs": 1791395905628,
+      "committedAtMs": 1791395905628
+    },
+    {
+      "decisionId": "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-decision-1-stop_or_continue",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "DECISION_STOP_OR_CONTINUE",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395904596,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "STOP_SUCCESS",
+          "actionKind": "STOP_SUCCESS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_MORE_EVIDENCE",
+          "actionKind": "NEED_MORE_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_REPLAN",
+          "actionKind": "NEED_REPLAN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_ESCALATION",
+          "actionKind": "NEED_ESCALATION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "CONTINUE_EXECUTION",
+          "actionKind": "CONTINUE_EXECUTION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "RECOVERABLE_FAILURE"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-stop_or_continue"
+        ],
+        "predictedOutcomeCode": "CONTINUE_EXECUTION",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-stop_or_continue"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395905689,
+      "status": "COMMITTED",
+      "selectedOptionId": "CONTINUE_EXECUTION",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:9d35c9f29f7c52916fda50e9ef5d5a94388501d7e5a5f81e75527b954268280b",
+      "updatedAtMs": 1791395905744,
+      "committedAtMs": 1791395905744
+    },
+    {
+      "decisionId": "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-decision-1-escalate_or_request_user",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-decision-engine",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "DECISION_ESCALATE_OR_REQUEST_USER",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395904596,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "RETRY_CHEAP",
+          "actionKind": "RETRY_CHEAP",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.36
+        },
+        {
+          "optionId": "USE_STRONG_MODEL",
+          "actionKind": "USE_STRONG_MODEL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.05
+        },
+        {
+          "optionId": "COLLECT_EVIDENCE",
+          "actionKind": "COLLECT_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.12
+        },
+        {
+          "optionId": "USE_NORMAL_MODEL",
+          "actionKind": "USE_NORMAL_MODEL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0.04
+        },
+        {
+          "optionId": "LOCAL_CONTINUE",
+          "actionKind": "LOCAL_CONTINUE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 0.43
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ],
+      "uncertaintyCodes": [
+        "DECISION_LOW_CONFIDENCE"
+      ],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-escalate_or_request_user"
+        ],
+        "predictedOutcomeCode": "LOCAL_CONTINUE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-escalate_or_request_user"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395905799,
+      "status": "COMMITTED",
+      "selectedOptionId": "LOCAL_CONTINUE",
+      "claimedConfidence": 0.29,
+      "recordDigest": "sha256:3c62a831a202b8695bae431c801c33b75aa3f0d0b15e239472bc9091b44ea7eb",
+      "updatedAtMs": 1791395905857,
+      "committedAtMs": 1791395905857
+    },
+    {
+      "decisionId": "decision-fcfa7e6a-e34a-4743-9ca2-cbb87ec52c11",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "execute-verification-1",
+      "parentDecisionIds": [
+        "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+        "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+        "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+        "decision-69539942-0e53-4977-ae70-444d8e634254",
+        "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+        "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+        "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+        "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a"
+      ],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-verifier",
+      "role": "verifier",
+      "roleContextId": "role-context-24d0759e-bcc0-4407-a986-fba2f71e4798-3",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "VERIFY_TASK_RESULT",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395906011,
+          "eventId": "event-577c869b-6d89-4c47-82f4-455692b6bf2f",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "verdict-PASS",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-FAIL",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-UNCERTAIN",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-ABSTAIN",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-CONTINUE",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-577c869b-6d89-4c47-82f4-455692b6bf2f"
+          ],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": []
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "tool-evidence-and-rule-checks"
+      ],
+      "reasonCodes": [
+        "RULE_VERIFIER"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-verification-1"
+        ],
+        "predictedOutcomeCode": "STEP_REJECTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "verifier-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-execute-1"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395906012,
+      "status": "COMMITTED",
+      "selectedOptionId": "verdict-CONTINUE",
+      "recordDigest": "sha256:c97e289395648060fd1db98114940cb5965829acbc14d43e9d39c58f851b7ba7",
+      "updatedAtMs": 1791395906080,
+      "committedAtMs": 1791395906080
+    },
+    {
+      "decisionId": "decision-f6dddea9-8754-4c26-aa83-dfd5d344f15c",
+      "schemaVersion": "1.0",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "stepId": "memory-consolidation",
+      "parentDecisionIds": [],
+      "agentInstanceId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36-MemoryConsolidator",
+      "role": "MemoryConsolidator",
+      "roleContextId": "memory-consolidator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "bindingSnapshotId": "snapshot-832322babc47865dddd53fa938ff8764b5a7b3b451c637eeca3f37a8165930c3",
+      "decisionType": "CONSOLIDATE_MEMORY",
+      "objectiveRef": "objective-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-ThreadCheckpointCommitted-event-9f010cc0-60bd-44c9-a5be-4e86efa56776",
+          "evidenceType": "ThreadCheckpointCommitted",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395907012,
+          "eventId": "event-9f010cc0-60bd-44c9-a5be-4e86efa56776",
+          "artifactDigest": "sha256:b7f0aa00786a13067ac22c902bd61a2ebe6aeeb61e33fa0f38591bcc561eee74"
+        },
+        {
+          "evidenceId": "evidence-TaskRunFailed-event-9970da3a-f5b7-4ccb-90cb-49274da67ab1",
+          "evidenceType": "TaskRunFailed",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395907012,
+          "eventId": "event-9970da3a-f5b7-4ccb-90cb-49274da67ab1",
+          "artifactDigest": "sha256:7c3350fafcd706cc4ddd9e830f97b3cfbdcfb5644357fbd2d35d4658b5bdacec"
+        },
+        {
+          "evidenceId": "evidence-GitStateObserved-event-dd9c0e51-ba36-4af5-9010-033510aee449",
+          "evidenceType": "GitStateObserved",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395907012,
+          "eventId": "event-dd9c0e51-ba36-4af5-9010-033510aee449",
+          "artifactDigest": "sha256:4c3a454f11d0833e7c7822c6338ca491d73aafa8b75906f1616abd56c88d432b"
+        },
+        {
+          "evidenceId": "evidence-EvolutionOutcomeRecorded-event-af420d39-ffc6-4531-b7b6-dca48cf45ac7",
+          "evidenceType": "EvolutionOutcomeRecorded",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395907012,
+          "eventId": "event-af420d39-ffc6-4531-b7b6-dca48cf45ac7",
+          "artifactDigest": "sha256:650d93f78074d07b9afb9c795698ac42d7afa0d5d7e588b9cc37de28a488ede3"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "memory-proposal-create",
+          "actionKind": "MEMORY_PROPOSAL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-ThreadCheckpointCommitted-event-9f010cc0-60bd-44c9-a5be-4e86efa56776",
+            "evidence-TaskRunFailed-event-9970da3a-f5b7-4ccb-90cb-49274da67ab1",
+            "evidence-GitStateObserved-event-dd9c0e51-ba36-4af5-9010-033510aee449",
+            "evidence-EvolutionOutcomeRecorded-event-af420d39-ffc6-4531-b7b6-dca48cf45ac7"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "OUTCOME_NOT_VERIFIED_SUCCESS"
+          ]
+        },
+        {
+          "optionId": "memory-proposal-skip",
+          "actionKind": "MEMORY_PROPOSAL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-ThreadCheckpointCommitted-event-9f010cc0-60bd-44c9-a5be-4e86efa56776",
+            "evidence-TaskRunFailed-event-9970da3a-f5b7-4ccb-90cb-49274da67ab1",
+            "evidence-GitStateObserved-event-dd9c0e51-ba36-4af5-9010-033510aee449",
+            "evidence-EvolutionOutcomeRecorded-event-af420d39-ffc6-4531-b7b6-dca48cf45ac7"
+          ],
+          "riskCodes": [
+            "UNVERIFIED_OUTCOME"
+          ],
+          "rejectionReasonCodes": []
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "deterministic-rule"
+      ],
+      "reasonCodes": [
+        "OUTCOME_NOT_VERIFIED_SUCCESS"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-memory-consolidation"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395907013,
+      "status": "COMMITTED",
+      "operationId": "memory-consolidation-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "selectedOptionId": "memory-proposal-skip",
+      "recordDigest": "sha256:ba65b0cdb1c43ed5de873a2c7df0e3d0c7f00c4423ce7b5e8dcf95047f4c1974",
+      "updatedAtMs": 1791395907080,
+      "committedAtMs": 1791395907080
+    },
+    {
+      "decisionId": "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "classification",
+      "parentDecisionIds": [],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-classifier",
+      "role": "classifier",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-classifier",
+      "bindingSnapshotId": "snapshot-e8bec795e604c7bf7cedd672452591393be3f2612d385d917f75c679400300f8",
+      "decisionType": "CLASSIFY_TASK",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-2c627060948974a7ff39bca65c304fcb6c88bd4106d2450270aa5f00804637be",
+      "featureSnapshotId": "snapshot-ae5e558dedb8b8463001059f8d09c179d09c79e3c77b12b74910e5acf98c8713",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "classify-inspect",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "classify-modify",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "classify-test",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "classify-unknown",
+          "actionKind": "CLASSIFY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "RULE_PATTERN_MISMATCH"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "task-classification-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-classification"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "classification-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395913183,
+      "status": "COMMITTED",
+      "selectedOptionId": "classify-test",
+      "recordDigest": "sha256:7f70ce2c0d68eaed784ccbd39ed6ca53b5c40cb86607b2c1220572b90f2e88ee",
+      "updatedAtMs": 1791395913243,
+      "committedAtMs": 1791395913243
+    },
+    {
+      "decisionId": "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "routing",
+      "parentDecisionIds": [
+        "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-router",
+      "role": "router",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-router",
+      "bindingSnapshotId": "snapshot-e8bec795e604c7bf7cedd672452591393be3f2612d385d917f75c679400300f8",
+      "decisionType": "SELECT_ROUTE",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-975274421a69d6c99a57c8cbbc05564ed0ee81fc1b7796d35d2aed8dd2e5a4fb",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "route-selected",
+          "actionKind": "ROUTE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "route-blocked",
+          "actionKind": "BLOCK_ROUTE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "POLICY_REJECTED"
+          ],
+          "rejectionReasonCodes": [
+            "POLICY_ALLOWED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "read-only-route-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-routing"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "route-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395913601,
+      "status": "COMMITTED",
+      "selectedOptionId": "route-selected",
+      "recordDigest": "sha256:f1c5e13d4e0962ee7a63a4120b383ef1688c504eac47a2445a5ffd7ae039cd40",
+      "updatedAtMs": 1791395913650,
+      "committedAtMs": 1791395913650
+    },
+    {
+      "decisionId": "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "context-allocation",
+      "parentDecisionIds": [
+        "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-coordinator",
+      "role": "coordinator",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-coordinator",
+      "bindingSnapshotId": "snapshot-0d2ad29a0b4f11d5b05b10a6634a73801810f0bd935d080b470d9c3801cfcc96",
+      "decisionType": "ALLOCATE_ROLE_CONTEXTS",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-8dde63f7422588d5593aa119518e1660fd67e6638e241b66833905fb882e168e",
+      "evidenceRefs": [],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "contexts-dedicated",
+          "actionKind": "ALLOCATE_CONTEXTS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "contexts-shared",
+          "actionKind": "ALLOCATE_CONTEXTS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "CONTEXT_CROSSTALK"
+          ],
+          "rejectionReasonCodes": [
+            "ROLE_ISOLATION_REQUIRED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "role-isolation-rule"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-context-allocation"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "contexts-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395914196,
+      "status": "COMMITTED",
+      "selectedOptionId": "contexts-dedicated",
+      "recordDigest": "sha256:32f5edd444caf0674a68a1b2ff762b7b166435514e73882c992797b17abc6fc9",
+      "updatedAtMs": 1791395914258,
+      "committedAtMs": 1791395914258
+    },
+    {
+      "decisionId": "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "planning",
+      "parentDecisionIds": [
+        "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-planner",
+      "role": "planner",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-planner",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "CREATE_PLAN",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395914645,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        },
+        {
+          "evidenceId": "evidence-TaskClassified-run-event-f5f480f4-e0f2-4efe-ad4c-dd5fe3162fcc",
+          "evidenceType": "TaskClassified",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395914645,
+          "eventId": "run-event-f5f480f4-e0f2-4efe-ad4c-dd5fe3162fcc",
+          "artifactDigest": "sha256:ff33c2aad93b0b1299cf03cce0ae0b1164142e96e5b40c369ced5521c1657493"
+        },
+        {
+          "evidenceId": "evidence-RoleBindingsResolved-run-event-5079150e-4cb1-438f-9ee3-39fcf999935c",
+          "evidenceType": "RoleBindingsResolved",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395914645,
+          "eventId": "run-event-5079150e-4cb1-438f-9ee3-39fcf999935c",
+          "artifactDigest": "sha256:f3fa0d3644e7353bf59505aafe63ac09b9a6a786da8287fd0d73e1bc75138059"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "plan-bounded-default",
+          "actionKind": "PLAN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+            "evidence-TaskClassified-run-event-f5f480f4-e0f2-4efe-ad4c-dd5fe3162fcc",
+            "evidence-RoleBindingsResolved-run-event-5079150e-4cb1-438f-9ee3-39fcf999935c"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "plan-abort",
+          "actionKind": "ABORT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "NO_EXECUTION"
+          ],
+          "rejectionReasonCodes": [
+            "BOUNDED_EXECUTION_REQUIRED"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "single-agent-bounded-plan"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-planning"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "plan-sha256:ecbad2d07dfa240429762b457044c4cb942fff172307d6d8cfc2a770265433bf"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395914645,
+      "status": "COMMITTED",
+      "selectedOptionId": "plan-bounded-default",
+      "recordDigest": "sha256:f80e3d5ecbda16360ad2d4742ebda3b814de702c2577a0005181f1be7ea7f499",
+      "updatedAtMs": 1791395914710,
+      "committedAtMs": 1791395914710
+    },
+    {
+      "decisionId": "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-tool-1-call_394c258f60dd47928e699247",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-executor",
+      "role": "executor",
+      "roleContextId": "role-context-2b8cdb9a-38e4-4b91-a673-74561c2b3e7d-2",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "SELECT_TOOL_ACTION",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395920659,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "tool-call_394c258f60dd47928e699247-selected",
+          "actionKind": "workspace.read",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "tool-call_394c258f60dd47928e699247-no-tool",
+          "actionKind": "NO_TOOL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "UNVERIFIED_CLAIM"
+          ],
+          "rejectionReasonCodes": [
+            "EVIDENCE_GAP_REMAINS"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "evidence-backed-jev-action-gate"
+      ],
+      "reasonCodes": [
+        "JEV_TIMEOUT"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-tool-1-call_394c258f60dd47928e699247"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [
+        "tool-1-call_394c258f60dd47928e699247"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395925690,
+      "status": "COMMITTED",
+      "operationId": "operation-execute-1-call_394c258f60dd47928e699247",
+      "selectedOptionId": "tool-call_394c258f60dd47928e699247-selected",
+      "recordDigest": "sha256:276f088ffcb9d12782dd2e05b50f903b66f728ecc6015004d234f4ba5ea08dc6",
+      "updatedAtMs": 1791395925774,
+      "committedAtMs": 1791395925774
+    },
+    {
+      "decisionId": "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-decision-1-failure_router",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "DECISION_FAILURE_ROUTER",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395939386,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "CODE_ERROR",
+          "actionKind": "CODE_ERROR",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "TEST_FAILURE",
+          "actionKind": "TEST_FAILURE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "ENVIRONMENT",
+          "actionKind": "ENVIRONMENT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "DEPENDENCY",
+          "actionKind": "DEPENDENCY",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "PERMISSION",
+          "actionKind": "PERMISSION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "TOOL_ERROR",
+          "actionKind": "TOOL_ERROR",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "TIMEOUT",
+          "actionKind": "TIMEOUT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NONE",
+          "actionKind": "NONE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "EXIT_CODE_ZERO_OR_VERIFIER_PASS"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-failure_router"
+        ],
+        "predictedOutcomeCode": "NONE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-failure_router"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395939396,
+      "status": "COMMITTED",
+      "selectedOptionId": "NONE",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:b4d93a7ff8000c553db202d13e5c185f26f780653ebe7cb69d13ee51ee3d1919",
+      "updatedAtMs": 1791395939465,
+      "committedAtMs": 1791395939465
+    },
+    {
+      "decisionId": "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-decision-1-assess_evidence",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "DECISION_ASSESS_EVIDENCE",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395939386,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "MISSING_EXECUTION_EVIDENCE",
+          "actionKind": "MISSING_EXECUTION_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "MISSING_TEST_EVIDENCE",
+          "actionKind": "MISSING_TEST_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "MISSING_ENVIRONMENT_EVIDENCE",
+          "actionKind": "MISSING_ENVIRONMENT_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "CONFLICTING_EVIDENCE",
+          "actionKind": "CONFLICTING_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "UNKNOWN",
+          "actionKind": "UNKNOWN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "SUFFICIENT",
+          "actionKind": "SUFFICIENT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "ALL_REQUIREMENTS_SUPPORTED"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-assess_evidence"
+        ],
+        "predictedOutcomeCode": "SUFFICIENT",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-assess_evidence"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395939546,
+      "status": "COMMITTED",
+      "selectedOptionId": "SUFFICIENT",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:91a800b2201c57011aa7d7f03e9cfd1febc378b878ad969ba0b9b8ba3dc72ca3",
+      "updatedAtMs": 1791395939625,
+      "committedAtMs": 1791395939625
+    },
+    {
+      "decisionId": "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-decision-1-test_selector",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "DECISION_TEST_SELECTOR",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395939386,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "RUN_TARGETED_TEST",
+          "actionKind": "RUN_TARGETED_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_UNIT_TEST",
+          "actionKind": "RUN_UNIT_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_INTEGRATION_TEST",
+          "actionKind": "RUN_INTEGRATION_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_LINT",
+          "actionKind": "RUN_LINT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_TYPECHECK",
+          "actionKind": "RUN_TYPECHECK",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_BUILD",
+          "actionKind": "RUN_BUILD",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "RUN_FULL_TEST",
+          "actionKind": "RUN_FULL_TEST",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NONE",
+          "actionKind": "NONE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "EVIDENCE_ALREADY_SUFFICIENT"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-test_selector"
+        ],
+        "predictedOutcomeCode": "NONE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-test_selector"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395939695,
+      "status": "COMMITTED",
+      "selectedOptionId": "NONE",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:7df7943e7631d7f42fc20bbb7dc5f2383ba3fdb11a7d1a9c6cbeb3470e5023ae",
+      "updatedAtMs": 1791395939763,
+      "committedAtMs": 1791395939763
+    },
+    {
+      "decisionId": "decision-73dff878-717b-4e73-8642-24fa33073d20",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-decision-1-stop_or_continue",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "DECISION_STOP_OR_CONTINUE",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395939386,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "CONTINUE_EXECUTION",
+          "actionKind": "CONTINUE_EXECUTION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_MORE_EVIDENCE",
+          "actionKind": "NEED_MORE_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_REPLAN",
+          "actionKind": "NEED_REPLAN",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "NEED_ESCALATION",
+          "actionKind": "NEED_ESCALATION",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "STOP_SUCCESS",
+          "actionKind": "STOP_SUCCESS",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "HARD_SUCCESS_WITH_COMPLETE_REQUIREMENTS"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-stop_or_continue"
+        ],
+        "predictedOutcomeCode": "STOP_SUCCESS",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-stop_or_continue"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395939831,
+      "status": "COMMITTED",
+      "selectedOptionId": "STOP_SUCCESS",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:1fd6fb603b37ee263e1450bb5e913ab4b2205525b70518a9a88f04cbeafe347b",
+      "updatedAtMs": 1791395939901,
+      "committedAtMs": 1791395939901
+    },
+    {
+      "decisionId": "decision-ba532192-f631-40da-a743-d4c3c9928903",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-decision-1-escalate_or_request_user",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "role": "decision-engine",
+      "roleContextId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-decision-engine",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "DECISION_ESCALATE_OR_REQUEST_USER",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395939386,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "RETRY_CHEAP",
+          "actionKind": "RETRY_CHEAP",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "COLLECT_EVIDENCE",
+          "actionKind": "COLLECT_EVIDENCE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "USE_NORMAL_MODEL",
+          "actionKind": "USE_NORMAL_MODEL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "USE_STRONG_MODEL",
+          "actionKind": "USE_STRONG_MODEL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [
+            "LOWER_DECISION_SCORE"
+          ],
+          "expectedQuality": 0
+        },
+        {
+          "optionId": "LOCAL_CONTINUE",
+          "actionKind": "LOCAL_CONTINUE",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": [],
+          "expectedQuality": 1
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "finite-choice-decision-layer"
+      ],
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_ESCALATION_AFTER_SUCCESS"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-decision-1-escalate_or_request_user"
+        ],
+        "predictedOutcomeCode": "LOCAL_CONTINUE",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0
+      },
+      "outputRefs": [
+        "decision-layer-execute-1-escalate_or_request_user"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395939977,
+      "status": "COMMITTED",
+      "selectedOptionId": "LOCAL_CONTINUE",
+      "claimedConfidence": 1,
+      "recordDigest": "sha256:6fe2a9d79ca3bd447f78e2722b3182bfa6c198c194ec0e0a3122b04bc1b4240c",
+      "updatedAtMs": 1791395940042,
+      "committedAtMs": 1791395940042
+    },
+    {
+      "decisionId": "decision-bca05bd9-ca75-4038-84a7-0d8f50b2bcb4",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "execute-verification-1",
+      "parentDecisionIds": [
+        "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+        "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+        "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+        "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+        "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+        "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+        "decision-73dff878-717b-4e73-8642-24fa33073d20",
+        "decision-ba532192-f631-40da-a743-d4c3c9928903"
+      ],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-verifier",
+      "role": "verifier",
+      "roleContextId": "role-context-9b58615c-dc8a-481d-bfea-6cfc5261d2dd-3",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "VERIFY_TASK_RESULT",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "evidenceType": "TaskRunCreated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395940219,
+          "eventId": "event-6b960305-8ee2-4569-a35d-650ffd1e3979",
+          "artifactDigest": "sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "verdict-PASS",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-TaskRunCreated-event-6b960305-8ee2-4569-a35d-650ffd1e3979"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "verdict-FAIL",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-UNCERTAIN",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        },
+        {
+          "optionId": "verdict-ABSTAIN",
+          "actionKind": "VERDICT",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [],
+          "riskCodes": [
+            "RESULT_NOT_ACCEPTED"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIER_RULE_MISMATCH"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "tool-evidence-and-rule-checks"
+      ],
+      "reasonCodes": [
+        "RULE_VERIFIER"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-execute-verification-1"
+        ],
+        "predictedOutcomeCode": "STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 1
+      },
+      "outputRefs": [
+        "verifier-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-execute-1"
+      ],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395940219,
+      "status": "COMMITTED",
+      "selectedOptionId": "verdict-PASS",
+      "recordDigest": "sha256:ac87cb535f2edcc31623617c5124f109b5a0b273d7ff90509fb2b0ecff558673",
+      "updatedAtMs": 1791395940293,
+      "committedAtMs": 1791395940293
+    },
+    {
+      "decisionId": "decision-b5b6008f-b79b-4573-a2cb-7237ea861cb5",
+      "schemaVersion": "1.0",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "stepId": "memory-consolidation",
+      "parentDecisionIds": [],
+      "agentInstanceId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a-MemoryConsolidator",
+      "role": "MemoryConsolidator",
+      "roleContextId": "memory-consolidator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "bindingSnapshotId": "snapshot-61e6e64e0be92844c834104bad55c1ec4d3916181c967c741f291f9668de4490",
+      "decisionType": "CONSOLIDATE_MEMORY",
+      "objectiveRef": "objective-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "constraintSnapshotId": "snapshot-faf7b8a4266f162e43bff0d0682906f6affacc60cc889e7cb6664183d9b329e1",
+      "featureSnapshotId": "snapshot-da1c847a8d694fe2711f458c40c0eb74ccf9670a197121d51975393a4596314c",
+      "evidenceRefs": [
+        {
+          "evidenceId": "evidence-ProfileProjectionUpdated-event-6cc79047-5ef7-4831-b90d-d9b3dde8510c",
+          "evidenceType": "ProfileProjectionUpdated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395942251,
+          "eventId": "event-6cc79047-5ef7-4831-b90d-d9b3dde8510c",
+          "artifactDigest": "sha256:b6464b4c4624115afc41dfecf7f16b51fbb5a351cd1a6a58f0d9bb894ecf42f1"
+        },
+        {
+          "evidenceId": "evidence-ProfileEvidenceRecorded-event-2fbf9760-e6b4-4d5a-a8d7-922e07d5a111",
+          "evidenceType": "ProfileEvidenceRecorded",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395942251,
+          "eventId": "event-2fbf9760-e6b4-4d5a-a8d7-922e07d5a111",
+          "artifactDigest": "sha256:0c7c250646a6d358f071033085151456927ae93d228f2dac93253cee0d434e36"
+        },
+        {
+          "evidenceId": "evidence-ProfileProjectionUpdated-event-5ce9d102-f40e-4f15-b40e-9010f16ebaf1",
+          "evidenceType": "ProfileProjectionUpdated",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395942251,
+          "eventId": "event-5ce9d102-f40e-4f15-b40e-9010f16ebaf1",
+          "artifactDigest": "sha256:f90dcba88297ac07180af2b6ba052c2d627425f6a4c41197e6d781cfb9874028"
+        },
+        {
+          "evidenceId": "evidence-EvolutionOutcomeRecorded-event-39b2668b-2598-4782-b0f1-b4fd75c7b5d3",
+          "evidenceType": "EvolutionOutcomeRecorded",
+          "stance": "SUPPORTS",
+          "freshnessAtMs": 1791395942251,
+          "eventId": "event-39b2668b-2598-4782-b0f1-b4fd75c7b5d3",
+          "artifactDigest": "sha256:a95ba6cef4d118ed3b38a2cdaf98b8f79fd4dd50a8ce1f252a2d15658b3a4574"
+        }
+      ],
+      "assumptions": [],
+      "options": [
+        {
+          "optionId": "memory-proposal-create",
+          "actionKind": "MEMORY_PROPOSAL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-ProfileProjectionUpdated-event-6cc79047-5ef7-4831-b90d-d9b3dde8510c",
+            "evidence-ProfileEvidenceRecorded-event-2fbf9760-e6b4-4d5a-a8d7-922e07d5a111",
+            "evidence-ProfileProjectionUpdated-event-5ce9d102-f40e-4f15-b40e-9010f16ebaf1",
+            "evidence-EvolutionOutcomeRecorded-event-39b2668b-2598-4782-b0f1-b4fd75c7b5d3"
+          ],
+          "riskCodes": [],
+          "rejectionReasonCodes": []
+        },
+        {
+          "optionId": "memory-proposal-skip",
+          "actionKind": "MEMORY_PROPOSAL",
+          "summary": "OPTION_SUMMARY_REDACTED",
+          "requiredCapabilityIds": [],
+          "evidenceRefs": [
+            "evidence-ProfileProjectionUpdated-event-6cc79047-5ef7-4831-b90d-d9b3dde8510c",
+            "evidence-ProfileEvidenceRecorded-event-2fbf9760-e6b4-4d5a-a8d7-922e07d5a111",
+            "evidence-ProfileProjectionUpdated-event-5ce9d102-f40e-4f15-b40e-9010f16ebaf1",
+            "evidence-EvolutionOutcomeRecorded-event-39b2668b-2598-4782-b0f1-b4fd75c7b5d3"
+          ],
+          "riskCodes": [
+            "UNVERIFIED_OUTCOME"
+          ],
+          "rejectionReasonCodes": [
+            "VERIFIED_OUTCOME_REQUIRES_PROPOSAL"
+          ]
+        }
+      ],
+      "decisionSummary": "DECISION_SUMMARY_REDACTED",
+      "selectionCriteria": [
+        "deterministic-rule"
+      ],
+      "reasonCodes": [
+        "VERIFIED_OUTCOME",
+        "REVIEW_GATED_PROPOSAL"
+      ],
+      "uncertaintyCodes": [],
+      "expectedOutcome": {
+        "successCriteriaRefs": [
+          "criterion-memory-consolidation"
+        ],
+        "predictedOutcomeCode": "PIPELINE_STEP_ACCEPTED",
+        "predictedRiskCodes": [],
+        "predictedProgress": 0.1
+      },
+      "outputRefs": [],
+      "sensitivity": "INTERNAL",
+      "createdAtMs": 1791395942251,
+      "status": "COMMITTED",
+      "operationId": "memory-consolidation-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "selectedOptionId": "memory-proposal-create",
+      "recordDigest": "sha256:4b8d68d4a262d3a5d904ef5cbc43c6d70578bea04e4fc1058f157896b2731f7f",
+      "updatedAtMs": 1791395942329,
+      "committedAtMs": 1791395942329
+    }
+  ],
+  "outcomes": [
+    {
+      "outcomeId": "outcome-d4218f31-82ea-497f-8c8d-1b89918d5bb8",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-e5f139b3-046d-4663-8586-616b1f214475",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-1c33a657-f9aa-4351-9de9-1492466e7478"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907200,
+      "outcomeDigest": "sha256:8ff1d2d891721e2ccbd94c11020f508fd489557eebd6ef449e0eeb9d1500b253"
+    },
+    {
+      "outcomeId": "outcome-68eeb34e-3b3c-4fa5-87c7-73869d7d3e88",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-9b1171da-6448-421d-bb38-e6e78ed53805",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-0bc4fcfa-33d1-415b-b623-c902a09e8d8d"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907277,
+      "outcomeDigest": "sha256:21d4f98fc8a4d190fa6a6b0a395aec148015b569d6f8056acfa35580f6985d55"
+    },
+    {
+      "outcomeId": "outcome-c4f50dbe-2e8e-4998-83d4-f7571027b38d",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "event-2fc0b890-132f-46a6-94aa-7b208adce195"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907343,
+      "outcomeDigest": "sha256:55bedf2a1f9870e44282a14a48eebe45184917c35319e4dee7bbc2df8bc7f65b"
+    },
+    {
+      "outcomeId": "outcome-7295d74a-6462-4be7-9e96-78c5e4421d8f",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "event-9970da3a-f5b7-4ccb-90cb-49274da67ab1"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907401,
+      "outcomeDigest": "sha256:65046bbeba585bc126f6cc858edea7a5f6165557fa1d4022ad7f891c8ef8e53d"
+    },
+    {
+      "outcomeId": "outcome-5c681ab6-a717-4efa-89ed-0f5bda1416ac",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "event-3edc8e2d-1061-4204-95d5-4f9950e6beeb"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907459,
+      "outcomeDigest": "sha256:62c70369a8d99797ea1dc0f98bb1c005928a3f5a70d93304043b86017ee527e0"
+    },
+    {
+      "outcomeId": "outcome-076d0669-db1e-475b-b6d9-2895d1ffd999",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-69539942-0e53-4977-ae70-444d8e634254",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-65a8adaf-3c1c-4282-88e9-3ff68bcc0441"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907511,
+      "outcomeDigest": "sha256:d7f6e49a5564556aa5c1eb6eb31662b06f8489eb04dedac1b2a8cf8f5ceba47c"
+    },
+    {
+      "outcomeId": "outcome-6268f49b-8e96-4480-9788-d11f4257ee43",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-65a8adaf-3c1c-4282-88e9-3ff68bcc0441"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907569,
+      "outcomeDigest": "sha256:db3e68bfae350df4c7a9fd5b02873ce56155f64824db262e66e80071643018f0"
+    },
+    {
+      "outcomeId": "outcome-74f2b1f2-d0d0-4c6f-ac2b-1c83beff0661",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-65a8adaf-3c1c-4282-88e9-3ff68bcc0441"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907621,
+      "outcomeDigest": "sha256:520693322b7b0febd83e4639ef3ab4eb173103dd29e093b7157d4d7d301dbf0d"
+    },
+    {
+      "outcomeId": "outcome-1c2eb740-ed49-4e66-b5e6-7e1a33ba38f7",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-65a8adaf-3c1c-4282-88e9-3ff68bcc0441"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907679,
+      "outcomeDigest": "sha256:fec2be5582ab6ba19ccade3e44ba012e5b9c2af0aebbb8112a357859e2944f9d"
+    },
+    {
+      "outcomeId": "outcome-e20bc5dc-9b5b-47a1-a3f6-67c94d5803f7",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-65a8adaf-3c1c-4282-88e9-3ff68bcc0441"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907759,
+      "outcomeDigest": "sha256:8af53dd0588b8acfb4efed52ee273fc928155c552516ffb6d5e6699f850b9a0a"
+    },
+    {
+      "outcomeId": "task-outcome-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-fcfa7e6a-e34a-4743-9ca2-cbb87ec52c11",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "run-event-46a7f065-26bb-45a4-83b1-9ee0918ddf48"
+      ],
+      "verifierReportIds": [
+        "event-2c2b1229-2588-4e6b-bf6b-c9604b74f32a"
+      ],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907819,
+      "outcomeDigest": "sha256:81d64e188da56fb91a6d5a1ef0463636dfa352ffd5d52942a7d5457cda823c0d"
+    },
+    {
+      "outcomeId": "outcome-80295510-c660-4797-90d9-f7735a72368d",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-f6dddea9-8754-4c26-aa83-dfd5d344f15c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "status": "FAILED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "executionEventIds": [
+        "event-9970da3a-f5b7-4ccb-90cb-49274da67ab1"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "TASK_FAILED"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395907879,
+      "outcomeDigest": "sha256:e0cd33a75928274abc897be14cd62051b7b70ebbaca97f879d55a186a0f93af3"
+    },
+    {
+      "outcomeId": "outcome-7be61d8f-b324-4069-a3b2-a41eb002781a",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-f5f480f4-e0f2-4efe-ad4c-dd5fe3162fcc"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941280,
+      "outcomeDigest": "sha256:fcdde83a0393edc0a40ac9ca677ea4cd492c4e7a1d84fbb9d9ec16d6c4fe9a51"
+    },
+    {
+      "outcomeId": "outcome-4fd4b511-6b7e-46e5-8468-18d3d747f138",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-36ac12b5-a6c9-49a9-bd81-b2b6643c29d9"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941343,
+      "outcomeDigest": "sha256:b5a3b7d89a6db22ae04791200cb330823ce19b73588d6940b71f329f999e3cab"
+    },
+    {
+      "outcomeId": "outcome-ad46cb69-9ca8-4af5-ae60-5374ee035356",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "event-17dfd5b5-b645-4c75-b7a6-4bbf46a31fb3"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941403,
+      "outcomeDigest": "sha256:12e2b86c54b651e2cfb11cbafe769726b72c1631fff6d680e7b5fd911fb08174"
+    },
+    {
+      "outcomeId": "outcome-5069f679-4d5a-4b65-9bd5-1382e167501a",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "event-0480823a-aa3f-42a8-868d-f8df106e2222"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941461,
+      "outcomeDigest": "sha256:a05a533e0bf4f4d81e299625d4e6fc34a37898ef19040d69aadd9786ccb2ff01"
+    },
+    {
+      "outcomeId": "outcome-4a5daf5e-9cfe-4f7f-9f57-3eaf54c0db6a",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "event-aa63a2b7-e4b6-4910-a7ac-a39395c6ca77"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941524,
+      "outcomeDigest": "sha256:f37023f256c10fe5abe945fb922902eda73b3dc1286a93312a7bf5da17083e55"
+    },
+    {
+      "outcomeId": "outcome-596e2cd5-ccce-4c8a-9496-309688f4b27a",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-c444d59e-61b8-495f-bfe2-2f1a3578633a"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941585,
+      "outcomeDigest": "sha256:93929efa182df1d80fbd0736b606bfccd4fd41bd1793b1fa41ff3820f518a4bc"
+    },
+    {
+      "outcomeId": "outcome-14b4baf3-5ea6-4036-a3cb-230655427587",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-c444d59e-61b8-495f-bfe2-2f1a3578633a"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941656,
+      "outcomeDigest": "sha256:e90fe358e3049f0edddcf5403e1484eb49b33cdea45e17bd6c7ab58ef9ea3e71"
+    },
+    {
+      "outcomeId": "outcome-319625fc-493a-4dee-9e79-cfdea344e914",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-c444d59e-61b8-495f-bfe2-2f1a3578633a"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941728,
+      "outcomeDigest": "sha256:6efb59c74eed2652a9f41f00ffe53f79f19867d3988a867ed0bc96849d18ff39"
+    },
+    {
+      "outcomeId": "outcome-0a0ee6e9-c5ae-4377-83a2-0c657ddb007f",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-73dff878-717b-4e73-8642-24fa33073d20",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-c444d59e-61b8-495f-bfe2-2f1a3578633a"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941788,
+      "outcomeDigest": "sha256:f742602360410d548b09356fe5d20cb4337ca3d38c97a637146570c8caafb491"
+    },
+    {
+      "outcomeId": "outcome-76370dce-d7ea-459d-8f8a-2961067d1ba2",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-ba532192-f631-40da-a743-d4c3c9928903",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-c444d59e-61b8-495f-bfe2-2f1a3578633a"
+      ],
+      "verifierReportIds": [],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941848,
+      "outcomeDigest": "sha256:eed9ea7821c0740d63fd32c43d79ae0ff450aa78ddaffdf8ace0c7d845c0ab2c"
+    },
+    {
+      "outcomeId": "task-outcome-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-bca05bd9-ca75-4038-84a7-0d8f50b2bcb4",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "verifier",
+      "sourceId": "verifier-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "run-event-4badf240-8290-4d99-986b-212196d4991a"
+      ],
+      "verifierReportIds": [
+        "event-91ac065b-3a3e-44ad-9276-d59ba2a453d5"
+      ],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395941911,
+      "outcomeDigest": "sha256:63afee447fe45ab0f02ba738d0ee8baa92440bf4154d81a9b6cb96d94f27ad13"
+    },
+    {
+      "outcomeId": "outcome-1bb4a79b-a08a-4269-a176-0430d9972af1",
+      "schemaVersion": "1.0",
+      "decisionId": "decision-b5b6008f-b79b-4573-a2cb-7237ea861cb5",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "status": "SUCCEEDED",
+      "sourceType": "coordinator",
+      "sourceId": "coordinator-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "executionEventIds": [
+        "event-0480823a-aa3f-42a8-868d-f8df106e2222"
+      ],
+      "verifierReportIds": [
+        "event-91ac065b-3a3e-44ad-9276-d59ba2a453d5"
+      ],
+      "userFeedbackEventIds": [],
+      "observedEffects": [],
+      "safetyOutcomeCodes": [
+        "NO_EXTERNAL_EFFECT"
+      ],
+      "creditAssignments": [],
+      "blameAssignments": [],
+      "evaluatorVersion": "deterministic-v1",
+      "linkedAtMs": 1791395942401,
+      "outcomeDigest": "sha256:75e5350f43223671d21017c35d56ae062ed9bca593caef5b0797863e6d2145de"
+    }
+  ],
+  "events": [
+    {
+      "eventId": "decision-event-6db95db5-bdf0-49db-8010-4130a99de882",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-e5f139b3-046d-4663-8586-616b1f214475",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395878572,
+      "eventDigest": "sha256:68654ca836cabba3341ae3a5306c64583b7fe1511e63acdbde45cfda8449773c"
+    },
+    {
+      "eventId": "decision-event-e8046efe-bd9e-4a5b-8b44-e64e6e2a9ee5",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-e5f139b3-046d-4663-8586-616b1f214475",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395878657,
+      "eventDigest": "sha256:c97f0fcdaae177cf04a55ae8429b2bb51d6127264903b6a42dc4653ae972a43a"
+    },
+    {
+      "eventId": "decision-event-a66fc2a5-ad21-4297-912c-ecf6b66a69d2",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-9b1171da-6448-421d-bb38-e6e78ed53805",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395878993,
+      "eventDigest": "sha256:63b52757333af952a0aadca0870edd18dcdf285243d11c1faa64f135fbc3159d"
+    },
+    {
+      "eventId": "decision-event-4304a64f-e1a2-4c02-b795-2982237338dc",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-9b1171da-6448-421d-bb38-e6e78ed53805",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395879049,
+      "eventDigest": "sha256:ced5ec120acdc603eb40130d2bd13e91635c0c95e21f148319191c922815a41f"
+    },
+    {
+      "eventId": "decision-event-9bbda4a3-0ddc-4908-a599-2364d6027f35",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395879789,
+      "eventDigest": "sha256:7c160b8d7c87bd7298810fac1cc61103a59516b55930d7a242fe6abc152371d4"
+    },
+    {
+      "eventId": "decision-event-a8e42848-91ad-4268-85fb-cbc4f13fca84",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395879835,
+      "eventDigest": "sha256:a33b0bfbc4443c19f0c5e59d015bdb053a70a678d7921d87a5312c43806bda12"
+    },
+    {
+      "eventId": "decision-event-e457e3b8-a410-464a-bfff-eadfd893393e",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395880291,
+      "eventDigest": "sha256:29ed5287d272a7bdb04685c056c46e7ab2bcfa1fd71157020534f2c8e53d3b6e"
+    },
+    {
+      "eventId": "decision-event-00ac477c-f1a5-4906-b352-5e60710c72ed",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395880348,
+      "eventDigest": "sha256:bc3803464386a0b654be1b0b1d0f84c1ae2bbe93c7ef8a6e3ec4a57b783fddd5"
+    },
+    {
+      "eventId": "decision-event-4aa86963-2efe-4a7d-9582-c6a6d3e8edfe",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395890766,
+      "eventDigest": "sha256:b4a66f1b0587d9fecf6bb03c2d8375d843fb37193d33967a750effed3db080fb"
+    },
+    {
+      "eventId": "decision-event-eb16225d-2d09-4788-8217-75b2fdeb4723",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395890831,
+      "eventDigest": "sha256:032a91ff44293eed964a6ca7656d63f8bd177503922d87f625b35944fd1aec1a"
+    },
+    {
+      "eventId": "decision-event-74f484fc-8abe-46f6-b054-08775c0bbe88",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-69539942-0e53-4977-ae70-444d8e634254",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395905312,
+      "eventDigest": "sha256:3586efb433a5dd7bb1cd4a550c3033dc81eea55adba6edeb3b2994a3de47e291"
+    },
+    {
+      "eventId": "decision-event-73a28ff7-da1b-4737-b590-c3169e224c0b",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-69539942-0e53-4977-ae70-444d8e634254",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395905371,
+      "eventDigest": "sha256:1058b503553fad57744d882d029ce97c5ef0a69318f25e7daa760639a44ad634"
+    },
+    {
+      "eventId": "decision-event-3f2dd174-6a85-4dcf-b709-6d657bdcdd3e",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395905432,
+      "eventDigest": "sha256:c1ef743eb1d8202f18339a1ebe2abfec200a3244887e530115046ced5efec185"
+    },
+    {
+      "eventId": "decision-event-5c43e065-b096-462e-9001-d901b2d15494",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395905497,
+      "eventDigest": "sha256:fa10640ac4889ae1a4465da6a35415a55f51c050998def532f2641f90abe095c"
+    },
+    {
+      "eventId": "decision-event-3323c201-e89c-4c5b-84e0-81923445fa38",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395905560,
+      "eventDigest": "sha256:f4aa8293c709e751b5cb4fe090c00b710bccd96e90408051ce1d750963173f30"
+    },
+    {
+      "eventId": "decision-event-74105908-dbe7-48ba-9ae4-8326019f9002",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395905628,
+      "eventDigest": "sha256:08e0c2f47fc684014cc90d9ce43af083443ebc59c04ab99ecae5615757df621d"
+    },
+    {
+      "eventId": "decision-event-31747dc0-ed8f-4ecd-9a23-962cf174c7e6",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395905690,
+      "eventDigest": "sha256:71f0d5673819162a3d0a193bf0744114226e27a070b7c5515b114a685734f782"
+    },
+    {
+      "eventId": "decision-event-48c3b1c8-9666-4b29-89da-b63bf3135f69",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395905744,
+      "eventDigest": "sha256:e84f6f7b55b869775095c9072ebfb3458163d9503f85dcc221b91cd6013ab1f4"
+    },
+    {
+      "eventId": "decision-event-6b7cdd45-47d0-41e4-b8a7-fb384411e5b4",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395905801,
+      "eventDigest": "sha256:c5a14c6d12745cc946b5e38d18915775a1bffcb66c5f6fabd6d69d7afc1f8f15"
+    },
+    {
+      "eventId": "decision-event-e1555e54-6819-4dfc-a3c5-916be2ae6837",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395905857,
+      "eventDigest": "sha256:89bdb62863250030266f1768eeaf12060314634dba6858761a2874060e7c5874"
+    },
+    {
+      "eventId": "decision-event-77baf539-e972-494a-a6cc-527cc5ee7245",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-fcfa7e6a-e34a-4743-9ca2-cbb87ec52c11",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395906013,
+      "eventDigest": "sha256:300a6b1fa26ee1335f411d17cbf487e401ca111011a92a7ca2b85074ab5843d0"
+    },
+    {
+      "eventId": "decision-event-f190e332-7c37-4577-826a-d55c654ea88a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-fcfa7e6a-e34a-4743-9ca2-cbb87ec52c11",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395906080,
+      "eventDigest": "sha256:94be662cfed520900a2a95399f0ffe6737a8a4e7723d2b256f8be89febad9232"
+    },
+    {
+      "eventId": "decision-event-17b56c67-d285-41d8-8bde-9aab257469d5",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-f6dddea9-8754-4c26-aa83-dfd5d344f15c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395907013,
+      "eventDigest": "sha256:42fdd571c7c5269e519641a8c00d390ed8847455aaae2aa64b2d6270b1fdb1a4"
+    },
+    {
+      "eventId": "decision-event-751e4f54-7727-432d-b705-0cd2ab73083a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-f6dddea9-8754-4c26-aa83-dfd5d344f15c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395907080,
+      "eventDigest": "sha256:508ce24aa3e0a8477d8406d9c162b01cf9782e8f826c8f17a590bc2a091efc9f"
+    },
+    {
+      "eventId": "decision-event-3be0180d-6d67-4e38-92cb-3a45587cc1fd",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-e5f139b3-046d-4663-8586-616b1f214475",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-d4218f31-82ea-497f-8c8d-1b89918d5bb8",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907201,
+      "eventDigest": "sha256:39ba4da4fb5fbf438f6d86362922573cbfdcbf9c5b90eb9fb570f810dfaa30f4"
+    },
+    {
+      "eventId": "decision-event-e648af7a-dec0-484f-8efa-614cc356bc23",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-9b1171da-6448-421d-bb38-e6e78ed53805",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-68eeb34e-3b3c-4fa5-87c7-73869d7d3e88",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907277,
+      "eventDigest": "sha256:d2a78295003df2b11efc2c0c9fdf5f361f713efff21fca090d55aa10d73b7dd8"
+    },
+    {
+      "eventId": "decision-event-45845cd0-f4d1-4216-864d-87df1258ffc3",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-69526f83-840c-4e22-897e-27d89e81c25e",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-c4f50dbe-2e8e-4998-83d4-f7571027b38d",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907343,
+      "eventDigest": "sha256:c436ae4fa55d5faa2910951df50885cc4d6987d1c7de347c9ef5ef7b12336786"
+    },
+    {
+      "eventId": "decision-event-3a3b16ff-a2b7-4274-a9e7-fce5d6a455d5",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-48be5cc5-c65a-429d-910a-62f0266251be",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-7295d74a-6462-4be7-9e96-78c5e4421d8f",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907402,
+      "eventDigest": "sha256:ce1d84355dcf1a4e5fae26c11dd99bf79fa9fdcfa3a3de14d16b2b1a7271dc30"
+    },
+    {
+      "eventId": "decision-event-6ecef5dd-0d94-4848-a790-8a8db5fd323d",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-86ca5bc6-248e-44ea-bdd4-d09160a1ba43",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-5c681ab6-a717-4efa-89ed-0f5bda1416ac",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907460,
+      "eventDigest": "sha256:7985aa7ee70ecbea9e9902e8c3a7487a09263ca85cf161fcfc0f873d75b7872e"
+    },
+    {
+      "eventId": "decision-event-3b9ce25a-5b7c-4563-ae5a-b8850aeb40aa",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-69539942-0e53-4977-ae70-444d8e634254",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-076d0669-db1e-475b-b6d9-2895d1ffd999",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907511,
+      "eventDigest": "sha256:26385c434650fef08b12eb50b208782c121762e4748011a18997f75c25b7891a"
+    },
+    {
+      "eventId": "decision-event-468f26c5-ad80-40b0-ac09-ece737881225",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-e524bb2e-ae92-45b7-83c7-15db576fbc1b",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-6268f49b-8e96-4480-9788-d11f4257ee43",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907569,
+      "eventDigest": "sha256:a5ecc9c67c4adc8f365eb0fe977568aa7aca38dbecdcdf1fd41bcd9498b2e767"
+    },
+    {
+      "eventId": "decision-event-219ca4d2-8197-46ae-a1e3-8ac205d407b5",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-be026684-4812-43aa-a1f1-87ba1209011c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-74f2b1f2-d0d0-4c6f-ac2b-1c83beff0661",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907622,
+      "eventDigest": "sha256:bd5fe8076cf9e6e6cc3b14b34c690308d5d7f8ad85766b1f11fa5a535d92d3cb"
+    },
+    {
+      "eventId": "decision-event-c09eb5cf-80a0-471f-a21c-4e84eb2b7fbe",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-589789d5-282c-4bbb-a18f-b405b5a5407a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-1c2eb740-ed49-4e66-b5e6-7e1a33ba38f7",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907680,
+      "eventDigest": "sha256:c1818704a611d2d16d13cc3fc47b840f45e8088efdb6cf506c91ed208d3d96f4"
+    },
+    {
+      "eventId": "decision-event-a4301e0a-260b-45af-a15d-e3d6311e6a40",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-18f8fa28-3835-4cc4-9691-4458fc65d75a",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-e20bc5dc-9b5b-47a1-a3f6-67c94d5803f7",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907759,
+      "eventDigest": "sha256:529a0cb29aeba3531e961449585fd65e02704297ee4a9a506f698234398ce434"
+    },
+    {
+      "eventId": "decision-event-f1c649b5-aafe-4290-82bf-0d3e63a7cbf9",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-fcfa7e6a-e34a-4743-9ca2-cbb87ec52c11",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "task-outcome-run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907819,
+      "eventDigest": "sha256:abd13b42ab1058692dab34e1d530b1cfe127963393331ab36efaf4598553d88b"
+    },
+    {
+      "eventId": "decision-event-5d515158-c69c-47e8-a8c5-5adc35fa399a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-f6dddea9-8754-4c26-aa83-dfd5d344f15c",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "payload": {
+        "outcomeId": "outcome-80295510-c660-4797-90d9-f7735a72368d",
+        "status": "FAILED"
+      },
+      "atMs": 1791395907879,
+      "eventDigest": "sha256:8a4774ac96b93fd70b559ff870339c4b0ce13a325e87b2297f72dd680bba9874"
+    },
+    {
+      "eventId": "decision-event-e6a9fa9d-bf8e-4179-ad62-492942941453",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395913184,
+      "eventDigest": "sha256:efd282cf0feb87c9f1877060fc660ac971d95dadd2bf19c8c0fd98337a1f424a"
+    },
+    {
+      "eventId": "decision-event-1fbe7b10-8262-4558-a7a5-73cedc884b2b",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395913243,
+      "eventDigest": "sha256:03ceae49b5b6f43ed6cd97879e7646e886db2341c26b9bf58f0bab435784e0b0"
+    },
+    {
+      "eventId": "decision-event-4d11c826-439d-4827-bc53-23b3bcc3590d",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395913601,
+      "eventDigest": "sha256:07c2f2183273b934ee2428513e284450b51f957acf76fbf5e9220a305331c4e0"
+    },
+    {
+      "eventId": "decision-event-6f0422f3-9774-4f50-8ac4-0fa52713e38f",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395913650,
+      "eventDigest": "sha256:03f7a41f27597e833bc00678e5d499a3095ff95c200c83f5b3717c5b0b2af804"
+    },
+    {
+      "eventId": "decision-event-fbf3051d-3ed0-491b-a602-762e29fb2e6c",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395914196,
+      "eventDigest": "sha256:4896062e652c916b11613ca6ec328c7bc7f7718cbddfb1ad1419179cf9d054de"
+    },
+    {
+      "eventId": "decision-event-15bbd74a-cb41-4161-a127-6ad358109239",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395914258,
+      "eventDigest": "sha256:b45c680fde65827ae28a60740ffd7fde83e5ee4838a82d69f5f5b2c5cc9ae32b"
+    },
+    {
+      "eventId": "decision-event-7cdb6390-f4c0-453a-90bd-9e4d04c073f2",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395914646,
+      "eventDigest": "sha256:cc2bde870cdb4320c5faa3237f05231a77a1f144cb6396a5e2ee61eec836fa39"
+    },
+    {
+      "eventId": "decision-event-f9944ea3-db3c-4149-ac58-3f86fbb55f9e",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395914710,
+      "eventDigest": "sha256:d2cdb9ba5f841243db282a130f6cc31bd69ed0b151eb4c4e91a9879de3727abe"
+    },
+    {
+      "eventId": "decision-event-7d4fd43d-eea3-420f-af0c-bdfd2c0dc5c3",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395925691,
+      "eventDigest": "sha256:91641837038719098563c0eabad141d2b162428ede0275e66ccfecb940656524"
+    },
+    {
+      "eventId": "decision-event-6a1178bc-2d47-4501-9fea-13b616764394",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395925774,
+      "eventDigest": "sha256:9dc7022bc751145eee5930c46f472200b96d3d52adc3db0535842b8dd75bb8d3"
+    },
+    {
+      "eventId": "decision-event-7d8d9030-1660-465a-807c-914cf72870b3",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395939399,
+      "eventDigest": "sha256:45a7eb313b3b6727ca2ea41a0765e29d8669325a70a81590b1b864ff00f7407b"
+    },
+    {
+      "eventId": "decision-event-9dd5a235-e73d-464a-828b-27cdf39ed79a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395939465,
+      "eventDigest": "sha256:23973888aa4bae0e83bb21d2741c8f36e9614d55d47a210af9a9d50be9ed4d15"
+    },
+    {
+      "eventId": "decision-event-b915a793-8f64-452f-8f07-044d3a4e126e",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395939552,
+      "eventDigest": "sha256:d5ae71d07da834babbfad05a1e21e82eabf5a489b27f0cd91a9450304e701bc1"
+    },
+    {
+      "eventId": "decision-event-ed1849d0-1c91-400e-85d9-b53a89c5b04a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395939625,
+      "eventDigest": "sha256:1fe801cb8bd0f9e5a416a706e997e923e0833d93096705c520b7450baff32eed"
+    },
+    {
+      "eventId": "decision-event-e8f7da80-fa9b-4487-a081-e4c99f1fc92a",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395939697,
+      "eventDigest": "sha256:b4c89982cbeb3d89e8e09bf01a712570df484ec5c564231a5452aa2d7bdb26dc"
+    },
+    {
+      "eventId": "decision-event-57276ab1-6fff-466f-b27e-555bef380454",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395939763,
+      "eventDigest": "sha256:486fea4cb798adf713152e63ef4f0460422f1794776b7116db92d360abcaad20"
+    },
+    {
+      "eventId": "decision-event-96497bb1-a587-4c33-8665-24ffe6f8cff5",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-73dff878-717b-4e73-8642-24fa33073d20",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395939832,
+      "eventDigest": "sha256:49a10700af02fc2b94e41751f899e01e47a7876869a2cfc7f394cac6ae88d9a3"
+    },
+    {
+      "eventId": "decision-event-b4619e4d-8fe7-4b6a-8f82-dcae186e09b3",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-73dff878-717b-4e73-8642-24fa33073d20",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395939901,
+      "eventDigest": "sha256:311836d483cc7c0f337703522c8939a816b065561a74ae9ccd91bfa6321bb8ce"
+    },
+    {
+      "eventId": "decision-event-fe45e8f3-fc9c-42ae-8f2a-5d4d8b743510",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-ba532192-f631-40da-a743-d4c3c9928903",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395939979,
+      "eventDigest": "sha256:2a155b0162107e65743294759f7cc71ee83904ec846aa2591befce1221f2df15"
+    },
+    {
+      "eventId": "decision-event-78dd2287-4cf2-4ed1-8562-106c437d7f47",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-ba532192-f631-40da-a743-d4c3c9928903",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395940042,
+      "eventDigest": "sha256:543d5fbbab655cd67477931e06847a61ec5321f169412edc2f80c2f07c7054fc"
+    },
+    {
+      "eventId": "decision-event-a0372670-ec2f-443a-bb76-b55466a9b07b",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-bca05bd9-ca75-4038-84a7-0d8f50b2bcb4",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395940221,
+      "eventDigest": "sha256:a9e67f55799dd8ed08d79354b0db13c094b9edebacfcad921efa028d0f1d494d"
+    },
+    {
+      "eventId": "decision-event-d3a3d1fd-70a3-4360-8128-4471ca825f8d",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-bca05bd9-ca75-4038-84a7-0d8f50b2bcb4",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395940293,
+      "eventDigest": "sha256:82e561a4bcdf21a594916f479c40e75813ab4ebad1c9328d45703043f69645e5"
+    },
+    {
+      "eventId": "decision-event-94e19e1a-c017-4eb2-aeda-e86cf508cb55",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-c1ed6798-b2e9-41bd-aa9f-01435439a0f9",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-7be61d8f-b324-4069-a3b2-a41eb002781a",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941281,
+      "eventDigest": "sha256:08e466c9d438a67654ac963beb85889168749484da9beec6e5ecb34dc397fbb1"
+    },
+    {
+      "eventId": "decision-event-02fbee94-ba1c-4ac0-8f63-a5686d3bd97e",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-dac3de01-f3d0-4292-9fdb-83e68aec0255",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-4fd4b511-6b7e-46e5-8468-18d3d747f138",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941343,
+      "eventDigest": "sha256:7523957162d9b3c18b8b2258ec93b493e45c9cb9cc869ffbc36e84fff3ebb769"
+    },
+    {
+      "eventId": "decision-event-d698ad5c-edff-4ef8-a7ca-a4b3bf592698",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-8e002e40-bd77-4cb2-b9bf-09fa3ede8d51",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-ad46cb69-9ca8-4af5-ae60-5374ee035356",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941403,
+      "eventDigest": "sha256:3c29186adfe6af92935ff5f47a05a160720c478e9b479f97e1f9cb36820c3787"
+    },
+    {
+      "eventId": "decision-event-00e6e28d-b530-4cfc-ac1b-6f0c7966ddb7",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-2753d9ae-3589-42ca-83c8-08467644f1b3",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-5069f679-4d5a-4b65-9bd5-1382e167501a",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941461,
+      "eventDigest": "sha256:e248211028900b6d57cc9cffb325196ac57808140014b98c7712a330886ae693"
+    },
+    {
+      "eventId": "decision-event-33294f53-ccf8-45dd-a8ca-c4cfdd7f89e2",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-68b6ae7c-110a-4058-a9be-04f58112ea4a",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-4a5daf5e-9cfe-4f7f-9f57-3eaf54c0db6a",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941524,
+      "eventDigest": "sha256:718ada413e3db3991612596a4be619f7edfd8f892a29d35e9e0f8a1d24b19acf"
+    },
+    {
+      "eventId": "decision-event-3b2021df-726b-4ca7-96df-2e1583ec4054",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-52d65df6-af05-4af9-bef7-986cab5ea256",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-596e2cd5-ccce-4c8a-9496-309688f4b27a",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941586,
+      "eventDigest": "sha256:9f1f428a997362285bf794d962715ce460247252605421e1dda4d089447aa931"
+    },
+    {
+      "eventId": "decision-event-e218ebf7-74ee-4969-8da1-40687e672be4",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-182315a7-28bb-4af3-9274-bf3d18cd082b",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-14b4baf3-5ea6-4036-a3cb-230655427587",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941656,
+      "eventDigest": "sha256:abdeae0f3ca9b51606c190ada6e57604e2ba6f84fde52835f736e188e0bf7b0b"
+    },
+    {
+      "eventId": "decision-event-a94f127c-73f0-4c05-9766-f2e19f6cf3f7",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-07b933bf-4ec8-4ac7-aab8-b6760f025a18",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-319625fc-493a-4dee-9e79-cfdea344e914",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941729,
+      "eventDigest": "sha256:0dbd4bdfead432c9d2df3aac7d03a2a762d980169002767e96ba1da43bea3f2b"
+    },
+    {
+      "eventId": "decision-event-7a1cbbcd-2b43-45de-ba0f-33d24b74af1c",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-73dff878-717b-4e73-8642-24fa33073d20",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-0a0ee6e9-c5ae-4377-83a2-0c657ddb007f",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941788,
+      "eventDigest": "sha256:91790e6d846e6e03ebdff0caa6d662a2792501e177654601758f7ae2ed0cc8bd"
+    },
+    {
+      "eventId": "decision-event-ed0d7f1b-6040-453d-8974-9ed58344554f",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-ba532192-f631-40da-a743-d4c3c9928903",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-76370dce-d7ea-459d-8f8a-2961067d1ba2",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941848,
+      "eventDigest": "sha256:ff232f490872c89ac19e11c5ea0b688441f211f73319d4943c5d993453550da4"
+    },
+    {
+      "eventId": "decision-event-ece83be1-d6f7-4556-a76b-79b78eb66ed3",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-bca05bd9-ca75-4038-84a7-0d8f50b2bcb4",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "task-outcome-run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395941912,
+      "eventDigest": "sha256:801cac9c10e9934fa07c54a5526d490cf1800ed5729ea760bd0c9b21232d3993"
+    },
+    {
+      "eventId": "decision-event-e024d1a9-2a1a-4981-832a-e4a77834d0eb",
+      "schemaVersion": "1.0",
+      "kind": "DecisionProposed",
+      "decisionId": "decision-b5b6008f-b79b-4573-a2cb-7237ea861cb5",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "PROPOSED"
+      },
+      "atMs": 1791395942252,
+      "eventDigest": "sha256:18ea55f971be7e8b0b21aba4b37e659b2c2da14179a10a3cf69adfdbbd02cb25"
+    },
+    {
+      "eventId": "decision-event-5891421d-61d7-478a-8eb2-b3562e732137",
+      "schemaVersion": "1.0",
+      "kind": "DecisionCommitted",
+      "decisionId": "decision-b5b6008f-b79b-4573-a2cb-7237ea861cb5",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "status": "COMMITTED"
+      },
+      "atMs": 1791395942329,
+      "eventDigest": "sha256:d9036f46566e9a83c6e51e6716d4728b9ce91160910688256c874554b6dacf39"
+    },
+    {
+      "eventId": "decision-event-5da4749a-8b9e-4275-b300-773e63a92b90",
+      "schemaVersion": "1.0",
+      "kind": "DecisionOutcomeLinked",
+      "decisionId": "decision-b5b6008f-b79b-4573-a2cb-7237ea861cb5",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "payload": {
+        "outcomeId": "outcome-1bb4a79b-a08a-4269-a176-0430d9972af1",
+        "status": "SUCCEEDED"
+      },
+      "atMs": 1791395942401,
+      "eventDigest": "sha256:800032fb5379599ce807f46c3c1d707557ca6bfe5726cc97693fe1f0ebc9cad8"
+    }
+  ]
+}

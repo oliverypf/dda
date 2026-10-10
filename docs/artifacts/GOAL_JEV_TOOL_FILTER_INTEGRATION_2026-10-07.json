@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-07T08:08:25.426Z",
+  "baseRuntimeSha256": "5e46ac33290f87788ea17a3a53d4a6c98ba2cbe5947fe1ab9669a2aa35186bdf",
+  "sourceFiles": [
+    "controlled-tools.mjs",
+    "plugins/task-runner.mjs",
+    "decision/jev-client.mjs",
+    "model-config.mjs"
+  ],
+  "stage": ".codex-tmp/goal-runtime-api-fixes-20261007"
+}

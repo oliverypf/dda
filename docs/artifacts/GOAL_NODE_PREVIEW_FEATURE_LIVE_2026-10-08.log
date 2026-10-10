@@ -1,0 +1,35 @@
+{"event":"CASE_START","runKey":"20261007T184704180Z-1683de3e/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791398825588}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T184704180Z-1683de3e/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791398903375}
+hmcodex-runtime code-feature-001 FAILED tools=3 errors=1
+{
+  "batchId": "20261007T184704180Z-1683de3e",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_FEATURE_LIVE_2026-10-08.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 1,
+      "successRate": 0.5,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 6,
+      "modelCalls": 11,
+      "usageCoverage": {
+        "reportedRequests": 8,
+        "totalRequests": 11,
+        "knownTokenSubtotal": 22898,
+        "pricedRequests": 8,
+        "knownPricedSubtotal": 0.0014412272000000003
+      },
+      "toolCallCount": 6,
+      "wallMs": 163487
+    }
+  }
+}

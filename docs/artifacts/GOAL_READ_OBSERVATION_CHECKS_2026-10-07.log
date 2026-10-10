@@ -1,0 +1,23 @@
+✔ failure router keeps assertion failures in the test failure lane (3.24875ms)
+✔ evidence and stop rules block premature success (1.02125ms)
+✔ Jev client normalizes finite-choice answers and sends no tool surface (3.122031ms)
+✔ decision engine batches unresolved Jev questions and returns a finite control action (2.564375ms)
+✔ decision engine fails closed to conservative recovery when Jev is unavailable (1.0875ms)
+✔ decision engine records fallback when an enabled Jev request fails (0.934063ms)
+✔ decision state honors the configured size limit (1.520312ms)
+✔ Jev owns candidate selection and action gating without a model verifier role (13.913125ms)
+✔ action gates retain host hard blocks and actual Jev refusals while avoiding duplicate instruction evidence (0.82625ms)
+✔ decision observations keep only bounded terminal host facts (2.993281ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2408.813438ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (4860.22ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (5420.018125ms)
+✔ a durable readonly registry failure is an observed error, never a missing future result (3.511093ms)
+✔ proposals, pre-registry refusals and other tool outcomes cannot masquerade as readonly execution (0.447344ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12996.624062

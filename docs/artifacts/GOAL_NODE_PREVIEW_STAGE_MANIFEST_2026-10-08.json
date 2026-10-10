@@ -1,0 +1,37 @@
+{
+  "createdAt": "2026-10-07T18:34:37.252Z",
+  "target": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-node-preview-fix-20261008\\src",
+  "appliedToMain": false,
+  "files": [
+    {
+      "path": "decision/evidence-claim.mjs",
+      "originalSha256": "05576991420225e715ca0e45f804648f5cc580da97712eac928719816633e512",
+      "stagedSha256": "cafbd142e90c3642e70b2e0d2df37d867dc4fc1bf935fe4b80120b4992ba16f2",
+      "changed": true
+    },
+    {
+      "path": "decision/process-intent.mjs",
+      "originalSha256": "e9720e34a1a4310013372bd725fbba179f4b0306bcc97a23793cd64273d89fb3",
+      "stagedSha256": "e9720e34a1a4310013372bd725fbba179f4b0306bcc97a23793cd64273d89fb3",
+      "changed": false
+    },
+    {
+      "path": "decision/workspace-context.mjs",
+      "originalSha256": "2c1dbccfdf034ebcbcc2fcd5ad37999fc1f288ddb715d04e8516c5a7065f00b6",
+      "stagedSha256": "1304599d523ca95861786a2337074b36cd901191705865c6a248063d8d6ad008",
+      "changed": true
+    },
+    {
+      "path": "runtime-safety-monitor.mjs",
+      "originalSha256": "48743814a6484908f381102ed55b7ae758907ae42feea9c53fd2feef6d51ba02",
+      "stagedSha256": "48743814a6484908f381102ed55b7ae758907ae42feea9c53fd2feef6d51ba02",
+      "changed": false
+    },
+    {
+      "path": "windows-path.mjs",
+      "originalSha256": "d6f051b662ea7850e72cbead87942f5bc025ed05a5ee874b24a3475c74326727",
+      "stagedSha256": "d6f051b662ea7850e72cbead87942f5bc025ed05a5ee874b24a3475c74326727",
+      "changed": false
+    }
+  ]
+}

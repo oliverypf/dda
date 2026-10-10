@@ -1,0 +1,103 @@
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791362204425}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362233498}
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-inspect-layout-001-ordinary-codex","mode":"READ_ONLY","atMs":1791362243752}
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-inspect-layout-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362261505}
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-recoverable-read-001-ordinary-codex","mode":"READ_ONLY","atMs":1791362277869}
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362308349}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791362349086}
+ordinary-codex code-normalize-001 SUCCEEDED tools=4 errors=2
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791362443928}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791362499254}
+ordinary-codex code-syntax-001 FAILED tools=6 errors=5
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791362664338}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=5 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-feature-001-ordinary-codex","mode":"CONTROLLED","atMs":1791362706183}
+ordinary-codex code-feature-001 SUCCEEDED tools=11 errors=5
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791362912863}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362942342}
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791362955755}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-inspect-layout-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362965120}
+hmcodex-runtime inspect-layout-001 TIMED_OUT tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-inspect-layout-001-ordinary-codex","mode":"READ_ONLY","atMs":1791363146002}
+ordinary-codex inspect-layout-001 TIMED_OUT tools=0 errors=0
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791363326283}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-recoverable-read-001-ordinary-codex","mode":"READ_ONLY","atMs":1791363492997}
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791363511469}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791363581719}
+ordinary-codex code-normalize-001 SUCCEEDED tools=9 errors=4
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791363751733}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791363800057}
+ordinary-codex code-syntax-001 FAILED tools=4 errors=2
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791363943775}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T083643881Z-9756d4e8/2-code-feature-001-ordinary-codex","mode":"CONTROLLED","atMs":1791363972369}
+ordinary-codex code-feature-001 SUCCEEDED tools=9 errors=5
+{
+  "batchId": "20261007T083643881Z-9756d4e8",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_FINAL_PAIRED_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 12,
+      "successes": 9,
+      "successRate": 0.75,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 6,
+      "recoverySuccessRate": 0.75,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 51,
+      "modelCalls": 65,
+      "usageCoverage": {
+        "reportedRequests": 62,
+        "totalRequests": 65,
+        "knownTokenSubtotal": 623687,
+        "pricedRequests": 62,
+        "knownPricedSubtotal": 0.049209636
+      },
+      "toolCallCount": 50,
+      "wallMs": 1243367
+    },
+    "hmcodex-runtime": {
+      "runs": 12,
+      "successes": 11,
+      "successRate": 0.9166666666666666,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 28,
+      "modelCalls": 43,
+      "usageCoverage": {
+        "reportedRequests": 41,
+        "totalRequests": 43,
+        "knownTokenSubtotal": 99652,
+        "pricedRequests": 41,
+        "knownPricedSubtotal": 0.022986183
+      },
+      "toolCallCount": 32,
+      "wallMs": 689370
+    }
+  }
+}

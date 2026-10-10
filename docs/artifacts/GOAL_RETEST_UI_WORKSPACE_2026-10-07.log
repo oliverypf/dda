@@ -1,0 +1,17 @@
+
+> hmcodex-desktop@0.1.0 test:ui:workspace
+> node "%npm_config_local_prefix%/scripts/ui-workspace-test.mjs"
+
+PASS new-task typing and selection survive delayed native hydration
+PASS switched root starts a fresh thread; following turn continues it
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.waitForFunction: Timeout 30000ms exceeded.
+    at C:\Users\User\hmCodex-local\desktop\scripts\ui-workspace-test.mjs:173:14 {
+  log: [],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

@@ -1,0 +1,33 @@
+✔ a long model answer retains literal reported values after the real 500-character boundary (3.996719ms)
+✔ native process status and the end of a large test log survive without malformed JSON (0.904375ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (0.594375ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (4.322031ms)
+✔ tool policy distinguishes configured capability from a required host execution check (1.44375ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (1.004687ms)
+✔ file edits carry the actual proposed change as bounded untrusted data (0.972344ms)
+✔ an actual failed process preserves stderr evidence when stdout is empty (0.302969ms)
+✔ decision observations keep only bounded terminal host facts (3.642344ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2643.54375ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (5119.682812ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (5561.348125ms)
+✔ a later successful identical test resolves its failure without losing the trace (8.060781ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (2.136875ms)
+✔ rule verifier requires bounded non-empty output (0.585938ms)
+✔ task coordinator enforces transitions and optimistic version (2.626406ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.037188ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.435156ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (2.067031ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.171094ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.244063ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.822813ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.439844ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.383125ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.489219ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13662.376094

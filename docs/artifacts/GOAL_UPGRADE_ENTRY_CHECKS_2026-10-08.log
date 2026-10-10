@@ -1,0 +1,13 @@
+✔ upgrade preflight rejects missing config, duplicate model and missing credential before inference (27.475625ms)
+✔ a setup failure after opening the first gateway closes it and exits without hanging (780.058594ms)
+✔ explicit model IDs reuse the configured provider route and distinct identities (3.276875ms)
+✔ configured role aliases resolve their real registered model and provider (0.450469ms)
+✔ missing upgrade target, aliasing the same model and unsupported protocol cannot pass an upgrade test (1.132968ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1428.4675

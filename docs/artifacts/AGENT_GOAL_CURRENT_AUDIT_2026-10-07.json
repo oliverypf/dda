@@ -1,0 +1,353 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T10:00:54.762Z",
+  "goalStatus": "active",
+  "assessment": "两项流程通过工程验收；固定任务与收益验证部分完成",
+  "runtimeSourceSha256": "e3f05eae3507f516cbffadb31814763f04ee4a69f5d3813f0fb3033f76dbb2ea",
+  "desktopExecutableSha256": "936b5ebcdb03c15ded97f43e1d4abd3ab2480fbbe780bbb6f60238b0e25d9580",
+  "sourceEvidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_CURRENT_SOURCE_VERIFICATION_2026-10-07.json",
+  "requirements": [
+    {
+      "id": "checkpoint-resume",
+      "status": "ENGINEERING_PASS",
+      "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T091052934Z\\native-resume-retry.log",
+      "remaining": "真实进程中断重启和更长任务"
+    },
+    {
+      "id": "failure-recovery",
+      "status": "ENGINEERING_PASS",
+      "localNativeUpgrade": true,
+      "realJevRecovery": {
+        "runs": 2,
+        "successes": 2,
+        "decision": {
+          "calls": 20,
+          "successfulCalls": 20,
+          "inputTokens": 53599,
+          "outputTokens": 1834,
+          "estimatedApiCost": 0.0022511579999999996,
+          "actualCost": null
+        },
+        "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_STAGED_LIVE_JEV_VERIFIER_EVIDENCE_2026-10-07.json"
+      },
+      "remaining": "真实低价/强模型升级和 Jev 开关对照"
+    },
+    {
+      "id": "fixed-tasks-and-roi",
+      "status": "PARTIAL",
+      "pairedBatch": "20261007T092219874Z-08e88e14",
+      "measurementsImplemented": true,
+      "actualInvoices": null,
+      "humanSavings": null
+    }
+  ],
+  "checks": {
+    "runtime": {
+      "passed": 629,
+      "failed": 0,
+      "skipped": 1
+    },
+    "scripts": {
+      "passed": 46,
+      "failed": 0
+    },
+    "desktopUnit": {
+      "passed": 60,
+      "failed": 0
+    },
+    "native": {
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browserHistory": {
+      "passed": 13,
+      "failed": 0
+    },
+    "oneCommandFixture": true
+  },
+  "paired": {
+    "batchId": "20261007T092219874Z-08e88e14",
+    "model": "mimo-v2.6-pro",
+    "codexVersion": "codex-cli 0.155.1",
+    "decisionMode": "OFF",
+    "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_SOURCE_PAIRED_2026-10-07.json",
+    "sourceSha256": "d01c9c06f1f966967460ffdcd4aa49e616c00fa7002d027cfa914a4b2fe731e0",
+    "conditions": {
+      "ordinary-codex": {
+        "runs": 12,
+        "successes": 8,
+        "successRate": 0.6666666666666666,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 4,
+        "recoverySuccessRate": 0.5,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 57,
+        "modelCalls": 74,
+        "usageCoverage": {
+          "reportedRequests": 67,
+          "totalRequests": 74,
+          "knownTokenSubtotal": 678209,
+          "pricedRequests": 67,
+          "knownPricedSubtotal": 0.04168518
+        },
+        "toolCallCount": 55,
+        "wallMs": 1539496
+      },
+      "hmcodex-runtime": {
+        "runs": 12,
+        "successes": 11,
+        "successRate": 0.9166666666666666,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 7,
+        "recoverySuccessRate": 0.875,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 29,
+        "modelCalls": 45,
+        "usageCoverage": {
+          "reportedRequests": 42,
+          "totalRequests": 45,
+          "knownTokenSubtotal": 102165,
+          "pricedRequests": 42,
+          "knownPricedSubtotal": 0.021810233
+        },
+        "toolCallCount": 33,
+        "wallMs": 732218
+      }
+    },
+    "failures": [
+      {
+        "runKey": "20261007T092219874Z-08e88e14/1-code-syntax-001-ordinary-codex",
+        "status": "FAILED",
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        },
+        "usageCoverage": {
+          "reportedRequests": 4,
+          "totalRequests": 4,
+          "knownTokenSubtotal": 36448,
+          "pricedRequests": 4,
+          "knownPricedSubtotal": 0.0023806390000000004
+        },
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\1-code-syntax-001-ordinary-codex"
+      },
+      {
+        "runKey": "20261007T092219874Z-08e88e14/1-code-feature-001-ordinary-codex",
+        "status": "FAILED",
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": false
+        },
+        "usageCoverage": {
+          "reportedRequests": 9,
+          "totalRequests": 10,
+          "knownTokenSubtotal": 93383,
+          "pricedRequests": 9,
+          "knownPricedSubtotal": 0.005011751
+        },
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\1-code-feature-001-ordinary-codex"
+      },
+      {
+        "runKey": "20261007T092219874Z-08e88e14/2-recoverable-read-001-hmcodex-runtime",
+        "status": "TIMED_OUT",
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        },
+        "usageCoverage": {
+          "reportedRequests": 4,
+          "totalRequests": 6,
+          "knownTokenSubtotal": 6700,
+          "pricedRequests": 4,
+          "knownPricedSubtotal": 0.001449507
+        },
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-recoverable-read-001-hmcodex-runtime"
+      },
+      {
+        "runKey": "20261007T092219874Z-08e88e14/2-code-syntax-001-ordinary-codex",
+        "status": "TIMED_OUT",
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": false
+        },
+        "usageCoverage": {
+          "reportedRequests": 9,
+          "totalRequests": 11,
+          "knownTokenSubtotal": 91343,
+          "pricedRequests": 9,
+          "knownPricedSubtotal": 0.005076971999999999
+        },
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-code-syntax-001-ordinary-codex"
+      },
+      {
+        "runKey": "20261007T092219874Z-08e88e14/2-code-feature-001-ordinary-codex",
+        "status": "TIMED_OUT",
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        },
+        "usageCoverage": {
+          "reportedRequests": 12,
+          "totalRequests": 14,
+          "knownTokenSubtotal": 137000,
+          "pricedRequests": 12,
+          "knownPricedSubtotal": 0.0084912
+        },
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-code-feature-001-ordinary-codex"
+      }
+    ],
+    "allSuccessfulRowsModelIdentityMatched": true,
+    "contentAudit": {
+      "passed": false,
+      "cases": 24,
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\content-audit.json",
+      "passedCases": 21,
+      "allSuccessfulRowsHaveEvidence": true
+    },
+    "engineeringSubset": {
+      "ordinary-codex": {
+        "runs": 6,
+        "successes": 2,
+        "successRate": 0.3333333333333333,
+        "recoveryOpportunities": 6,
+        "recoverySuccesses": 2,
+        "recoverySuccessRate": 0.3333333333333333,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 49,
+        "modelCalls": 58,
+        "usageCoverage": {
+          "reportedRequests": 53,
+          "totalRequests": 58,
+          "knownTokenSubtotal": 560265,
+          "pricedRequests": 53,
+          "knownPricedSubtotal": 0.033169707
+        },
+        "toolCallCount": 47,
+        "wallMs": 1378759
+      },
+      "hmcodex-runtime": {
+        "runs": 6,
+        "successes": 6,
+        "successRate": 1,
+        "recoveryOpportunities": 6,
+        "recoverySuccesses": 6,
+        "recoverySuccessRate": 1,
+        "manualInterventionMinutes": 0,
+        "totalTokens": 75488,
+        "actualCost": null,
+        "estimatedCost": 0.014905361999999998,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 19,
+        "modelCalls": 25,
+        "usageCoverage": {
+          "reportedRequests": 25,
+          "totalRequests": 25,
+          "knownTokenSubtotal": 75488,
+          "pricedRequests": 25,
+          "knownPricedSubtotal": 0.014905361999999998
+        },
+        "toolCallCount": 23,
+        "wallMs": 294354
+      }
+    }
+  },
+  "liveJev": {
+    "batchId": "20261007T090526039Z-99955e26",
+    "sourceRuntimeRoot": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-jev-evidence-e6n90e",
+    "sourceSha256": "e3f05eae3507f516cbffadb31814763f04ee4a69f5d3813f0fb3033f76dbb2ea",
+    "conditions": {
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 2,
+        "successRate": 1,
+        "recoveryOpportunities": 2,
+        "recoverySuccesses": 2,
+        "recoverySuccessRate": 1,
+        "manualInterventionMinutes": 0,
+        "totalTokens": 17652,
+        "actualCost": null,
+        "estimatedCost": 0.005026077,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 6,
+        "modelCalls": 10,
+        "usageCoverage": {
+          "reportedRequests": 10,
+          "totalRequests": 10,
+          "knownTokenSubtotal": 17652,
+          "pricedRequests": 10,
+          "knownPricedSubtotal": 0.005026077
+        },
+        "toolCallCount": 6,
+        "wallMs": 88427
+      }
+    },
+    "contentAudit": {
+      "passed": true,
+      "cases": 2,
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T090526039Z-99955e26\\content-audit.json"
+    },
+    "decision": {
+      "calls": 20,
+      "successfulCalls": 20,
+      "inputTokens": 53599,
+      "outputTokens": 1834,
+      "estimatedApiCost": 0.0022511579999999996,
+      "actualCost": null
+    }
+  },
+  "remaining": [
+    "改善网络超时；加入真实进程中断重启、多文件构建与长任务。",
+    "相同任务集验证真实低价/强模型路由和 Jev 开关，记录分项成本及延迟。",
+    "实际供应商收费和真人活动记录，按成功任务核算完整费用和人工时间。"
+  ],
+  "limitations": [
+    "实际费用未知；已知 token/额度小计不等于完整用量或现金账单。",
+    "无人运行的 0 分钟不证明节省人工。",
+    "普通 Codex 使用 CLI 的自定义 Mimo 路由；不能推广为原生 GPT Codex 的总体能力。",
+    "真实 Jev 是单方 2 次恢复诊断，不能拼接其他批次作开关对照。",
+    "当前用户配置未改，只有一个 Mimo Pro 且未显式启用 Jev。"
+  ]
+}

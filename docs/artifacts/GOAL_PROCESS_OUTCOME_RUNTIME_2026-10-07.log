@@ -1,0 +1,20 @@
+✔ runs a bounded OpenAI tool round through CONTROLLED executor approval (8555.045625ms)
+✔ verifier recovery continues past the already observed initial failure instead of replaying it (7168.96625ms)
+✔ definite failure retries through Jev and upgrades to the bound strong model (12569.891719ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (41.767031ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (9.553438ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (9.6475ms)
+✔ runs a model-requested tool and sends its result into the next round (9.924532ms)
+✔ READ_ONLY requests expose only read-only tools (7.841875ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (11.3275ms)
+✔ stops repeated workspace requests after four rounds without new evidence (18.550625ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (11.368906ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (12.537656ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20471.750156

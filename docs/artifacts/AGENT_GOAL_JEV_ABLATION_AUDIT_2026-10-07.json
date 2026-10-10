@@ -1,0 +1,331 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T11:59:21.426Z",
+  "goalStatus": "active",
+  "assessment": "Engineering automation works; Jev speed, cheap/strong routing and complete economic benefits remain unverified.",
+  "currentRuntimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+  "changedRuntimeFilesSinceAblation": [
+    "decision/evidence-claim.mjs",
+    "index.mjs",
+    "plugins/task-runner.mjs"
+  ],
+  "engineering": {
+    "targetedPassed": 18,
+    "runtimePassed": 636,
+    "runtimeFailed": 0,
+    "runtimeSkipped": 1,
+    "scriptPassed": 50,
+    "windowsX64DebugBuildPassed": true,
+    "recoveryJevTestsPassed": 16,
+    "nativeDesktopPassed": 27,
+    "nativeDesktopFailed": 0,
+    "debugExecutableSha256": "9fa428090828d1f7292d888626151396e4eb8228ba78cde7839c938ad1f44c33",
+    "oneCommandReport": "AGENT_GOAL_JEV_CLAIM_VALIDATION_2026-10-07.json",
+    "oneCommandPassed": true,
+    "localComparison": {
+      "batchId": "20261007T115000180Z-c8d0af28",
+      "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+      "evidenceClass": "ACTUAL_CLIENTS_LOCAL_MODEL_FIXTURE",
+      "conditions": {
+        "ordinary-codex": {
+          "runs": 6,
+          "successes": 6,
+          "successRate": 1,
+          "recoveryOpportunities": 4,
+          "recoverySuccesses": 4,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 480,
+          "actualCost": 0,
+          "estimatedCost": 0,
+          "pricingBasis": null,
+          "toolRounds": 14,
+          "modelCalls": 20,
+          "usageCoverage": {
+            "reportedRequests": 20,
+            "totalRequests": 20,
+            "knownTokenSubtotal": 480,
+            "pricedRequests": 0,
+            "knownPricedSubtotal": 0
+          },
+          "toolCallCount": 14,
+          "wallMs": 354990
+        },
+        "hmcodex-runtime": {
+          "runs": 6,
+          "successes": 6,
+          "successRate": 1,
+          "recoveryOpportunities": 4,
+          "recoverySuccesses": 4,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 528,
+          "actualCost": 0,
+          "estimatedCost": 0,
+          "pricingBasis": null,
+          "toolRounds": 15,
+          "modelCalls": 22,
+          "usageCoverage": {
+            "reportedRequests": 22,
+            "totalRequests": 22,
+            "knownTokenSubtotal": 528,
+            "pricedRequests": 0,
+            "knownPricedSubtotal": 0
+          },
+          "toolCallCount": 15,
+          "wallMs": 85090
+        }
+      },
+      "contentAuditCases": 12,
+      "contentAuditPassed": true
+    },
+    "currentSourceRevalidated": true
+  },
+  "jevAblation": {
+    "sourceReport": "AGENT_GOAL_JEV_ABLATION_2026-10-07.json",
+    "runtimeSourceSha256": "a51d19434c4cdd6676ea4aa8a25019035307deaf486a63b831977410a7b62683",
+    "batchId": "20261007T110629419Z-b67a743d",
+    "model": "mimo-v2.6-pro",
+    "conditions": {
+      "hmcodex-jev-off": {
+        "runs": 12,
+        "successes": 12,
+        "successRate": 1,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 8,
+        "recoverySuccessRate": 1,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 28,
+        "modelCalls": 47,
+        "usageCoverage": {
+          "reportedRequests": 42,
+          "totalRequests": 47,
+          "knownTokenSubtotal": 101104,
+          "pricedRequests": 42,
+          "knownPricedSubtotal": 0.02261913
+        },
+        "toolCallCount": 31,
+        "wallMs": 577527
+      },
+      "hmcodex-jev-on": {
+        "runs": 12,
+        "successes": 7,
+        "successRate": 0.5833333333333334,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 4,
+        "recoverySuccessRate": 0.5,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 36,
+        "modelCalls": 69,
+        "usageCoverage": {
+          "reportedRequests": 49,
+          "totalRequests": 69,
+          "knownTokenSubtotal": 131470,
+          "pricedRequests": 49,
+          "knownPricedSubtotal": 0.024644925
+        },
+        "toolCallCount": 35,
+        "wallMs": 918056
+      }
+    },
+    "summary": {
+      "method": "One frozen source, one upstream model, identical paired task files, alternating off/on order.",
+      "pairs": [
+        {
+          "iteration": 1,
+          "taskId": "inspect-readme-001",
+          "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-inspect-readme-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 1,
+          "taskId": "inspect-layout-001",
+          "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-inspect-layout-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 1,
+          "taskId": "recoverable-read-001",
+          "initialDigest": "1fe637db3b3822b86880905bae6aa0bde540ef85360602a6d4259ac0b9111a6b",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-recoverable-read-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "FAILED"
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-normalize-001",
+          "initialDigest": "5f9649b4aa09dc2cb328aee7b7aa266eef055a8f27229cb6dcd23469a80893ea",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-code-normalize-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-syntax-001",
+          "initialDigest": "ffec0c8c31010286fff298a633653f4ec7738a207af4941aa9408dffed90e05f",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-code-syntax-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "FAILED"
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-feature-001",
+          "initialDigest": "45468187a2062aebe536ab1447b430da9babaa4968223ac1a8bb77912fe1f4ea",
+          "offRunKey": "20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/1-code-feature-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "inspect-readme-001",
+          "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-inspect-readme-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "FAILED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "inspect-layout-001",
+          "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-inspect-layout-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "recoverable-read-001",
+          "initialDigest": "943b42cbe8693f1de600853f3a097bdfb035cf6d17a9edae1a3b9390278296f1",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-recoverable-read-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-normalize-001",
+          "initialDigest": "beab72917a3d36464b304e3b1016e44947d73f763e70fab7da05c1b1ecbcb483",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-code-normalize-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "SUCCEEDED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-syntax-001",
+          "initialDigest": "f71a1bcf8769af9c996ea9b05a051ab4487108e85118970246f7d6c4ee602136",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-code-syntax-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "FAILED"
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-feature-001",
+          "initialDigest": "b592701307ada09e3e0f6d29647cd856e7c43a4deac521886437f33721b28182",
+          "offRunKey": "20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-off",
+          "onRunKey": "20261007T110629419Z-b67a743d/2-code-feature-001-hmcodex-jev-on",
+          "offStatus": "SUCCEEDED",
+          "onStatus": "FAILED"
+        }
+      ],
+      "pairCount": 12,
+      "assignedOnRuns": 12,
+      "activatedOnRuns": 11,
+      "decision": {
+        "calls": 70,
+        "succeededCalls": 50,
+        "wallMs": 145711.6581219999,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedApiCost": null,
+        "actualCost": null
+      },
+      "limitations": [
+        "All failed and timed-out runs are included in their assigned condition.",
+        "Decision API-price estimates and language-model subscription quota are separate quantities, not combined invoices.",
+        "Small samples and provider/network timing variation limit causal attribution. Human savings and cash charges remain unverified."
+      ]
+    },
+    "wallRatioOnOverOff": 1.589633038801649
+  },
+  "fixedSourceLiveDiagnostic": {
+    "sourceReport": "AGENT_GOAL_JEV_CLAIM_DIAGNOSTIC_2026-10-07.json",
+    "batchId": "20261007T114245110Z-87c8c135",
+    "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+    "conditions": {
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 1,
+        "successRate": 0.5,
+        "recoveryOpportunities": 2,
+        "recoverySuccesses": 1,
+        "recoverySuccessRate": 0.5,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 12,
+        "modelCalls": 16,
+        "usageCoverage": {
+          "reportedRequests": 15,
+          "totalRequests": 16,
+          "knownTokenSubtotal": 41470,
+          "pricedRequests": 15,
+          "knownPricedSubtotal": 0.006155510999999999
+        },
+        "toolCallCount": 10,
+        "wallMs": 196341
+      }
+    },
+    "statuses": [
+      {
+        "taskId": "recoverable-read-001",
+        "status": "SUCCEEDED",
+        "error": null
+      },
+      {
+        "taskId": "code-syntax-001",
+        "status": "FAILED",
+        "error": "PLAN_STEP_FAILED:execute:FAIL"
+      }
+    ],
+    "observedClaims": 5,
+    "allObservedClaimsValidAndBounded": true,
+    "interpretation": "Selective one-sided diagnostic, not a fresh on/off comparison."
+  },
+  "pending": [
+    "Real Jev engineering task evidence/timeout recovery and full frozen-source paired comparisons.",
+    "Actual cheap/strong routing with broader repository, multi-file and long task coverage.",
+    "Complete provider usage, actual invoices and actual human activity; per-success-task cost and time."
+  ],
+  "measurementLimits": {
+    "completeTokenTotals": null,
+    "actualLanguageModelCashCost": null,
+    "actualJevCashCost": null,
+    "humanTimeSavings": null,
+    "headlessZeroMinutesProveSavings": false,
+    "billingBrowserReadSucceeded": false
+  },
+  "markdown": "AGENT_GOAL_JEV_ABLATION_AUDIT_2026-10-07.md"
+}

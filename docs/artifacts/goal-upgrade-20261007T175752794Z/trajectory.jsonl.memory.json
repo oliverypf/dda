@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0",
+  "memories": [
+    {
+      "memoryId": "memory-cca4e081-7205-4488-a860-6573f7bfba66",
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "statement": "Verified task outcome: class=test; verifier=PASS; outputDigest=sha256:b39b7b6dc04c95fda0c8cc735a06336a4af9f345bdfaeb4c886a0c6b7a1d223e",
+      "sourceEventIds": [
+        "event-0480823a-aa3f-42a8-868d-f8df106e2222"
+      ],
+      "scope": "workspace",
+      "confidence": 1,
+      "kind": "TASK_OUTCOME",
+      "validFromMs": 1791395942462,
+      "sensitivity": "INTERNAL",
+      "version": 1,
+      "createdAtMs": 1791395942462,
+      "updatedAtMs": 1791395942462,
+      "status": "PROPOSED",
+      "history": [],
+      "recordDigest": "sha256:e5f499dd4a874a06f548240d19d9993f8731a1b81373260bc8f22c4cbfebfcc6",
+      "lifecycleDigest": "sha256:94d7e39b4331fa112ed1da330e85d93fff2e00ede32d93b0e963390eb0f58109"
+    }
+  ]
+}

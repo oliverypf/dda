@@ -97,6 +97,24 @@ import { createJevClient } from './decision/jev-client.mjs';
 import { createMcpReadOnlyHost, loadMcpConfig } from './mcp-host.mjs';
 import { createPlaywrightWorkerHost, registerPlaywrightTools } from './playwright-host.mjs';
 
+// Decision Trace caps every assumption statement at 500 characters and rejects
+// (DECISION_INVALID_ASSUMPTIONS) rather than truncates an oversized value. The
+// council producer allows a longer rationale (1000) and probe (600), so an
+// over-limit verdict would abort the whole decision write. Normalize producer
+// side with one explainable rule: values at or under the limit pass through
+// unchanged, longer values are compacted and cut to fit the downstream limit
+// exactly, keeping an explicit truncation marker so the shortening is visible.
+const ASSUMPTION_STATEMENT_MAX = 500;
+const ASSUMPTION_TRUNCATION_MARKER = ' [TRUNCATED]';
+const councilAssumptionStatement = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const compact = value.replace(/\s+/gu, ' ').trim();
+  if (!compact) return undefined;
+  if (compact.length <= ASSUMPTION_STATEMENT_MAX) return compact;
+  const budget = ASSUMPTION_STATEMENT_MAX - ASSUMPTION_TRUNCATION_MARKER.length;
+  return `${compact.slice(0, budget).trimEnd()}${ASSUMPTION_TRUNCATION_MARKER}`;
+};
+
 const BOOLEAN_ARGS = new Set(['--resume', '--auto-evolution-proposal', '--purge-expired', '--require-holdout']);
 const APPROVAL_TTL_MS = 120000;
 // One CLI invocation runs at most one task; never derive identity from errors.
@@ -2655,15 +2673,15 @@ async function runTask() {
           reasonCodes: [`COUNCIL_${councilResult.verdict.decision}`],
           selectionCriteria: ['council-judge-selection'],
           assumptions: [
-            ...(councilResult.verdict.rationale ? [{
+            ...(councilAssumptionStatement(councilResult.verdict.rationale) ? [{
               assumptionId: 'council-judge-rationale',
-              statement: councilResult.verdict.rationale,
+              statement: councilAssumptionStatement(councilResult.verdict.rationale),
               source: 'MODEL_INFERENCE',
               testable: false
             }] : []),
-            ...(councilResult.verdict.probe ? [{
+            ...(councilAssumptionStatement(councilResult.verdict.probe) ? [{
               assumptionId: 'council-judge-probe',
-              statement: councilResult.verdict.probe,
+              statement: councilAssumptionStatement(councilResult.verdict.probe),
               source: 'MODEL_INFERENCE',
               testable: true
             }] : [])

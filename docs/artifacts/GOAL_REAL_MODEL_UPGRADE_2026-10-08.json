@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-10-07T16:49:54.663Z",
+  "taskId": "actual-flash-to-pro-recovery",
+  "models": [
+    "mimo-v2.6-flash",
+    "mimo-v2.6-pro"
+  ],
+  "frozenRuntimeSource": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+  "method": "Actual registered Flash/Pro providers and untouched real Jev answers. Prompt seeds a missing-file failure; no inference response is fabricated. Independent experiment during fixed-task batch; excluded from its comparison and timing.",
+  "passed": false,
+  "checks": {
+    "childCompleted": true,
+    "runtimeSuccess": true,
+    "actualMissingRead": false,
+    "recoveryStarted": false,
+    "actualStrongExecutor": false,
+    "distinctActualModels": false,
+    "actualJevUsed": true,
+    "actualMarkerRead": false
+  },
+  "result": {
+    "code": 0,
+    "timedOut": false,
+    "wallMs": 61962,
+    "outputTruncated": false
+  },
+  "modelsUsed": {
+    "flashRequests": 5,
+    "proRequests": 0,
+    "strongExecutorRequests": 0,
+    "jevRequests": 10
+  },
+  "decisions": [],
+  "actualCost": null,
+  "manualInterventionMinutes": null,
+  "limitation": "A preset recovery smoke test cannot establish a cost-effective model escalation policy, success rates or human savings."
+}

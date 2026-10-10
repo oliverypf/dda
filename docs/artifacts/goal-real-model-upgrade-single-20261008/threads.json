@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "threads": [
+    {
+      "id": "thread-de72565b-956c-4cdf-a343-6ce51b61d44f",
+      "title": "This is a preset recovery acceptance task in an authorized read-only workspace. The final goal is to read README.md with a real tool and report its exact evidence marker. Planner: produce one bounded READ step for this whole goal. Initial e",
+      "cwd": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-real-model-upgrade-1cfbGW",
+      "turns": [
+        {
+          "id": "turn-7ee51391-e7f7-49ed-ae6b-dc6f855a43e2",
+          "runId": "run-281e9526-086a-43d6-8b4b-8b1d9056f6b4",
+          "summary": "state=SUCCEEDED | promptDigest=sha256:6207983cf91ab94a0298ee6afb820f6fd8dfdafbcd97c8f11d566d0a27347916 | outputDigest=sha256:8d52c23f4049cbab22cd00dd412a58ea32218dbca354d967a592ea00348e94ba | toolRounds=1 | toolCalls=1",
+          "state": "SUCCEEDED",
+          "atMs": 1791391981987
+        }
+      ],
+      "state": "COMPLETED",
+      "createdAtMs": 1791391930780,
+      "updatedAtMs": 1791391981987
+    }
+  ]
+}

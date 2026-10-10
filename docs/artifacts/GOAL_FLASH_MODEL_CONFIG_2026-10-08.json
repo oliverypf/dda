@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "provider": "openai-chat",
+  "protocol": "chat-completions",
+  "model": "mimo-v2.6-flash",
+  "apiKeyEnv": "OPENCODE_GO_API_KEY",
+  "baseURL": "https://opencode.ai/zen/go/v1",
+  "sessionHeader": "x-opencode-session"
+}

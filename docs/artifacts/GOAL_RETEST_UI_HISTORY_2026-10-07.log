@@ -1,0 +1,64 @@
+
+> hmcodex-desktop@0.1.0 test:ui:history
+> node "%npm_config_local_prefix%/scripts/ui-history-test.mjs"
+
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "startup history before health/recovery, summaries plus one 100-event page",
+      "pass": true
+    },
+    {
+      "name": "history cache updates in viewport without replacing composer or requiring diagnostics",
+      "pass": true
+    },
+    {
+      "name": "history switches during recovery without replacing shell/sidebar/composer/transcript",
+      "pass": true
+    },
+    {
+      "name": "all older pages reachable, existing rows/disclosures preserved",
+      "pass": true
+    },
+    {
+      "name": "late response cannot overwrite newer selection",
+      "pass": true
+    },
+    {
+      "name": "interrupted response is restored alongside the failure",
+      "pass": true
+    },
+    {
+      "name": "empty history, failed reads and invalid page identity recover correctly",
+      "pass": true
+    },
+    {
+      "name": "lazy details and returning from pages/settings preserve history and draft",
+      "pass": true
+    },
+    {
+      "name": "six repeated 100-event switches",
+      "pass": true,
+      "longTasks": [
+        {
+          "start": 8444.200000001118,
+          "duration": 54
+        }
+      ]
+    },
+    {
+      "name": "new task invalidates pending history request",
+      "pass": true
+    },
+    {
+      "name": "startup restoration does not override early user navigation",
+      "pass": true
+    },
+    {
+      "name": "mobile layout has no page overflow",
+      "pass": true
+    }
+  ],
+  "output": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\history-ui"
+}

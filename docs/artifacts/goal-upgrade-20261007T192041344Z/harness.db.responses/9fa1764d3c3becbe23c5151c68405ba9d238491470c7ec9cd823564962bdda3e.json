@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-84eda0f6-c395-4c55-b19d-95a8b26ebca3",
+  "text": "Attempt result: **FAILURE (expected)**\n\n- **Tool call made:** `workspace.read` of `missing-evidence.txt` — first and only tool of this attempt.\n- **Actual error received:** `WORKSPACE_NOT_FOUND` — `missing-evidence.txt Available snapshot paths: README.md`\n- **README.md was not read** in this attempt, so no evidence marker is reported.\n\nThe observed failure fact is recorded: `missing-evidence.txt` does not exist in the workspace snapshot. If a host restores a checkpoint or starts verifier recovery with this previously observed failure, the remaining goal (reading `README.md` and reporting its marker) can be continued from here.",
+  "outputDigest": "sha256:b5ed01376c91b25459bda52e6f66f7b9897ea0bf80e57493d645abe5767478bf"
+}

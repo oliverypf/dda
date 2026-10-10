@@ -1,0 +1,45 @@
+
+> hmcodex-desktop@0.1.0 test:ui:accessibility
+> node "%npm_config_local_prefix%/scripts/ui-accessibility-test.mjs"
+
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "all visible buttons have an accessible name",
+      "detail": "[]"
+    },
+    {
+      "name": "all visible form controls have a label or hint",
+      "detail": "[]"
+    },
+    {
+      "name": "desktop has no horizontal overflow",
+      "detail": ""
+    },
+    {
+      "name": "mobile has no horizontal overflow",
+      "detail": ""
+    },
+    {
+      "name": "200% root font size has no viewport overflow",
+      "detail": ""
+    },
+    {
+      "name": "reduced-motion media query is active",
+      "detail": ""
+    },
+    {
+      "name": "reduced-motion disables long animation/transition",
+      "detail": "{\"animationDuration\":\"1e-06s\",\"transitionDuration\":\"1e-06s\",\"scrollBehavior\":\"auto\"}"
+    },
+    {
+      "name": "high-contrast media query is active",
+      "detail": "{\"matches\":true,\"borderWidth\":\"2px\",\"border\":\"#6d7580\"}"
+    },
+    {
+      "name": "high-contrast controls have a 2px border",
+      "detail": "{\"matches\":true,\"borderWidth\":\"2px\",\"border\":\"#6d7580\"}"
+    }
+  ]
+}

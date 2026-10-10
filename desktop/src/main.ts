@@ -1550,16 +1550,21 @@ const renderVerificationEvidence = (item: TimelineItem): string => {
 const renderFinalVerificationChecks = (): string => {
   const checks = model.timeline.filter(item => item.evidenceKind === 'rule-verification-check' && item.runId === verificationRunId());
   if (!checks.length) return '';
+  // Item-level checks stay collapsed until the reader opens them. The
+  // disclosure id is scoped by run id and backed by contextDisclosureState, so
+  // streaming refreshes and history replay restore the same choice without
+  // leaking one task's open state into another task.
+  const disclosureKey = `verification-checks:${verificationRunId() ?? 'no-run'}`;
   return `<section class="verification-checks" aria-label="确定性验收检查">
     <h2>确定性验收检查</h2>
     <p>来源：运行时规则核对报告。历史记录显示报告事件时间；实时记录显示接收时间。运行时未提供逐项检查时间和影响等级。</p>
-    <div class="verification-check-list">${checks.map(item => `
+    ${panelDetails(disclosureKey, `查看确定性验收检查（${checks.length} 项）`, `<div class="verification-check-list">${checks.map(item => `
       <article class="verification-check" data-status="${item.status}">
         <h3>${escapeHtml(item.title)}</h3>
         <pre>${escapeHtml(item.body)}</pre>
         ${renderVerificationEvidence(item)}
         <small>报告时间：${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small>
-      </article>`).join('')}</div>
+      </article>`).join('')}</div>`)}
   </section>`;
 };
 

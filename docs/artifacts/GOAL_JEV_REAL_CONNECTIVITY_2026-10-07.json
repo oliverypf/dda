@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-07T07:36:51.813Z",
+  "keyAvailable": true,
+  "source": "https://api.typesafe.ai/openapi.json",
+  "probes": [
+    {
+      "path": "/v1/models",
+      "status": 200,
+      "latencyMs": 1779,
+      "models": [
+        "jev-latest",
+        "jev-preview"
+      ]
+    },
+    {
+      "path": "/v1/system_one",
+      "status": 404,
+      "latencyMs": 407
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert.ok(lastBox && listBox && lastBox.y >= listBox.y && lastBox.y + lastBox.height <= listBox.y + listBox.height + 1)
+
+    at file:///C:/Users/User/hmCodex-local/desktop/scripts/ui-history-test.mjs:306:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

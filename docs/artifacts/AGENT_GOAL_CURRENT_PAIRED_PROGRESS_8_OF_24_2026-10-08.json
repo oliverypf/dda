@@ -1,0 +1,357 @@
+{
+  "generatedAt": "2026-10-07T18:15:12.894Z",
+  "batchId": "20261007T180217856Z-3be656c2",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "completedRuns": 8,
+  "plannedRuns": 24,
+  "fullBatch": false,
+  "overallAdvantageConclusion": "NOT_ESTABLISHED",
+  "status": "INCOMPLETE_PROGRESS_SNAPSHOT",
+  "rows": [
+    {
+      "iteration": 1,
+      "taskId": "inspect-readme-001",
+      "condition": "ordinary-codex",
+      "status": "SUCCEEDED",
+      "wallMs": 22727,
+      "modelCalls": 2,
+      "toolRounds": 1,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 16529,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 16529,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.0012453000000000004
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-inspect-readme-001-ordinary-codex"
+    },
+    {
+      "iteration": 1,
+      "taskId": "inspect-readme-001",
+      "condition": "hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "wallMs": 23312,
+      "modelCalls": 2,
+      "toolRounds": 1,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 2644,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 2644,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.00023366560000000005
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 2,
+        "succeededCalls": 1,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 6024.544218999996,
+        "latencyCoverage": {
+          "reportedRequests": 2,
+          "knownWallMsSubtotal": 6024.544218999996
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-inspect-readme-001-hmcodex-runtime"
+    },
+    {
+      "iteration": 1,
+      "taskId": "inspect-layout-001",
+      "condition": "ordinary-codex",
+      "status": "SUCCEEDED",
+      "wallMs": 27901,
+      "modelCalls": 3,
+      "toolRounds": 2,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 25709,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 25709,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.0005869584000000001
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-inspect-layout-001-ordinary-codex"
+    },
+    {
+      "iteration": 1,
+      "taskId": "inspect-layout-001",
+      "condition": "hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "wallMs": 28041,
+      "modelCalls": 2,
+      "toolRounds": 1,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 2636,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 2636,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.00023310560000000004
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 4,
+        "succeededCalls": 3,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 7015.623749999984,
+        "latencyCoverage": {
+          "reportedRequests": 4,
+          "knownWallMsSubtotal": 7015.623749999984
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-inspect-layout-001-hmcodex-runtime"
+    },
+    {
+      "iteration": 1,
+      "taskId": "recoverable-read-001",
+      "condition": "ordinary-codex",
+      "status": "SUCCEEDED",
+      "wallMs": 21966,
+      "modelCalls": 3,
+      "toolRounds": 2,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 25338,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 25338,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.0005362616
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-recoverable-read-001-ordinary-codex"
+    },
+    {
+      "iteration": 1,
+      "taskId": "recoverable-read-001",
+      "condition": "hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "wallMs": 65518,
+      "modelCalls": 5,
+      "toolRounds": 3,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": 8924,
+      "usageCoverage": {
+        "reportedRequests": 5,
+        "totalRequests": 5,
+        "knownTokenSubtotal": 8924,
+        "pricedRequests": 5,
+        "knownPricedSubtotal": 0.0007740264000000001
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 10,
+        "succeededCalls": 9,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 11225.78515499999,
+        "latencyCoverage": {
+          "reportedRequests": 10,
+          "knownWallMsSubtotal": 11225.78515499999
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-recoverable-read-001-hmcodex-runtime"
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-normalize-001",
+      "condition": "ordinary-codex",
+      "status": "TIMED_OUT",
+      "wallMs": 300391,
+      "modelCalls": 14,
+      "toolRounds": 12,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": false
+        }
+      },
+      "totalTokens": null,
+      "usageCoverage": {
+        "reportedRequests": 12,
+        "totalRequests": 14,
+        "knownTokenSubtotal": 133369,
+        "pricedRequests": 12,
+        "knownPricedSubtotal": 0.0026774888
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-code-normalize-001-ordinary-codex"
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-normalize-001",
+      "condition": "hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "wallMs": 190114,
+      "modelCalls": 18,
+      "toolRounds": 16,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "totalTokens": null,
+      "usageCoverage": {
+        "reportedRequests": 17,
+        "totalRequests": 18,
+        "knownTokenSubtotal": 75409,
+        "pricedRequests": 17,
+        "knownPricedSubtotal": 0.0023658992
+      },
+      "actualCost": null,
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 19,
+        "succeededCalls": 14,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 38783.88999900024,
+        "latencyCoverage": {
+          "reportedRequests": 19,
+          "knownWallMsSubtotal": 38783.88999900024
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T180217856Z-3be656c2\\1-code-normalize-001-hmcodex-runtime"
+    }
+  ],
+  "limitations": [
+    "Only completed cases are shown; unfinished cases have no outcome yet. Do not infer full-batch success rates or economic benefit.",
+    "The ordinary Codex engineering control uses third-party model fallback tools; one completed timeout had repeated PowerShell patch failures.",
+    "Known usage subtotals are not full usage. Actual billing and human savings remain unverified."
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "reports": [],
+  "outcomes": [
+    {
+      "outcomeId": "outcome-4b680d0e-4622-44a3-9791-4d5ce5f80681",
+      "runId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+      "taskClass": "test",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "status": "FAILED",
+      "verified": false,
+      "quality": 0,
+      "latencyMs": 24858,
+      "sourceEventId": "event-c56ab096-4da3-4da7-a2e8-18a270793825",
+      "recordedAtMs": 1791394606947,
+      "outcomeDigest": "sha256:bc1d7b13f989ea9932f2b38e5e7aff5eb8e80c7c74b722cb62f9a0d5315044e1"
+    },
+    {
+      "outcomeId": "outcome-e4798e9d-ae07-4edb-aab2-0462e5f3e0e7",
+      "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "taskClass": "test",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-pro",
+      "status": "FAILED",
+      "verified": false,
+      "quality": 0,
+      "latencyMs": 30840,
+      "sourceEventId": "event-a04e6dec-84d7-414f-8d8f-74af9f82bc21",
+      "recordedAtMs": 1791394643284,
+      "outcomeDigest": "sha256:750ebaf32848648c273197dbce89fbf1e897d5cd5f1bf262a93aca7d738c6862"
+    }
+  ]
+}

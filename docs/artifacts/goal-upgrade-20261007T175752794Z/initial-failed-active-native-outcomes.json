@@ -1,0 +1,10 @@
+[
+  {
+    "ok": false,
+    "name": "workspace.read",
+    "errorCode": "WORKSPACE_NOT_FOUND",
+    "input": {
+      "path": "missing-evidence.txt"
+    }
+  }
+]

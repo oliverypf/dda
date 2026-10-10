@@ -1,0 +1,1127 @@
+{
+  "batchId": "20261007T122831636Z-e79c6f86",
+  "runtimeSourceSha256": "f6f9b17ab1cfea3c9e9b8e40582027deed8335d482a061903242fbff4142a638",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 1,
+      "successRate": 0.5,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 22,
+      "modelCalls": 26,
+      "usageCoverage": {
+        "reportedRequests": 25,
+        "totalRequests": 26,
+        "knownTokenSubtotal": 116945,
+        "pricedRequests": 25,
+        "knownPricedSubtotal": 0.016946005
+      },
+      "toolCallCount": 16,
+      "wallMs": 391015
+    }
+  },
+  "rows": [
+    {
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "error": null,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 16,
+        "succeededCalls": 13,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 26774.324060999956,
+        "latencyCoverage": {
+          "reportedRequests": 16,
+          "knownWallMsSubtotal": 26774.324060999956
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "native": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          },
+          "exitCode": 1,
+          "errorCode": "PROCESS_EXIT_FAILURE"
+        },
+        {
+          "name": "file.write",
+          "ok": true,
+          "input": {
+            "content": "export const parseTags = value => {\n  if (value === null || value === undefined) return [];\n  const seen = new Set();\n  const result = [];\n  for (const item of String(value).split(',')) {\n    const tag = item.trim().toLowerCase();\n    if (tag === '' || seen.has(tag)) continue;\n    seen.add(tag);\n    result.push(tag);\n  }\n  return result;\n};\n",
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          },
+          "exitCode": 0
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          },
+          "exitCode": 0
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "input": {
+            "args": [
+              "-e",
+              "import('./tags.mjs').then(({parseTags}) => { console.log(JSON.stringify([parseTags('A, b , a,, B,  '), parseTags(undefined), parseTags(null), parseTags('')])); })"
+            ],
+            "command": "node"
+          },
+          "exitCode": 0
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.test.mjs"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          },
+          "exitCode": 0
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          },
+          "exitCode": 0
+        }
+      ],
+      "verification": [
+        {
+          "attempt": 1,
+          "status": "UNCERTAIN",
+          "summary": "Deterministic checks passed but Jev requires more evidence",
+          "failureCodes": [],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "PASS",
+              "message": "实际执行动作均有完成证据"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            }
+          ]
+        },
+        {
+          "attempt": 1,
+          "status": "UNCERTAIN",
+          "semanticStatus": "UNCERTAIN",
+          "summary": "Deterministic checks passed but Jev requires more evidence",
+          "failureCodes": [],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "PASS",
+              "message": "实际执行动作均有完成证据"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            }
+          ]
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "summary": "确定性检查通过",
+          "failureCodes": [],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "PASS",
+              "message": "实际执行动作均有完成证据"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            }
+          ]
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "semanticStatus": "PASS",
+          "summary": "确定性检查通过",
+          "failureCodes": [],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "PASS",
+              "message": "实际执行动作均有完成证据"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            }
+          ]
+        }
+      ],
+      "jevOutcomes": [
+        {
+          "sequence": 1,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.39,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.28,
+                "ALLOW": 0.54,
+                "BLOCK": 0,
+                "REQUIRE_APPROVAL": 0.17
+              }
+            }
+          }
+        },
+        {
+          "sequence": 2,
+          "status": null,
+          "error": 20,
+          "kind": "file.write",
+          "answers": null
+        },
+        {
+          "sequence": 3,
+          "status": null,
+          "error": 20,
+          "kind": "test.execute",
+          "answers": null
+        },
+        {
+          "sequence": 4,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.16,
+              "probabilities": {
+                "ALLOW": 0.37,
+                "BLOCK": 0.28,
+                "REQUIRE_APPROVAL": 0.02,
+                "REQUEST_EVIDENCE": 0.33
+              }
+            }
+          }
+        },
+        {
+          "sequence": 5,
+          "status": null,
+          "error": 20,
+          "kind": "test.execute",
+          "answers": null
+        },
+        {
+          "sequence": 6,
+          "status": 200,
+          "error": null,
+          "kind": "EXECUTE",
+          "answers": {
+            "verification": {
+              "type": "choice",
+              "choice": "UNCERTAIN",
+              "confidence": 0.07,
+              "probabilities": {
+                "FAIL": 0.32,
+                "PASS": 0.3,
+                "UNCERTAIN": 0.38
+              }
+            }
+          }
+        },
+        {
+          "sequence": 7,
+          "status": 200,
+          "error": null,
+          "kind": "EXECUTE",
+          "answers": {
+            "failureType": {
+              "type": "choice",
+              "choice": "TEST_FAILURE",
+              "confidence": 0.49,
+              "probabilities": {
+                "TOOL_ERROR": 0,
+                "UNKNOWN": 0.43,
+                "BAD_ASSUMPTION": 0,
+                "NONE": 0.02,
+                "PERMISSION": 0,
+                "DEPENDENCY": 0,
+                "CODE_ERROR": 0.01,
+                "TEST_FAILURE": 0.54,
+                "TIMEOUT": 0,
+                "ENVIRONMENT": 0
+              }
+            },
+            "evidence": {
+              "type": "choice",
+              "choice": "MISSING_TEST_EVIDENCE",
+              "confidence": 0.24,
+              "probabilities": {
+                "UNKNOWN": 0.11,
+                "CONFLICTING_EVIDENCE": 0.28,
+                "SUFFICIENT": 0,
+                "MISSING_EXECUTION_EVIDENCE": 0.23,
+                "MISSING_TEST_EVIDENCE": 0.37,
+                "MISSING_ENVIRONMENT_EVIDENCE": 0.01
+              }
+            },
+            "test": {
+              "type": "choice",
+              "choice": "NONE",
+              "confidence": 0.66,
+              "probabilities": {
+                "RUN_LINT": 0.01,
+                "RUN_UNIT_TEST": 0.09,
+                "RUN_BUILD": 0,
+                "RUN_INTEGRATION_TEST": 0,
+                "NONE": 0.7,
+                "RUN_FULL_TEST": 0.13,
+                "RUN_TYPECHECK": 0.01,
+                "RUN_TARGETED_TEST": 0.06
+              }
+            },
+            "stop": {
+              "type": "choice",
+              "choice": "NEED_MORE_EVIDENCE",
+              "confidence": 0.65,
+              "probabilities": {
+                "NEED_MORE_EVIDENCE": 0.72,
+                "STOP_SUCCESS": 0.01,
+                "NEED_REPLAN": 0.01,
+                "CONTINUE_EXECUTION": 0.24,
+                "NEED_ESCALATION": 0.02
+              }
+            },
+            "escalation": {
+              "type": "choice",
+              "choice": "COLLECT_EVIDENCE",
+              "confidence": 0.47,
+              "probabilities": {
+                "USE_NORMAL_MODEL": 0.03,
+                "COLLECT_EVIDENCE": 0.58,
+                "RETRY_CHEAP": 0.16,
+                "USE_STRONG_MODEL": 0.05,
+                "LOCAL_CONTINUE": 0.18
+              }
+            }
+          }
+        },
+        {
+          "sequence": 8,
+          "status": 200,
+          "error": null,
+          "kind": "DIAGNOSE_HYPOTHESIS",
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "diagnosis-UNKNOWN_VERIFIER_FAILURE",
+              "confidence": 0.82,
+              "probabilities": {
+                "diagnosis-UNKNOWN_VERIFIER_FAILURE": 0.91,
+                "diagnosis-stop": 0.09
+              }
+            }
+          }
+        },
+        {
+          "sequence": 9,
+          "status": 200,
+          "error": null,
+          "kind": "SELECT_PROBE",
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "probe-readonly-evidence",
+              "confidence": 0.83,
+              "probabilities": {
+                "probe-repeat-verification": 0.06,
+                "probe-readonly-evidence": 0.89,
+                "probe-stop": 0.05
+              }
+            }
+          }
+        },
+        {
+          "sequence": 10,
+          "status": 200,
+          "error": null,
+          "kind": "SELECT_RECOVERY_DIRECTION",
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "collect-evidence",
+              "confidence": 0.33,
+              "probabilities": {
+                "change-approach": 0.02,
+                "stop-and-report": 0.32,
+                "collect-evidence": 0.5,
+                "request-user": 0.16
+              }
+            }
+          }
+        },
+        {
+          "sequence": 11,
+          "status": 200,
+          "error": null,
+          "kind": "SELECT_REPLAN_PLAN",
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "replan-collect-evidence",
+              "confidence": 0.64,
+              "probabilities": {
+                "replan-change-role": 0.01,
+                "replan-collect-evidence": 0.76,
+                "replan-narrow-scope": 0.23
+              }
+            }
+          }
+        },
+        {
+          "sequence": 12,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.read",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.63,
+              "probabilities": {
+                "BLOCK": 0.01,
+                "REQUIRE_APPROVAL": 0.01,
+                "REQUEST_EVIDENCE": 0.26,
+                "ALLOW": 0.72
+              }
+            }
+          }
+        },
+        {
+          "sequence": 13,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.read",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.71,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.21,
+                "BLOCK": 0.01,
+                "REQUIRE_APPROVAL": 0,
+                "ALLOW": 0.78
+              }
+            }
+          }
+        },
+        {
+          "sequence": 14,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.65,
+              "probabilities": {
+                "ALLOW": 0.74,
+                "BLOCK": 0.03,
+                "REQUIRE_APPROVAL": 0.02,
+                "REQUEST_EVIDENCE": 0.21
+              }
+            }
+          }
+        },
+        {
+          "sequence": 15,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.37,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.34,
+                "ALLOW": 0.53,
+                "BLOCK": 0.11,
+                "REQUIRE_APPROVAL": 0.02
+              }
+            }
+          }
+        },
+        {
+          "sequence": 16,
+          "status": 200,
+          "error": null,
+          "kind": "EXECUTE",
+          "answers": {
+            "verification": {
+              "type": "choice",
+              "choice": "PASS",
+              "confidence": 0.06,
+              "probabilities": {
+                "UNCERTAIN": 0.31,
+                "FAIL": 0.32,
+                "PASS": 0.37
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:FAIL",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": false
+        }
+      },
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 17,
+        "succeededCalls": 17,
+        "usageComplete": true,
+        "inputTokens": 119060,
+        "outputTokens": 1361,
+        "estimatedCost": 0.0050005200000000005,
+        "wallMs": 14123.95625200012,
+        "latencyCoverage": {
+          "reportedRequests": 17,
+          "knownWallMsSubtotal": 14123.95625200012
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "native": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          },
+          "exitCode": 1,
+          "errorCode": "PROCESS_EXIT_FAILURE"
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "input": {
+            "baseContent": "export const parseTags = value => { return String(value).split(',').map(item => item.trim(); };\n",
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": false,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          },
+          "exitCode": 1,
+          "errorCode": "PROCESS_EXIT_FAILURE"
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "input": {}
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.test.mjs"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "package.json"
+          }
+        }
+      ],
+      "verification": [
+        {
+          "attempt": 1,
+          "status": "FAIL",
+          "summary": "Jev rejected the observed behavior: RULE_VERIFIER_FAILED",
+          "failureCodes": [
+            "ACTION_FAILED",
+            "JEV_BEHAVIOR_REJECTED"
+          ],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "FAIL",
+              "message": "1 个动作执行失败（TOOL_ACTION_BLOCKED_BY_JEV）"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            },
+            {
+              "id": "jev-behavior-judge",
+              "status": "FAIL",
+              "message": "RULE_VERIFIER_FAILED"
+            }
+          ]
+        },
+        {
+          "attempt": 1,
+          "status": "FAIL",
+          "semanticStatus": "FAIL",
+          "summary": "Jev rejected the observed behavior: RULE_VERIFIER_FAILED",
+          "failureCodes": [
+            "ACTION_FAILED",
+            "JEV_BEHAVIOR_REJECTED"
+          ],
+          "checks": [
+            {
+              "id": "actions.progress",
+              "status": "FAIL",
+              "message": "1 个动作执行失败（TOOL_ACTION_BLOCKED_BY_JEV）"
+            },
+            {
+              "id": "actions.duplicates",
+              "status": "PASS",
+              "message": "未检测到重复动作指纹"
+            },
+            {
+              "id": "actions.new_evidence",
+              "status": "PASS",
+              "message": "动作产生了新的结果证据"
+            },
+            {
+              "id": "jev-behavior-judge",
+              "status": "FAIL",
+              "message": "RULE_VERIFIER_FAILED"
+            }
+          ]
+        }
+      ],
+      "jevOutcomes": [
+        {
+          "sequence": 1,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.47,
+              "probabilities": {
+                "BLOCK": 0.01,
+                "REQUEST_EVIDENCE": 0.25,
+                "REQUIRE_APPROVAL": 0.14,
+                "ALLOW": 0.6
+              }
+            }
+          }
+        },
+        {
+          "sequence": 2,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.3,
+              "probabilities": {
+                "ALLOW": 0.21,
+                "BLOCK": 0.14,
+                "REQUIRE_APPROVAL": 0.18,
+                "REQUEST_EVIDENCE": 0.47
+              }
+            }
+          }
+        },
+        {
+          "sequence": 3,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.read",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.61,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.01,
+                "BLOCK": 0,
+                "ALLOW": 0.71,
+                "REQUEST_EVIDENCE": 0.28
+              }
+            }
+          }
+        },
+        {
+          "sequence": 4,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.65,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.12,
+                "BLOCK": 0.04,
+                "REQUEST_EVIDENCE": 0.74,
+                "ALLOW": 0.1
+              }
+            }
+          }
+        },
+        {
+          "sequence": 5,
+          "status": 200,
+          "error": null,
+          "kind": "file.diff",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.48,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.27,
+                "BLOCK": 0.1,
+                "ALLOW": 0.61,
+                "REQUIRE_APPROVAL": 0.02
+              }
+            }
+          }
+        },
+        {
+          "sequence": 6,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.25,
+              "probabilities": {
+                "BLOCK": 0.21,
+                "REQUEST_EVIDENCE": 0.3,
+                "REQUIRE_APPROVAL": 0.05,
+                "ALLOW": 0.44
+              }
+            }
+          }
+        },
+        {
+          "sequence": 7,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.65,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.12,
+                "ALLOW": 0.11,
+                "REQUEST_EVIDENCE": 0.74,
+                "BLOCK": 0.03
+              }
+            }
+          }
+        },
+        {
+          "sequence": 8,
+          "status": 200,
+          "error": null,
+          "kind": "file.write",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.25,
+              "probabilities": {
+                "ALLOW": 0.19,
+                "BLOCK": 0.1,
+                "REQUIRE_APPROVAL": 0.27,
+                "REQUEST_EVIDENCE": 0.44
+              }
+            }
+          }
+        },
+        {
+          "sequence": 9,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.73,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.08,
+                "BLOCK": 0.02,
+                "ALLOW": 0.1,
+                "REQUEST_EVIDENCE": 0.8
+              }
+            }
+          }
+        },
+        {
+          "sequence": 10,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.68,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.11,
+                "BLOCK": 0.03,
+                "ALLOW": 0.1,
+                "REQUEST_EVIDENCE": 0.76
+              }
+            }
+          }
+        },
+        {
+          "sequence": 11,
+          "status": 200,
+          "error": null,
+          "kind": "test.execute",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "BLOCK",
+              "confidence": 0.32,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.19,
+                "BLOCK": 0.49,
+                "REQUIRE_APPROVAL": 0.11,
+                "ALLOW": 0.21
+              }
+            }
+          }
+        },
+        {
+          "sequence": 12,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.list",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.63,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.23,
+                "ALLOW": 0.72,
+                "BLOCK": 0.02,
+                "REQUIRE_APPROVAL": 0.03
+              }
+            }
+          }
+        },
+        {
+          "sequence": 13,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.read",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.71,
+              "probabilities": {
+                "ALLOW": 0.78,
+                "REQUIRE_APPROVAL": 0.01,
+                "REQUEST_EVIDENCE": 0.19,
+                "BLOCK": 0.02
+              }
+            }
+          }
+        },
+        {
+          "sequence": 14,
+          "status": 200,
+          "error": null,
+          "kind": "workspace.read",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.69,
+              "probabilities": {
+                "ALLOW": 0.77,
+                "REQUIRE_APPROVAL": 0.01,
+                "REQUEST_EVIDENCE": 0.2,
+                "BLOCK": 0.02
+              }
+            }
+          }
+        },
+        {
+          "sequence": 15,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.6,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.14,
+                "BLOCK": 0.04,
+                "ALLOW": 0.12,
+                "REQUEST_EVIDENCE": 0.7
+              }
+            }
+          }
+        },
+        {
+          "sequence": 16,
+          "status": 200,
+          "error": null,
+          "kind": "file.patch",
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.67,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0.11,
+                "REQUEST_EVIDENCE": 0.75,
+                "ALLOW": 0.1,
+                "BLOCK": 0.04
+              }
+            }
+          }
+        },
+        {
+          "sequence": 17,
+          "status": 200,
+          "error": null,
+          "kind": "EXECUTE",
+          "answers": {
+            "failureType": {
+              "type": "choice",
+              "choice": "UNKNOWN",
+              "confidence": 0.73,
+              "probabilities": {
+                "UNKNOWN": 0.76,
+                "DEPENDENCY": 0,
+                "PERMISSION": 0,
+                "TIMEOUT": 0,
+                "NONE": 0.02,
+                "BAD_ASSUMPTION": 0.01,
+                "TOOL_ERROR": 0.18,
+                "CODE_ERROR": 0,
+                "ENVIRONMENT": 0.02,
+                "TEST_FAILURE": 0.01
+              }
+            },
+            "evidence": {
+              "type": "choice",
+              "choice": "MISSING_EXECUTION_EVIDENCE",
+              "confidence": 0.53,
+              "probabilities": {
+                "UNKNOWN": 0.08,
+                "MISSING_EXECUTION_EVIDENCE": 0.61,
+                "SUFFICIENT": 0,
+                "CONFLICTING_EVIDENCE": 0.05,
+                "MISSING_ENVIRONMENT_EVIDENCE": 0.01,
+                "MISSING_TEST_EVIDENCE": 0.25
+              }
+            },
+            "test": {
+              "type": "choice",
+              "choice": "NONE",
+              "confidence": 0.82,
+              "probabilities": {
+                "RUN_BUILD": 0,
+                "NONE": 0.84,
+                "RUN_UNIT_TEST": 0.06,
+                "RUN_LINT": 0,
+                "RUN_TARGETED_TEST": 0.04,
+                "RUN_FULL_TEST": 0.05,
+                "RUN_TYPECHECK": 0.01,
+                "RUN_INTEGRATION_TEST": 0
+              }
+            },
+            "stop": {
+              "type": "choice",
+              "choice": "NEED_ESCALATION",
+              "confidence": 0.24,
+              "probabilities": {
+                "NEED_ESCALATION": 0.39,
+                "CONTINUE_EXECUTION": 0.29,
+                "STOP_SUCCESS": 0,
+                "NEED_MORE_EVIDENCE": 0.18,
+                "NEED_REPLAN": 0.14
+              }
+            },
+            "escalation": {
+              "type": "choice",
+              "choice": "RETRY_CHEAP",
+              "confidence": 0.52,
+              "probabilities": {
+                "RETRY_CHEAP": 0.62,
+                "COLLECT_EVIDENCE": 0.19,
+                "USE_STRONG_MODEL": 0.08,
+                "LOCAL_CONTINUE": 0.08,
+                "USE_NORMAL_MODEL": 0.03
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

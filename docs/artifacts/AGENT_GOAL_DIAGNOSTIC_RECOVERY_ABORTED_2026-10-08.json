@@ -1,0 +1,1309 @@
+{
+  "generatedAt": "2026-10-07T16:12:08.548Z",
+  "status": "ABORTED_PROVIDER_IMPAIRMENT",
+  "batchId": "20261007T155025244Z-90c4fb48",
+  "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+  "plannedRuns": 24,
+  "completedRuns": 10,
+  "preservedOriginalRows": [
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-code-normalize-001-hmcodex-runtime",
+      "startedAtMs": 1791388843582,
+      "endedAtMs": 1791388857509,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "code-normalize-001",
+      "acceptance": "code",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "FAILED",
+      "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 0,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 0,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 0,
+        "succeededCalls": 0,
+        "usageComplete": true,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "estimatedCost": null,
+        "wallMs": 0,
+        "latencyCoverage": {
+          "reportedRequests": 0,
+          "knownWallMsSubtotal": 0
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "8b4ceb59-b5cd-471b-97e4-30d24d36fda4",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 0,
+      "toolCallCount": 0,
+      "wallMs": 12541,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": false,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": false
+        }
+      },
+      "modelsMatch": false,
+      "initialDigest": "8b619dfa6695f826083ca3cff60d37f055581132ad3b3879c519404ac4840d41",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-code-normalize-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T16:00:57.510Z",
+      "observedProviderFailures": [
+        {
+          "sequence": 1,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 2,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 3,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        }
+      ],
+      "originalResultSha256": "d49131f364420e071635497ecfd771015492dc67e4ef2fed1fa4cd2bd01a791d"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-code-normalize-001-ordinary-codex",
+      "startedAtMs": 1791388542920,
+      "endedAtMs": 1791388843509,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "ordinary-codex",
+      "client": "ordinary-codex",
+      "taskId": "code-normalize-001",
+      "acceptance": "code",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "TIMED_OUT",
+      "runtimeSourceSha256": null,
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 1,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 4,
+      "usageCoverage": {
+        "reportedRequests": 1,
+        "totalRequests": 4,
+        "knownTokenSubtotal": 8494,
+        "pricedRequests": 1,
+        "knownPricedSubtotal": 0.0011075969999999999
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "d2e9b1f7-ed33-4b4c-8dec-a61f4b7d25ee",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 1,
+      "toolCallCount": 1,
+      "wallMs": 300541,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": false,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": false
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "8b619dfa6695f826083ca3cff60d37f055581132ad3b3879c519404ac4840d41",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-code-normalize-001-ordinary-codex",
+      "generatedAt": "2026-10-07T16:00:43.509Z",
+      "observedProviderFailures": [
+        {
+          "sequence": 2,
+          "upstreamStatus": null,
+          "error": "The operation was aborted due to timeout",
+          "transportCode": null
+        },
+        {
+          "sequence": 3,
+          "upstreamStatus": null,
+          "error": "The operation was aborted due to timeout",
+          "transportCode": null
+        }
+      ],
+      "originalResultSha256": "e0e93c0e59a5553df5f277d59149bbe0540e189fec2fad345a88a79b57f0e16f"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-code-syntax-001-hmcodex-runtime",
+      "startedAtMs": 1791388935389,
+      "endedAtMs": 1791389074396,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "acceptance": "code",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "FAILED",
+      "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 0,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 0,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 0,
+        "succeededCalls": 0,
+        "usageComplete": true,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "estimatedCost": null,
+        "wallMs": 0,
+        "latencyCoverage": {
+          "reportedRequests": 0,
+          "knownWallMsSubtotal": 0
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "5986e757-5e61-4e6c-8a1e-562bc4e8a7e2",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 0,
+      "toolCallCount": 0,
+      "wallMs": 137814,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": false,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": false
+        }
+      },
+      "modelsMatch": false,
+      "initialDigest": "af518ac0b0604c067c95d5ca3acdef2d77e3279fb9699a00b6fba6feb579b503",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-code-syntax-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T16:04:34.396Z",
+      "observedProviderFailures": [
+        {
+          "sequence": 1,
+          "upstreamStatus": null,
+          "error": "fetch failed",
+          "transportCode": "UND_ERR_CONNECT_TIMEOUT"
+        },
+        {
+          "sequence": 2,
+          "upstreamStatus": null,
+          "error": "The operation was aborted due to timeout",
+          "transportCode": null
+        },
+        {
+          "sequence": 3,
+          "upstreamStatus": null,
+          "error": "The operation was aborted due to timeout",
+          "transportCode": null
+        }
+      ],
+      "originalResultSha256": "a401d1536479a9615e5c5612d3acd2b20e2c282c9e93cd7c5ae3bf74f035f460"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-code-syntax-001-ordinary-codex",
+      "startedAtMs": 1791388857579,
+      "endedAtMs": 1791388935300,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "ordinary-codex",
+      "client": "ordinary-codex",
+      "taskId": "code-syntax-001",
+      "acceptance": "code",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "FAILED",
+      "runtimeSourceSha256": null,
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 24,
+      "usageCoverage": {
+        "reportedRequests": 0,
+        "totalRequests": 24,
+        "knownTokenSubtotal": 0,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "80ef4330-0bdc-4ccb-9175-da476ff07bf7",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 0,
+      "toolCallCount": 0,
+      "wallMs": 77645,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": false,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": false,
+          "successfulToolAfterFailure": false,
+          "workspaceScopeRespected": false
+        }
+      },
+      "modelsMatch": false,
+      "initialDigest": "af518ac0b0604c067c95d5ca3acdef2d77e3279fb9699a00b6fba6feb579b503",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-code-syntax-001-ordinary-codex",
+      "generatedAt": "2026-10-07T16:02:15.300Z",
+      "observedProviderFailures": [
+        {
+          "sequence": 1,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 2,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 3,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 4,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 5,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 6,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 7,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 8,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 9,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 10,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 11,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 12,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 13,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 14,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 15,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 16,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 17,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 18,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 19,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 20,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 21,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 22,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 23,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        },
+        {
+          "sequence": 24,
+          "upstreamStatus": 500,
+          "error": "LIVE_MODEL_HTTP_500",
+          "transportCode": null
+        }
+      ],
+      "originalResultSha256": "ac91bea6f0b1ca33e68d9416cbbd7f75e807d0c6ba13d677054ffaef963c7f27"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-inspect-layout-001-hmcodex-runtime",
+      "startedAtMs": 1791388298162,
+      "endedAtMs": 1791388412663,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "inspect-layout-001",
+      "acceptance": "layout",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+      "firstAttemptStatus": "SUCCEEDED",
+      "recoveryOpportunity": false,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 5,
+      "usageCoverage": {
+        "reportedRequests": 4,
+        "totalRequests": 5,
+        "knownTokenSubtotal": 7791,
+        "pricedRequests": 4,
+        "knownPricedSubtotal": 0.00275848
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 13,
+        "succeededCalls": 7,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 42651.21249899997,
+        "latencyCoverage": {
+          "reportedRequests": 13,
+          "knownWallMsSubtotal": 42651.21249899997
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "3db356bf-7991-4b51-b60b-88034e28d815",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 2,
+      "toolCallCount": 5,
+      "wallMs": 113128,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-inspect-layout-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T15:53:32.664Z",
+      "observedProviderFailures": [
+        {
+          "sequence": 4,
+          "upstreamStatus": null,
+          "error": "fetch failed",
+          "transportCode": "UND_ERR_CONNECT_TIMEOUT"
+        }
+      ],
+      "originalResultSha256": "63c9fa84a4bbbd5d073d3d06465d44a4165304c26a2f589dd929835a448e968a"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-inspect-layout-001-ordinary-codex",
+      "startedAtMs": 1791388272324,
+      "endedAtMs": 1791388298099,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "ordinary-codex",
+      "client": "ordinary-codex",
+      "taskId": "inspect-layout-001",
+      "acceptance": "layout",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": null,
+      "firstAttemptStatus": "SUCCEEDED",
+      "recoveryOpportunity": false,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": 16676,
+      "outputTokens": 417,
+      "totalTokens": 17093,
+      "modelCalls": 2,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 17093,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.001487874
+      },
+      "cachedInputTokens": 14208,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.001487874,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "a296b879-7066-41f3-b16f-7461e313fa93",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 1,
+      "toolCallCount": 1,
+      "wallMs": 25741,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-inspect-layout-001-ordinary-codex",
+      "generatedAt": "2026-10-07T15:51:38.099Z",
+      "observedProviderFailures": [],
+      "originalResultSha256": "6b06d439c09f8d712ade1b5b6adcf622a16e00fcc6f41ca5b11f435e05d39619"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-inspect-readme-001-hmcodex-runtime",
+      "startedAtMs": 1791388246928,
+      "endedAtMs": 1791388272263,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+      "firstAttemptStatus": "SUCCEEDED",
+      "recoveryOpportunity": false,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": 2430,
+      "outputTokens": 312,
+      "totalTokens": 2742,
+      "modelCalls": 2,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 2742,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.000886762
+      },
+      "cachedInputTokens": 1024,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.000886762,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 2,
+        "succeededCalls": 2,
+        "usageComplete": true,
+        "inputTokens": 6699,
+        "outputTokens": 96,
+        "estimatedCost": 0.000281358,
+        "wallMs": 3577.183281000005,
+        "latencyCoverage": {
+          "reportedRequests": 2,
+          "knownWallMsSubtotal": 3577.183281000005
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "23c7356a-e064-460e-9668-753c7b54a51d",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 1,
+      "toolCallCount": 1,
+      "wallMs": 24092,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-inspect-readme-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T15:51:12.264Z",
+      "observedProviderFailures": [],
+      "originalResultSha256": "51620725bf9c21414089191fceb805766a2ff96f94a3749a5ee65d1a24667eae"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-inspect-readme-001-ordinary-codex",
+      "startedAtMs": 1791388226388,
+      "endedAtMs": 1791388246813,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "ordinary-codex",
+      "client": "ordinary-codex",
+      "taskId": "inspect-readme-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": null,
+      "firstAttemptStatus": "SUCCEEDED",
+      "recoveryOpportunity": false,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": 16336,
+      "outputTokens": 228,
+      "totalTokens": 16564,
+      "modelCalls": 2,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 16564,
+        "pricedRequests": 2,
+        "knownPricedSubtotal": 0.00123076
+      },
+      "cachedInputTokens": 14080,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.00123076,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "eabe2f61-240f-4c95-a20f-0b70d9b76778",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 1,
+      "toolCallCount": 1,
+      "wallMs": 20372,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-inspect-readme-001-ordinary-codex",
+      "generatedAt": "2026-10-07T15:50:46.815Z",
+      "observedProviderFailures": [],
+      "originalResultSha256": "4a0838a788eeb268705740352339d45c1c98f192f75e29a73c9cce55ef72e996"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-recoverable-read-001-hmcodex-runtime",
+      "startedAtMs": 1791388441013,
+      "endedAtMs": 1791388542845,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": true,
+      "errorAttempts": 1,
+      "inputTokens": 8338,
+      "outputTokens": 1344,
+      "totalTokens": 9682,
+      "modelCalls": 5,
+      "usageCoverage": {
+        "reportedRequests": 5,
+        "totalRequests": 5,
+        "knownTokenSubtotal": 9682,
+        "pricedRequests": 5,
+        "knownPricedSubtotal": 0.002808534
+      },
+      "cachedInputTokens": 4608,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.002808534,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 10,
+        "succeededCalls": 6,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 24652.272186000104,
+        "latencyCoverage": {
+          "reportedRequests": 10,
+          "knownWallMsSubtotal": 24652.272186000104
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "61adc15d-c2ab-4b05-b99e-55a92761a301",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 3,
+      "toolCallCount": 3,
+      "wallMs": 100529,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-recoverable-read-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T15:55:42.846Z",
+      "observedProviderFailures": [],
+      "originalResultSha256": "b23040420d2dc352392570b2feecac3041197f56c9604cfd31761250d54f3c98"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T155025244Z-90c4fb48",
+      "runKey": "20261007T155025244Z-90c4fb48/1-recoverable-read-001-ordinary-codex",
+      "startedAtMs": 1791388412732,
+      "endedAtMs": 1791388440947,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "ordinary-codex",
+      "client": "ordinary-codex",
+      "taskId": "recoverable-read-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": null,
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": true,
+      "errorAttempts": 1,
+      "inputTokens": 24943,
+      "outputTokens": 287,
+      "totalTokens": 25230,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 25230,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.001381879
+      },
+      "cachedInputTokens": 22528,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.001381879,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "9af7c6f4-b1f6-4cbe-b909-83a13a900b32",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 2,
+      "toolCallCount": 2,
+      "wallMs": 28177,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "5164be4325fb5c979e052ba07f4f2ce9c608e663d98d1ae57bd4c83d54fc09cd",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T155025244Z-90c4fb48\\1-recoverable-read-001-ordinary-codex",
+      "generatedAt": "2026-10-07T15:54:00.948Z",
+      "observedProviderFailures": [],
+      "originalResultSha256": "97e2f407c3e3672439ac5ef5d737efcf2fe4c6fd4750222e33f06ff3af54167a"
+    }
+  ],
+  "incompleteOrUnstartedRuns": 14,
+  "terminatedActiveCase": "1-code-feature-001-ordinary-codex",
+  "activeCaseOutcome": "UNKNOWN_AFTER_EXPLICIT_TEST_TERMINATION",
+  "stopEvidence": "Both clients observed repeated Pro HTTP500 responses; a minimal Pro call timed out while a same-account Flash call returned200. Only the verified test harness PID12736 and its own children were terminated.",
+  "modelAvailability": {
+    "checkedAt": "2026-10-07T16:05:11.232Z",
+    "method": "Minimal same-account configured provider requests. Private headers and error bodies are excluded.",
+    "limitation": "Availability probes are not task recovery, model upgrading, economic comparisons or invoices.",
+    "rows": [
+      {
+        "model": "mimo-v2.6-pro",
+        "error": "TimeoutError",
+        "transportCode": null,
+        "wallMs": 10021,
+        "actualCost": null
+      },
+      {
+        "model": "mimo-v2.6-flash",
+        "status": 200,
+        "wallMs": 6099,
+        "upstreamModel": "mimo-v2.6-flash",
+        "upstreamRequestIds": {},
+        "upstreamResponseId": "b4f38c49-74de-4864-bda0-a410e76f2ee1_fc35ebc1a0f44207b5c96da4e09d0978",
+        "correlationMeasurement": "UPSTREAM_RETURNED_IDS",
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 14,
+          "total_tokens": 25,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 11
+          }
+        },
+        "responseMessagePresent": true,
+        "errorCode": null,
+        "errorResponseChars": null,
+        "errorResponseSha256": null,
+        "actualCost": null
+      }
+    ]
+  },
+  "completedFullComparison": false,
+  "provesCurrentEconomicAdvantage": false,
+  "caveats": [
+    "Original successful, failed and timed-out rows remain unchanged. No interrupted or unstarted case is credited.",
+    "The incomplete active case had live in-memory request records that the terminated parent could not finalize; usage and fees remain unknown.",
+    "Provider impairment prevents quality, speed or economic advantage attribution from this partial batch."
+  ],
+  "goalStatus": "active"
+}

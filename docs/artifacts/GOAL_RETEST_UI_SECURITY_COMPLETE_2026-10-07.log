@@ -1,0 +1,14 @@
+
+> hmcodex-desktop@0.1.0 test:ui:security
+> node "%npm_config_local_prefix%/scripts/ui-security-test.mjs"
+
+hmCodex controlled UI security tests · exe=C:/Users/User/hmCodex-local/desktop/src-tauri/target/x86_64-pc-windows-msvc/debug/hmcodex-desktop.exe · port=9335
+PASS  S01 受控门与模式区分 — 受控模式
+PASS  S02 网络目标编辑器拒绝非法 JSON — 格式无效：需要 JSON 数组
+PASS  S03 审批拒绝后无副作用 — approval declined; no write
+PASS  S03b 从审批卡片取消任务且不写入 — card cancellation settled; no target file; composer ready
+PASS  S04 审批批准执行一次并显示 Verifier — approved write; verifier PASS
+PASS  S05 副作用超时错误可见且可取消 — timeout failure visible in timeline and authorization card; run settled after cancellation if needed
+PASS  S06 断线显示失败并可恢复 — disconnect failed safely; restart recovered
+
+Summary: 7 passed, 0 failed, 0 skipped

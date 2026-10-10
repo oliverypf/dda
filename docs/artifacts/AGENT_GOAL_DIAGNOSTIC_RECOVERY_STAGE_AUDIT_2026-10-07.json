@@ -1,0 +1,118 @@
+{
+  "generatedAt": "2026-10-07T15:50:15.041Z",
+  "stage": "DIAGNOSTIC_RECOVERY_N",
+  "runtimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+  "debugExeSha256": "9a29c55c2ede256c12dc38ff4af0d987b1718c836493f7bbd8a7f696215f6742",
+  "runtime": {
+    "passed": 653,
+    "failed": 0,
+    "skipped": 1,
+    "log": "GOAL_DIAGNOSTIC_RECOVERY_FULL_RUNTIME_VALIDATED_2026-10-07.log",
+    "sha256": "b7cab2e380e4acb2d9b201eb83e2756c89d15db4034cd55ff83d9010b5e4a3f4"
+  },
+  "scripts": {
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_DIAGNOSTIC_RECOVERY_SCRIPTS_2026-10-07.log",
+    "sha256": "6998cf7337e170e7b0603d6cc356e9a1367f99cf5ea13bb6adc3186a9f37ab94"
+  },
+  "targeted": {
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_DIAGNOSTIC_RECOVERY_CHECKS_FINAL_2026-10-07.log",
+    "sha256": "b0e3c569655790ad256b7b9cffc88cc84d5f6746a27e4b421eede6c4ce8e6cd8"
+  },
+  "longerFixtureAfterDeadlineCorrection": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_DIAGNOSTIC_RECOVERY_FIXTURE_DEADLINE_2026-10-07.log",
+    "sha256": "63ab64153205e1647382e38c100ee46999eb4b23533adaa65f71d76f2d5e19b7"
+  },
+  "native": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_DIAGNOSTIC_RECOVERY_NATIVE_2026-10-07.log",
+    "sha256": "b10391b5031c67d23156138c530d6a9177b972af8ca06093ee7f7ae3cefbe0e8"
+  },
+  "originalFailedRegressionLogs": [
+    {
+      "passed": 652,
+      "failed": 1,
+      "skipped": 1,
+      "log": "GOAL_DIAGNOSTIC_RECOVERY_FULL_RUNTIME_2026-10-07.log",
+      "sha256": "6d37b53b168a6906f97e1f600f2387f9f9be30bc187df4d33998fe64d08e9a91"
+    },
+    {
+      "passed": 651,
+      "failed": 2,
+      "skipped": 1,
+      "log": "GOAL_DIAGNOSTIC_RECOVERY_FULL_RUNTIME_FINAL_2026-10-07.log",
+      "sha256": "9c7581074a98c436f2b996bee85266b1ddab1f132a09a7a3e5a6f1a77cd6bed8"
+    }
+  ],
+  "originalFailures": [
+    "A five-lease diagnostic fixture completed near its outer 30-second deadline; the parent killed the child before exit.",
+    "An intermediate edit attached diagnosticRetry to the wrong test, producing ReferenceError and retaining the old diagnostic deadline. This was corrected before the current validated regression."
+  ],
+  "changes": [
+    "Known bounded Node request forms describe default cwd and automatic discovery before execution without granting a lease.",
+    "Only actual RestrictedWindowsExecutor test results can carry observed Node purpose and actual process success.",
+    "One repeated Node syntax diagnosis followed by a distinct actual full Node test with exit 0 can stop being classified as stalled; history remains recorded.",
+    "Multiple repeats, absent or mismatched actual output digests, earlier or unsuccessful tests, arbitrary commands and repeated writes remain blocked by the original stall checks."
+  ],
+  "archivedReplay": {
+    "path": "GOAL_DIAGNOSTIC_RECOVERY_TRAJECTORY_REPLAY_2026-10-07.json",
+    "originalTaskStatus": "FAILED",
+    "previousRuleStatus": "STALLED",
+    "currentRuleStatus": "PASS",
+    "originalGradeChanged": false
+  },
+  "previousSourceLive": {
+    "report": "AGENT_GOAL_READ_OBSERVATION_LIVE_2026-10-07.json",
+    "batchId": "20261007T151628814Z-d02bc679",
+    "runtimeSourceSha256": "b972fad82820981901a8c9d80f8cfefca887ae68f0a0a56fbbef23ab2d5d320d",
+    "conditions": {
+      "hmcodex-runtime": {
+        "runs": 8,
+        "successes": 7,
+        "successRate": 0.875,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 7,
+        "recoverySuccessRate": 0.875,
+        "manualInterventionMinutes": 0,
+        "totalTokens": 181862,
+        "actualCost": null,
+        "estimatedCost": 0.025405682,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 40,
+        "modelCalls": 50,
+        "usageCoverage": {
+          "reportedRequests": 50,
+          "totalRequests": 50,
+          "knownTokenSubtotal": 181862,
+          "pricedRequests": 50,
+          "knownPricedSubtotal": 0.025405682
+        },
+        "toolCallCount": 39,
+        "wallMs": 506951
+      }
+    },
+    "suppliesCurrentSourceEvidence": false
+  },
+  "nextRequiredEvidence": [
+    "Frozen-current-source full 24-run ordinary Codex comparison.",
+    "Current-source independent Jev off/on comparison.",
+    "Actual cheap/strong model retry identities and per-model measurements.",
+    "Actual billing and human activity, plus broader engineering tasks."
+  ],
+  "goalStatus": "active",
+  "limitations": [
+    "The archived trajectory replay is not a new live task success.",
+    "Native desktop model upgrade uses local fixtures.",
+    "Green engineering regressions do not establish economic advantage."
+  ]
+}

@@ -1,0 +1,37 @@
+✔ decision observations keep only bounded terminal host facts (5.368282ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (4753.2725ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (10737.899218ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (11884.845469ms)
+✔ a repeated restricted syntax diagnosis ends through an actual full test without bypassing leases (15989.490468ms)
+✔ Node process scope distinguishes default discovery, targeted tests and syntax diagnosis without implying execution (7.031875ms)
+✔ a later successful identical test resolves its failure without losing the trace (22.02125ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (4.572031ms)
+✔ rule verifier requires bounded non-empty output (1.053593ms)
+✔ task coordinator enforces transitions and optimistic version (4.646719ms)
+✔ rule verifier reports partial goal progress as CONTINUE (4.5825ms)
+✔ rule verifier detects repeated actions and stops with STALLED (3.257812ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (4.685625ms)
+✔ one repeated syntax diagnosis can recover only through a later actual full test (4.281407ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.635156ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (2.304063ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.697812ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.659844ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.744219ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (2.305781ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (42.489219ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (15.529062ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (7.850156ms)
+✔ runs a model-requested tool and sends its result into the next round (7.300469ms)
+✔ READ_ONLY requests expose only read-only tools (5.85375ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (6.229844ms)
+✔ stops repeated workspace requests after four rounds without new evidence (13.524531ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (6.299843ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (8.139844ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 43936.717656

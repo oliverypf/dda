@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "startedAt": "2026-10-07T10:27:56.547Z",
+  "mode": "LOCAL_FIXTURE",
+  "steps": [
+    {
+      "id": "build",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 49172,
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\build.log"
+    },
+    {
+      "id": "recovery-jev-runtime",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 43333,
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\recovery-jev-runtime.log"
+    },
+    {
+      "id": "native-resume-retry",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 80331,
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\native-resume-retry.log"
+    },
+    {
+      "id": "paired-fixed-tasks",
+      "passed": true,
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 904193,
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\paired-fixed-tasks.log"
+    }
+  ],
+  "limitations": [
+    "Fixture inference verifies the recovery and test machinery, not production model quality.",
+    "Published quota value is not an invoice. Missing cash charges and human activity remain unknown.",
+    "This command covers the three agent goals; it does not certify every product feature."
+  ],
+  "completedAt": "2026-10-07T10:45:53.614Z",
+  "passed": true,
+  "comparison": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\comparison.json"
+}

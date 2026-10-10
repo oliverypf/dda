@@ -1,0 +1,44 @@
+✔ text patch is exact, digest guarded, and produces a unified diff (7.209687ms)
+✔ file.patch and file.diff stay behind the existing executor lease path (11.941563ms)
+✔ MCP config is static and rejects credentials or arbitrary server shapes (135.054687ms)
+✔ browser.open uses the isolated worker interface and host allowlist (6.058282ms)
+✔ passes Responses function definitions and assembles argument deltas (207.8575ms)
+✔ passes Chat Completions function definitions and assembles tool-call deltas (54.730781ms)
+✔ keeps a valid tool-call id and name when later deltas send null fields (34.156406ms)
+✔ serializes Responses assistant tool calls and function outputs for a follow-up turn (31.569375ms)
+✔ serializes Chat Completions assistant tool calls and tool messages for a follow-up turn (34.47625ms)
+✔ transient HTTP errors retry the same model request then deliver one stream (258.208281ms)
+✔ a disconnected request can retry but exhausted transient errors remain failures (118.355781ms)
+✔ bad requests, authentication failures and long Retry-After do not retry (106.84625ms)
+✔ abort during backoff prevents subsequent attempts (44.824375ms)
+✔ partial streams are never replayed after a disconnect (50.757187ms)
+✔ real workspace patch and diff handle small files and bare SHA-256 digests (262.586875ms)
+✔ patch past the 32 KiB page boundary preserves all text and diff sees the tail (138.723593ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: '../outside.txt',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-real-patch-LJNUe5',
+  error: 'WORKSPACE_INVALID_PATH'
+}
+✔ stale digest and oversized source cannot write even with an approved capability (144.780781ms)
+✔ a changed file while approval is pending is never overwritten by the old patch (35.744375ms)
+✔ a source changing between pages is rejected before requesting a write lease (22.590156ms)
+✔ a later successful identical test resolves its failure without losing the trace (20.13625ms)
+✔ rule verifier requires bounded non-empty output (1.232969ms)
+✔ task coordinator enforces transitions and optimistic version (4.814687ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.521406ms)
+✔ rule verifier detects repeated actions and stops with STALLED (1.70625ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.28ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.685938ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.57875ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.7975ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (1.590157ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (6.811094ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1412.472812

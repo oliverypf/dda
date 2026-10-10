@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+  "text": "Recovery complete with fresh tool evidence.\n\n**Fresh evidence (workspace.read of README.md):**\n- Result: SUCCESS — `sizeBytes: 43`, not truncated\n- Digest: `sha256:545704d74130b84d6a8a3bdc1d99d0f67d12f118a8408568f353de0101962953`\n- Exact evidence marker: **`GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117861d1e`**\n\n**Stage status:**\n- Initial attempt: `workspace.read` of `missing-evidence.txt` → FAILED (`WORKSPACE_NOT_FOUND`) — recorded as attempted, not repeated.\n- Recovery stage: read README.md → succeeded, marker reported above. Remaining goal satisfied.",
+  "outputDigest": "sha256:eb145b1b44dfb0a21a8df2fb1df3502326c8f7f79225da1b6df558bf3c685493"
+}

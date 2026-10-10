@@ -1,0 +1,14 @@
+{
+  "date":"2026-10-03",
+  "kind":"jev_error_task_batch",
+  "sampleSizePerCondition":3,
+  "task":"model first requests missing.md, then requests README.md; read-only workspace inspection",
+  "conditions":{
+    "jev-off":{"runs":3,"successes":0,"wallMs":[6357,7218,13701],"meanWallMs":9092,"modelCalls":9,"errorAttemptsPerRun":1,"manualInterventionsPerRun":0},
+    "jev-on":{"runs":3,"successes":0,"wallMs":[10172,6563,6642],"meanWallMs":7792.3,"modelCalls":9,"errorAttemptsPerRun":1,"manualInterventionsPerRun":0}
+  },
+  "delta":{"meanWallMs":-1299.7,"relativeToOff":-0.1429,"successRateDelta":0,"errorAttemptsDelta":0,"manualInterventionsDelta":0},
+  "jevCalls":9,
+  "validity":"VALID_ERROR_PATH_SMOKE",
+  "caveats":["The fixture produced WORKSPACE_NOT_FOUND:missing.md on every run; all six runs terminated failed before a successful recovery outcome.","Wall time is noisy because each run includes CLI startup and local persistence.","This complements the successful easy-task Jev batch; it should not be pooled with it as one metric."]
+}

@@ -1,0 +1,20 @@
+✔ model-visible tool content must match a successful durable native result (11.594843ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.647031ms)
+✔ a completed invocation returning exit failure does not count as a successful process (0.825468ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (1.809219ms)
+✔ Jev variant labels still require successful native hmCodex evidence (72.856875ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (4.25ms)
+✔ recovery requires a real failure followed by a successful tool result (0.59875ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.478437ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (3.770938ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (1.394688ms)
+✔ declared off/on conditions must match observed decision-provider usage (1.04125ms)
+✔ live decision recording forwards real answers and never records credentials (127.193906ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 952.207188

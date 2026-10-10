@@ -1,0 +1,52 @@
+✔ a long model answer retains literal reported values after the real 500-character boundary (3.668594ms)
+✔ native process status and the end of a large test log survive without malformed JSON (0.58ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (0.425625ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (2.699532ms)
+✔ tool policy distinguishes configured capability from a required host execution check (0.940782ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (0.835469ms)
+✔ file edits carry the actual proposed change as bounded untrusted data (0.653593ms)
+✔ an actual failed process preserves stderr evidence when stdout is empty (0.319688ms)
+✔ automatic test context reads current authorized files rather than stale snapshot contents (53.772187ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'private-store.mjs',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-decision-context-policy-VVl9GR',
+  error: 'WORKSPACE_EXCLUDED_PATH:private-store.mjs'
+}
+✔ context collection preserves workspace exclusions and never follows opaque or escaped proposals (18.302188ms)
+✔ actual failed and successful tests remain visible after a long chain and state compaction (3.594531ms)
+✔ decision observations keep only bounded terminal host facts (3.706562ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2810.0825ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (5769.618282ms)
+✖ autodiscovered tests receive fresh file context and finish after post-write preservation reads (5826.983437ms)
+✔ a later successful identical test resolves its failure without losing the trace (10.287656ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (2.319219ms)
+✔ rule verifier requires bounded non-empty output (0.648438ms)
+✔ task coordinator enforces transitions and optimistic version (2.830469ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.046875ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.749375ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (2.380937ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.691875ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.649063ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.586563ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.452187ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.456719ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.519218ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 27
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60383.481875
+
+✖ failing tests:
+
+test at runtime\test\jev-tool-evidence.test.mjs:201:1
+✖ autodiscovered tests receive fresh file context and finish after post-write preservation reads (5826.983437ms)
+  ReferenceError: readFile is not defined
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/jev-tool-evidence.test.mjs:284:16)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)

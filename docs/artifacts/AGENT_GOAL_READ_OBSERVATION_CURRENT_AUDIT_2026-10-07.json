@@ -1,0 +1,1029 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T15:25:20.983Z",
+  "report": "AGENT_GOAL_READ_OBSERVATION_LIVE_2026-10-07.json",
+  "reportSha256": "a21864731e2f92390ded42e80ed3db0aa1bca419e3972d8d47520e2ab06d7b89",
+  "batchId": "20261007T151628814Z-d02bc679",
+  "runtimeSourceSha256": "b972fad82820981901a8c9d80f8cfefca887ae68f0a0a56fbbef23ab2d5d320d",
+  "currentRuntimeSourceSha256": "b972fad82820981901a8c9d80f8cfefca887ae68f0a0a56fbbef23ab2d5d320d",
+  "currentRuntimeMatchesBatch": true,
+  "debugExeSha256": "dc8ece86497be3741261b01c00889cb9c416e2a850b2a2cac12a784d62ac0044",
+  "mode": "live",
+  "model": "mimo-v2.6-pro",
+  "decisionMode": "LIVE_JEV_HMCODEX_ONLY",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 8,
+      "successes": 7,
+      "successRate": 0.875,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 7,
+      "recoverySuccessRate": 0.875,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 181862,
+      "actualCost": null,
+      "estimatedCost": 0.025405682,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 40,
+      "modelCalls": 50,
+      "usageCoverage": {
+        "reportedRequests": 50,
+        "totalRequests": 50,
+        "knownTokenSubtotal": 181862,
+        "pricedRequests": 50,
+        "knownPricedSubtotal": 0.025405682
+      },
+      "toolCallCount": 39,
+      "wallMs": 506951
+    }
+  },
+  "contentAudit": {
+    "passed": true,
+    "cases": 8,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T151628814Z-d02bc679\\content-audit.json"
+  },
+  "cases": [
+    {
+      "runKey": "20261007T151628814Z-d02bc679/1-recoverable-read-001-hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": null,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "workspace.read",
+        "errorCode": "WORKSPACE_NOT_FOUND",
+        "input": {
+          "path": "missing-evidence.txt"
+        }
+      },
+      "actualPassedTest": false,
+      "actualReadRecovered": true,
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": false,
+          "errorCode": "WORKSPACE_NOT_FOUND",
+          "input": {
+            "path": "missing-evidence.txt"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "README.md"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "README.md"
+          }
+        }
+      ],
+      "observedReadStates": [
+        {
+          "sequence": 2,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "FAILED",
+          "failureCodes": [
+            "WORKSPACE_NOT_FOUND"
+          ]
+        },
+        {
+          "sequence": 9,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        }
+      ],
+      "decisionCalls": 10,
+      "decisionSucceededCalls": 10
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/1-code-normalize-001-hmcodex-runtime",
+      "taskId": "code-normalize-001",
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "input": {
+            "path": "name.mjs",
+            "replacements": [
+              {
+                "newText": "export const normalizeName = value => (value == null ? '' : String(value)).normalize('NFKC').replace(/\\s+/gu, ' ').trim().toLowerCase();",
+                "oldText": "export const normalizeName = value => value.trim().toLowerCase();"
+              }
+            ]
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        }
+      ],
+      "observedReadStates": [],
+      "decisionCalls": 4,
+      "decisionSucceededCalls": 4
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/1-code-syntax-001-hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--check",
+            "tags.mjs"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "file.write",
+          "ok": true,
+          "input": {
+            "content": "export const parseTags = value => {\n  if (value === null || value === undefined) return [];\n  const seen = new Set();\n  const result = [];\n  for (const item of String(value).split(',')) {\n    const tag = item.trim().toLowerCase();\n    if (tag && !seen.has(tag)) {\n      seen.add(tag);\n      result.push(tag);\n    }\n  }\n  return result;\n};\n",
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        }
+      ],
+      "observedReadStates": [
+        {
+          "sequence": 3,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        }
+      ],
+      "decisionCalls": 6,
+      "decisionSucceededCalls": 6
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/1-code-feature-001-hmcodex-runtime",
+      "taskId": "code-feature-001",
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "input": {
+            "path": "name.mjs",
+            "replacements": [
+              {
+                "newText": "export const normalizeName = value => value == null ? '' : String(value).trim().toLowerCase();\n\nexport const uniqueNames = values => {\n  if (!Array.isArray(values)) return [];\n  const seen = new Set();\n  const result = [];\n  for (const item of values) {\n    const name = normalizeName(item);\n    if (name === '' || seen.has(name)) continue;\n    seen.add(name);\n    result.push(name);\n  }\n  return result;\n};",
+                "oldText": "export const normalizeName = value => value == null ? '' : String(value).trim().toLowerCase();"
+              }
+            ]
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        }
+      ],
+      "observedReadStates": [],
+      "decisionCalls": 4,
+      "decisionSucceededCalls": 4
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/2-recoverable-read-001-hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "iteration": 2,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": null,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "workspace.read",
+        "errorCode": "WORKSPACE_NOT_FOUND",
+        "input": {
+          "path": "missing-evidence.txt"
+        }
+      },
+      "actualPassedTest": false,
+      "actualReadRecovered": true,
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": false,
+          "errorCode": "WORKSPACE_NOT_FOUND",
+          "input": {
+            "path": "missing-evidence.txt"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "README.md"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "README.md"
+          }
+        }
+      ],
+      "observedReadStates": [
+        {
+          "sequence": 2,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "FAILED",
+          "failureCodes": [
+            "WORKSPACE_NOT_FOUND"
+          ]
+        },
+        {
+          "sequence": 9,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        }
+      ],
+      "decisionCalls": 10,
+      "decisionSucceededCalls": 10
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/2-code-normalize-001-hmcodex-runtime",
+      "taskId": "code-normalize-001",
+      "iteration": 2,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "input": {
+            "path": "name.mjs",
+            "replacements": [
+              {
+                "newText": "export const normalizeName = value => {\n  if (value === null || value === undefined) return '';\n  return String(value)\n    .normalize('NFKC')\n    .trim()\n    .replace(/\\s+/gu, ' ')\n    .toLowerCase();\n};",
+                "oldText": "export const normalizeName = value => value.trim().toLowerCase();"
+              }
+            ]
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "name.mjs"
+          }
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "input": {
+            "path": ""
+          }
+        }
+      ],
+      "observedReadStates": [
+        {
+          "sequence": 5,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        }
+      ],
+      "decisionCalls": 6,
+      "decisionSucceededCalls": 6
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/2-code-syntax-001-hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "iteration": 2,
+      "status": "FAILED",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--check",
+            "tags.mjs"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "file.write",
+          "ok": true,
+          "input": {
+            "content": "export const parseTags = value => {\n  if (value === null || value === undefined) return [];\n  const seen = new Set();\n  const result = [];\n  for (const item of String(value).split(',')) {\n    const tag = item.trim().toLowerCase();\n    if (tag === '' || seen.has(tag)) continue;\n    seen.add(tag);\n    result.push(tag);\n  }\n  return result;\n};\n",
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "input": {
+            "path": ""
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "tags.test.mjs"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "package.json"
+          }
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "input": {
+            "baseContent": "export const parseTags = value => { return String(value).split(',').map(item => item.trim(); };\n",
+            "path": "tags.mjs"
+          }
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "input": {
+            "baseContent": "import test from 'node:test'; import assert from 'node:assert/strict'; {parseTags} from './tags.mjs'; test('parses tags', () => { assert.deepEqual(parseTags('a, b, a'), ['a','b']); assert.deepEqual(parseTags(null), []); });\n",
+            "path": "tags.test.mjs"
+          }
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "input": {
+            "baseContent": "{\"name\":\"goal-evidence-task\",\"type\":\"module\",\"scripts\":{\"test\":\"node --test --test-isolation=none\"}}",
+            "path": "package.json"
+          }
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "input": {
+            "path": "README.md"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--check",
+              "tags.mjs"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none",
+              "tags.test.mjs"
+            ],
+            "command": "node",
+            "cwd": "."
+          }
+        }
+      ],
+      "observedReadStates": [
+        {
+          "sequence": 3,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 7,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 8,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 9,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 10,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 11,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 12,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 19,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 20,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        },
+        {
+          "sequence": 21,
+          "questionIds": [
+            "actionGate"
+          ],
+          "status": "SUCCEEDED",
+          "failureCodes": []
+        }
+      ],
+      "decisionCalls": 25,
+      "decisionSucceededCalls": 25
+    },
+    {
+      "runKey": "20261007T151628814Z-d02bc679/2-code-feature-001-hmcodex-runtime",
+      "taskId": "code-feature-001",
+      "iteration": 2,
+      "status": "SUCCEEDED",
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "codeAcceptance": true,
+      "modelsMatch": true,
+      "firstActualFailure": {
+        "name": "test.execute",
+        "errorCode": "PROCESS_EXIT_FAILURE",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ],
+          "command": "node"
+        }
+      },
+      "actualPassedTest": true,
+      "actualReadRecovered": null,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "errorCode": "PROCESS_EXIT_FAILURE",
+          "exitCode": 1,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "input": {
+            "path": "name.mjs",
+            "replacements": [
+              {
+                "newText": "export const normalizeName = value => value == null ? '' : String(value).trim().toLowerCase();\n\nexport const uniqueNames = values => {\n  if (!Array.isArray(values)) return [];\n  const seen = new Set();\n  const result = [];\n  for (const value of values) {\n    const name = normalizeName(value);\n    if (name === '' || seen.has(name)) continue;\n    seen.add(name);\n    result.push(name);\n  }\n  return result;\n};",
+                "oldText": "export const normalizeName = value => value == null ? '' : String(value).trim().toLowerCase();"
+              }
+            ]
+          }
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "input": {
+            "args": [
+              "--test",
+              "--test-isolation=none"
+            ],
+            "command": "node"
+          }
+        }
+      ],
+      "observedReadStates": [],
+      "decisionCalls": 4,
+      "decisionSucceededCalls": 4
+    }
+  ],
+  "actualChainsPassed": false,
+  "decision": {
+    "calls": 69,
+    "succeededCalls": 69,
+    "inputTokens": 323287,
+    "outputTokens": 4781,
+    "proxyWallMs": 59726.8762519997,
+    "estimatedApiPriceUsd": 0.013578053999999999,
+    "actualCashCharge": null
+  },
+  "engineering": {
+    "runtime": {
+      "passed": 650,
+      "failed": 0,
+      "skipped": 1,
+      "log": "GOAL_READ_OBSERVATION_FULL_RUNTIME_2026-10-07.log"
+    },
+    "scripts": {
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "log": "GOAL_READ_OBSERVATION_SCRIPTS_2026-10-07.log"
+    },
+    "native": {
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "log": "GOAL_READ_OBSERVATION_NATIVE_2026-10-07.log"
+    },
+    "build": "GOAL_READ_OBSERVATION_BUILD_2026-10-07.log"
+  },
+  "previousSourceComparison": {
+    "report": "AGENT_GOAL_LITERAL_GATE_PAIRED_2026-10-07.json",
+    "batchId": "20261007T143609771Z-211dbce3",
+    "runtimeSourceSha256": "9accbfdd5d7a4843984d84072a26fcdbdbe16b8f20e2cf843ee0fdaa67057f2f",
+    "conditions": {
+      "ordinary-codex": {
+        "runs": 12,
+        "successes": 10,
+        "successRate": 0.8333333333333334,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 6,
+        "recoverySuccessRate": 0.75,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 50,
+        "modelCalls": 63,
+        "usageCoverage": {
+          "reportedRequests": 61,
+          "totalRequests": 63,
+          "knownTokenSubtotal": 599370,
+          "pricedRequests": 61,
+          "knownPricedSubtotal": 0.041871505
+        },
+        "toolCallCount": 49,
+        "wallMs": 1223253
+      },
+      "hmcodex-runtime": {
+        "runs": 12,
+        "successes": 9,
+        "successRate": 0.75,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 5,
+        "recoverySuccessRate": 0.625,
+        "manualInterventionMinutes": 0,
+        "totalTokens": 119665,
+        "actualCost": null,
+        "estimatedCost": 0.024905548,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 33,
+        "modelCalls": 46,
+        "usageCoverage": {
+          "reportedRequests": 46,
+          "totalRequests": 46,
+          "knownTokenSubtotal": 119665,
+          "pricedRequests": 46,
+          "knownPricedSubtotal": 0.024905548
+        },
+        "toolCallCount": 32,
+        "wallMs": 568232
+      }
+    },
+    "failedHmTasks": [
+      {
+        "taskId": "recoverable-read-001",
+        "iteration": 1,
+        "grade": {
+          "passed": false,
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": false,
+            "actualSuccessfulTool": false,
+            "actualSuccessfulTest": true,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": false,
+            "workspaceScopeRespected": true
+          }
+        }
+      },
+      {
+        "taskId": "recoverable-read-001",
+        "iteration": 2,
+        "grade": {
+          "passed": false,
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": false,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": true,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": true
+          }
+        }
+      },
+      {
+        "taskId": "code-syntax-001",
+        "iteration": 2,
+        "grade": {
+          "passed": false,
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": true,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": false,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": true
+          }
+        }
+      }
+    ],
+    "suppliesCurrentSourceControl": false
+  },
+  "limitations": [
+    "This single-client diagnostic has no current-source Codex control or Jev off/on control.",
+    "The native upgrade test uses local fixtures; real cheap-to-strong model routing remains unverified.",
+    "Published language-model quota and Jev API-price values are not cash invoices.",
+    "Headless zero human intervention is not evidence of saved human time.",
+    "Small seeded tasks do not establish multi-file, real-repository or long-task performance."
+  ],
+  "goalStatus": "active"
+}

@@ -1,0 +1,542 @@
+{
+  "generatedAt": "2026-10-07T17:37:55.886Z",
+  "batchId": "20261007T162508744Z-b72917fe",
+  "originalRuntimeSourceSha256": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+  "gradingProtocol": "2.1-NATIVE_COMMAND_DIGEST_AND_FIXTURE_TEST",
+  "method": "Read-only archival regrading of all24 original executions. Command digest and immutable fixture scope are checked; agent failures and timeouts remain authoritative. No source run, model request, raw grade, content-audit or history record is changed.",
+  "originalReport": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_TEST_ACCEPTANCE_FLASH_PAIRED_2026-10-08.json",
+  "originalConditions": {
+    "ordinary-codex": {
+      "runs": 12,
+      "successes": 9,
+      "successRate": 0.75,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 5,
+      "recoverySuccessRate": 0.625,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 65,
+      "modelCalls": 83,
+      "usageCoverage": {
+        "reportedRequests": 74,
+        "totalRequests": 83,
+        "knownTokenSubtotal": 769053,
+        "pricedRequests": 74,
+        "knownPricedSubtotal": 0.0186535832
+      },
+      "toolCallCount": 66,
+      "wallMs": 1853303
+    },
+    "hmcodex-runtime": {
+      "runs": 12,
+      "successes": 6,
+      "successRate": 0.5,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 3,
+      "recoverySuccessRate": 0.375,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 89,
+      "modelCalls": 117,
+      "usageCoverage": {
+        "reportedRequests": 108,
+        "totalRequests": 117,
+        "knownTokenSubtotal": 413011,
+        "pricedRequests": 108,
+        "knownPricedSubtotal": 0.0158290832
+      },
+      "toolCallCount": 74,
+      "wallMs": 1593958
+    }
+  },
+  "conditions": {
+    "hmcodex": {
+      "runs": 12,
+      "originalSuccesses": 6,
+      "regradedSuccesses": 8
+    },
+    "codex": {
+      "runs": 12,
+      "originalSuccesses": 9,
+      "regradedSuccesses": 9
+    }
+  },
+  "rows": [
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "inspect-readme-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "inspect-layout-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-layout-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "recoverable-read-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "code-normalize-001",
+      "originalStatus": "TIMED_OUT",
+      "currentGradingPassed": false,
+      "revisedStatus": "TIMED_OUT",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": false,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": false
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-normalize-001",
+      "originalStatus": "FAILED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [
+        "actualSuccessfulTest",
+        "actualInjectedFailure"
+      ],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "code-syntax-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "ordinary-codex",
+      "taskId": "code-feature-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 1,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-feature-001",
+      "originalStatus": "FAILED",
+      "currentGradingPassed": false,
+      "revisedStatus": "FAILED",
+      "changedChecks": [
+        "actualInjectedFailure"
+      ],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "originalStatus": "FAILED",
+      "currentGradingPassed": false,
+      "revisedStatus": "FAILED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "inspect-readme-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-layout-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "inspect-layout-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "originalStatus": "FAILED",
+      "currentGradingPassed": false,
+      "revisedStatus": "FAILED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "recoverable-read-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-normalize-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "code-normalize-001",
+      "originalStatus": "TIMED_OUT",
+      "currentGradingPassed": false,
+      "revisedStatus": "TIMED_OUT",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": false,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": false
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "originalStatus": "TIMED_OUT",
+      "currentGradingPassed": false,
+      "revisedStatus": "TIMED_OUT",
+      "changedChecks": [
+        "actualSuccessfulTest",
+        "actualInjectedFailure"
+      ],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "code-syntax-001",
+      "originalStatus": "TIMED_OUT",
+      "currentGradingPassed": false,
+      "revisedStatus": "TIMED_OUT",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": false,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": false,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": false
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "hmcodex-runtime",
+      "taskId": "code-feature-001",
+      "originalStatus": "FAILED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [
+        "actualInjectedFailure"
+      ],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    },
+    {
+      "iteration": 2,
+      "condition": "ordinary-codex",
+      "taskId": "code-feature-001",
+      "originalStatus": "SUCCEEDED",
+      "currentGradingPassed": true,
+      "revisedStatus": "SUCCEEDED",
+      "changedChecks": [],
+      "checks": {
+        "processCompleted": true,
+        "agentCompleted": true,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      }
+    }
+  ],
+  "limitations": [
+    "Not a fresh live comparison for current runtime source.",
+    "Neither original nor regraded success counts demonstrate an hmCodex advantage; cash and human savings remain unknown."
+  ]
+}

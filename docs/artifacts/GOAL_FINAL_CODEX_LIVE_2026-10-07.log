@@ -1,0 +1,49 @@
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+ordinary-codex recoverable-read-001 SUCCEEDED tools=3 errors=1
+{
+  "batchId": "20261007T055657599Z-aae33255",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_LIVE_FINAL_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 126342,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 9,
+      "toolCallCount": 9,
+      "wallMs": 137434
+    },
+    "hmcodex-runtime": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 29859,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 10,
+      "toolCallCount": 10,
+      "wallMs": 182479
+    }
+  }
+}

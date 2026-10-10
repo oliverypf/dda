@@ -1,0 +1,38 @@
+✔ Phase 1.5 build fixes the controlled channel without mutating caller environment (3.042343ms)
+✔ controlled build invokes the local Windows CLI and supports fast mode (0.802812ms)
+✔ full local build fixes the release channel without mutating caller environment (0.384844ms)
+✔ Phase 1 build fixes the compiled channel without mutating caller environment (4.309844ms)
+✔ build invokes the local Windows CLI with the fixed channel and propagates failure (2.114687ms)
+✔ model-visible tool content must match a successful durable native result (3.817187ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.322187ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (1.643125ms)
+✔ recovery requires a real failure followed by a successful tool result (0.255781ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.244687ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (3.375469ms)
+✔ both clients use the same text and developer instruction conversion (0.297344ms)
+✔ the sampler credits only the wall clock between real samples (22.633906ms)
+✔ the sampler records a real store count and fails closed without a state path (61.635781ms)
+✔ each sample names the physical store file it read (49.6375ms)
+✔ phase3 evidence check passes and writes artifact (200.193437ms)
+✔ w10 evidence stays NOT_READY without a real install, window and signed reports (18.355156ms)
+✔ long run only credits observed wall clock inside the gap tolerance (15.327031ms)
+✔ signed release evidence must declare ok:true (22.020781ms)
+✔ retention needs a recorded observation start before it can be partial (15.873281ms)
+✔ install lifecycle evidence must be present, elevated and complete (2.581875ms)
+✔ install lifecycle evidence accepts only fully verified elevated steps (39.7175ms)
+✔ install lifecycle evidence rejects fabricated, partial and tampered records (63.616563ms)
+✔ the evidence record names the physical store file it read (57.888281ms)
+✔ derives one coherent desktop, workspace, and runtime root (4.3925ms)
+✔ honors an explicit desktop root before the caller directory (2.005ms)
+✔ a real profile file lists the package copy as a different physical file (15.985781ms)
+✔ the same inode identifies a store read through the package local cache (9.450312ms)
+✔ the unredacted profile alias is reported only when it is another file (11.687656ms)
+✔ paths outside the profile root have no package twins (3.106094ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 874.210938

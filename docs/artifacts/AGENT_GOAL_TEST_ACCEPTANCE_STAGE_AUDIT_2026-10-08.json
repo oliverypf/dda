@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-10-07T16:23:37.007Z",
+  "stage": "TEST_ACCEPTANCE_O",
+  "runtimeSourceSha256": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+  "debugExeSha256": "aff3eebfd106127bbf673996b6a1bc0b663852210ddb6569eb4d919a3b1de35b",
+  "runtime": {
+    "passed": 653,
+    "failed": 0,
+    "skipped": 1,
+    "log": "GOAL_TEST_ACCEPTANCE_FULL_RUNTIME_2026-10-08.log",
+    "sha256": "8260e143c04a0a3aa8f46b3939d094a92f7e799023593b21cf924e7f27fd6954"
+  },
+  "scripts": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_TEST_ACCEPTANCE_SCRIPTS_2026-10-08.log",
+    "sha256": "93f93db76b40e84924a047b36662c53f3be2d15671ef2b7c8f594dc3ac268ade"
+  },
+  "targeted": {
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_TEST_ACCEPTANCE_CHECKS_2026-10-08.log",
+    "sha256": "42d94c3efb23de33e3576834e0789379b9af2bdb879fd56cc8c3274f1f0ca02c"
+  },
+  "native": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_TEST_ACCEPTANCE_NATIVE_2026-10-08.log",
+    "sha256": "6d8959392aae158d21dee5103d9882ae499691afa6b054a03863a24d4fc13b63"
+  },
+  "gradingProtocolVersion": "2.0-NATIVE_FIXTURE_TEST_EXECUTION",
+  "changes": [
+    "Node flags must precede the script/test-file arguments; an entry-point receiving --test is not classified as Node test-runner execution.",
+    "Goal grading now requires the actual immutable fixture test file scope, observed passing test names and actual process exit0, alongside independent behavior and file-scope checks.",
+    "The seeded engineering failure must come from the requested actual Node diagnostic/test before the repair; an unrelated failed read cannot satisfy it.",
+    "Ordinary Codex commands are parsed as simple actual Node invocations, not substring matches inside quoted text or shell scripts."
+  ],
+  "previousBatch": {
+    "report": "AGENT_GOAL_DIAGNOSTIC_RECOVERY_ABORTED_2026-10-08.json",
+    "status": "ABORTED_PROVIDER_IMPAIRMENT",
+    "completeComparison": false
+  },
+  "modelAvailability": "GOAL_MODEL_AVAILABILITY_2026-10-08.json",
+  "nextComparison": {
+    "model": "mimo-v2.6-flash",
+    "plannedRuns": 24,
+    "taskSetVersion": "3.1",
+    "decisionMode": "LIVE_JEV_HMCODEX_ONLY",
+    "configuration": "GOAL_FLASH_MODEL_CONFIG_2026-10-08.json"
+  },
+  "pricing": {
+    "schemaVersion": "1.0",
+    "model": "mimo-v2.6-flash",
+    "source": "https://opencode.ai/docs/go/#usage-limits",
+    "checkedAt": "2026-10-07T16:16:22.721Z",
+    "currency": "USD",
+    "basis": "SUBSCRIPTION_QUOTA",
+    "inputPerMillion": 0.14,
+    "cachedInputPerMillion": 0.0028,
+    "outputPerMillion": 0.28,
+    "note": "Published quota consumption rates, not an invoice. Verified from official Go documentation on 2026-10-08."
+  },
+  "limitations": [
+    "No actual cheap-to-Pro upgrade was proven by the minimal availability requests.",
+    "The new source still needs a full matched client comparison and independent Jev off/on comparison.",
+    "Published quota and Jev API-price estimates are not user invoices; real human savings remain unmeasured."
+  ],
+  "goalStatus": "active"
+}

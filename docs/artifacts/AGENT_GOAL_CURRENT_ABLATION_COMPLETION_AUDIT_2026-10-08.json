@@ -1,0 +1,231 @@
+{
+  "generatedAt": "2026-10-07T19:23:15.802Z",
+  "report": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_JEV_ABLATION_2026-10-08.json",
+  "batchId": "20261007T185054362Z-99afaa1f",
+  "sourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "complete": true,
+  "currentSourceAfterMerge": false,
+  "verifiedPairs": 12,
+  "assignedOnRuns": 12,
+  "activatedOnRuns": 12,
+  "acceptedSuccessesWithNativeContent": 20,
+  "conditions": {
+    "hmcodex-jev-off": {
+      "runs": 12,
+      "successes": 12,
+      "successRate": 1,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 30,
+      "modelCalls": 48,
+      "usageCoverage": {
+        "reportedRequests": 44,
+        "totalRequests": 48,
+        "knownTokenSubtotal": 102501,
+        "pricedRequests": 44,
+        "knownPricedSubtotal": 0.0073626
+      },
+      "toolCallCount": 33,
+      "wallMs": 482977
+    },
+    "hmcodex-jev-on": {
+      "runs": 12,
+      "successes": 8,
+      "successRate": 0.6666666666666666,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 5,
+      "recoverySuccessRate": 0.625,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 57,
+      "modelCalls": 77,
+      "usageCoverage": {
+        "reportedRequests": 70,
+        "totalRequests": 77,
+        "knownTokenSubtotal": 232633,
+        "pricedRequests": 70,
+        "knownPricedSubtotal": 0.009581863200000002
+      },
+      "toolCallCount": 48,
+      "wallMs": 930219
+    }
+  },
+  "decision": {
+    "calls": 100,
+    "succeededCalls": 66,
+    "wallMs": 224122.4967230004,
+    "inputTokens": null,
+    "outputTokens": null,
+    "estimatedApiCost": null,
+    "actualCost": null
+  },
+  "failures": [
+    {
+      "iteration": 1,
+      "taskId": "recoverable-read-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:CONTINUE",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "verificationStatus": "CONTINUE",
+      "failureCodes": [],
+      "issues": [
+        {
+          "id": "actions.progress",
+          "status": "UNKNOWN",
+          "message": "1 个动作返回可恢复工具错误，允许模型换路径重试",
+          "evidence": [
+            "action:0:3ff5d0d9406026d9",
+            "action:1:656127a4d473daf4"
+          ]
+        }
+      ],
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T185054362Z-99afaa1f\\1-recoverable-read-001-hmcodex-jev-on"
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-syntax-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "MODEL_HTTP_ERROR:502:MODEL_CALL_BUDGET_REACHED",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T185054362Z-99afaa1f\\1-code-syntax-001-hmcodex-jev-on"
+    },
+    {
+      "iteration": 2,
+      "taskId": "inspect-layout-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:UNCERTAIN",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": false,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "verificationStatus": "UNCERTAIN",
+      "failureCodes": [],
+      "issues": [
+        {
+          "id": "jev-behavior-judge",
+          "status": "UNKNOWN",
+          "message": "JEV_TIMEOUT",
+          "evidence": [
+            "verification-check-execute-2-1",
+            "verification-check-execute-2-2",
+            "verification-check-execute-2-3",
+            "verification-check-execute-2-4",
+            "verification-check-execute-2-5",
+            "verification-check-execute-2-6",
+            "verification-check-execute-2-7",
+            "verification-check-execute-2-8"
+          ]
+        }
+      ],
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T185054362Z-99afaa1f\\2-inspect-layout-001-hmcodex-jev-on"
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-normalize-001",
+      "condition": "hmcodex-jev-on",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:FAIL",
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "verificationStatus": "FAIL",
+      "failureCodes": [
+        "ACTION_FAILED",
+        "JEV_BEHAVIOR_REJECTED"
+      ],
+      "issues": [
+        {
+          "id": "actions.progress",
+          "status": "FAIL",
+          "message": "1 个动作执行失败（SAFETY_COMMAND_NOT_ALLOWED）",
+          "evidence": [
+            "action:11:78e013c57777ae82"
+          ]
+        },
+        {
+          "id": "jev-behavior-judge",
+          "status": "FAIL",
+          "message": "RULE_VERIFIER_FAILED",
+          "evidence": [
+            "verification-check-execute-1-1",
+            "verification-check-execute-1-2",
+            "verification-check-execute-1-3",
+            "verification-check-execute-1-4",
+            "verification-check-execute-1-5",
+            "verification-check-execute-1-6",
+            "verification-check-execute-1-7",
+            "verification-check-execute-1-8"
+          ]
+        }
+      ],
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T185054362Z-99afaa1f\\2-code-normalize-001-hmcodex-jev-on"
+    }
+  ],
+  "conclusions": [
+    "This frozen source sample had 12/12 successes off and 8/12 on. It provides no acceleration or success-rate advantage for enabling Jev.",
+    "On-condition total wall time is higher; service failures and known metadata defects limit causal interpretation.",
+    "Every failed run remains in its assigned condition. Actual rule failures, budget exhaustion and unresolved verification are distinct.",
+    "Incomplete provider usage keeps total tokens and price estimates unknown. Published subscription quota and actual cash are different measures.",
+    "The source has since received separately validated preview/context and timer-cleanup fixes. This batch cannot certify their comparative performance."
+  ],
+  "remaining": [
+    "Complete merged-source regression and desktop acceptance.",
+    "Retest the final source before claiming post-fix comparative benefit.",
+    "Obtain genuine cash billing and human activity data before claiming cash or labor savings."
+  ]
+}

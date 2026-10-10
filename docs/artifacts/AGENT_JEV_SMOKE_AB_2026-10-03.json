@@ -1,0 +1,7 @@
+{
+  "date":"2026-10-03",
+  "kind":"jev_on_off_smoke",
+  "status":"SUPERSEDED_BY_BATCH",
+  "supersededBy":"AGENT_JEV_BATCH_AB_2026-10-03.json",
+  "note":"原始 8 秒 harness 截断测量已因 task CLI 生命周期修复而失效；请使用批次结果。"
+}

@@ -1,0 +1,43 @@
+{
+  "startedAt": "2026-10-07T19:38:06.105Z",
+  "runtimeSourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+  "model": "mimo-v2.6-flash",
+  "repeat": 2,
+  "plannedRuns": 48,
+  "status": "COMPLETE",
+  "steps": [
+    {
+      "id": "paired",
+      "status": "COMPLETE",
+      "startedAt": "2026-10-07T19:38:06.113Z",
+      "comparison": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_PAIRED_2026-10-08.json",
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_MERGED_PAIRED_2026-10-08.log",
+      "completedAt": "2026-10-07T20:20:32.248Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "wallMs": 2546117,
+      "runtimeSourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+      "matchesVerifiedRuntime": true,
+      "completedRuns": 24
+    },
+    {
+      "id": "jev-ablation",
+      "status": "COMPLETE",
+      "startedAt": "2026-10-07T20:20:32.252Z",
+      "comparison": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_JEV_ABLATION_2026-10-08.json",
+      "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_MERGED_JEV_ABLATION_2026-10-08.log",
+      "completedAt": "2026-10-07T20:37:56.675Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "wallMs": 1044410,
+      "runtimeSourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+      "matchesVerifiedRuntime": true,
+      "completedRuns": 24
+    }
+  ],
+  "limitations": [
+    "Full paired comparison and separate Jev on/off ablation; neither is a cash invoice or human savings study.",
+    "Provider failures and timeouts remain in their assigned conditions. No source edits are planned during the series."
+  ],
+  "completedAt": "2026-10-07T20:37:56.678Z"
+}

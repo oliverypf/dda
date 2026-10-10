@@ -1,0 +1,14 @@
+
+> dda-desktop@0.1.0 build
+> node "%npm_config_local_prefix%/scripts/build.mjs"
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 52 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.50 kB │ gzip:  0.30 kB
+dist/assets/index-BRpvpgwK.css   40.26 kB │ gzip:  8.12 kB
+dist/assets/index-BVvFpmOF.js   215.19 kB │ gzip: 66.17 kB │ map: 588.45 kB
+
+✓ built in 181ms

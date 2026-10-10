@@ -1,0 +1,25 @@
+✔ model-visible tool content must match a successful durable native result (7.304062ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.582344ms)
+✔ a completed invocation returning exit failure does not count as a successful process (0.788906ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (3.400625ms)
+✔ Jev variant labels still require successful native hmCodex evidence (69.475938ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (3.413594ms)
+✔ recovery requires a real failure followed by a successful tool result (0.845625ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.768437ms)
+✔ actual simple Node commands are parsed without accepting quoted examples or compound shell scripts (13.4875ms)
+✔ source repair needs an actual seeded failure and the immutable fixture test to pass (1728.367812ms)
+✔ upgrade preflight rejects missing config, duplicate model and missing credential before inference (24.21625ms)
+✔ a setup failure after opening the first gateway closes it and exits without hanging (954.814687ms)
+✔ explicit model IDs reuse the configured provider route and distinct identities (3.415469ms)
+✔ automatic upgrade requires real strong execution and Jev model selection, not only escalation or a rule fallback (0.659375ms)
+✔ configured role aliases resolve their real registered model and provider (0.388281ms)
+✔ missing upgrade target, aliasing the same model and unsupported protocol cannot pass an upgrade test (1.38875ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2473.175938
+

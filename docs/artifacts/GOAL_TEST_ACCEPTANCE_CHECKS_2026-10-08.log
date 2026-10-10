@@ -1,0 +1,19 @@
+✔ model-visible tool content must match a successful durable native result (9.390157ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.228282ms)
+✔ a completed invocation returning exit failure does not count as a successful process (1.83875ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (12.394375ms)
+✔ Jev variant labels still require successful native hmCodex evidence (134.261719ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (3.182343ms)
+✔ recovery requires a real failure followed by a successful tool result (0.521406ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.532812ms)
+✔ actual simple Node commands are parsed without accepting quoted examples or compound shell scripts (14.045625ms)
+✔ source repair needs an actual seeded failure and the immutable fixture test to pass (1939.633437ms)
+✔ Node process scope distinguishes default discovery, targeted tests and syntax diagnosis without implying execution (11.648907ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2936.857343

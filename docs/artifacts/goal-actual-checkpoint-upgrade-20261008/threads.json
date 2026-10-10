@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "threads": [
+    {
+      "id": "thread-11cb5ad0-e51f-46a6-880c-94380b53ccdc",
+      "title": "This is a preset read-only recovery test. Success requires a real workspace.read of README.md and reporting its exact evidence marker. In the initial executor attempt, invoke only workspace.read of missing-evidence.txt as the first tool, re",
+      "cwd": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-actual-checkpoint-upgrade-fgVCPV",
+      "turns": [
+        {
+          "id": "turn-cabe0168-b538-4e6f-928e-5b3ea6d321f7",
+          "runId": "run-29ee4925-2f96-44c2-9302-d5ca2112fe5c",
+          "summary": "state=FAILED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | errorDigest=sha256:aed86ddbba95c8f72c0d3fc4f2f32406551e571e921b9a2ba26c3844c4cb4858",
+          "state": "FAILED",
+          "atMs": 1791393311826
+        },
+        {
+          "id": "turn-07d34b4e-afe8-4c39-bf3c-b6027ebb3f54",
+          "runId": "run-29c68be8-14b8-4f04-a393-b1e718efb584",
+          "summary": "state=FAILED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | errorDigest=sha256:331621b5f0e91c9e5861ebc3bbf44e11644667dcec8c070768e7efa47ecfd4b2",
+          "state": "FAILED",
+          "atMs": 1791393359583
+        }
+      ],
+      "state": "FAILED",
+      "createdAtMs": 1791393271083,
+      "updatedAtMs": 1791393359583,
+      "activeRunId": "run-29c68be8-14b8-4f04-a393-b1e718efb584",
+      "checkpoint": {
+        "runId": "run-29c68be8-14b8-4f04-a393-b1e718efb584",
+        "phase": "VERIFYING",
+        "state": "FAILED",
+        "plan": {
+          "planId": "plan-run-29ee4925-2f96-44c2-9302-d5ca2112fe5c",
+          "planDigest": "sha256:b629b2e0442bc48b9ba68684ffc9a91ec0b6647c9133ae07ad4397319c625c74",
+          "steps": [
+            {
+              "stepId": "execute",
+              "summary": "Execute the bounded task and collect evidence",
+              "actionKind": "EXECUTE",
+              "dependencies": [],
+              "status": "FAILED",
+              "attempt": 2,
+              "outputDigest": "sha256:0f5689adde79b11c25d44592cb8dd2703c6df908306e1be56b41e61e7d1efd78",
+              "errorCode": "JEV_BEHAVIOR_REJECTED"
+            }
+          ]
+        },
+        "blockers": [
+          "PLAN_STEP_FAILED"
+        ],
+        "pendingActions": [
+          "review failure and decide whether to resume"
+        ],
+        "updatedAtMs": 1791393359515,
+        "checkpointDigest": "sha256:cbd8e27cabf5ca8f5d0e586585e01930425861c53b4a8f8c0f627bc98fefeb42"
+      }
+    }
+  ]
+}

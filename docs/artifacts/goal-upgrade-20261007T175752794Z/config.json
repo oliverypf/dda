@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "provider": "openai",
+  "protocol": "responses",
+  "model": "mimo-v2.6-flash",
+  "endpoint": "http://127.0.0.1:61587/responses",
+  "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY",
+  "models": [
+    {
+      "id": "mimo-v2.6-flash",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "endpoint": "http://127.0.0.1:61587/responses",
+      "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY"
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-pro",
+      "endpoint": "http://127.0.0.1:61588/responses",
+      "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY"
+    }
+  ],
+  "roleBindings": {
+    "planner": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-flash"
+    },
+    "executor": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-flash"
+    },
+    "critic": {
+      "selector": "PINNED",
+      "modelId": "mimo-v2.6-pro"
+    }
+  },
+  "decision": {
+    "enabled": true,
+    "enforce": true,
+    "endpoint": "http://127.0.0.1:61589/jev",
+    "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_JEV_KEY",
+    "model": "jev-latest",
+    "timeoutMs": 5000,
+    "diagnosisEnabled": true,
+    "recoveryDirectionEnabled": true
+  }
+}

@@ -1,0 +1,46 @@
+✔ model-visible tool content must match a successful durable native result (15.353125ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.172187ms)
+✔ a completed invocation returning exit failure does not count as a successful process (1.359688ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (9.256093ms)
+✔ Jev variant labels still require successful native hmCodex evidence (108.570312ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (3.180782ms)
+✔ recovery requires a real failure followed by a successful tool result (0.5025ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.492656ms)
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (3113.148593ms)
+✔ a timed out live client is terminated and cannot pass acceptance (1038.638125ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (6.055938ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (2.18375ms)
+✔ declared off/on conditions must match observed decision-provider usage (0.860312ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (12.536719ms)
+✔ both clients use the same text and developer instruction conversion (0.95375ms)
+✔ live model records returned inference IDs for success and HTTP failure without inventing charges (287.172813ms)
+✔ live decision recording forwards real answers and never records credentials (304.727187ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (18.053281ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (2.139062ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (10.912031ms)
+✔ billing imports require full coverage and never turn missing charges into zero (2.057812ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (19.996407ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (2.145313ms)
+✔ real decision-provider bills are required before language-only charges become total cash cost (2.796094ms)
+✔ upstream inference identifiers remain distinct from charge amounts and private response headers (154.520469ms)
+✔ missing, oversized and free-text identifiers do not become fabricated correlation keys (0.722969ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (2483.862969ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (1636.03125ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (1690.822813ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (1220.336562ms)
+✔ actual simple Node commands are parsed without accepting quoted examples or compound shell scripts (12.991719ms)
+✔ source repair needs an actual seeded failure and the immutable fixture test to pass (2202.271719ms)
+✔ upgrade preflight rejects missing config, duplicate model and missing credential before inference (57.071875ms)
+✔ a setup failure after opening the first gateway closes it and exits without hanging (997.356875ms)
+✔ explicit model IDs reuse the configured provider route and distinct identities (5.059219ms)
+✔ automatic upgrade requires real strong execution and Jev model selection, not only escalation or a rule fallback (1.025938ms)
+✔ configured role aliases resolve their real registered model and provider (1.044531ms)
+✔ missing upgrade target, aliasing the same model and unsupported protocol cannot pass an upgrade test (1.90875ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8696.253281

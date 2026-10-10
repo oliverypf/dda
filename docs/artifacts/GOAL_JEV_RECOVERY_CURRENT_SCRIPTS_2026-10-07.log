@@ -1,0 +1,35 @@
+✔ model-visible tool content must match a successful durable native result (4.078438ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.337656ms)
+✔ a completed invocation returning exit failure does not count as a successful process (0.434063ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (0.930468ms)
+✔ Jev variant labels still require successful native hmCodex evidence (140.745625ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (2.04125ms)
+✔ recovery requires a real failure followed by a successful tool result (0.35125ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.309062ms)
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (1623.585312ms)
+✔ a timed out live client is terminated and cannot pass acceptance (1034.376719ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (3.686093ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (0.99ms)
+✔ declared off/on conditions must match observed decision-provider usage (0.48875ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (3.364688ms)
+✔ both clients use the same text and developer instruction conversion (0.290625ms)
+✔ live decision recording forwards real answers and never records credentials (133.856407ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (3.739062ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (0.70125ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (0.494375ms)
+✔ billing imports require full coverage and never turn missing charges into zero (0.669375ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (4.164688ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (2.183594ms)
+✔ real decision-provider bills are required before language-only charges become total cash cost (0.818125ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (1705.726406ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (1596.611563ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (1885.939375ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (1085.727344ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7367.165625

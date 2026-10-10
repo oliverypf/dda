@@ -1,0 +1,47 @@
+
+> hmcodex-desktop@0.1.0 test:evidence:goal
+> node "%npm_config_local_prefix%/scripts/goal-evidence-harness.mjs" --live-config C:/Users/User/AppData/Local/hmCodex/model-config.json --output C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_LIVE_COMPARISON_2026-10-07.json
+
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=5 errors=1
+{
+  "batchId": "20261007T053021281Z-023b524a",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_LIVE_COMPARISON_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 3,
+      "successes": 3,
+      "successRate": 1,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 58429,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 4,
+      "toolCallCount": 4,
+      "wallMs": 80229
+    },
+    "hmcodex-runtime": {
+      "runs": 3,
+      "successes": 3,
+      "successRate": 1,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 13256,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 5,
+      "toolCallCount": 7,
+      "wallMs": 73472
+    }
+  }
+}

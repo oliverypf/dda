@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "reports": [],
+  "outcomes": [
+    {
+      "outcomeId": "outcome-44a5b321-bf1a-46ea-89a4-aca90bd04c2c",
+      "runId": "run-8893163b-9678-4a4c-ae63-45245ea0c0f8",
+      "taskClass": "test",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "status": "FAILED",
+      "verified": false,
+      "quality": 0,
+      "latencyMs": 17459,
+      "sourceEventId": "event-49830a5d-82e4-4de2-8f75-f8bf78d62408",
+      "recordedAtMs": 1791395138473,
+      "outcomeDigest": "sha256:96c61af26c4bdb1f7fefa0eedbe527160d4d118efa0b22a05a22727d9f8ccd90"
+    },
+    {
+      "outcomeId": "outcome-3b91c44c-fd47-4b17-acb1-31a68af11106",
+      "runId": "run-f359f4de-d20e-4d05-a8c9-4728a0897b29",
+      "taskClass": "test",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-pro",
+      "status": "SUCCEEDED",
+      "verified": true,
+      "quality": 1,
+      "safety": 1,
+      "latencyMs": 28760,
+      "sourceEventId": "event-691d0507-4f80-4d0f-a674-dffff5bf7f7d",
+      "recordedAtMs": 1791395171888,
+      "outcomeDigest": "sha256:4d053c09ca7330b4190a541ff947b29f6ebba606843e1f1bff65ff89133204a1"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "productName": "dda",
+  "status": "PASSED",
+  "tests": {
+    "frontend": {
+      "passed": 60,
+      "failed": 0
+    },
+    "relatedScripts": {
+      "passed": 25,
+      "failed": 0
+    },
+    "nativeDesktop": {
+      "passed": 28,
+      "failed": 0,
+      "log": "docs/artifacts/DDA_RENAME_NATIVE_2026-10-08.log"
+    },
+    "reportSmoke": {
+      "passed": 1,
+      "failed": 0,
+      "report": "docs/artifacts/DDA_RENAME_REPORT_SMOKE_2026-10-08.json"
+    }
+  },
+  "executableMetadata": {
+    "productName": "dda",
+    "companyName": "dda",
+    "fileDescription": "dda"
+  },
+  "msiMetadata": {
+    "productName": "dda",
+    "manufacturer": "dda",
+    "upgradeCode": "{10FEC2AA-B588-528E-9951-92BB36312B9D}"
+  },
+  "nsisMetadata": {
+    "productName": "dda",
+    "fileDescription": "dda",
+    "uninstallKey": "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\hmCodex",
+    "manufacturerProductKey": "Software\\hmcodex\\hmCodex"
+  },
+  "compatibility": {
+    "dataRoot": "%LOCALAPPDATA%\\hmCodex",
+    "applicationIdentifier": "com.hmcodex.desktop",
+    "environmentVariables": "HMCODEX_*",
+    "browserStorageKeys": "hmcodex.*",
+    "historicalEvidence": "retained",
+    "installerLifecycle": "NOT_RUN; package build and metadata verification only"
+  },
+  "buildRecovery": {
+    "initialNsisHookAttempt": "FAILED: hook loaded before default registry definitions",
+    "correctedNsisTemplate": "PASSED: CLI 2.11.4 template with two registry identity substitutions"
+  },
+  "artifacts": {
+    "desktopExecutable": {
+      "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\dda-desktop.exe",
+      "bytes": 10280960,
+      "sha256": "640a2a73e43ba7ba6132a4c5113d989c5c33e74d5ed55876325cb8459ffe08de"
+    },
+    "msi": {
+      "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\bundle\\msi\\dda_0.1.0_x64_en-US.msi",
+      "bytes": 12017950,
+      "sha256": "9816f3dba07f68322d60c12efc9e33f06d58722105ce4f8af2e7ed44a7082823"
+    },
+    "nsis": {
+      "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\bundle\\nsis\\dda_0.1.0_x64-setup.exe",
+      "bytes": 6585570,
+      "sha256": "a737dcf1d49f37b7606a5d92cecf6860a49327a8216b013d65b3e6b7ffa11370"
+    }
+  }
+}

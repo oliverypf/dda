@@ -1,0 +1,404 @@
+{
+  "generatedAt": "2026-10-07T17:00:40.219Z",
+  "scope": "Current compiled native goal flows, full runtime regression, frozen-source live comparison progress and independent failure diagnosis.",
+  "currentRuntimeSha256": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+  "currentDebugExeSha256": "aff3eebfd106127bbf673996b6a1bc0b663852210ddb6569eb4d919a3b1de35b",
+  "runtimeRegression": {
+    "passed": 653,
+    "failed": 0,
+    "skipped": 1,
+    "log": "GOAL_TEST_ACCEPTANCE_FULL_RUNTIME_2026-10-08.log",
+    "sha256": "8260e143c04a0a3aa8f46b3939d094a92f7e799023593b21cf924e7f27fd6954"
+  },
+  "nativeGoalFlows": {
+    "passed": 27,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_TEST_ACCEPTANCE_NATIVE_2026-10-08.log",
+    "sha256": "6d8959392aae158d21dee5103d9882ae499691afa6b054a03863a24d4fc13b63"
+  },
+  "benchmarkScriptRegression": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "log": "GOAL_TEST_ACCEPTANCE_SCRIPTS_2026-10-08.log",
+    "sha256": "93f93db76b40e84924a047b36662c53f3be2d15671ef2b7c8f594dc3ac268ade"
+  },
+  "milestones": [
+    {
+      "goal": "Sidebar scroll and checkpoint continuation",
+      "status": "VALIDATED_CURRENT_NATIVE_BUILD",
+      "evidence": "GOAL_TEST_ACCEPTANCE_NATIVE_2026-10-08.log",
+      "limitation": "80 task history, wheel and last-item reachability; resume planner unchanged and executor advanced. Defined scenarios only, not exhaustive UI coverage."
+    },
+    {
+      "goal": "Retry / model upgrade / Jev recovery",
+      "status": "PARTIAL",
+      "localFlow": "VALIDATED_MOCK_BOUND_STRONG_MODEL",
+      "realUpgrade": "NOT_PROVEN",
+      "actualNegativeExperiments": [
+        {
+          "agentMode": "multi",
+          "runtimeReportedSuccess": true,
+          "actualMissingFileFailure": false,
+          "actualMarkerRead": true,
+          "recoveryStarted": true,
+          "actualProRequests": 0,
+          "modelSelections": [
+            {
+              "selectedOptionId": "active-model",
+              "reasonCodes": [
+                "JEV_DECISION"
+              ]
+            }
+          ],
+          "upgradeAcceptance": "FAILED",
+          "source": "GOAL_REAL_MODEL_UPGRADE_2026-10-08.json",
+          "observationCorrection": "Original script read only a JSONL path; phase1 stored native events in SQLite. This audit uses the actual durable event export. Overall upgrade failure remains unchanged."
+        },
+        {
+          "agentMode": "single",
+          "runtimeReportedSuccess": true,
+          "actualMissingFileFailure": false,
+          "actualMarkerRead": true,
+          "recoveryStarted": true,
+          "actualProRequests": 0,
+          "modelSelections": [
+            {
+              "selectedOptionId": "active-model",
+              "reasonCodes": [
+                "JEV_DECISION"
+              ]
+            }
+          ],
+          "upgradeAcceptance": "FAILED",
+          "source": "GOAL_REAL_MODEL_UPGRADE_SINGLE_2026-10-08.json",
+          "observationCorrection": null
+        }
+      ]
+    },
+    {
+      "goal": "Fixed tasks, metrics and same-model Codex comparison",
+      "status": "FRAMEWORK_IMPLEMENTED_LIVE_VALIDATION_RUNNING",
+      "economicAdvantage": "NOT_PROVEN",
+      "actualCashCost": "UNKNOWN",
+      "humanTimeSavings": "UNMEASURED"
+    }
+  ],
+  "liveBatch": {
+    "batchId": "20261007T162508744Z-b72917fe",
+    "state": "RUNNING_CONFIRMED_BY_TOOL_SESSION_86924",
+    "planned": 24,
+    "completed": 19,
+    "incomplete": 5,
+    "model": "mimo-v2.6-flash",
+    "gradingProtocolVersion": "2.0-NATIVE_FIXTURE_TEST_EXECUTION",
+    "taskSetVersion": "3.1",
+    "lastLog": "{\"event\":\"CASE_START\",\"runKey\":\"20261007T162508744Z-b72917fe/2-code-normalize-001-ordinary-codex\",\"mode\":\"CONTROLLED\",\"atMs\":1791392352464}",
+    "originalCounts": {
+      "hmcodex": {
+        "completed": 10,
+        "succeeded": 6,
+        "failed": 4,
+        "timedOut": 0,
+        "actualCost": null,
+        "humanSavingsMinutes": null,
+        "note": "Partial original protocol 2.0 grades include the independently reproduced command-line false rejection. Do not use this partial count to claim comparative advantage."
+      },
+      "codex": {
+        "completed": 9,
+        "succeeded": 8,
+        "failed": 0,
+        "timedOut": 1,
+        "actualCost": null,
+        "humanSavingsMinutes": null,
+        "note": "Partial original protocol 2.0 grades include the independently reproduced command-line false rejection. Do not use this partial count to claim comparative advantage."
+      }
+    },
+    "rows": [
+      {
+        "iteration": 1,
+        "taskId": "inspect-readme-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 35427,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-inspect-readme-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "inspect-readme-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 25479,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-inspect-readme-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 1,
+        "taskId": "inspect-layout-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 31339,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-inspect-layout-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "inspect-layout-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 29267,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-inspect-layout-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 1,
+        "taskId": "recoverable-read-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 2,
+        "wallMs": 22456,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-recoverable-read-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "recoverable-read-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 3,
+        "wallMs": 95665,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-recoverable-read-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-normalize-001",
+        "condition": "ordinary-codex",
+        "status": "TIMED_OUT",
+        "failedChecks": [
+          "processCompleted",
+          "agentCompleted",
+          "correctAnswer",
+          "actualSuccessfulTest",
+          "workspaceScopeRespected"
+        ],
+        "toolCallCount": 10,
+        "wallMs": 300455,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-normalize-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-normalize-001",
+        "condition": "hmcodex-runtime",
+        "status": "FAILED",
+        "failedChecks": [
+          "actualSuccessfulTest",
+          "actualInjectedFailure"
+        ],
+        "toolCallCount": 16,
+        "wallMs": 268722,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-normalize-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-syntax-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 10,
+        "wallMs": 296517,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-syntax-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-syntax-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 4,
+        "wallMs": 58940,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-syntax-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-feature-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 5,
+        "wallMs": 187943,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-feature-001-ordinary-codex"
+      },
+      {
+        "iteration": 1,
+        "taskId": "code-feature-001",
+        "condition": "hmcodex-runtime",
+        "status": "FAILED",
+        "failedChecks": [
+          "processCompleted",
+          "agentCompleted",
+          "actualInjectedFailure"
+        ],
+        "toolCallCount": 10,
+        "wallMs": 273135,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\1-code-feature-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-readme-001",
+        "condition": "hmcodex-runtime",
+        "status": "FAILED",
+        "failedChecks": [
+          "processCompleted",
+          "agentCompleted",
+          "correctAnswer"
+        ],
+        "toolCallCount": 2,
+        "wallMs": 78382,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-inspect-readme-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-readme-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 15940,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-inspect-readme-001-ordinary-codex"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-layout-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 2,
+        "wallMs": 99540,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-inspect-layout-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 2,
+        "taskId": "inspect-layout-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 1,
+        "wallMs": 37116,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-inspect-layout-001-ordinary-codex"
+      },
+      {
+        "iteration": 2,
+        "taskId": "recoverable-read-001",
+        "condition": "hmcodex-runtime",
+        "status": "FAILED",
+        "failedChecks": [
+          "processCompleted",
+          "agentCompleted",
+          "correctAnswer"
+        ],
+        "toolCallCount": 3,
+        "wallMs": 93783,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-recoverable-read-001-hmcodex-runtime"
+      },
+      {
+        "iteration": 2,
+        "taskId": "recoverable-read-001",
+        "condition": "ordinary-codex",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 2,
+        "wallMs": 29365,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-recoverable-read-001-ordinary-codex"
+      },
+      {
+        "iteration": 2,
+        "taskId": "code-normalize-001",
+        "condition": "hmcodex-runtime",
+        "status": "SUCCEEDED",
+        "failedChecks": [],
+        "toolCallCount": 3,
+        "wallMs": 40199,
+        "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T162508744Z-b72917fe\\2-code-normalize-001-hmcodex-runtime"
+      }
+    ]
+  },
+  "newFindings": [
+    {
+      "issue": "Benchmark and host process-intent recognition omit a supported complete Node command string.",
+      "diagnosis": "GOAL_COMMAND_LINE_ACCEPTANCE_DRAFT_2026-10-08.json",
+      "draftNativeProof": "GOAL_NODE_COMMAND_FIX_DRAFT_2026-10-08.log",
+      "testsPassed": 2,
+      "productionMerged": false
+    },
+    {
+      "issue": "Jev verification transport timeouts trigger executor recovery even after deterministic checks pass; extra executor work can introduce a capability failure.",
+      "actualCases": [
+        "2-inspect-readme-001-hmcodex-runtime",
+        "1-code-feature-001-hmcodex-runtime"
+      ]
+    },
+    {
+      "issue": "Verification sends the same complete evidence twice.",
+      "diagnosticProbe": "GOAL_JEV_VERIFICATION_PAYLOAD_PROBE_2026-10-08.json",
+      "actualDiagnosticDecisions": [
+        {
+          "condition": "BASELINE_DUPLICATED",
+          "stateIndex": 1,
+          "choice": "PASS",
+          "inputTokens": 5317,
+          "wallMs": 1290
+        },
+        {
+          "condition": "SINGLE_COPY",
+          "stateIndex": 1,
+          "choice": "PASS",
+          "inputTokens": 3455,
+          "wallMs": 464
+        },
+        {
+          "condition": "SINGLE_COPY",
+          "stateIndex": 2,
+          "choice": "PASS",
+          "inputTokens": 3886,
+          "wallMs": 366
+        },
+        {
+          "condition": "BASELINE_DUPLICATED",
+          "stateIndex": 2,
+          "choice": "PASS",
+          "inputTokens": 6177,
+          "wallMs": 561
+        }
+      ],
+      "baselineInputTokens": 11494,
+      "compactInputTokens": 7341,
+      "inputReductionFraction": 0.36131894901687833,
+      "limitation": "All four archived-state requests returned PASS. Small decision probe only; not end-to-end speed, recovery or cost advantage."
+    },
+    {
+      "issue": "Real upgrade tests skipped the prescribed initial failure, then selected active-model; Pro was never called.",
+      "acceptance": "FAILED",
+      "correctionNeeded": "Record and enforce actual preset failure evidence; route from real bound model metadata and observed failure facts."
+    }
+  ],
+  "nextRequired": [
+    "Complete and preserve the full current-source 24-run comparison.",
+    "Merge and verify exact executor command normalization and native digest-bound grading after the frozen batch ends.",
+    "Remove duplicate Jev verification evidence and retry transport-only verification without replaying executor tools; retain real FAIL/BLOCK and uncertain results.",
+    "Obtain actual recorded failure → recovery → distinct bound strong-model call → verified success with real Jev decisions.",
+    "Run same-source Jev off/on ablation and matched client comparison; use complete provider usage, real billing and human activity evidence for economic claims."
+  ],
+  "limitations": [
+    "Tests passing is not a completion percentage for an unbounded product.",
+    "Current comparative batch is incomplete and contains a known grader defect; no overall product advantage is established.",
+    "Published subscription quota/API price estimates are not invoices; headless zero interaction is not saved human time."
+  ],
+  "goalStatus": "active"
+}

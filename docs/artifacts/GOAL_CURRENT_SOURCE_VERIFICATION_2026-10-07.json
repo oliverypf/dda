@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "recordedAt": "2026-10-07T09:55:33.751Z",
+  "runtimeSourceSha256": "e3f05eae3507f516cbffadb31814763f04ee4a69f5d3813f0fb3033f76dbb2ea",
+  "runtimeSourceVerifiedFiles": 100,
+  "sourceDifferences": [],
+  "desktopExecutableSha256": "936b5ebcdb03c15ded97f43e1d4abd3ab2480fbbe780bbb6f60238b0e25d9580",
+  "evidence": {
+    "runtimeRegression": "GOAL_JEV_FINAL_FULL_RUNTIME_2026-10-07.log",
+    "scriptRegression": "GOAL_FINAL_ALL_SCRIPTS_WITH_BILLING_2026-10-07.log",
+    "nativeValidation": "AGENT_GOAL_JEV_MERGED_VALIDATION_2026-10-07.json",
+    "liveJev": "AGENT_GOAL_STAGED_LIVE_JEV_VERIFIER_EVIDENCE_2026-10-07.json",
+    "finalPairedBatch": "20261007T092219874Z-08e88e14"
+  },
+  "billingAvailability": {
+    "actualInvoice": null,
+    "actualHumanActivity": null,
+    "questionPending": true,
+    "browserAttempts": 2,
+    "browserResult": "BROWSER_EXTENSION_CONNECTION_FAILED",
+    "limitation": "No actual billing or human savings claim is supported."
+  }
+}

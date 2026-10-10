@@ -1,0 +1,36 @@
+✔ side-effect tools are registered behind the safety monitor and fail closed by default (33.102656ms)
+✔ explicit capability and command approval issues one lease per tool invocation (407.170782ms)
+✔ executor effect starts only after the lease-start durability callback resolves (4.001875ms)
+✔ a failed lease-start durability callback prevents the executor effect (2.178907ms)
+✔ denied approval creates no lease and executes no effect (4.215468ms)
+✔ lease provider failures invoke cleanup without replacing the original error (2.624218ms)
+✔ lease start failures clean up before the effect runs (2.716563ms)
+✔ cleanup failures do not replace the original handler failure (2.117813ms)
+✔ executor failures invoke lease cleanup and preserve the original error (4.637813ms)
+✔ workspace mutation lock is released after each controlled tool call (567.117968ms)
+✔ a long model answer retains literal reported values after the real 500-character boundary (8.533281ms)
+✔ native process status and the end of a large test log survive without malformed JSON (1.324063ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (0.927031ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (6.544531ms)
+✔ tool policy distinguishes configured capability from a required host execution check (3.207032ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (2.189219ms)
+✔ decision observations keep only bounded terminal host facts (5.718125ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (5065.054531ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (48.5225ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (11.686094ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (9.645313ms)
+✔ runs a model-requested tool and sends its result into the next round (10.49125ms)
+✔ READ_ONLY requests expose only read-only tools (8.955468ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (9.218281ms)
+✔ stops repeated workspace requests after four rounds without new evidence (17.282968ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (8.797813ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (13.579687ms)
+✔ the model sees only lease-eligible effects; hidden effects still fail closed when guessed (424.218593ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5827.339687

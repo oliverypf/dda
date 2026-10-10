@@ -1,0 +1,303 @@
+{
+  "schemaVersion": "3.0",
+  "batchId": "20261007T114245110Z-87c8c135",
+  "generatedAt": "2026-10-07T11:46:12.278Z",
+  "taskSetVersion": "3.1",
+  "suite": "all",
+  "repeat": 1,
+  "taskSet": [
+    {
+      "taskId": "recoverable-read-001",
+      "prompt": "The recovery test requires an observable failed tool call. First invoke a tool that ONLY reads missing-evidence.txt and lets its missing-file error occur. Do not check existence, catch the error, or combine a fallback command in this first call. Only AFTER receiving that tool error, invoke a separate tool to read README.md and report its evidence marker.",
+      "acceptance": "marker",
+      "recoverable": true
+    },
+    {
+      "taskId": "code-syntax-001",
+      "suite": "engineering",
+      "mode": "CONTROLLED",
+      "acceptance": "code",
+      "recoverable": true,
+      "target": "tags.mjs",
+      "initialCommand": [
+        "--check",
+        "tags.mjs"
+      ],
+      "prompt": "First run node --check tags.mjs in a separate tool call to observe the syntax failure. Then repair only tags.mjs. parseTags must accept a comma-separated string, trim/lowercase each tag, drop empty tags, remove duplicates while keeping their first occurrence order, and return [] for null/undefined. Preserve the export and all other files, including tests. Run node --check tags.mjs and node --test --test-isolation=none and report their real results.",
+      "initial": "export const parseTags = value => { return String(value).split(',').map(item => item.trim(); };\n",
+      "tests": "import test from 'node:test'; import assert from 'node:assert/strict'; import {parseTags} from './tags.mjs'; test('parses tags', () => { assert.deepEqual(parseTags('a, b, a'), ['a','b']); assert.deepEqual(parseTags(null), []); });\n",
+      "solution": "export const parseTags = value => value == null ? [] : [...new Set(String(value).split(',').map(item => item.trim().toLowerCase()).filter(Boolean))];\n",
+      "assertions": "assert.deepEqual(m.parseTags(null), []); assert.deepEqual(m.parseTags(undefined), []); assert.deepEqual(m.parseTags('  A, b, a,, B, c '), ['a','b','c']); assert.deepEqual(m.parseTags(' , , '), []); assert.deepEqual(m.parseTags('z,a,z,b'), ['z','a','b']);",
+      "checks": 5
+    }
+  ],
+  "codexVersion": "codex-cli 0.155.1",
+  "runtimeRoot": "C:\\Users\\User\\hmCodex-local\\runtime",
+  "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+  "testHarnessSourceSha256": "092eb712137cfa8f68dd54348c9a253e203281130d7e7e457dd95c595538c653",
+  "model": "mimo-v2.6-pro",
+  "mode": "live",
+  "decisionMode": "LIVE_JEV_HMCODEX_ONLY",
+  "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T114245110Z-87c8c135",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 1,
+      "successRate": 0.5,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 12,
+      "modelCalls": 16,
+      "usageCoverage": {
+        "reportedRequests": 15,
+        "totalRequests": 16,
+        "knownTokenSubtotal": 41470,
+        "pricedRequests": 15,
+        "knownPricedSubtotal": 0.006155510999999999
+      },
+      "toolCallCount": 10,
+      "wallMs": 196341
+    }
+  },
+  "rows": [
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T114245110Z-87c8c135",
+      "runKey": "20261007T114245110Z-87c8c135/1-recoverable-read-001-hmcodex-runtime",
+      "startedAtMs": 1791373368683,
+      "endedAtMs": 1791373459925,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "acceptance": "marker",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": true,
+      "errorAttempts": 1,
+      "inputTokens": null,
+      "outputTokens": null,
+      "totalTokens": null,
+      "modelCalls": 6,
+      "usageCoverage": {
+        "reportedRequests": 5,
+        "totalRequests": 6,
+        "knownTokenSubtotal": 9217,
+        "pricedRequests": 5,
+        "knownPricedSubtotal": 0.002685777
+      },
+      "cachedInputTokens": null,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": null,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 10,
+        "succeededCalls": 9,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 11536.074218000009,
+        "latencyCoverage": {
+          "reportedRequests": 10,
+          "knownWallMsSubtotal": 11536.074218000009
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "a49df48a-5d20-4124-82c4-3788b008c5d9",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 3,
+      "toolCallCount": 3,
+      "wallMs": 88462,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "a6c25aabd0d9762dcc52e844b1967c11455bf76fc67837658884e3f4345f51b6",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T114245110Z-87c8c135\\1-recoverable-read-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T11:44:19.927Z"
+    },
+    {
+      "schemaVersion": "3.0",
+      "batchId": "20261007T114245110Z-87c8c135",
+      "runKey": "20261007T114245110Z-87c8c135/1-code-syntax-001-hmcodex-runtime",
+      "startedAtMs": 1791373460088,
+      "endedAtMs": 1791373572241,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "code-syntax-001",
+      "acceptance": "code",
+      "model": "mimo-v2.6-pro",
+      "evidenceClass": "ACTUAL_CLIENTS_ACTUAL_MODEL",
+      "status": "FAILED",
+      "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+      "firstAttemptStatus": "FAILED",
+      "recoveryOpportunity": true,
+      "recovered": false,
+      "errorAttempts": 1,
+      "inputTokens": 31016,
+      "outputTokens": 1237,
+      "totalTokens": 32253,
+      "modelCalls": 10,
+      "usageCoverage": {
+        "reportedRequests": 10,
+        "totalRequests": 10,
+        "knownTokenSubtotal": 32253,
+        "pricedRequests": 10,
+        "knownPricedSubtotal": 0.0034697339999999995
+      },
+      "cachedInputTokens": 25728,
+      "actualCost": null,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0.0034697339999999995,
+      "costCurrency": "USD",
+      "costScope": "LANGUAGE_MODEL_ONLY; JEV_CHARGE_UNKNOWN",
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 12,
+        "succeededCalls": 9,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 24675.081248999966,
+        "latencyCoverage": {
+          "reportedRequests": 12,
+          "knownWallMsSubtotal": 24675.081248999966
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      },
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "pricing": {
+        "schemaVersion": "1.0",
+        "model": "mimo-v2.6-pro",
+        "source": "https://opencode.ai/docs/go/#usage-limits",
+        "checkedAt": "2026-10-07T06:17:33.449Z",
+        "currency": "USD",
+        "basis": "SUBSCRIPTION_QUOTA",
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87,
+        "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+      },
+      "providerSessionId": "e7befb3d-1d2c-46e6-8cd2-1b91355e5274",
+      "tokenMeasurement": "UPSTREAM_PROVIDER_USAGE",
+      "modelIdentityMeasurement": "REQUEST_AND_SUCCESSFUL_UPSTREAM_RESPONSE",
+      "costMeasurement": "PUBLISHED_RATES_WITH_CACHE; ACTUAL_INVOICE_UNKNOWN",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 9,
+      "toolCallCount": 7,
+      "wallMs": 107879,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": false,
+        "checks": {
+          "processCompleted": false,
+          "agentCompleted": false,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": false,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "886e7f0791bbafc4c53286caee5029e23f4dcdad554061845c707918d9552247",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T114245110Z-87c8c135\\1-code-syntax-001-hmcodex-runtime",
+      "generatedAt": "2026-10-07T11:46:12.243Z"
+    }
+  ],
+  "caveats": [
+    "This is a single-client diagnostic, not a paired comparison. Other batches cannot supply its control condition.",
+    "Selected clients use the configured actual upstream model through the shared protocol adapter. Missing usage or billing stays UNKNOWN.",
+    "hmCodex uses the real Jev service in its enabled condition; raw decision usage and latency are recorded separately. Priced usage covers the language model only; Jev cash charges remain unknown.",
+    "Published quota rates include separate cached-input prices. Quota consumption is not an invoice or per-task cash charge. Unknown billing stays unknown.",
+    "No humans are connected to this headless run; zero intervention time does not prove human time savings.",
+    "Plugins are disabled in the Codex control. Inspection is read-only; engineering tasks permit workspace edits with approved file/test capabilities. Both clients start from identical independent workspaces.",
+    "Fixed engineering tasks use independent behavior assertions, syntax and test commands, and immutable test-file checks. Larger samples and actual billing/manual-time evidence remain required for product ROI claims."
+  ],
+  "contentAudit": {
+    "passed": false,
+    "cases": 2,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T114245110Z-87c8c135\\content-audit.json"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "date":"2026-10-03",
+  "kind":"direct_model_vs_hmcodex_batch",
+  "sampleSize":5,
+  "fixture":"same local DeepSeek-compatible SSE model and same five prompts",
+  "conditions":{
+    "model-baseline":{"runs":5,"successes":5,"meanWallMs":16.4,"wallMs":[55,8,6,6,7],"inputTokensPerRun":12,"outputTokensPerRun":4,"totalTokens":80,"toolRoundsPerRun":0,"toolCallsPerRun":0},
+    "hmcodex":{"runs":5,"successes":5,"meanWallMs":4941.4,"wallMs":[4851,4842,5026,5122,4866],"inputTokensPerRun":12,"outputTokensPerRun":4,"totalTokens":80,"toolRoundsPerRun":0,"toolCallsPerRun":0}
+  },
+  "delta":{"meanWallMs":4925,"relativeToDirect":300.3293,"inputTokensDelta":0,"outputTokensDelta":0,"toolRoundsDelta":0},
+  "cost":{"providerBilling":{"modelBaseline":0,"hmcodex":0,"currency":"USD","basis":"local in-process fixture; no external provider billing request"},"computeCost":"UNKNOWN","productionProviderCost":"UNKNOWN","reason":"local fixture has no CPU price model and is not a production endpoint"},
+  "validity":"VALID_LOCAL_FIXTURE_BATCH",
+  "caveats":["direct model baseline is a raw provider call, not the full ordinary Codex product","same deterministic fixture returns exactly 12 input and 4 output tokens per request","hmcodex wall time includes CLI startup, persistence, decision/event bookkeeping and dashboard readback","does not measure production model behavior or prove Pi-style cost savings"]
+}

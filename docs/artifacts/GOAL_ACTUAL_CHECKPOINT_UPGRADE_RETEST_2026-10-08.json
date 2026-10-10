@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-10-07T17:37:26.437Z",
+  "method": "Real Flash task with one recovery attempt to preserve its observed initial failure, then the existing explicit user-model override and checkpoint-resume CLI with real Pro. Same read-only workspace and prompt, real untouched Jev answers. No provider response is fabricated.",
+  "runtimeRoot": "C:\\Users\\User\\hmCodex-local\\runtime",
+  "runtimeSourceSha256": "e9dbff468c8c383d987ca710e685381c0f69754562cc877ae0685810a070fef2",
+  "currentWorkspaceBuild": true,
+  "manualModelUpgrade": true,
+  "automaticJevStrongSelectionProven": false,
+  "passed": false,
+  "checks": {
+    "realInitialFlash": true,
+    "initialTaskFailed": true,
+    "actualInitialMissingRead": true,
+    "resumedSameThread": true,
+    "checkpointRestored": true,
+    "actualProExecutor": true,
+    "successfulRead": true,
+    "finalSuccess": false,
+    "actualJevUsed": true
+  },
+  "phases": [
+    {
+      "id": "initial-failed-flash",
+      "result": {
+        "code": 1,
+        "timedOut": false,
+        "wallMs": 27211
+      },
+      "ok": false,
+      "error": "PLAN_STEP_FAILED:execute:CONTINUE",
+      "runId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+      "models": [
+        "mimo-v2.6-flash",
+        "mimo-v2.6-flash"
+      ],
+      "jevCalls": 3
+    },
+    {
+      "id": "resume-with-bound-pro",
+      "result": {
+        "code": 1,
+        "timedOut": false,
+        "wallMs": 34323
+      },
+      "ok": false,
+      "error": "PLAN_STEP_FAILED:execute:UNCERTAIN",
+      "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "models": [
+        "mimo-v2.6-pro",
+        "mimo-v2.6-pro"
+      ],
+      "jevCalls": 5
+    }
+  ],
+  "limitation": "One preset checkpoint/explicit-upgrade experiment is a flow test. Initial recovery budget1 versus retry budget2 is intentional fixture stimulation; it does not prove that Pro is needed, better, cheaper or selected automatically by Jev.",
+  "actualCost": null,
+  "humanSavingsMinutes": null
+}

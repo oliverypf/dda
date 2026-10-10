@@ -1,0 +1,11 @@
+✔ explicit model IDs reuse the configured provider route and distinct identities (3.009531ms)
+✔ configured role aliases resolve their real registered model and provider (0.361093ms)
+✔ missing upgrade target, aliasing the same model and unsupported protocol cannot pass an upgrade test (1.117812ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 466.336875

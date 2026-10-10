@@ -1,0 +1,21 @@
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791388226388}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791388246928}
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-inspect-layout-001-ordinary-codex","mode":"READ_ONLY","atMs":1791388272324}
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-inspect-layout-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791388298162}
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=5 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-recoverable-read-001-ordinary-codex","mode":"READ_ONLY","atMs":1791388412732}
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791388441013}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791388542920}
+ordinary-codex code-normalize-001 TIMED_OUT tools=1 errors=1
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791388843582}
+hmcodex-runtime code-normalize-001 FAILED tools=0 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791388857579}
+ordinary-codex code-syntax-001 FAILED tools=0 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791388935389}
+hmcodex-runtime code-syntax-001 FAILED tools=0 errors=0
+{"event":"CASE_START","runKey":"20261007T155025244Z-90c4fb48/1-code-feature-001-ordinary-codex","mode":"CONTROLLED","atMs":1791389074455}

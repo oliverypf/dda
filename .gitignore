@@ -57,6 +57,13 @@ target-unlimited/
 # ---- Decision-Driven Agent runtime evidence ----
 /.decision/
 jev.config.json
+# Raw per-run harness state (model requests, trajectory DBs, workspace copies).
+# Curated evidence belongs in the dated docs/artifacts/<name>-<date> bundles instead.
+/docs/artifacts/agent-goal-runs/
+# Self-hosted VPS migration bundles carry secrets/ and provider auth files; keep
+# them out of the public repo and transfer them out of band.
+/toeic-vps-migration-transfer-*.tar.gz
+/toeic-vps-migration-*/
 
 # ---- Local decision/debug scratch ----
 /.codex-tmp/

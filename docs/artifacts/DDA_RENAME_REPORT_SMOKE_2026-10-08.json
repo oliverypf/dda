@@ -1,0 +1,154 @@
+{
+  "schemaVersion": "3.0",
+  "gradingProtocolVersion": "2.1-NATIVE_COMMAND_DIGEST_AND_FIXTURE_TEST",
+  "batchId": "20261008T010725944Z-4454450d",
+  "generatedAt": "2026-10-08T01:07:36.519Z",
+  "taskSetVersion": "3.1",
+  "suite": "all",
+  "repeat": 1,
+  "taskSet": [
+    {
+      "taskId": "inspect-readme-001",
+      "prompt": "Read README.md using a tool and report its evidence marker.",
+      "acceptance": "marker",
+      "recoverable": false
+    }
+  ],
+  "codexVersion": "codex-cli 0.155.1",
+  "runtimeRoot": "C:\\Users\\User\\hmCodex-local\\runtime",
+  "runtimeSourceSha256": "4c8a7d6baaf0ba221dd541c11947b4806ef13e31dd23f1bbd8bb7cbe56d22e0f",
+  "testHarnessSourceSha256": "a233ad4fe16d4aeb7b21aec7f4df28986019c78ce1a94da1c1e81bc29467de8b",
+  "model": "evidence-fixture",
+  "mode": "fixture",
+  "decisionMode": "OFF",
+  "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261008T010725944Z-4454450d",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 1,
+      "successes": 1,
+      "successRate": 1,
+      "recoveryOpportunities": 0,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": null,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 48,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "pricingBasis": null,
+      "toolRounds": 1,
+      "modelCalls": 2,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 48,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "toolCallCount": 1,
+      "wallMs": 8555
+    }
+  },
+  "rows": [
+    {
+      "schemaVersion": "3.0",
+      "gradingProtocolVersion": "2.1-NATIVE_COMMAND_DIGEST_AND_FIXTURE_TEST",
+      "batchId": "20261008T010725944Z-4454450d",
+      "runKey": "20261008T010725944Z-4454450d/1-inspect-readme-001-hmcodex-runtime",
+      "startedAtMs": 1791421646943,
+      "endedAtMs": 1791421656493,
+      "iteration": 1,
+      "taskSetVersion": "3.1",
+      "condition": "hmcodex-runtime",
+      "client": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "acceptance": "marker",
+      "model": "evidence-fixture",
+      "evidenceClass": "ACTUAL_CLIENTS_LOCAL_MODEL_FIXTURE",
+      "status": "SUCCEEDED",
+      "runtimeSourceSha256": "4c8a7d6baaf0ba221dd541c11947b4806ef13e31dd23f1bbd8bb7cbe56d22e0f",
+      "firstAttemptStatus": "SUCCEEDED",
+      "recoveryOpportunity": false,
+      "recovered": false,
+      "errorAttempts": 0,
+      "inputTokens": 32,
+      "outputTokens": 16,
+      "totalTokens": 48,
+      "modelCalls": 2,
+      "usageCoverage": {
+        "reportedRequests": 2,
+        "totalRequests": 2,
+        "knownTokenSubtotal": 48,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "cachedInputTokens": 0,
+      "actualCost": 0,
+      "billing": {
+        "amount": null,
+        "partialAmount": null,
+        "coverage": "UNKNOWN",
+        "measurement": "NO_INVOICE_SOURCE",
+        "sources": []
+      },
+      "estimatedCost": 0,
+      "costCurrency": "USD",
+      "costScope": "EXTERNAL_PROVIDER_ONLY",
+      "decisionProvider": {
+        "mode": "OFF",
+        "calls": 0
+      },
+      "pricingBasis": null,
+      "pricing": null,
+      "providerSessionId": null,
+      "tokenMeasurement": "SYNTHETIC_FIXTURE_USAGE",
+      "modelIdentityMeasurement": "LOCAL_FIXTURE_REQUEST",
+      "costMeasurement": "LOCAL_SERVICE_NO_EXTERNAL_INFERENCE",
+      "manualInterventionMinutes": 0,
+      "manualMeasurement": "NO_HUMAN_CHANNEL",
+      "interventionMeasurement": {
+        "minutes": 0,
+        "measurement": "NO_HUMAN_CHANNEL",
+        "intervals": [],
+        "automationEvents": 0,
+        "events": 0
+      },
+      "interventions": [],
+      "toolRounds": 1,
+      "toolCallCount": 1,
+      "wallMs": 8555,
+      "timeoutOutputTruncated": false,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "modelsMatch": true,
+      "initialDigest": "f398758ae24a4c07833c4850e103073385fc225817dec9521ce09c3ec78c183e",
+      "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261008T010725944Z-4454450d\\1-inspect-readme-001-hmcodex-runtime",
+      "generatedAt": "2026-10-08T01:07:36.494Z"
+    }
+  ],
+  "caveats": [
+    "This is a single-client diagnostic, not a paired comparison. Other batches cannot supply its control condition.",
+    "The model and token usage are deterministic local fixtures; this validates the experiment, not production savings.",
+    "Jev is explicitly disabled for this same-model client comparison.",
+    "Provider cost is zero only because no external inference is used; local compute is excluded.",
+    "No humans are connected to this headless run; zero intervention time does not prove human time savings.",
+    "Plugins are disabled in the Codex control. Inspection is read-only; engineering tasks permit workspace edits with approved file/test capabilities. Both clients start from identical independent workspaces.",
+    "Fixed engineering tasks use independent behavior assertions, syntax and test commands, and immutable test-file checks. Larger samples and actual billing/manual-time evidence remain required for product ROI claims."
+  ],
+  "contentAudit": {
+    "passed": true,
+    "cases": 1,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261008T010725944Z-4454450d\\content-audit.json"
+  }
+}

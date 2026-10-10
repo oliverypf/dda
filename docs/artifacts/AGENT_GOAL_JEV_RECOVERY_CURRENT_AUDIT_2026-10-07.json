@@ -1,0 +1,372 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T12:49:32.380Z",
+  "goalStatus": "active",
+  "previousGoalTurnClassification": "progress",
+  "runtimeSourceSha256": "a1489aa65ff8bfbdf24deba355bba7d2479a113f492737a0db38d065a75a4c2a",
+  "currentSourceVerified": true,
+  "sourceReport": "AGENT_GOAL_JEV_EDIT_CONTEXT_LIVE_2026-10-07.json",
+  "batchId": "20261007T124402967Z-d697bf7f",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 2,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 25937,
+      "actualCost": null,
+      "estimatedCost": 0.004734453,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 7,
+      "modelCalls": 9,
+      "usageCoverage": {
+        "reportedRequests": 9,
+        "totalRequests": 9,
+        "knownTokenSubtotal": 25937,
+        "pricedRequests": 9,
+        "knownPricedSubtotal": 0.004734453
+      },
+      "toolCallCount": 8,
+      "wallMs": 118945
+    }
+  },
+  "contentAudit": {
+    "passed": true,
+    "cases": 2,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T124402967Z-d697bf7f\\content-audit.json"
+  },
+  "rows": [
+    {
+      "iteration": 1,
+      "status": "SUCCEEDED",
+      "seededSyntaxFailureObserved": true,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "claimChecks": [
+        {
+          "sequence": 1,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 1,
+          "id": "proposed-tool-input",
+          "length": 162,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "host-proposed-tool-policy",
+          "length": 233,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "proposed-tool-input",
+          "length": 475,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "proposed-tool-input",
+          "length": 162,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "verified-tool-result-gate-1-2",
+          "length": 495,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "proposed-tool-input",
+          "length": 170,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-2",
+          "length": 495,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-3",
+          "length": 104,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-2",
+          "length": 495,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-3",
+          "length": 104,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-4",
+          "length": 240,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "model-answer-1",
+          "length": 489,
+          "validJson": true
+        }
+      ],
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 5,
+        "succeededCalls": 5,
+        "usageComplete": true,
+        "inputTokens": 28367,
+        "outputTokens": 264,
+        "estimatedCost": 0.001191414,
+        "wallMs": 3308.738281,
+        "latencyCoverage": {
+          "reportedRequests": 5,
+          "knownWallMsSubtotal": 3308.738281
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    },
+    {
+      "iteration": 2,
+      "status": "SUCCEEDED",
+      "seededSyntaxFailureObserved": true,
+      "grade": {
+        "passed": true,
+        "checks": {
+          "processCompleted": true,
+          "agentCompleted": true,
+          "correctAnswer": true,
+          "actualSuccessfulTool": true,
+          "actualSuccessfulTest": true,
+          "actualInjectedFailure": true,
+          "successfulToolAfterFailure": true,
+          "workspaceScopeRespected": true
+        }
+      },
+      "claimChecks": [
+        {
+          "sequence": 1,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 1,
+          "id": "proposed-tool-input",
+          "length": 162,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "host-proposed-tool-policy",
+          "length": 233,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "proposed-tool-input",
+          "length": 495,
+          "validJson": true
+        },
+        {
+          "sequence": 2,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "proposed-tool-input",
+          "length": 162,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 3,
+          "id": "verified-tool-result-gate-1-2",
+          "length": 342,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "host-proposed-tool-policy",
+          "length": 271,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "proposed-tool-input",
+          "length": 170,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-2",
+          "length": 342,
+          "validJson": true
+        },
+        {
+          "sequence": 4,
+          "id": "verified-tool-result-gate-1-3",
+          "length": 104,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-1",
+          "length": 488,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-2",
+          "length": 342,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-3",
+          "length": 104,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "verified-tool-result-1-4",
+          "length": 240,
+          "validJson": true
+        },
+        {
+          "sequence": 5,
+          "id": "model-answer-1",
+          "length": 495,
+          "validJson": true
+        }
+      ],
+      "decisionProvider": {
+        "mode": "LIVE_JEV",
+        "calls": 5,
+        "succeededCalls": 4,
+        "usageComplete": false,
+        "inputTokens": null,
+        "outputTokens": null,
+        "estimatedCost": null,
+        "wallMs": 9028.549375999988,
+        "latencyCoverage": {
+          "reportedRequests": 5,
+          "knownWallMsSubtotal": 9028.549375999988
+        },
+        "pricingBasis": "API_PRICE",
+        "actualCost": null,
+        "endpoint": "https://api.typesafe.ai/v1/systemone"
+      }
+    }
+  ],
+  "engineering": {
+    "targetedPassed": 39,
+    "fullRuntimePassed": 643,
+    "fullRuntimeFailed": 0,
+    "fullRuntimeSkipped": 1,
+    "goalScriptPassed": 27,
+    "windowsX64DebugBuildPassed": true,
+    "nativeDesktopPassed": 27,
+    "debugExecutableSha256": "ad908cd1951bcec433d16416236c9ed81d690d9cf72d6c8d15db841041a3de83"
+  },
+  "history": {
+    "jevOffOnSource": "a51d19434c4cdd6676ea4aa8a25019035307deaf486a63b831977410a7b62683",
+    "intentOnlyDiagnosticSource": "b289bab3d9f29bdbe212965ef1ec017a56597fac6a3c0c8d4f0b10106aaf98d1",
+    "intentOnlyDiagnosticSuccesses": 0,
+    "deferralDiagnosticSource": "f6f9b17ab1cfea3c9e9b8e40582027deed8335d482a061903242fbff4142a638",
+    "deferralDiagnosticSuccesses": 1
+  },
+  "limitations": [
+    "Two repeated instances of one task are a selective diagnostic, not the complete six-task suite or a fresh same-model Codex/on-off comparison.",
+    "Complete decision usage and actual cash billing remain unknown.",
+    "Headless zero human minutes do not prove saved human time."
+  ],
+  "pending": [
+    "Complete frozen-source actual client comparison and Jev ablation.",
+    "Real cheap/strong routing, wider repository tasks.",
+    "Complete language/decision invoices and actual human intervention evidence."
+  ]
+}

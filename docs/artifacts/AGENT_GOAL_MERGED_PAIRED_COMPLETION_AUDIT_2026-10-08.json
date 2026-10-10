@@ -1,0 +1,782 @@
+{
+  "generatedAt": "2026-10-07T20:26:07.682Z",
+  "runtimeSourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+  "complete": true,
+  "scope": "24-RUN_PAIRED_CLIENT_COMPARISON",
+  "regressions": {
+    "runtime": {
+      "passed": 673,
+      "failed": 0,
+      "optionalSkipped": 1
+    },
+    "goalScripts": {
+      "passed": 38,
+      "failed": 0
+    },
+    "nativeDesktop": {
+      "passed": 28,
+      "failed": 0,
+      "cssViewport": {
+        "width": 1280,
+        "height": 474
+      },
+      "nativeWindowChromeResized": false
+    },
+    "build": {
+      "succeeded": true
+    },
+    "evidence": [
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_FULL_RUNTIME_VALIDATED_2026-10-08.log",
+        "sha256": "ca077da49a91f400b31932bac44521b4d50af3f562e90a36f9d857bf57b22de8"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_SCRIPTS_VALIDATED_2026-10-08.log",
+        "sha256": "b87e1b794219dd8105adf8ce98c85cf5005adb43bf5da2af49aa60f153e52106"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_NATIVE_2026-10-08.log",
+        "sha256": "edde6dc044a317a821b1747cdc07bebe0bd23955a8a7cb791ea54918eb7b76d3"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_BUILD_2026-10-08.log",
+        "sha256": "ad0b9cb7f44df0052b8aba488b79884a657e8c1aa5f0e4e630906c5d19267e96"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_UPGRADE_2026-10-08.json",
+        "sha256": "ad249fd802027147df93578b41fd8446b3130a7abd8a6bf417adc472403644c9"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_AUTOMATIC_2026-10-08.json",
+        "sha256": "2df903b03218b150554831523ff22ae3488e56b5d47e692fef9b00aa2b5cfbad"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_NATIVE_2026-10-08.png",
+        "sha256": "ff5540ac7dd851d43e0de4adca4726cb844a69a6e2ec3576a561a654dbe44a0c"
+      }
+    ]
+  },
+  "recovery": [
+    {
+      "id": "checkpoint-continuation",
+      "status": "VERIFIED",
+      "scope": "Native desktop continuation and actual interrupted-process checkpoint recovery."
+    },
+    {
+      "id": "preset-failure-recovery-upgrade-jev",
+      "status": "VERIFIED_FLOW",
+      "manualUpgradePassed": true,
+      "realAutomaticRecoveryPassed": true,
+      "automaticStrongModelSelectionProven": false,
+      "scope": "Actual Flash failure; same-checkpoint explicit Pro success; separate real Jev automatic recovery succeeded on Flash."
+    }
+  ],
+  "comparisons": {
+    "paired": {
+      "report": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_PAIRED_2026-10-08.json",
+      "sha256": "cdbcbf82a545e70afd295acb97aba5cc09aa3b96709338a848377be41610120a",
+      "batchId": "20261007T193806644Z-bbef78c3",
+      "verifiedPairs": 12,
+      "acceptedSuccessesWithNativeContent": 19,
+      "pairs": [
+        {
+          "iteration": 1,
+          "taskId": "inspect-readme-001",
+          "initialDigest": "495093355ace68d15defc1905caae6ba8b85995f93b8662d5a06b22bea5447b8",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 1,
+          "taskId": "inspect-layout-001",
+          "initialDigest": "495093355ace68d15defc1905caae6ba8b85995f93b8662d5a06b22bea5447b8",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 1,
+          "taskId": "recoverable-read-001",
+          "initialDigest": "495093355ace68d15defc1905caae6ba8b85995f93b8662d5a06b22bea5447b8",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "FAILED"
+          }
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-normalize-001",
+          "initialDigest": "f881c8504864189a7f2651086b88676c0a03f6f18a5de4190ae3a3c51e158755",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-syntax-001",
+          "initialDigest": "6494777e99795689bc0644ffbfa3f311396216f964726dbfc4172c47b2084d39",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 1,
+          "taskId": "code-feature-001",
+          "initialDigest": "7b18abad1668ffe6a8080d3eba437c7bd853a37d9cdd09e41b80692532877f0e",
+          "outcomes": {
+            "ordinary-codex": "SUCCEEDED",
+            "hmcodex-runtime": "FAILED"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "inspect-readme-001",
+          "initialDigest": "8211f5c4b64b864378a9738f346482b5d287856354b95d6d241be94ca284ceee",
+          "outcomes": {
+            "hmcodex-runtime": "SUCCEEDED",
+            "ordinary-codex": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "inspect-layout-001",
+          "initialDigest": "8211f5c4b64b864378a9738f346482b5d287856354b95d6d241be94ca284ceee",
+          "outcomes": {
+            "hmcodex-runtime": "SUCCEEDED",
+            "ordinary-codex": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "recoverable-read-001",
+          "initialDigest": "8211f5c4b64b864378a9738f346482b5d287856354b95d6d241be94ca284ceee",
+          "outcomes": {
+            "hmcodex-runtime": "SUCCEEDED",
+            "ordinary-codex": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-normalize-001",
+          "initialDigest": "df6b6dedd8683e80bc18ed2e47e9f33d2ec269940c21b89c9c8e8f0fdfc5cc49",
+          "outcomes": {
+            "hmcodex-runtime": "SUCCEEDED",
+            "ordinary-codex": "TIMED_OUT"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-syntax-001",
+          "initialDigest": "d09be9a54e69e02ee5b8856052401cf23b4e2ba024da82a9d1476ab589f05fd3",
+          "outcomes": {
+            "hmcodex-runtime": "FAILED",
+            "ordinary-codex": "SUCCEEDED"
+          }
+        },
+        {
+          "iteration": 2,
+          "taskId": "code-feature-001",
+          "initialDigest": "f90752ab65a4cfa49492de14d599e860a36627e6f469253648024a67bc45a856",
+          "outcomes": {
+            "hmcodex-runtime": "FAILED",
+            "ordinary-codex": "SUCCEEDED"
+          }
+        }
+      ],
+      "allRowsSucceeded": false,
+      "rawAllCaseContentAuditPassed": false,
+      "contentAuditInterpretation": "A raw audit requires successful expected content for every assigned case. Failed cases remain failed; accepted successes are separately verified against actual native content.",
+      "conditions": {
+        "ordinary-codex": {
+          "runs": 12,
+          "successes": 11,
+          "successRate": 0.9166666666666666,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 7,
+          "recoverySuccessRate": 0.875,
+          "manualInterventionMinutes": 0,
+          "totalTokens": null,
+          "actualCost": null,
+          "estimatedCost": null,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 76,
+          "modelCalls": 96,
+          "usageCoverage": {
+            "reportedRequests": 87,
+            "totalRequests": 96,
+            "knownTokenSubtotal": 944352,
+            "pricedRequests": 87,
+            "knownPricedSubtotal": 0.018886403200000002
+          },
+          "toolCallCount": 75,
+          "wallMs": 1830512
+        },
+        "hmcodex-runtime": {
+          "runs": 12,
+          "successes": 8,
+          "successRate": 0.6666666666666666,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 4,
+          "recoverySuccessRate": 0.5,
+          "manualInterventionMinutes": 0,
+          "totalTokens": null,
+          "actualCost": null,
+          "estimatedCost": null,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 41,
+          "modelCalls": 57,
+          "usageCoverage": {
+            "reportedRequests": 55,
+            "totalRequests": 57,
+            "knownTokenSubtotal": 158441,
+            "pricedRequests": 55,
+            "knownPricedSubtotal": 0.008565972800000002
+          },
+          "toolCallCount": 42,
+          "wallMs": 675151
+        }
+      },
+      "failures": [
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-recoverable-read-001-hmcodex-runtime",
+          "taskId": "recoverable-read-001",
+          "condition": "hmcodex-runtime",
+          "status": "FAILED",
+          "error": "PLAN_STEP_FAILED:execute:UNCERTAIN",
+          "grade": {
+            "passed": false,
+            "checks": {
+              "processCompleted": false,
+              "agentCompleted": false,
+              "correctAnswer": false,
+              "actualSuccessfulTool": true,
+              "actualSuccessfulTest": true,
+              "actualInjectedFailure": true,
+              "successfulToolAfterFailure": true,
+              "workspaceScopeRespected": true
+            }
+          },
+          "verificationStatus": "UNCERTAIN",
+          "failureCodes": [],
+          "unknownOrFailedChecks": [
+            {
+              "id": "jev-behavior-judge",
+              "status": "UNKNOWN",
+              "message": "JEV_TIMEOUT",
+              "evidence": [
+                "verification-check-execute-2-1",
+                "verification-check-execute-2-2",
+                "verification-check-execute-2-3",
+                "verification-check-execute-2-4",
+                "verification-check-execute-2-5",
+                "verification-check-execute-2-6",
+                "verification-check-execute-2-7",
+                "verification-check-execute-2-8"
+              ]
+            }
+          ],
+          "independentCodeVerification": null,
+          "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T193806644Z-bbef78c3\\1-recoverable-read-001-hmcodex-runtime"
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-feature-001-hmcodex-runtime",
+          "taskId": "code-feature-001",
+          "condition": "hmcodex-runtime",
+          "status": "FAILED",
+          "error": "PLAN_STEP_FAILED:execute:FAIL",
+          "grade": {
+            "passed": false,
+            "checks": {
+              "processCompleted": false,
+              "agentCompleted": false,
+              "correctAnswer": true,
+              "actualSuccessfulTool": true,
+              "actualSuccessfulTest": false,
+              "actualInjectedFailure": true,
+              "successfulToolAfterFailure": true,
+              "workspaceScopeRespected": true
+            }
+          },
+          "verificationStatus": "FAIL",
+          "failureCodes": [
+            "JEV_BEHAVIOR_REJECTED"
+          ],
+          "unknownOrFailedChecks": [
+            {
+              "id": "actions.progress",
+              "status": "UNKNOWN",
+              "message": "1 个动作返回可恢复工具错误，允许模型换路径重试",
+              "evidence": [
+                "action:0:30a83d62f999feec",
+                "action:1:412ed945fb2b6d77",
+                "action:2:b76a7154c5aaf840",
+                "action:3:20f70031c5a51e63",
+                "action:4:656127a4d473daf4",
+                "action:5:30a83d62f999feec",
+                "action:6:15a8d8acd2c2245a",
+                "action:7:30a83d62f999feec"
+              ]
+            },
+            {
+              "id": "jev-behavior-judge",
+              "status": "FAIL",
+              "message": "JEV_CHOICE",
+              "evidence": [
+                "verification-check-execute-1-1",
+                "verification-check-execute-1-2",
+                "verification-check-execute-1-3",
+                "verification-check-execute-1-4",
+                "verification-check-execute-1-5",
+                "verification-check-execute-1-6",
+                "verification-check-execute-1-7",
+                "verification-check-execute-1-8"
+              ]
+            }
+          ],
+          "independentCodeVerification": {
+            "passed": true,
+            "scopeChecks": {
+              "onlyExpectedFiles": true,
+              "onlyTargetChanged": true,
+              "targetChanged": true,
+              "ordinaryFiles": true
+            },
+            "syntax": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 386,
+              "startedAtMs": 1791403123113,
+              "endedAtMs": 1791403123499
+            },
+            "assertions": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "GOAL_INDEPENDENT_ASSERTIONS_PASSED:5\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 350,
+              "startedAtMs": 1791403123499,
+              "endedAtMs": 1791403123849
+            },
+            "visibleTests": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "✔ deduplicates names (5.173281ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 82.289844\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 480,
+              "startedAtMs": 1791403123849,
+              "endedAtMs": 1791403124329
+            },
+            "independentAssertions": 5
+          },
+          "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T193806644Z-bbef78c3\\1-code-feature-001-hmcodex-runtime"
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-normalize-001-ordinary-codex",
+          "taskId": "code-normalize-001",
+          "condition": "ordinary-codex",
+          "status": "TIMED_OUT",
+          "error": null,
+          "grade": {
+            "passed": false,
+            "checks": {
+              "processCompleted": false,
+              "agentCompleted": false,
+              "correctAnswer": false,
+              "actualSuccessfulTool": true,
+              "actualSuccessfulTest": false,
+              "actualInjectedFailure": true,
+              "successfulToolAfterFailure": true,
+              "workspaceScopeRespected": false
+            }
+          },
+          "verificationStatus": null,
+          "failureCodes": [],
+          "unknownOrFailedChecks": [],
+          "independentCodeVerification": {
+            "passed": false,
+            "scopeChecks": {
+              "onlyExpectedFiles": true,
+              "onlyTargetChanged": true,
+              "targetChanged": false,
+              "ordinaryFiles": true
+            }
+          },
+          "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T193806644Z-bbef78c3\\2-code-normalize-001-ordinary-codex"
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-syntax-001-hmcodex-runtime",
+          "taskId": "code-syntax-001",
+          "condition": "hmcodex-runtime",
+          "status": "FAILED",
+          "error": "PLAN_STEP_FAILED:execute:UNCERTAIN",
+          "grade": {
+            "passed": false,
+            "checks": {
+              "processCompleted": false,
+              "agentCompleted": false,
+              "correctAnswer": true,
+              "actualSuccessfulTool": true,
+              "actualSuccessfulTest": true,
+              "actualInjectedFailure": true,
+              "successfulToolAfterFailure": true,
+              "workspaceScopeRespected": true
+            }
+          },
+          "verificationStatus": "UNCERTAIN",
+          "failureCodes": [],
+          "unknownOrFailedChecks": [
+            {
+              "id": "jev-behavior-judge",
+              "status": "UNKNOWN",
+              "message": "JEV_TIMEOUT",
+              "evidence": [
+                "verification-check-execute-2-1",
+                "verification-check-execute-2-2",
+                "verification-check-execute-2-3",
+                "verification-check-execute-2-4",
+                "verification-check-execute-2-5",
+                "verification-check-execute-2-6",
+                "verification-check-execute-2-7",
+                "verification-check-execute-2-8"
+              ]
+            }
+          ],
+          "independentCodeVerification": {
+            "passed": true,
+            "scopeChecks": {
+              "onlyExpectedFiles": true,
+              "onlyTargetChanged": true,
+              "targetChanged": true,
+              "ordinaryFiles": true
+            },
+            "syntax": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 344,
+              "startedAtMs": 1791403813387,
+              "endedAtMs": 1791403813731
+            },
+            "assertions": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "GOAL_INDEPENDENT_ASSERTIONS_PASSED:5\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 411,
+              "startedAtMs": 1791403813731,
+              "endedAtMs": 1791403814142
+            },
+            "visibleTests": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "✔ parses tags (5.390469ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 74.574375\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 440,
+              "startedAtMs": 1791403814142,
+              "endedAtMs": 1791403814582
+            },
+            "independentAssertions": 5
+          },
+          "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T193806644Z-bbef78c3\\2-code-syntax-001-hmcodex-runtime"
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-feature-001-hmcodex-runtime",
+          "taskId": "code-feature-001",
+          "condition": "hmcodex-runtime",
+          "status": "FAILED",
+          "error": "PLAN_STEP_FAILED:execute:FAIL",
+          "grade": {
+            "passed": false,
+            "checks": {
+              "processCompleted": false,
+              "agentCompleted": false,
+              "correctAnswer": true,
+              "actualSuccessfulTool": true,
+              "actualSuccessfulTest": true,
+              "actualInjectedFailure": true,
+              "successfulToolAfterFailure": true,
+              "workspaceScopeRespected": true
+            }
+          },
+          "verificationStatus": "FAIL",
+          "failureCodes": [
+            "ACTION_FAILED",
+            "JEV_BEHAVIOR_REJECTED"
+          ],
+          "unknownOrFailedChecks": [
+            {
+              "id": "actions.progress",
+              "status": "FAIL",
+              "message": "1 个动作执行失败（SAFETY_WORKSPACE_PATH_FORBIDDEN）",
+              "evidence": [
+                "action:0:9d768b7d5097d9a2"
+              ]
+            },
+            {
+              "id": "jev-behavior-judge",
+              "status": "FAIL",
+              "message": "RULE_VERIFIER_FAILED",
+              "evidence": [
+                "verification-check-execute-1-1",
+                "verification-check-execute-1-2",
+                "verification-check-execute-1-3",
+                "verification-check-execute-1-4",
+                "verification-check-execute-1-5",
+                "verification-check-execute-1-6",
+                "verification-check-execute-1-7",
+                "verification-check-execute-1-8"
+              ]
+            }
+          ],
+          "independentCodeVerification": {
+            "passed": true,
+            "scopeChecks": {
+              "onlyExpectedFiles": true,
+              "onlyTargetChanged": true,
+              "targetChanged": true,
+              "ordinaryFiles": true
+            },
+            "syntax": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 313,
+              "startedAtMs": 1791404129547,
+              "endedAtMs": 1791404129860
+            },
+            "assertions": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "GOAL_INDEPENDENT_ASSERTIONS_PASSED:5\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 381,
+              "startedAtMs": 1791404129860,
+              "endedAtMs": 1791404130241
+            },
+            "visibleTests": {
+              "code": 0,
+              "timedOut": false,
+              "stdout": "✔ deduplicates names (6.382343ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 90.145937\n",
+              "stderr": "",
+              "outputTruncated": false,
+              "wallMs": 419,
+              "startedAtMs": 1791404130241,
+              "endedAtMs": 1791404130660
+            },
+            "independentAssertions": 5
+          },
+          "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T193806644Z-bbef78c3\\2-code-feature-001-hmcodex-runtime"
+        }
+      ],
+      "successResources": {
+        "ordinary-codex": {
+          "successes": 11,
+          "wallMs": 1530079,
+          "modelCalls": 84,
+          "toolRounds": 67,
+          "totalTokens": null,
+          "actualCost": null
+        },
+        "hmcodex-runtime": {
+          "successes": 8,
+          "wallMs": 337919,
+          "modelCalls": 27,
+          "toolRounds": 16,
+          "totalTokens": null,
+          "actualCost": null
+        }
+      },
+      "independentlyRecheckedNativeEvidence": [
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-inspect-readme-001-ordinary-codex",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "73cacf14fc7ba4ceaa852a237291fd744aefaf0fb76b0cc544614a7f482a7553",
+            "modelRequests": "013c9020e7d2b413e63070212cf63f7ff5932e139c515f61f78a6433442dca66"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-inspect-readme-001-hmcodex-runtime",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "a0cd729aeab56946b5cf8ecc4b22626e853ca62ca6dd808f624589a9a2513dcd",
+            "modelRequests": "772811819f5fd9b8bce1c21fdc972fd0898f623d3fea84b0ca716313f88e10a5",
+            "nativeEvents": "04875775341e2ec44f2a43eac62d27f0e3d71f7b2a46fd6ebf29a053e1a5a29d"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-inspect-layout-001-ordinary-codex",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "5491b111c0ea8d82998524876ad9d2346641bc7b4cd4a5dc8bf05cd2ce71dfb8",
+            "modelRequests": "3e3e2166481fa075f09d8c85881ddf0243e129443902d3a1d6b955768feb8c3f"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-inspect-layout-001-hmcodex-runtime",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "a08784bdf43ee468c1439ca9c775e2338f59cd21cd775c2ea3b005abf37e7911",
+            "modelRequests": "d8e25fc77c587a3f7c825682478b962339654550cdc7278a073dccf0c3d84a11",
+            "nativeEvents": "74e1f2e1e85bba8d014142d223d6956e7c7ce23ba6ad0327402bb2c8c3fe79f9"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-recoverable-read-001-ordinary-codex",
+          "actualOutcomes": 2,
+          "sourceHashes": {
+            "stdout": "a5555e812c8d74d9289a7f1cd0a445bc7246c4e1e2cd60c0ccda47c88f641316",
+            "modelRequests": "6f20f1e1f7a9f7aaaee3397238f5bd820bca35994790f767839ac5dda312fe64"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-normalize-001-ordinary-codex",
+          "actualOutcomes": 12,
+          "sourceHashes": {
+            "stdout": "0d133ce650d5cf2ee471a2cc6edd9c4880d11426338bfcb826d6112584c81c7c",
+            "modelRequests": "8d65d4c3b1a030ac279d6e243baf8c056ed6cc1d46397cbef11d86da5160b340"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-normalize-001-hmcodex-runtime",
+          "actualOutcomes": 3,
+          "sourceHashes": {
+            "stdout": "c6d1f94f383f3393ceb9374f00480b2c6a10de7f3f69be0cf474c96934855dce",
+            "modelRequests": "d227bd9b1dfe1268df859a8f84a5a3adb90c025ef67e3c1f4923d55ef44edf3c",
+            "nativeEvents": "4c5ad033774727a42127f7adcd8b3e9986e20bfad5406a9ea0daa569735bb3b8"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-syntax-001-ordinary-codex",
+          "actualOutcomes": 6,
+          "sourceHashes": {
+            "stdout": "a8b55b5f620f2639165f6d42b098571dadb55101dea5f0130af49a400f58bff9",
+            "modelRequests": "a3a50e11272d7c337480133fd6c91a0d7fb79b12a47b17dae5711681dda9157a"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-syntax-001-hmcodex-runtime",
+          "actualOutcomes": 4,
+          "sourceHashes": {
+            "stdout": "4f7694265b1b9fe550d6a5923839ee0ac489abdde7e9806ac0d3db4db85e8354",
+            "modelRequests": "fcbf86794ec459220006895ae17a341ba0e440b8040a614e49ce0cf405e9aac7",
+            "nativeEvents": "fb58dcf0b0adcf79e4b7cf1970f2343e30a1f15dbb08dafba42e0d9fdf1d818f"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/1-code-feature-001-ordinary-codex",
+          "actualOutcomes": 12,
+          "sourceHashes": {
+            "stdout": "0b8c1ed041a84662017c106f7262ef20697baf5691a9ebdfc28b002697da55a7",
+            "modelRequests": "8940392f9bb74281aca52a157a66f7555cede6c11961e840e00ea7678234282d"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-inspect-readme-001-hmcodex-runtime",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "b0491eca96be388195046615681fa6103d012d9a6b8d2e63a228ef8d0cd4c76e",
+            "modelRequests": "f116648ea0c1c71d0f6a0ed7f58747fcde64d719aac29009d6b843e3957ddee2",
+            "nativeEvents": "13f5d1cb127f7e8eee8ceaa75ebc9fa0da47cb3c85d7ec5a711aade52453d79f"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-inspect-readme-001-ordinary-codex",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "5cd27a1ddefffae993ef8bc8803fc1a1a3db6cdabf83032c52f4173ad3925423",
+            "modelRequests": "3228d5a2ff4e5be28f397397068bcb69b15bb8271585e7bacdc08a378c455159"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-inspect-layout-001-hmcodex-runtime",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "a0811950b3b434e5f14466480ac8a4c7b7bca53a8e2b58ef38b16bdbc6176ee4",
+            "modelRequests": "789f2442f3c676b76fdc13ae101d00f67d6f51abec0f370f48db7e31557aa470",
+            "nativeEvents": "949f79ed6d81b913d9c2eb0819aa2c82fe73516bd637d29a3d1ad27022d2ddd1"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-inspect-layout-001-ordinary-codex",
+          "actualOutcomes": 1,
+          "sourceHashes": {
+            "stdout": "ccd25ff9c077eff87d932a4dd175b608b1efffb253b75f0f972e6a20abe8c5a1",
+            "modelRequests": "e8720342e20a8e544f991c69b9d50f64331674f3262a1b8d064881a83fe5edd9"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-recoverable-read-001-hmcodex-runtime",
+          "actualOutcomes": 3,
+          "sourceHashes": {
+            "stdout": "6da8971f42dfbf6cdb23f5dbfd0fae410ba26c250f6d8de86f8ae868ccf16e0a",
+            "modelRequests": "96a32e541a156b542f7f4499c5bb9d3000825f05a588bbfa545e251b96f47421",
+            "nativeEvents": "4ff5c64a6c439942243dfcfbb3c7148007bc4fc25d9cf9dfac844da0264011c2"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-recoverable-read-001-ordinary-codex",
+          "actualOutcomes": 2,
+          "sourceHashes": {
+            "stdout": "12ac57b4c89f75bfd306aac92e3a266e13aaf2d263f63aead718a068f2f4946d",
+            "modelRequests": "ed62e61a432675f0128d7d0f8042561d1b770e5d8a171eebff64fa52cd869db2"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-normalize-001-hmcodex-runtime",
+          "actualOutcomes": 3,
+          "sourceHashes": {
+            "stdout": "bf917fb778be2a2b2f554904981147fa0f858d9786f6de6e8979dedfab32e8dd",
+            "modelRequests": "2cb03cef1941c4acac248623918c41d00d2e52f931e33f587bda42700eda18dc",
+            "nativeEvents": "28de04016b37c8e97dde51e23a937e4b2aff3bf3789549cf288c158d8aeeeea7"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-syntax-001-ordinary-codex",
+          "actualOutcomes": 14,
+          "sourceHashes": {
+            "stdout": "5e7e4982989cc967084c7de80e176e422b9fe967b2138babd967e217d399c1ea",
+            "modelRequests": "53799c9bef8d8aef566887b34bd74dd35a0d110d7c67d4f2d6dd419307149975"
+          }
+        },
+        {
+          "runKey": "20261007T193806644Z-bbef78c3/2-code-feature-001-ordinary-codex",
+          "actualOutcomes": 14,
+          "sourceHashes": {
+            "stdout": "13e9d01daa9987ea35d016f72ed2e3d1ce17a00798e3335984f6f0d8e8cc33f0",
+            "modelRequests": "c0868fb02fc370b0e6fac51b4052e48269d1ed8d56de723c40dcc96d71219bf3"
+          }
+        }
+      ],
+      "codexVersion": "codex-cli 0.155.1"
+    }
+  },
+  "remaining": [
+    "Complete the separate current-source Jev off/on ablation.",
+    "Real automatic stronger-model selection remains unobserved.",
+    "Missing provider usage stays unknown; actual billing and measured human activity are required for cash or labor savings."
+  ],
+  "limitations": [
+    "Preset tasks and two repeats per condition do not establish general superiority.",
+    "Third-party model fallback tools in installed Codex differ from native GPT Codex.",
+    "Language-model quota estimates and Jev API estimates are not combined cash invoices.",
+    "Success-conditioned resources have different successful task sets and cannot establish a causal savings estimate."
+  ]
+}

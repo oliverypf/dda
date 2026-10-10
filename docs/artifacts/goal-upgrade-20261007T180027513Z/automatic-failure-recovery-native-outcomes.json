@@ -1,0 +1,26 @@
+[
+  {
+    "ok": false,
+    "name": "workspace.read",
+    "errorCode": "WORKSPACE_NOT_FOUND",
+    "input": {
+      "path": "missing-evidence.txt"
+    }
+  },
+  {
+    "ok": true,
+    "name": "workspace.read",
+    "outputDigest": "sha256:bac5473e361087362d77bb315a7a99a206b0fcd9f5dee22f42af70085bb7e91c",
+    "output": "{\"path\":\"README.md\",\"sizeBytes\":43,\"digest\":\"sha256:545704d74130b84d6a8a3bdc1d99d0f67d12f118a8408568f353de0101962953\",\"content\":\"GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117861d1e\\n\",\"truncated\":false}",
+    "value": {
+      "path": "README.md",
+      "sizeBytes": 43,
+      "digest": "sha256:545704d74130b84d6a8a3bdc1d99d0f67d12f118a8408568f353de0101962953",
+      "content": "GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117861d1e\n",
+      "truncated": false
+    },
+    "input": {
+      "path": "README.md"
+    }
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-10-07T17:42:35.534Z",
+  "source": "docs/artifacts/goal-actual-checkpoint-upgrade-retest-20261008/resume-with-bound-pro-jev-requests.json",
+  "method": "One unchanged archived actual verification state. Actual prior failure and actual Pro success remain included. No model/executor is retried and no provider answer is replaced.",
+  "limitation": "Availability/semantic replay only, not a new successful runtime task or invoice.",
+  "observation": {
+    "status": 200,
+    "wallMs": 1084,
+    "answers": {
+      "verification": {
+        "type": "choice",
+        "choice": "PASS",
+        "confidence": 0.82,
+        "probabilities": {
+          "PASS": 0.88,
+          "UNCERTAIN": 0.03,
+          "FAIL": 0.09
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 3683,
+      "output_tokens": 40
+    },
+    "model": "jev-1.13.0",
+    "errorBodyChars": null,
+    "errorBodySha256": null,
+    "actualCost": null
+  }
+}

@@ -1,0 +1,38 @@
+✔ model-visible tool content must match a successful durable native result (11.838594ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.170938ms)
+✔ a completed invocation returning exit failure does not count as a successful process (0.825ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (2.362344ms)
+✔ Jev variant labels still require successful native hmCodex evidence (986.705156ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (5.915781ms)
+✔ recovery requires a real failure followed by a successful tool result (0.873281ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.704531ms)
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (2315.488282ms)
+✔ a timed out live client is terminated and cannot pass acceptance (1419.33ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (3.611563ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (2.687656ms)
+✔ declared off/on conditions must match observed decision-provider usage (0.947343ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (9.702187ms)
+✔ both clients use the same text and developer instruction conversion (0.775938ms)
+✔ live model records returned inference IDs for success and HTTP failure without inventing charges (338.988906ms)
+✔ live decision recording forwards real answers and never records credentials (496.6425ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (6.884531ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (1.782657ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (1.058594ms)
+✔ billing imports require full coverage and never turn missing charges into zero (2.585312ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (5.910312ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (3.886093ms)
+✔ real decision-provider bills are required before language-only charges become total cash cost (5.845781ms)
+✔ upstream inference identifiers remain distinct from charge amounts and private response headers (228.030782ms)
+✔ missing, oversized and free-text identifiers do not become fabricated correlation keys (0.585157ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (4138.957344ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (2971.799219ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (3653.743594ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (2688.203125ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 17221.384844

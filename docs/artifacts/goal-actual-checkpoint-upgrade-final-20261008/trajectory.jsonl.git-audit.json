@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "1.0",
+  "checkpoints": [
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-f967fd8f-3514-46a0-9e71-0120d1f715d8",
+      "runId": "run-8893163b-9678-4a4c-ae63-45245ea0c0f8",
+      "checkpointKind": "RUN_STARTED",
+      "status": "READY",
+      "eventId": "event-b05466ec-d00a-40e8-ab7a-75c22fcf8ee9",
+      "eventSequence": 1,
+      "observationDigest": "sha256:437b16a68ab85a70df6cc1ede9d87f632a0b336b268d9babc10b23a601e215d6",
+      "trajectoryRootDigest": "sha256:c91481cccbb6c66a2f9b7883371f9c36feaf029dbfcf7462e66e5637c64c0076",
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:2c2528af8ca15110f98224617e852404914391c28d0e29045253b46be916a81e",
+        "observedAtMs": 1791395121104,
+        "observationDigest": "sha256:437b16a68ab85a70df6cc1ede9d87f632a0b336b268d9babc10b23a601e215d6"
+      },
+      "createdAtMs": 1791395121439,
+      "recordDigest": "sha256:6826da86e81fd06d6bc2c45fe46debadd43436c362f1b6986b32a02f6b6aa679"
+    },
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-db500a90-3c43-4a45-a9c6-02b40b495081",
+      "runId": "run-8893163b-9678-4a4c-ae63-45245ea0c0f8",
+      "checkpointKind": "RUN_FAILED",
+      "status": "READY",
+      "eventId": "event-e1c0f6a8-73e9-47d3-b716-7671057fe662",
+      "eventSequence": 75,
+      "observationDigest": "sha256:c24d8da6b6ceaf536d5d1a05d43b1ee076a1d5afe80a1ad239348e2658869b4a",
+      "trajectoryRootDigest": "sha256:50d2faab3b4685da04ae881e836b95ebf4d77f5088acefde5ff27dd479907902",
+      "correlation": {
+        "threadId": "thread-f73bd92d-e77d-4c87-8f00-d5124262dbc7"
+      },
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:2c2528af8ca15110f98224617e852404914391c28d0e29045253b46be916a81e",
+        "observedAtMs": 1791395138106,
+        "observationDigest": "sha256:c24d8da6b6ceaf536d5d1a05d43b1ee076a1d5afe80a1ad239348e2658869b4a"
+      },
+      "createdAtMs": 1791395138458,
+      "recordDigest": "sha256:b3f358a6630789b62c487537bd1bba27cd3679600bdb559412a860a241d53583"
+    },
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-99ed9d17-878d-4f57-b821-8455ab19fa8c",
+      "runId": "run-f359f4de-d20e-4d05-a8c9-4728a0897b29",
+      "checkpointKind": "RESUME_STARTED",
+      "status": "READY",
+      "eventId": "event-755ac683-7192-4679-b392-57ea08bde517",
+      "eventSequence": 1,
+      "observationDigest": "sha256:5c877c5ff9430fef84cb5ee9360bb61073656f0b7bef29bacd4d55474a98eedc",
+      "trajectoryRootDigest": "sha256:2265c8a862b2b85266a62481231895032569cfa1847a004b394d04e2c9082c6e",
+      "correlation": {
+        "threadId": "thread-f73bd92d-e77d-4c87-8f00-d5124262dbc7"
+      },
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:2c2528af8ca15110f98224617e852404914391c28d0e29045253b46be916a81e",
+        "observedAtMs": 1791395143275,
+        "observationDigest": "sha256:5c877c5ff9430fef84cb5ee9360bb61073656f0b7bef29bacd4d55474a98eedc"
+      },
+      "createdAtMs": 1791395143657,
+      "recordDigest": "sha256:52d778cd4300e68680bb6dbda1cc0e8adaec16517f817b45c3cc99085a662fad"
+    },
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-a8be10ce-cd38-4530-b617-d66c02166e62",
+      "runId": "run-f359f4de-d20e-4d05-a8c9-4728a0897b29",
+      "checkpointKind": "RUN_COMPLETED",
+      "status": "READY",
+      "eventId": "event-852f8700-2235-411f-b5fb-c2eda0c80b1c",
+      "eventSequence": 78,
+      "observationDigest": "sha256:0b2e7b1eb45f34cc27ef4d9e0a67b1b98fbc95aee35c624f9c3af58d85b66817",
+      "trajectoryRootDigest": "sha256:7d9f9f26471756075869de0be33809049aae2aaedb9af8c516fb0ef34610f95f",
+      "correlation": {
+        "threadId": "thread-f73bd92d-e77d-4c87-8f00-d5124262dbc7"
+      },
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:2c2528af8ca15110f98224617e852404914391c28d0e29045253b46be916a81e",
+        "observedAtMs": 1791395170575,
+        "observationDigest": "sha256:0b2e7b1eb45f34cc27ef4d9e0a67b1b98fbc95aee35c624f9c3af58d85b66817"
+      },
+      "createdAtMs": 1791395171005,
+      "recordDigest": "sha256:bf5cc9be041a89b12669082f757e81d5e2c88cb16b7fb1ff82ac62afb6e63b36"
+    }
+  ]
+}

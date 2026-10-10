@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "1.0",
+  "sourceReport": "AGENT_GOAL_JEV_PROCESS_INTENT_LIVE_2026-10-07.json",
+  "batchId": "20261007T121214084Z-ece8a80f",
+  "runtimeSourceSha256": "b289bab3d9f29bdbe212965ef1ec017a56597fac6a3c0c8d4f0b10106aaf98d1",
+  "rows": [
+    {
+      "iteration": 1,
+      "status": "FAILED",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      },
+      "ruleStatus": "FAIL",
+      "ruleChecks": [
+        {
+          "id": "actions.progress",
+          "status": "FAIL",
+          "message": "2 个动作执行失败（TOOL_ACTION_REQUIRES_EVIDENCE）"
+        },
+        {
+          "id": "actions.duplicates",
+          "status": "FAIL",
+          "message": "检测到重复动作指纹"
+        },
+        {
+          "id": "actions.new_evidence",
+          "status": "PASS",
+          "message": "动作产生了新的结果证据"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "status": "FAILED",
+      "checks": {
+        "processCompleted": false,
+        "agentCompleted": false,
+        "correctAnswer": true,
+        "actualSuccessfulTool": true,
+        "actualSuccessfulTest": true,
+        "actualInjectedFailure": true,
+        "successfulToolAfterFailure": true,
+        "workspaceScopeRespected": true
+      },
+      "ruleStatus": "FAIL",
+      "ruleChecks": [
+        {
+          "id": "actions.progress",
+          "status": "FAIL",
+          "message": "1 个动作执行失败（TOOL_ACTION_REQUIRES_EVIDENCE）"
+        },
+        {
+          "id": "actions.duplicates",
+          "status": "PASS",
+          "message": "未检测到重复动作指纹"
+        },
+        {
+          "id": "actions.new_evidence",
+          "status": "PASS",
+          "message": "动作产生了新的结果证据"
+        }
+      ]
+    }
+  ],
+  "preFixRegression": {
+    "passed": 13,
+    "failed": 2
+  },
+  "interpretation": "Actual successful tools, tests and independent code assertions did not erase a REQUEST_EVIDENCE proposal classified as a permanent execution failure. Historical failed runs are retained."
+}

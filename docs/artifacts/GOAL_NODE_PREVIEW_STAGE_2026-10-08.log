@@ -1,0 +1,23 @@
+✔ the frozen source has a contradictory opaque preview for a known Node test request (4.769531ms)
+✔ staged safe Node request forms share one bounded untrusted preview without claiming a lease or execution (6.527188ms)
+✖ real one-shot executor semantics still agree with every staged request preview (490.850312ms)
+✔ full command strings now collect current authorized fixture files, while excluded data stays absent (95.881093ms)
+✔ private overrides, inline code, outside paths, preloads and ambiguous commands are not normalized as bounded tests (2.163906ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 61071.594531
+
+✖ failing tests:
+
+test at docs\artifacts\GOAL_NODE_PREVIEW_STAGE_2026-10-08.test.mjs:36:1
+✖ real one-shot executor semantics still agree with every staged request preview (490.850312ms)
+  TypeError: Cannot read properties of undefined (reading 'get')
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/docs/artifacts/GOAL_NODE_PREVIEW_STAGE_2026-10-08.test.mjs:49:33)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)

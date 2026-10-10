@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "events": [
+    {
+      "schemaVersion": "1.0",
+      "eventId": "feedback-event-98f2e615-5584-49c0-979e-427fdaa42b72",
+      "kind": "FeedbackSubmitted",
+      "feedback": {
+        "schemaVersion": "1.0",
+        "feedbackId": "feedback-17cf0051-6666-4cb7-bcb7-0f4a4f8e44c9",
+        "runId": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+        "taskId": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+        "threadId": "thread-5d68f5c4-49b6-455a-92cf-a726ba9a1dfa",
+        "outcomeId": "task-outcome-run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+        "outcomeStatus": "SUCCEEDED",
+        "modelIdentity": {
+          "provider": "openai",
+          "protocol": "responses",
+          "model": "mimo-v2.6-flash",
+          "modelVersion": "unknown",
+          "role": "planner",
+          "pluginVersion": "unknown",
+          "modelRegistryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "candidateKey": "openai/responses/mimo-v2.6-flash/unknown/planner/unknown"
+        },
+        "scenario": {
+          "taskClass": "test",
+          "riskClass": "unknown",
+          "operationClass": "unknown",
+          "requiredCapabilities": [],
+          "workspaceCapabilityClass": "READ_ONLY",
+          "platform": "WINDOWS",
+          "policyClass": "WINDOWS_PHASE1_READ_ONLY",
+          "scenarioKey": "sha256:55dbf4a3f4694b4ac8da4c8e18019a0b5c23e9f35ca6f21c13e403cd5ed3b3e9"
+        },
+        "sourceType": "SYSTEM",
+        "dimensions": {
+          "quality": 1,
+          "objectiveSuccess": true,
+          "verifierPass": true,
+          "safetyIncident": false
+        },
+        "reasonCodes": [
+          "OBJECTIVE_OUTCOME"
+        ],
+        "evidenceRefs": [
+          "event-ca670059-c792-4720-86ef-467ec3729dd2",
+          "event-cecb9d40-f8b8-4dd6-9a7e-e09165869402"
+        ],
+        "independenceGroup": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398/event-ca670059-c792-4720-86ef-467ec3729dd2",
+        "submittedAtMs": 1791396064635,
+        "eventKind": "FeedbackSubmitted",
+        "recordDigest": "sha256:3c3243978a2116abd473a5d3ee12490830659c5f1273321d3fa1ccc39690dfd7"
+      },
+      "requestDigest": "sha256:474f810827c9274d9d47455fef1076fdc823d74029581c4869ff94bb2528a1d1",
+      "commandId": "objective-feedback:event-ca670059-c792-4720-86ef-467ec3729dd2",
+      "atMs": 1791396064635
+    }
+  ]
+}

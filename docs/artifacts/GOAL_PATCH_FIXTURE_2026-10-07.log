@@ -1,0 +1,9 @@
+{"event":"CASE_START","runKey":"20261007T071244667Z-7ae83a7b/1-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791357168665}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T071244667Z-7ae83a7b/1-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791357177828}
+TypeError: (request.output ?? []) is not iterable
+    at file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-evidence-audit.mjs:16:73
+    at Array.flatMap (<anonymous>)
+    at runtimeNativeOutcomes (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-evidence-audit.mjs:16:31)
+    at runCase (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-evidence-harness.mjs:142:23)
+    at async main (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-evidence-harness.mjs:230:19)

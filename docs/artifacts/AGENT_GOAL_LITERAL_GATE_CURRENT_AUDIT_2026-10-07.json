@@ -1,0 +1,526 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T14:36:21.788Z",
+  "sourceReport": "docs/artifacts/AGENT_GOAL_LITERAL_GATE_LIVE_2026-10-07.json",
+  "sourceReportSha256": "c41b7e8d3c9a3cd2903dbd134a58ed36345df3e2b6f531bc39b41cb3ab8aa269",
+  "batchId": "20261007T142807863Z-02cee6a9",
+  "runtimeSourceSha256": "9accbfdd5d7a4843984d84072a26fcdbdbe16b8f20e2cf843ee0fdaa67057f2f",
+  "currentRuntimeSourceSha256": "9accbfdd5d7a4843984d84072a26fcdbdbe16b8f20e2cf843ee0fdaa67057f2f",
+  "currentRuntimeMatchesBatch": true,
+  "debugExeSha256": "d1a6760b8a040084b16c0de62d0ac02634d86126481e06bf7c3aa7a08849d516",
+  "batchProcessExitCode": 0,
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 4,
+      "successes": 4,
+      "successRate": 1,
+      "recoveryOpportunities": 4,
+      "recoverySuccesses": 4,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 12,
+      "modelCalls": 17,
+      "usageCoverage": {
+        "reportedRequests": 16,
+        "totalRequests": 17,
+        "knownTokenSubtotal": 46626,
+        "pricedRequests": 16,
+        "knownPricedSubtotal": 0.008381464
+      },
+      "toolCallCount": 12,
+      "wallMs": 209796
+    }
+  },
+  "cases": [
+    {
+      "runKey": "20261007T142807863Z-02cee6a9/1-code-normalize-001-hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "gradePassed": true,
+      "modelsMatch": true,
+      "initialTestObserved": true,
+      "firstFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "errorType": "TypeError",
+        "referencesSeededTarget": true
+      },
+      "sameTestActuallyPassed": true,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "exitCode": 1,
+          "path": null
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs"
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null
+        }
+      ],
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "jevGates": [
+        {
+          "sequence": 1,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.21,
+            "probabilities": {
+              "REQUIRE_APPROVAL": 0.41,
+              "REQUEST_EVIDENCE": 0.28,
+              "ALLOW": 0.26,
+              "BLOCK": 0.05
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 2,
+          "kind": "file.patch",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.37,
+            "probabilities": {
+              "BLOCK": 0.01,
+              "REQUIRE_APPROVAL": 0.53,
+              "REQUEST_EVIDENCE": 0.09,
+              "ALLOW": 0.37
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 3,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.21,
+            "probabilities": {
+              "REQUEST_EVIDENCE": 0.26,
+              "ALLOW": 0.24,
+              "BLOCK": 0.09,
+              "REQUIRE_APPROVAL": 0.41
+            }
+          },
+          "status": 200
+        }
+      ],
+      "modelRequestsWithReturnedIds": 4
+    },
+    {
+      "runKey": "20261007T142807863Z-02cee6a9/1-code-feature-001-hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "gradePassed": true,
+      "modelsMatch": true,
+      "initialTestObserved": true,
+      "firstFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "errorType": "SyntaxError",
+        "referencesSeededTarget": true
+      },
+      "sameTestActuallyPassed": true,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "exitCode": 1,
+          "path": null
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs"
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null
+        }
+      ],
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "jevGates": [
+        {
+          "sequence": 1,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.15,
+            "probabilities": {
+              "REQUEST_EVIDENCE": 0.31,
+              "BLOCK": 0.08,
+              "ALLOW": 0.25,
+              "REQUIRE_APPROVAL": 0.36
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 2,
+          "kind": "file.patch",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.23,
+            "probabilities": {
+              "REQUEST_EVIDENCE": 0.19,
+              "ALLOW": 0.37,
+              "BLOCK": 0.02,
+              "REQUIRE_APPROVAL": 0.42
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 3,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.11,
+            "probabilities": {
+              "BLOCK": 0.12,
+              "REQUEST_EVIDENCE": 0.29,
+              "REQUIRE_APPROVAL": 0.33,
+              "ALLOW": 0.26
+            }
+          },
+          "status": 200
+        }
+      ],
+      "modelRequestsWithReturnedIds": 4
+    },
+    {
+      "runKey": "20261007T142807863Z-02cee6a9/2-code-normalize-001-hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "gradePassed": true,
+      "modelsMatch": true,
+      "initialTestObserved": true,
+      "firstFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "errorType": "TypeError",
+        "referencesSeededTarget": true
+      },
+      "sameTestActuallyPassed": true,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "exitCode": 1,
+          "path": null
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs"
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null
+        }
+      ],
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "jevGates": [
+        {
+          "sequence": 1,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.2,
+            "probabilities": {
+              "ALLOW": 0.3,
+              "REQUIRE_APPROVAL": 0.4,
+              "BLOCK": 0.04,
+              "REQUEST_EVIDENCE": 0.26
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 2,
+          "kind": "file.patch",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.36,
+            "probabilities": {
+              "REQUEST_EVIDENCE": 0.1,
+              "ALLOW": 0.37,
+              "REQUIRE_APPROVAL": 0.52,
+              "BLOCK": 0.01
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 3,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.19,
+            "probabilities": {
+              "REQUEST_EVIDENCE": 0.27,
+              "BLOCK": 0.1,
+              "ALLOW": 0.24,
+              "REQUIRE_APPROVAL": 0.39
+            }
+          },
+          "status": 200
+        }
+      ],
+      "modelRequestsWithReturnedIds": 4
+    },
+    {
+      "runKey": "20261007T142807863Z-02cee6a9/2-code-feature-001-hmcodex-runtime",
+      "status": "SUCCEEDED",
+      "gradePassed": true,
+      "modelsMatch": true,
+      "initialTestObserved": true,
+      "firstFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "errorType": "SyntaxError",
+        "referencesSeededTarget": true
+      },
+      "sameTestActuallyPassed": true,
+      "actualTools": [
+        {
+          "name": "test.execute",
+          "ok": false,
+          "exitCode": 1,
+          "path": null
+        },
+        {
+          "name": "file.patch",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs"
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null
+        }
+      ],
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "jevGates": [
+        {
+          "sequence": 1,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.15,
+            "probabilities": {
+              "BLOCK": 0.06,
+              "ALLOW": 0.29,
+              "REQUIRE_APPROVAL": 0.36,
+              "REQUEST_EVIDENCE": 0.29
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 2,
+          "kind": "file.patch",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.27,
+            "probabilities": {
+              "ALLOW": 0.35,
+              "REQUIRE_APPROVAL": 0.45,
+              "REQUEST_EVIDENCE": 0.18,
+              "BLOCK": 0.02
+            }
+          },
+          "status": 200
+        },
+        {
+          "sequence": 3,
+          "kind": "test.execute",
+          "answer": {
+            "type": "choice",
+            "choice": "REQUIRE_APPROVAL",
+            "confidence": 0.16,
+            "probabilities": {
+              "BLOCK": 0.1,
+              "ALLOW": 0.25,
+              "REQUEST_EVIDENCE": 0.28,
+              "REQUIRE_APPROVAL": 0.37
+            }
+          },
+          "status": 200
+        }
+      ],
+      "modelRequestsWithReturnedIds": 4
+    }
+  ],
+  "claims": {
+    "total": 84,
+    "validBoundedJson": 84
+  },
+  "allActualChainsVerified": true,
+  "decision": {
+    "calls": 16,
+    "successfulCalls": 16,
+    "inputTokens": 73394,
+    "outputTokens": 892,
+    "estimatedApiPriceUsd": 0.0030825480000000005,
+    "proxyWallMs": 16943.41843799993,
+    "actualCashCharge": null
+  },
+  "engineering": {
+    "runtime": {
+      "passed": 648,
+      "failed": 0,
+      "skipped": 1,
+      "log": "docs/artifacts/GOAL_LITERAL_GATE_FULL_RUNTIME_2026-10-07.log"
+    },
+    "native": {
+      "passed": 27,
+      "failed": 0,
+      "log": "docs/artifacts/GOAL_LITERAL_GATE_NATIVE_2026-10-07.log"
+    },
+    "build": "docs/artifacts/GOAL_LITERAL_GATE_BUILD_2026-10-07.log"
+  },
+  "previousStageAudit": "docs/artifacts/AGENT_GOAL_ACTUAL_CONTEXT_STAGE_AUDIT_2026-10-07.json",
+  "fullPairedComparison": {
+    "status": "COMPLETED_FAILED_ACCEPTANCE",
+    "log": "docs/artifacts/GOAL_LITERAL_GATE_PAIRED_2026-10-07.log",
+    "plannedRuns": 24,
+    "batchId": "20261007T143609771Z-211dbce3",
+    "knownFailureAudit": "docs/artifacts/GOAL_LITERAL_GATE_PAIRED_READ_FAILURE_2026-10-07.json",
+    "report": "docs/artifacts/AGENT_GOAL_LITERAL_GATE_PAIRED_2026-10-07.json",
+    "batchProcessExitCode": 1,
+    "completedRuns": 24,
+    "conditions": {
+      "ordinary-codex": {
+        "runs": 12,
+        "successes": 10,
+        "successRate": 0.8333333333333334,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 6,
+        "recoverySuccessRate": 0.75,
+        "manualInterventionMinutes": 0,
+        "totalTokens": null,
+        "actualCost": null,
+        "estimatedCost": null,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 50,
+        "modelCalls": 63,
+        "usageCoverage": {
+          "reportedRequests": 61,
+          "totalRequests": 63,
+          "knownTokenSubtotal": 599370,
+          "pricedRequests": 61,
+          "knownPricedSubtotal": 0.041871505
+        },
+        "toolCallCount": 49,
+        "wallMs": 1223253
+      },
+      "hmcodex-runtime": {
+        "runs": 12,
+        "successes": 9,
+        "successRate": 0.75,
+        "recoveryOpportunities": 8,
+        "recoverySuccesses": 5,
+        "recoverySuccessRate": 0.625,
+        "manualInterventionMinutes": 0,
+        "totalTokens": 119665,
+        "actualCost": null,
+        "estimatedCost": 0.024905548,
+        "pricingBasis": "SUBSCRIPTION_QUOTA",
+        "toolRounds": 33,
+        "modelCalls": 46,
+        "usageCoverage": {
+          "reportedRequests": 46,
+          "totalRequests": 46,
+          "knownTokenSubtotal": 119665,
+          "pricedRequests": 46,
+          "knownPricedSubtotal": 0.024905548
+        },
+        "toolCallCount": 32,
+        "wallMs": 568232
+      }
+    },
+    "appliesToCurrentSource": false
+  },
+  "goalStatus": "active",
+  "limitations": [
+    "Single-client two-task recovery diagnostic does not prove the full task set or advantage over ordinary Codex.",
+    "One missing language-model usage record leaves complete language-model tokens and quota cost unknown.",
+    "Jev API-price estimate and model subscription-quota value are not actual invoices.",
+    "Real model upgrades, current-source Jev off/on effects and human benefit remain unverified."
+  ],
+  "comparisonCompletionAmendedAt": "2026-10-07T15:21:33.135Z"
+}

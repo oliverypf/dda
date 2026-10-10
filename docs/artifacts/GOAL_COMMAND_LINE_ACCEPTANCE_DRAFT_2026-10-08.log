@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-10-07T16:44:01.488Z",
+  "method": "Read-only replay of completed actual native records. Original batch and grading remain unchanged. Draft requires exact normalized host command digest and cwd before accepting command-line input.",
+  "originalStatus": "FAILED",
+  "rows": [
+    {
+      "input": {
+        "command": "node --test --test-isolation=none",
+        "cwd": "."
+      },
+      "exitCode": 1,
+      "nativeOutputBound": true,
+      "normalizedRequest": {
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "commandName": "node"
+      },
+      "originalPass": false,
+      "draftPass": false,
+      "missingDigestRejected": true,
+      "forgedCommandRejected": true
+    },
+    {
+      "input": {
+        "command": "node --test --test-isolation=none",
+        "cwd": "."
+      },
+      "exitCode": 0,
+      "nativeOutputBound": true,
+      "normalizedRequest": {
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "commandName": "node"
+      },
+      "originalPass": false,
+      "draftPass": true,
+      "missingDigestRejected": true,
+      "forgedCommandRejected": true
+    },
+    {
+      "input": {
+        "command": "node --test --test-isolation=none"
+      },
+      "exitCode": 0,
+      "nativeOutputBound": true,
+      "normalizedRequest": {
+        "command": "node",
+        "args": [
+          "--test",
+          "--test-isolation=none"
+        ],
+        "commandName": "node"
+      },
+      "originalPass": false,
+      "draftPass": true,
+      "missingDigestRejected": true,
+      "forgedCommandRejected": true
+    }
+  ],
+  "originalInjectedFailure": false,
+  "draftInjectedFailure": true,
+  "actualCodeVerified": true,
+  "replayOnly": true,
+  "productionChanged": false,
+  "sourceSha256": "5aac9b679873370316c81f0354cdae86f9afe04e34b898e26cb37ec8d941fab4"
+}

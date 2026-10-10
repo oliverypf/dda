@@ -1,0 +1,29 @@
+✔ resume enters recovery and blocks an interrupted side effect (3222.595625ms)
+✔ verifier recovery continues past the already observed initial failure instead of replaying it (4977.554375ms)
+✔ definite failure retries through Jev and upgrades to the bound strong model (11430.655781ms)
+✔ a killed read-only runtime resumes pending work without repeating completed steps (7647.378594ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-Ga4aE4
+✔ a killed controlled write remains blocked when resumed in read-only mode (8106.440469ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-dQiWfJ
+✔ a read-only source does not authorize replay after upgrading the resume mode (7008.427188ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-zC0Bso
+✔ a killed read-only runtime resumes with the phase-one SQLite event store (19394.410625ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-iRhVE8
+✔ continuation records bounded action outcomes without commands, arguments, errors or output contents (4.885ms)
+✔ action metadata cannot inject instructions into host continuation (2.862657ms)
+✔ recovers CONTINUE reports and stops after a successful verification (11.055ms)
+✔ does not recover hard failures or exceed the configured budget (2.148906ms)
+✔ recovery context contains only bounded verifier facts and action digests (1.121562ms)
+✔ terminal FAIL report stops recovery without another execute (0.895ms)
+✔ terminal CANCELLED report also stops recovery without retry (0.702343ms)
+✔ stops before another execution when recovery selects stop and report (1.657812ms)
+✔ pauses before another execution when recovery requests user input (1.26875ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42928.735625
+

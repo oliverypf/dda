@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "reports": [],
+  "outcomes": [
+    {
+      "outcomeId": "outcome-82fa90c7-d54f-498c-878d-72ff33431c70",
+      "runId": "run-281e9526-086a-43d6-8b4b-8b1d9056f6b4",
+      "taskClass": "inspect",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "status": "SUCCEEDED",
+      "verified": true,
+      "quality": 1,
+      "safety": 1,
+      "latencyMs": 53846,
+      "sourceEventId": "event-11af1102-6164-488d-982a-5d4bebde6de9",
+      "recordedAtMs": 1791391984138,
+      "outcomeDigest": "sha256:fca3e3b9c558be7b13adf060837678fdf77d13f72e7b4e73a63108ffc6083c13"
+    }
+  ]
+}

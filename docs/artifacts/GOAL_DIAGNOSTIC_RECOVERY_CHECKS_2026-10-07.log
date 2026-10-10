@@ -1,0 +1,35 @@
+✔ decision observations keep only bounded terminal host facts (5.45875ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (4834.480312ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (10672.286407ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (11896.440313ms)
+✔ a later successful identical test resolves its failure without losing the trace (18.701094ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (5.135157ms)
+✔ rule verifier requires bounded non-empty output (1.49ms)
+✔ task coordinator enforces transitions and optimistic version (4.457031ms)
+✔ rule verifier reports partial goal progress as CONTINUE (3.724375ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.540781ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (4.227656ms)
+✔ one repeated syntax diagnosis can recover only through a later actual full test (6.0975ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.985625ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (3.256094ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.898594ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.802812ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.911094ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (2.546718ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (33.502656ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (15.79625ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (13.220781ms)
+✔ runs a model-requested tool and sends its result into the next round (9.18875ms)
+✔ READ_ONLY requests expose only read-only tools (5.517188ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (5.67125ms)
+✔ stops repeated workspace requests after four rounds without new evidence (11.934687ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (6.151563ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (7.697969ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 27990.275313

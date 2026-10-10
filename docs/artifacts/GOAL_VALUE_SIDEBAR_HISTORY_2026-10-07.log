@@ -1,0 +1,183 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "startup history before health/recovery, summaries plus one 100-event page",
+      "pass": true
+    },
+    {
+      "name": "history cache updates in viewport without replacing composer or requiring diagnostics",
+      "pass": true
+    },
+    {
+      "name": "history switches during recovery without replacing shell/sidebar/composer/transcript",
+      "pass": true
+    },
+    {
+      "name": "all older pages reachable, existing rows/disclosures preserved",
+      "pass": true
+    },
+    {
+      "name": "late response cannot overwrite newer selection",
+      "pass": true
+    },
+    {
+      "name": "interrupted response is restored alongside the failure",
+      "pass": true
+    },
+    {
+      "name": "empty history, failed reads and invalid page identity recover correctly",
+      "pass": true
+    },
+    {
+      "name": "lazy details and returning from pages/settings preserve history and draft",
+      "pass": true
+    },
+    {
+      "name": "six repeated 100-event switches",
+      "pass": true,
+      "longTasks": [
+        {
+          "start": 17046.5,
+          "duration": 117
+        },
+        {
+          "start": 17164.199999999255,
+          "duration": 59
+        },
+        {
+          "start": 17276.300000000745,
+          "duration": 68
+        },
+        {
+          "start": 17458.10000000149,
+          "duration": 67
+        },
+        {
+          "start": 17577.800000000745,
+          "duration": 124
+        },
+        {
+          "start": 17702.199999999255,
+          "duration": 52
+        },
+        {
+          "start": 17956.800000000745,
+          "duration": 70
+        },
+        {
+          "start": 18082.800000000745,
+          "duration": 125
+        },
+        {
+          "start": 18208.10000000149,
+          "duration": 56
+        },
+        {
+          "start": 18433.10000000149,
+          "duration": 77
+        },
+        {
+          "start": 18545.39999999851,
+          "duration": 76
+        },
+        {
+          "start": 18826.39999999851,
+          "duration": 63
+        },
+        {
+          "start": 18941.699999999255,
+          "duration": 80
+        },
+        {
+          "start": 19059.699999999255,
+          "duration": 52
+        },
+        {
+          "start": 19212.800000000745,
+          "duration": 77
+        },
+        {
+          "start": 19293.5,
+          "duration": 153
+        },
+        {
+          "start": 19527,
+          "duration": 92
+        },
+        {
+          "start": 19655.5,
+          "duration": 57
+        },
+        {
+          "start": 19865.699999999255,
+          "duration": 54
+        }
+      ]
+    },
+    {
+      "name": "new task invalidates pending history request",
+      "pass": true
+    },
+    {
+      "name": "startup restoration does not override early user navigation",
+      "pass": true
+    },
+    {
+      "name": "mobile layout has no page overflow",
+      "pass": true
+    },
+    {
+      "name": "80-task sidebar wheel, final-row access, task-switch position and short-window scrolling",
+      "pass": true,
+      "evidence": {
+        "initialScroll": {
+          "top": 0,
+          "max": 3963,
+          "railTop": 0,
+          "brandTop": 16,
+          "pageWidth": 1200,
+          "viewportWidth": 1200,
+          "height": 479
+        },
+        "wheeled": {
+          "top": 700,
+          "max": 3963,
+          "railTop": 0,
+          "brandTop": 16,
+          "pageWidth": 1200,
+          "viewportWidth": 1200,
+          "height": 479
+        },
+        "bottom": {
+          "top": 3963,
+          "max": 3963,
+          "railTop": 0,
+          "brandTop": 16,
+          "pageWidth": 1200,
+          "viewportWidth": 1200,
+          "height": 479
+        },
+        "switched": {
+          "top": 3963,
+          "max": 3963,
+          "railTop": 0,
+          "brandTop": 16,
+          "pageWidth": 1200,
+          "viewportWidth": 1200,
+          "height": 479
+        },
+        "shorter": {
+          "top": 4228,
+          "max": 4228,
+          "railTop": 0,
+          "brandTop": 16,
+          "pageWidth": 1200,
+          "viewportWidth": 1200,
+          "height": 214
+        }
+      }
+    }
+  ],
+  "output": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\history-ui"
+}

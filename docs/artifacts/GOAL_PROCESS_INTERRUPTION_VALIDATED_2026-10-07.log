@@ -1,0 +1,45 @@
+✔ resume enters recovery and blocks an interrupted side effect (3155.454844ms)
+✔ executes ready steps in dependency order and persists every lifecycle transition (12.785ms)
+✔ blocks dependent steps after a hard verification failure (5.126407ms)
+✔ retries recoverable verification and records attempt (1.8825ms)
+✔ reconciles an interrupted step and refuses unknown side effects (1.520469ms)
+✔ explicit resume cannot replay a step with unknown side-effect outcome (1.279844ms)
+✔ executes a multi-step planner DAG one step at a time and persists step checkpoints (4533.179375ms)
+✔ multi-agent runtime reviews a complex plan through isolated Council turns (6353.605ms)
+✔ resumes a failed thread from its checkpoint without rerunning completed steps (8564.359375ms)
+✔ recovers from a binary workspace read and verifies a colored build log through the runtime (4641.392968ms)
+✖ a killed read-only runtime resumes pending work without repeating completed steps (7255.039844ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-gFtJHm
+✔ a killed controlled write remains blocked when resumed in read-only mode (8012.640156ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-aU8hif
+✔ a read-only source does not authorize replay after upgrading the resume mode (6266.332968ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-3G4pEd
+✔ a killed read-only runtime resumes with the phase-one SQLite event store (18680.589844ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-M0isU2
+ℹ tests 14
+ℹ suites 0
+ℹ pass 13
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41028.343125
+
+✖ failing tests:
+
+test at test\process-interruption-runtime.test.mjs:154:1
+✖ a killed read-only runtime resumes pending work without repeating completed steps (7255.039844ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== 2
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:160:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

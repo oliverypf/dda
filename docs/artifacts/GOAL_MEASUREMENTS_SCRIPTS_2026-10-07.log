@@ -1,0 +1,78 @@
+✔ Phase 1.5 build fixes the controlled channel without mutating caller environment (5.14ms)
+✔ controlled build invokes the local Windows CLI and supports fast mode (1.342187ms)
+✔ full local build fixes the release channel without mutating caller environment (0.600157ms)
+✔ Phase 1 build fixes the compiled channel without mutating caller environment (6.469687ms)
+✔ build invokes the local Windows CLI with the fixed channel and propagates failure (4.583594ms)
+✔ model-visible tool content must match a successful durable native result (13.429687ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (2.805313ms)
+✔ a completed invocation returning exit failure does not count as a successful process (3.900937ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (4.149844ms)
+✔ recovery requires a real failure followed by a successful tool result (0.512656ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (3.932657ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (9.28375ms)
+✔ both clients use the same text and developer instruction conversion (0.797813ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (7.289531ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (2.008281ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (1.033281ms)
+✖ code-normalize-001 starts with a real failure and validates the fixed code independently (872.159219ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (2919.260625ms)
+✖ code-feature-001 starts with a real failure and validates the fixed code independently (483.449063ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (2045.682344ms)
+✔ the sampler credits only the wall clock between real samples (240.081875ms)
+✔ the sampler records a real store count and fails closed without a state path (241.333281ms)
+✔ each sample names the physical store file it read (115.665781ms)
+✔ phase3 evidence check passes and writes artifact (502.555ms)
+✔ w10 evidence stays NOT_READY without a real install, window and signed reports (53.913281ms)
+✔ long run only credits observed wall clock inside the gap tolerance (65.970625ms)
+✔ signed release evidence must declare ok:true (102.432188ms)
+✔ retention needs a recorded observation start before it can be partial (82.333282ms)
+✔ install lifecycle evidence must be present, elevated and complete (4.252969ms)
+✔ install lifecycle evidence accepts only fully verified elevated steps (144.952188ms)
+✔ install lifecycle evidence rejects fabricated, partial and tampered records (122.69ms)
+✔ the evidence record names the physical store file it read (141.166718ms)
+✔ derives one coherent desktop, workspace, and runtime root (13.186718ms)
+✔ honors an explicit desktop root before the caller directory (5.512812ms)
+✔ a real profile file lists the package copy as a different physical file (34.496562ms)
+✔ the same inode identifies a store read through the package local cache (16.583125ms)
+✔ the unredacted profile alias is reported only when it is another file (17.909531ms)
+✔ paths outside the profile root have no package twins (6.543437ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 36
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8219.841563
+
+✖ failing tests:
+
+test at scripts\goal-task-set.test.mjs:10:3
+✖ code-normalize-001 starts with a real failure and validates the fixed code independently (872.159219ms)
+  AssertionError [ERR_ASSERTION]: the seeded diagnostic must actually fail
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-task-set.test.mjs:16:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 0,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\goal-task-set.test.mjs:10:3
+✖ code-feature-001 starts with a real failure and validates the fixed code independently (483.449063ms)
+  AssertionError [ERR_ASSERTION]: the seeded diagnostic must actually fail
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-task-set.test.mjs:16:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 0,
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }

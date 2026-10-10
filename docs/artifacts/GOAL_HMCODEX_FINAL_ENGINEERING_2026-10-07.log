@@ -1,0 +1,43 @@
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361025588}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361085282}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361145300}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361183275}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/2-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361216507}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T081702923Z-f3305196/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791361270941}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{
+  "batchId": "20261007T081702923Z-f3305196",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_HMCODEX_FINAL_ENGINEERING_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 6,
+      "recoverySuccesses": 6,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 78467,
+      "actualCost": null,
+      "estimatedCost": 0.014347344000000001,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 20,
+      "modelCalls": 26,
+      "usageCoverage": {
+        "reportedRequests": 26,
+        "totalRequests": 26,
+        "knownTokenSubtotal": 78467,
+        "pricedRequests": 26,
+        "knownPricedSubtotal": 0.014347344000000001
+      },
+      "toolCallCount": 21,
+      "wallMs": 260912
+    }
+  }
+}

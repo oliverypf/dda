@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "threads": [
+    {
+      "id": "thread-5d68f5c4-49b6-455a-92cf-a726ba9a1dfa",
+      "title": "This is a preset read-only recovery test. Success requires a real workspace.read of README.md and reporting its exact evidence marker. In the initial executor attempt, invoke only workspace.read of missing-evidence.txt as the first tool, re",
+      "cwd": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-actual-checkpoint-upgrade-fYPnvw",
+      "turns": [
+        {
+          "id": "turn-e4299609-13a2-4281-a958-732013cc2f95",
+          "runId": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+          "summary": "state=SUCCEEDED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | outputDigest=sha256:eb145b1b44dfb0a21a8df2fb1df3502326c8f7f79225da1b6df558bf3c685493 | toolRounds=1 | toolCalls=1",
+          "state": "SUCCEEDED",
+          "atMs": 1791396062056
+        }
+      ],
+      "state": "COMPLETED",
+      "createdAtMs": 1791396029255,
+      "updatedAtMs": 1791396062056
+    }
+  ]
+}

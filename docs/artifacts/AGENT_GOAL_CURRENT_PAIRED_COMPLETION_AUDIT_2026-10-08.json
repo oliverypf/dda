@@ -1,0 +1,194 @@
+{
+  "generatedAt": "2026-10-07T19:06:01.341Z",
+  "batchId": "20261007T180217856Z-3be656c2",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "completed": true,
+  "actualClientComparison": true,
+  "model": "mimo-v2.6-flash",
+  "codexVersion": "codex-cli 0.155.1",
+  "matchedPairs": 12,
+  "acceptedSuccessesWithVerifiedNativeContent": 19,
+  "allRowsSucceeded": false,
+  "rawAllCaseContentAuditPassed": false,
+  "contentAuditInterpretation": "The raw audit requires expected successful content in every case. Failed and timed-out cases make it false; all19 accepted successes separately have verified native content. No failed outcome is relabeled.",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 12,
+      "successes": 9,
+      "successRate": 0.75,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 5,
+      "recoverySuccessRate": 0.625,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 60,
+      "modelCalls": 79,
+      "usageCoverage": {
+        "reportedRequests": 69,
+        "totalRequests": 79,
+        "knownTokenSubtotal": 710343,
+        "pricedRequests": 69,
+        "knownPricedSubtotal": 0.0159791352
+      },
+      "toolCallCount": 58,
+      "wallMs": 1774238
+    },
+    "hmcodex-runtime": {
+      "runs": 12,
+      "successes": 10,
+      "successRate": 0.8333333333333334,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 6,
+      "recoverySuccessRate": 0.75,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 61,
+      "modelCalls": 79,
+      "usageCoverage": {
+        "reportedRequests": 74,
+        "totalRequests": 79,
+        "knownTokenSubtotal": 267459,
+        "pricedRequests": 74,
+        "knownPricedSubtotal": 0.010902729600000001
+      },
+      "toolCallCount": 51,
+      "wallMs": 1109480
+    }
+  },
+  "pairs": [
+    {
+      "iteration": 1,
+      "taskId": "inspect-readme-001",
+      "initialDigest": "aa51a8f18e76553079b41453fb274e75b6312b6a42856e689a3cf043b9a1621a",
+      "outcomes": {
+        "ordinary-codex": "SUCCEEDED",
+        "hmcodex-runtime": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "inspect-layout-001",
+      "initialDigest": "aa51a8f18e76553079b41453fb274e75b6312b6a42856e689a3cf043b9a1621a",
+      "outcomes": {
+        "ordinary-codex": "SUCCEEDED",
+        "hmcodex-runtime": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "recoverable-read-001",
+      "initialDigest": "aa51a8f18e76553079b41453fb274e75b6312b6a42856e689a3cf043b9a1621a",
+      "outcomes": {
+        "ordinary-codex": "SUCCEEDED",
+        "hmcodex-runtime": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-normalize-001",
+      "initialDigest": "3b893199d6c33f941c4a813a33e8f6f569ef7f1e5a30c6bd0bfa11248403bc50",
+      "outcomes": {
+        "ordinary-codex": "TIMED_OUT",
+        "hmcodex-runtime": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-syntax-001",
+      "initialDigest": "5cc9496d270a939d22de2b61296fd21d61abc17f9b7473587b92347625d8feca",
+      "outcomes": {
+        "ordinary-codex": "TIMED_OUT",
+        "hmcodex-runtime": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 1,
+      "taskId": "code-feature-001",
+      "initialDigest": "40cdbe8c5e7589bbf65ae8e785e39f154efdfdbb09a483c92a44f36b14e044e7",
+      "outcomes": {
+        "ordinary-codex": "SUCCEEDED",
+        "hmcodex-runtime": "FAILED"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "inspect-readme-001",
+      "initialDigest": "8e9508b0ce085034a41988061bc6a694312894f1cfcfa51584ac476d2595ad16",
+      "outcomes": {
+        "hmcodex-runtime": "SUCCEEDED",
+        "ordinary-codex": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "inspect-layout-001",
+      "initialDigest": "8e9508b0ce085034a41988061bc6a694312894f1cfcfa51584ac476d2595ad16",
+      "outcomes": {
+        "hmcodex-runtime": "SUCCEEDED",
+        "ordinary-codex": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "recoverable-read-001",
+      "initialDigest": "8e9508b0ce085034a41988061bc6a694312894f1cfcfa51584ac476d2595ad16",
+      "outcomes": {
+        "hmcodex-runtime": "TIMED_OUT",
+        "ordinary-codex": "TIMED_OUT"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-normalize-001",
+      "initialDigest": "cc1d4a6f08ff1d18c8ba0561aa56bb393022784aad2cc45d264b0fc600fafe88",
+      "outcomes": {
+        "hmcodex-runtime": "SUCCEEDED",
+        "ordinary-codex": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-syntax-001",
+      "initialDigest": "b3aee66187019e7ad986fd169e2715504dad128a957bc312e46dab2625acdb08",
+      "outcomes": {
+        "hmcodex-runtime": "SUCCEEDED",
+        "ordinary-codex": "SUCCEEDED"
+      }
+    },
+    {
+      "iteration": 2,
+      "taskId": "code-feature-001",
+      "initialDigest": "e7e365f9a39b0d4e76436fdff77725a00facc1ee2937636bc3e117c9c452c33f",
+      "outcomes": {
+        "hmcodex-runtime": "SUCCEEDED",
+        "ordinary-codex": "SUCCEEDED"
+      }
+    }
+  ],
+  "stageResult": {
+    "hmSuccess": "10/12",
+    "codexSuccess": "9/12",
+    "hmRecovery": "6/8",
+    "codexRecovery": "5/8"
+  },
+  "conclusions": [
+    "This complete small sample has one additional hmCodex success and recovery. It does not establish general superiority.",
+    "Observed total wall time includes failures, timeouts and provider/network variation; it is not a controlled causal speed estimate.",
+    "Known token and quota subtotals have unequal incomplete coverage. Total usage, cash charges and cash savings remain unknown.",
+    "Headless human minutes are zero for both conditions; this does not measure human time savings.",
+    "Ordinary Codex uses third-party model fallback tools. PowerShell patch failures constrain the interpretation."
+  ],
+  "remaining": [
+    "Complete the separately running same-source Jev on/off ablation.",
+    "Finish validating and merge the isolated Node preview/context and workspace timeout cleanup after the frozen series ends.",
+    "Rebuild and verify the merged source; do not use isolated runtime diagnostics as current desktop acceptance.",
+    "Import genuine billing and human activity records before claiming cash or labor benefits."
+  ],
+  "report": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_PAIRED_2026-10-08.json"
+}

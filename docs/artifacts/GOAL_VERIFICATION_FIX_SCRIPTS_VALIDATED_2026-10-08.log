@@ -1,0 +1,27 @@
+✔ model-visible tool content must match a successful durable native result (11.876875ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.0475ms)
+✔ a completed invocation returning exit failure does not count as a successful process (1.33ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (5.116562ms)
+✔ Jev variant labels still require successful native hmCodex evidence (79.510625ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (4.072187ms)
+✔ recovery requires a real failure followed by a successful tool result (1.000156ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.782969ms)
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (3117.668906ms)
+✔ a timed out live client is terminated and cannot pass acceptance (894.173125ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (9.526406ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (2.257031ms)
+✔ declared off/on conditions must match observed decision-provider usage (1.218438ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (6.075156ms)
+✔ both clients use the same text and developer instruction conversion (0.681093ms)
+✔ live model records returned inference IDs for success and HTTP failure without inventing charges (188.019687ms)
+✔ live decision recording forwards real answers and never records credentials (143.28875ms)
+✔ actual simple Node commands are parsed without accepting quoted examples or compound shell scripts (11.400937ms)
+✔ source repair needs an actual seeded failure and the immutable fixture test to pass (1717.849844ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4624.063125

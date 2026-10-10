@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+  "text": "Evidence gathered for the remaining goal.\n\n**Result of `workspace.read(README.md)`** (fresh, successful):\n- path: `README.md`\n- sizeBytes: 43\n- digest: `sha256:16de4f136fc9809000445f1f0248ce99e2b3069782a186b9d7306357d6f1dde3` (matches the snapshot's selected-file hash)\n- truncated: false\n\n**Exact evidence marker in README.md:** `GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a11783c93c`\n\nStatus notes (read-only, no side effects):\n- Prior failure remains recorded as observed: `workspace.read` of `missing-evidence.txt` failed with `WORKSPACE_NOT_FOUND` (attempted, not retried — no new evidence supported retrying it, and it is not needed for the remaining goal).\n- The remaining goal was to read `README.md` and report its marker; that is now complete with real tool evidence above.\n- Workspace was not modified; only `workspace.read` was used.",
+  "outputDigest": "sha256:b39b7b6dc04c95fda0c8cc735a06336a4af9f345bdfaeb4c886a0c6b7a1d223e"
+}

@@ -1,0 +1,63 @@
+✔ resume enters recovery and blocks an interrupted side effect (3089.299531ms)
+✔ executes ready steps in dependency order and persists every lifecycle transition (12.708593ms)
+✔ blocks dependent steps after a hard verification failure (5.185782ms)
+✔ retries recoverable verification and records attempt (2.074531ms)
+✔ reconciles an interrupted step and refuses unknown side effects (1.444219ms)
+✔ explicit resume cannot replay a step with unknown side-effect outcome (1.260469ms)
+✔ executes a multi-step planner DAG one step at a time and persists step checkpoints (4608.123281ms)
+✔ multi-agent runtime reviews a complex plan through isolated Council turns (6368.306094ms)
+✔ resumes a failed thread from its checkpoint without rerunning completed steps (8920.631563ms)
+✔ recovers from a binary workspace read and verifies a colored build log through the runtime (4711.580157ms)
+✖ a killed read-only runtime resumes pending work without repeating completed steps (7309.090156ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-w5UQO6
+✔ a killed controlled write remains blocked when resumed in read-only mode (8044.410157ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-sdwN6M
+✔ a read-only source does not authorize replay after upgrading the resume mode (6214.366875ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-1vAiOd
+✖ a killed read-only runtime resumes with the phase-one SQLite event store (17492.700312ms)
+ℹ Evidence directory: C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-zGXRpU
+ℹ tests 14
+ℹ suites 0
+ℹ pass 12
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39862.543906
+
+✖ failing tests:
+
+test at test\process-interruption-runtime.test.mjs:145:1
+✖ a killed read-only runtime resumes pending work without repeating completed steps (7309.090156ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'sha256:3ed7d41cff582bfae9074598630581cb1b9760a83c7d565b9eaabb6070381f69'
+  
+      at exerciseInterruption (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:140:10)
+      at async TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:146:53)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'sha256:3ed7d41cff582bfae9074598630581cb1b9760a83c7d565b9eaabb6070381f69',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test\process-interruption-runtime.test.mjs:181:1
+✖ a killed read-only runtime resumes with the phase-one SQLite event store (17492.700312ms)
+  Error: ENOENT: no such file or directory, open 'C:\Users\User\AppData\Local\Temp\hmcodex-process-interruption-zGXRpU\trajectory.jsonl'
+      at async open (node:internal/fs/promises:697:25)
+      at async readFile (node:internal/fs/promises:1348:14)
+      at async exerciseInterruption (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:130:19)
+      at async TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:182:33)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    errno: -4058,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-process-interruption-zGXRpU\\trajectory.jsonl'
+  }

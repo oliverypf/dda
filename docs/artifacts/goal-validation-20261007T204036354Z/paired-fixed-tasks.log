@@ -1,0 +1,104 @@
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791405923803}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791405929535}
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-inspect-layout-001-ordinary-codex","mode":"READ_ONLY","atMs":1791405939376}
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-inspect-layout-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791405945344}
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-recoverable-read-001-ordinary-codex","mode":"READ_ONLY","atMs":1791405954823}
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791405963617}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791405976941}
+ordinary-codex code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406111258}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791406131930}
+ordinary-codex code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406269429}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-feature-001-ordinary-codex","mode":"CONTROLLED","atMs":1791406294081}
+ordinary-codex code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406429062}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-inspect-readme-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791406449734}
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-inspect-readme-001-ordinary-codex","mode":"READ_ONLY","atMs":1791406458839}
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-inspect-layout-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791406464617}
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-inspect-layout-001-ordinary-codex","mode":"READ_ONLY","atMs":1791406473725}
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791406479403}
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-recoverable-read-001-ordinary-codex","mode":"READ_ONLY","atMs":1791406492316}
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406500825}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791406521258}
+ordinary-codex code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406657973}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791406682262}
+ordinary-codex code-syntax-001 SUCCEEDED tools=4 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791406818898}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T204522387Z-5e51fe58/2-code-feature-001-ordinary-codex","mode":"CONTROLLED","atMs":1791406839717}
+ordinary-codex code-feature-001 SUCCEEDED tools=3 errors=1
+{
+  "batchId": "20261007T204522387Z-5e51fe58",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\comparison.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 12,
+      "successes": 12,
+      "successRate": 1,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 960,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "pricingBasis": null,
+      "toolRounds": 28,
+      "modelCalls": 40,
+      "usageCoverage": {
+        "reportedRequests": 40,
+        "totalRequests": 40,
+        "knownTokenSubtotal": 960,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "toolCallCount": 28,
+      "wallMs": 849663
+    },
+    "hmcodex-runtime": {
+      "runs": 12,
+      "successes": 12,
+      "successRate": 1,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 8,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 1056,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "pricingBasis": null,
+      "toolRounds": 30,
+      "modelCalls": 44,
+      "usageCoverage": {
+        "reportedRequests": 44,
+        "totalRequests": 44,
+        "knownTokenSubtotal": 1056,
+        "pricedRequests": 0,
+        "knownPricedSubtotal": 0
+      },
+      "toolCallCount": 30,
+      "wallMs": 169918
+    }
+  }
+}
+

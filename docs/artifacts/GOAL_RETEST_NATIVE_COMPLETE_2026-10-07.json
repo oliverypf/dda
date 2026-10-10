@@ -1,0 +1,30 @@
+[
+  {
+    "suite": "security",
+    "exitCode": 0,
+    "startedAt": "2026-10-07T12:58:52.9137411+08:00",
+    "finishedAt": "2026-10-07T12:59:52.7988645+08:00",
+    "log": "../docs/artifacts/GOAL_RETEST_UI_SECURITY_COMPLETE_2026-10-07.log"
+  },
+  {
+    "suite": "disconnect",
+    "exitCode": 0,
+    "startedAt": "2026-10-07T12:59:52.8670562+08:00",
+    "finishedAt": "2026-10-07T13:00:09.9651424+08:00",
+    "log": "../docs/artifacts/GOAL_RETEST_UI_DISCONNECT_COMPLETE_2026-10-07.log"
+  },
+  {
+    "suite": "streaming",
+    "exitCode": 0,
+    "startedAt": "2026-10-07T13:00:09.9696218+08:00",
+    "finishedAt": "2026-10-07T13:00:17.1101979+08:00",
+    "log": "../docs/artifacts/GOAL_RETEST_UI_STREAMING_COMPLETE_2026-10-07.log"
+  },
+  {
+    "suite": "accessibility",
+    "exitCode": 0,
+    "startedAt": "2026-10-07T13:00:17.1177803+08:00",
+    "finishedAt": "2026-10-07T13:00:20.9318969+08:00",
+    "log": "../docs/artifacts/GOAL_RETEST_UI_ACCESSIBILITY_COMPLETE_2026-10-07.log"
+  }
+]

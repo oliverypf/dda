@@ -1,0 +1,40 @@
+
+> hmcodex-desktop@0.1.0 test:scripts
+> node "%npm_config_local_prefix%/scripts/run-script-tests.mjs"
+
+✔ Phase 1.5 build fixes the controlled channel without mutating caller environment (2.827969ms)
+✔ controlled build invokes the local Windows CLI and supports fast mode (0.756718ms)
+✔ full local build fixes the release channel without mutating caller environment (0.380625ms)
+✔ Phase 1 build fixes the compiled channel without mutating caller environment (2.858593ms)
+✔ build invokes the local Windows CLI with the fixed channel and propagates failure (2.041875ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (1.738281ms)
+✔ recovery requires a real failure followed by a successful tool result (0.254531ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.25ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (2.982656ms)
+✔ both clients use the same text and developer instruction conversion (0.244688ms)
+✔ the sampler credits only the wall clock between real samples (18.442344ms)
+✔ the sampler records a real store count and fails closed without a state path (59.975781ms)
+✔ each sample names the physical store file it read (48.265157ms)
+✔ phase3 evidence check passes and writes artifact (182.457188ms)
+✔ w10 evidence stays NOT_READY without a real install, window and signed reports (18.417812ms)
+✔ long run only credits observed wall clock inside the gap tolerance (18.282969ms)
+✔ signed release evidence must declare ok:true (23.819688ms)
+✔ retention needs a recorded observation start before it can be partial (12.343125ms)
+✔ install lifecycle evidence must be present, elevated and complete (2.436094ms)
+✔ install lifecycle evidence accepts only fully verified elevated steps (37.203281ms)
+✔ install lifecycle evidence rejects fabricated, partial and tampered records (66.264531ms)
+✔ the evidence record names the physical store file it read (56.36375ms)
+✔ derives one coherent desktop, workspace, and runtime root (3.449844ms)
+✔ honors an explicit desktop root before the caller directory (2.312031ms)
+✔ a real profile file lists the package copy as a different physical file (17.289687ms)
+✔ the same inode identifies a store read through the package local cache (9.647656ms)
+✔ the unredacted profile alias is reported only when it is another file (13.303594ms)
+✔ paths outside the profile root have no package twins (2.952813ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 814.684375

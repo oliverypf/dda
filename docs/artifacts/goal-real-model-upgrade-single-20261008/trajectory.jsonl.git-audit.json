@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "checkpoints": [
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-94d8b049-c55c-4045-835d-6401dbf81dab",
+      "runId": "run-281e9526-086a-43d6-8b4b-8b1d9056f6b4",
+      "checkpointKind": "RUN_STARTED",
+      "status": "READY",
+      "eventId": "event-283c7234-60c6-4a7d-a9e4-8ae1b704c078",
+      "eventSequence": 1,
+      "observationDigest": "sha256:cc37693a626dd5223dc9b1ba442fef37400c042789f81eb5e19b2c4181390de3",
+      "trajectoryRootDigest": "sha256:84d4cc548015b4bffe675805aca4a0075aa2c56373524991e82eebacaf62c618",
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:6dc5acde5b7518e4c5a312e1e9d69a8ca0170bbfc122be7bb2315bdf797cb4e3",
+        "observedAtMs": 1791391930370,
+        "observationDigest": "sha256:cc37693a626dd5223dc9b1ba442fef37400c042789f81eb5e19b2c4181390de3"
+      },
+      "createdAtMs": 1791391930766,
+      "recordDigest": "sha256:ea506e5f4a43510b9a49c9283bc76520e9310186123f888f119d9aaaec0b2d04"
+    },
+    {
+      "schemaVersion": "1.0",
+      "checkpointId": "audit-b3388299-bd50-421a-b9c8-bf44059fe2ae",
+      "runId": "run-281e9526-086a-43d6-8b4b-8b1d9056f6b4",
+      "checkpointKind": "RUN_COMPLETED",
+      "status": "READY",
+      "eventId": "event-60da1908-cc1c-494b-b4d7-dbe2c90c17fa",
+      "eventSequence": 126,
+      "observationDigest": "sha256:26f7f16a6ea802f01c5cdee854b361552dff5cee25052de79defc0efd72d9a78",
+      "trajectoryRootDigest": "sha256:e527296ff22cb1358f4832b045d4294d11d0eb5c95447acddba56767ded51777",
+      "correlation": {
+        "threadId": "thread-de72565b-956c-4cdf-a343-6ce51b61d44f"
+      },
+      "observation": {
+        "schemaVersion": "1.0",
+        "available": false,
+        "status": "NOT_A_REPOSITORY",
+        "workspaceRootDigest": "sha256:6dc5acde5b7518e4c5a312e1e9d69a8ca0170bbfc122be7bb2315bdf797cb4e3",
+        "observedAtMs": 1791391982093,
+        "observationDigest": "sha256:26f7f16a6ea802f01c5cdee854b361552dff5cee25052de79defc0efd72d9a78"
+      },
+      "createdAtMs": 1791391982437,
+      "recordDigest": "sha256:2448d5e61780ab8ef5eb571b630fe50be643787fed65438ae39a8b404e2c98da"
+    }
+  ]
+}

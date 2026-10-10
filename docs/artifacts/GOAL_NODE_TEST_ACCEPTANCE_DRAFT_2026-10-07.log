@@ -1,0 +1,10 @@
+✔ options after a script and incomplete fixture scopes cannot supply full test proof (5.63375ms)
+✔ native suite acceptance observes the immutable fixture test, not a successful unrelated Node script (1295.735ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1753.879687

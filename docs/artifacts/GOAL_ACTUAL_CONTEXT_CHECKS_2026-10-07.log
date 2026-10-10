@@ -1,0 +1,41 @@
+✔ a long model answer retains literal reported values after the real 500-character boundary (3.563437ms)
+✔ native process status and the end of a large test log survive without malformed JSON (0.516406ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (0.413281ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (2.594844ms)
+✔ tool policy distinguishes configured capability from a required host execution check (0.958125ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (0.72125ms)
+✔ file edits carry the actual proposed change as bounded untrusted data (0.534062ms)
+✔ an actual failed process preserves stderr evidence when stdout is empty (0.264843ms)
+✔ automatic test context reads current authorized files rather than stale snapshot contents (47.784219ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'private-store.mjs',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-decision-context-policy-P7ds7n',
+  error: 'WORKSPACE_EXCLUDED_PATH:private-store.mjs'
+}
+✔ context collection preserves workspace exclusions and never follows opaque or escaped proposals (15.823594ms)
+✔ actual failed and successful tests remain visible after a long chain and state compaction (3.448125ms)
+✔ decision observations keep only bounded terminal host facts (3.370312ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2565.987969ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (5023.202812ms)
+✔ a later successful identical test resolves its failure without losing the trace (7.664062ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (2.075469ms)
+✔ rule verifier requires bounded non-empty output (0.500469ms)
+✔ task coordinator enforces transitions and optimistic version (2.8775ms)
+✔ rule verifier reports partial goal progress as CONTINUE (0.757031ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.523594ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (1.981407ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (0.826562ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.116094ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.512969ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.395625ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.396719ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.319688ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60357.250781

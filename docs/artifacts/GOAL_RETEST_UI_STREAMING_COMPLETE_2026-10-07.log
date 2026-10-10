@@ -1,0 +1,7 @@
+
+> hmcodex-desktop@0.1.0 test:ui:streaming
+> node "%npm_config_local_prefix%/scripts/ui-streaming-test.mjs"
+
+samples=4 maxStreamingLength=138 markerKeptWhileGrowing=4 terminal=只读检查完成
+检查完成，可查看时间线证据或发起新任务。
+PASS streaming row updated in place without rebuilding the app root

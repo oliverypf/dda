@@ -1,0 +1,25 @@
+✔ model-visible tool content must match a successful durable native result (24.743438ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.1875ms)
+✔ a completed invocation returning exit failure does not count as a successful process (2.068125ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (2.417344ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (6.956406ms)
+✔ recovery requires a real failure followed by a successful tool result (1.464375ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.827968ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (14.774688ms)
+✔ both clients use the same text and developer instruction conversion (2.053594ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (4.408906ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (1.042344ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (0.64ms)
+✔ billing imports require full coverage and never turn missing charges into zero (1.0325ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (2015.8975ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (3079.562969ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (3001.765469ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (2454.305781ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11538.521875

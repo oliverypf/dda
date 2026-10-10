@@ -1,0 +1,254 @@
+{
+  "generatedAt": "2026-10-07T16:53:05.938Z",
+  "taskId": "actual-flash-to-pro-recovery",
+  "models": [
+    "mimo-v2.6-flash",
+    "mimo-v2.6-pro"
+  ],
+  "frozenRuntimeSource": "5186ceb599c120d765faf1bfc3150294064ab64504620a214f6d5e185e1638bc",
+  "method": "Actual registered Flash/Pro providers and untouched real Jev answers. Prompt seeds a missing-file failure; no inference response is fabricated. Independent experiment during fixed-task batch; excluded from its comparison and timing.",
+  "passed": false,
+  "checks": {
+    "childCompleted": true,
+    "runtimeSuccess": true,
+    "actualMissingRead": false,
+    "recoveryStarted": true,
+    "actualStrongExecutor": false,
+    "distinctActualModels": false,
+    "actualJevUsed": true,
+    "jevSelectedStrongModel": false,
+    "actualMarkerRead": true
+  },
+  "result": {
+    "code": 0,
+    "timedOut": false,
+    "wallMs": 55553,
+    "outputTruncated": false
+  },
+  "modelsUsed": {
+    "flashRequests": 4,
+    "proRequests": 0,
+    "strongExecutorRequests": 0,
+    "jevRequests": 10
+  },
+  "decisions": [
+    {
+      "decisionId": "decision-5734529a-31b0-46ec-af0b-e79e116c2f82",
+      "decisionType": "CLASSIFY_TASK",
+      "selectedOptionId": "classify-inspect",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ]
+    },
+    {
+      "decisionId": "decision-b78859ad-09c6-4c15-8896-4ceddd92d69e",
+      "decisionType": "SELECT_ROUTE",
+      "selectedOptionId": "route-selected",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ]
+    },
+    {
+      "decisionId": "decision-97675899-15ce-47ee-b037-fb5c09662353",
+      "decisionType": "ALLOCATE_ROLE_CONTEXTS",
+      "selectedOptionId": "contexts-dedicated",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ]
+    },
+    {
+      "decisionId": "decision-e45fbcb1-4ef6-47e6-a638-d2cf7ba112c6",
+      "decisionType": "CREATE_PLAN",
+      "selectedOptionId": "plan-bounded-default",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_EVIDENCE_REQUIRED"
+      ]
+    },
+    {
+      "decisionId": "decision-ba7c8d77-040f-4b83-9af3-2d538484978f",
+      "decisionType": "SELECT_TOOL_ACTION",
+      "selectedOptionId": "tool-call_cab81b69466d46ab8713792c-selected",
+      "reasonCodes": [
+        "JEV_TIMEOUT"
+      ]
+    },
+    {
+      "decisionId": "decision-899e0296-cd1c-4ddc-b875-4d1594ff93e8",
+      "decisionType": "DECISION_FAILURE_ROUTER",
+      "selectedOptionId": "TIMEOUT",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "TIMEOUT_SIGNAL"
+      ]
+    },
+    {
+      "decisionId": "decision-d9d25fac-e226-438f-99c2-9f68066923b2",
+      "decisionType": "DECISION_ASSESS_EVIDENCE",
+      "selectedOptionId": "UNKNOWN",
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ]
+    },
+    {
+      "decisionId": "decision-8256547b-7060-4388-a3c1-7a70e0a88e86",
+      "decisionType": "DECISION_TEST_SELECTOR",
+      "selectedOptionId": "NONE",
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ]
+    },
+    {
+      "decisionId": "decision-29083e0a-a925-4eba-a143-d03f1241f8bc",
+      "decisionType": "DECISION_STOP_OR_CONTINUE",
+      "selectedOptionId": "NEED_ESCALATION",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NON_RETRYABLE_OR_EXPENSIVE_FAILURE"
+      ]
+    },
+    {
+      "decisionId": "decision-404a1817-eaef-40a5-bdb0-a759851a495f",
+      "decisionType": "DECISION_ESCALATE_OR_REQUEST_USER",
+      "selectedOptionId": "COLLECT_EVIDENCE",
+      "reasonCodes": [
+        "JEV_DECISION",
+        "JEV_CHOICE"
+      ]
+    },
+    {
+      "decisionId": "decision-33e73e29-b5e2-4b62-82a9-2a2e3aa48c1f",
+      "decisionType": "VERIFY_TASK_RESULT",
+      "selectedOptionId": "verdict-UNCERTAIN",
+      "reasonCodes": [
+        "RULE_VERIFIER"
+      ]
+    },
+    {
+      "decisionId": "decision-f1b89a50-1a55-4f81-90e9-4544541c5fbb",
+      "decisionType": "DIAGNOSE_VERIFICATION",
+      "selectedOptionId": "diagnosis-UNKNOWN_VERIFIER_FAILURE",
+      "reasonCodes": [
+        "JEV_DECISION"
+      ]
+    },
+    {
+      "decisionId": "decision-4ed1a925-e7a1-491c-9c84-b83f2b2bb116",
+      "decisionType": "SELECT_PROBE",
+      "selectedOptionId": "probe-readonly-evidence",
+      "reasonCodes": [
+        "JEV_DECISION"
+      ]
+    },
+    {
+      "decisionId": "decision-e4477c80-8a5d-43cb-b717-65676816e042",
+      "decisionType": "SELECT_RECOVERY_DIRECTION",
+      "selectedOptionId": "collect-evidence",
+      "reasonCodes": [
+        "JEV_DECISION"
+      ]
+    },
+    {
+      "decisionId": "decision-d8034a4f-5af3-41e6-bca8-cd9b6aef38de",
+      "decisionType": "SELECT_REPLAN_PLAN",
+      "selectedOptionId": "replan-collect-evidence",
+      "reasonCodes": [
+        "JEV_DECISION"
+      ]
+    },
+    {
+      "decisionId": "decision-be73c206-7249-40bc-b108-68bce58e5caa",
+      "decisionType": "RECOVER_TASK",
+      "selectedOptionId": "recovery-retry-new-evidence",
+      "reasonCodes": [
+        "BOUNDED_RECOVERY"
+      ]
+    },
+    {
+      "decisionId": "decision-6d677d68-54df-48b4-9e3c-7f3b285f1115",
+      "decisionType": "SELECT_SAFE_MODEL_FALLBACK",
+      "selectedOptionId": "active-model",
+      "reasonCodes": [
+        "JEV_DECISION"
+      ]
+    },
+    {
+      "decisionId": "decision-a84dc254-f8e0-47b8-b036-5000b3d1294f",
+      "decisionType": "SELECT_TOOL_ACTION",
+      "selectedOptionId": "tool-call_a8a174e866514222af4bad44-selected",
+      "reasonCodes": [
+        "JEV_TIMEOUT"
+      ]
+    },
+    {
+      "decisionId": "decision-9716421a-a519-4bc7-8057-1bd18c2378b2",
+      "decisionType": "DECISION_FAILURE_ROUTER",
+      "selectedOptionId": "NONE",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "EXIT_CODE_ZERO_OR_VERIFIER_PASS"
+      ]
+    },
+    {
+      "decisionId": "decision-d1d7e58e-a8ec-4001-9f1a-aac19b305194",
+      "decisionType": "DECISION_ASSESS_EVIDENCE",
+      "selectedOptionId": "SUFFICIENT",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "ALL_REQUIREMENTS_SUPPORTED"
+      ]
+    },
+    {
+      "decisionId": "decision-363a746a-3470-4aec-8612-0b68cd78f26e",
+      "decisionType": "DECISION_TEST_SELECTOR",
+      "selectedOptionId": "NONE",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "EVIDENCE_ALREADY_SUFFICIENT"
+      ]
+    },
+    {
+      "decisionId": "decision-5235c1df-f927-4966-848d-b926f71a5c31",
+      "decisionType": "DECISION_STOP_OR_CONTINUE",
+      "selectedOptionId": "STOP_SUCCESS",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "HARD_SUCCESS_WITH_COMPLETE_REQUIREMENTS"
+      ]
+    },
+    {
+      "decisionId": "decision-19470b59-c6db-481d-bb3c-aa69d5366fd5",
+      "decisionType": "DECISION_ESCALATE_OR_REQUEST_USER",
+      "selectedOptionId": "LOCAL_CONTINUE",
+      "reasonCodes": [
+        "DETERMINISTIC_RULE",
+        "NO_ESCALATION_AFTER_SUCCESS"
+      ]
+    },
+    {
+      "decisionId": "decision-fe4b5d47-6b06-4c45-844d-c386cc99a997",
+      "decisionType": "VERIFY_TASK_RESULT",
+      "selectedOptionId": "verdict-PASS",
+      "reasonCodes": [
+        "RULE_VERIFIER"
+      ]
+    },
+    {
+      "decisionId": "decision-26ae46c2-926e-4a71-a68a-3226ebe75e7a",
+      "decisionType": "CONSOLIDATE_MEMORY",
+      "selectedOptionId": "memory-proposal-create",
+      "reasonCodes": [
+        "VERIFIED_OUTCOME",
+        "REVIEW_GATED_PROPOSAL"
+      ]
+    }
+  ],
+  "actualCost": null,
+  "manualInterventionMinutes": null,
+  "limitation": "A preset recovery smoke test cannot establish a cost-effective model escalation policy, success rates or human savings."
+}

@@ -1,0 +1,46 @@
+✔ Phase 1.5 build fixes the controlled channel without mutating caller environment (10.195313ms)
+✔ controlled build invokes the local Windows CLI and supports fast mode (2.664218ms)
+✔ full local build fixes the release channel without mutating caller environment (1.096719ms)
+✔ Phase 1 build fixes the compiled channel without mutating caller environment (6.1025ms)
+✔ build invokes the local Windows CLI with the fixed channel and propagates failure (4.285156ms)
+✔ model-visible tool content must match a successful durable native result (17.762969ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.809219ms)
+✔ a completed invocation returning exit failure does not count as a successful process (6.610156ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (5.742187ms)
+✔ recovery requires a real failure followed by a successful tool result (0.6925ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.561875ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (7.184375ms)
+✔ both clients use the same text and developer instruction conversion (0.638906ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (6.505938ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (2.064531ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (0.990312ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (3179.59375ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (3443.321875ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (2673.343437ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (2137.81625ms)
+✔ the sampler credits only the wall clock between real samples (187.596093ms)
+✔ the sampler records a real store count and fails closed without a state path (219.348125ms)
+✔ each sample names the physical store file it read (142.787187ms)
+✔ phase3 evidence check passes and writes artifact (559.97375ms)
+✔ w10 evidence stays NOT_READY without a real install, window and signed reports (44.418438ms)
+✔ long run only credits observed wall clock inside the gap tolerance (89.498125ms)
+✔ signed release evidence must declare ok:true (134.123125ms)
+✔ retention needs a recorded observation start before it can be partial (37.905468ms)
+✔ install lifecycle evidence must be present, elevated and complete (5.236563ms)
+✔ install lifecycle evidence accepts only fully verified elevated steps (339.168906ms)
+✔ install lifecycle evidence rejects fabricated, partial and tampered records (465.829375ms)
+✔ the evidence record names the physical store file it read (532.956563ms)
+✔ derives one coherent desktop, workspace, and runtime root (8.583438ms)
+✔ honors an explicit desktop root before the caller directory (9.824062ms)
+✔ a real profile file lists the package copy as a different physical file (75.065156ms)
+✔ the same inode identifies a store read through the package local cache (77.821406ms)
+✔ the unredacted profile alias is reported only when it is another file (14.692656ms)
+✔ paths outside the profile root have no package twins (6.651875ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13127.575313

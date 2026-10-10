@@ -1,0 +1,5 @@
+
+> hmcodex-desktop@0.1.0 test:ui:memory
+> node "%npm_config_local_prefix%/scripts/ui-memory-test.mjs"
+
+PASS memory fields, unknown semantics, delete bridge dispatch and refresh for three states

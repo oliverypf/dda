@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "threads": [
+    {
+      "id": "thread-d169eb49-5f48-4530-a776-782abe5e6b59",
+      "title": "This is a preset read-only recovery test. Success requires a real workspace.read of README.md and reporting its exact evidence marker. In the initial executor attempt, invoke only workspace.read of missing-evidence.txt as the first tool, re",
+      "cwd": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-actual-checkpoint-upgrade-L2OsZB",
+      "turns": [
+        {
+          "id": "turn-42e4e4ac-0da3-462f-b3a9-de66a4960e72",
+          "runId": "run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+          "summary": "state=FAILED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | errorDigest=sha256:aed86ddbba95c8f72c0d3fc4f2f32406551e571e921b9a2ba26c3844c4cb4858",
+          "state": "FAILED",
+          "atMs": 1791394606274
+        },
+        {
+          "id": "turn-5fdef036-43e5-496f-b28f-2823e13f938b",
+          "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+          "summary": "state=FAILED | promptDigest=sha256:921c332e90ea5a0089d1584c62a47697c8d5c5938018f80d1c3be557bce75a45 | errorDigest=sha256:96d01d9e92a453809da42efd1f2550ada5ea75b63471109a46573bb747b18547",
+          "state": "FAILED",
+          "atMs": 1791394642838
+        }
+      ],
+      "state": "FAILED",
+      "createdAtMs": 1791394582514,
+      "updatedAtMs": 1791394642838,
+      "activeRunId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+      "checkpoint": {
+        "runId": "run-e2c9735e-dee6-43ea-b969-5cc08430963f",
+        "phase": "VERIFYING",
+        "state": "FAILED",
+        "plan": {
+          "planId": "plan-run-4e1ba646-4656-44fe-8766-c82d14bdddb4",
+          "planDigest": "sha256:bc44e576adb146b3c26d1f87b0608d049b88cfbf2b65a174b9217e8eece3a13d",
+          "steps": [
+            {
+              "stepId": "execute",
+              "summary": "Execute the bounded task and collect evidence",
+              "actionKind": "EXECUTE",
+              "dependencies": [],
+              "status": "FAILED",
+              "attempt": 2,
+              "outputDigest": "sha256:94ca46d13699ec5545257f88563ed8873c6fe0edb7740ef26dafd69c887c3a33",
+              "errorCode": "UNCERTAIN"
+            }
+          ]
+        },
+        "blockers": [
+          "PLAN_STEP_FAILED"
+        ],
+        "pendingActions": [
+          "review failure and decide whether to resume"
+        ],
+        "updatedAtMs": 1791394642784,
+        "checkpointDigest": "sha256:f072edb11283ccabf462e1ef59fb0c2663082a4614462ee53c29dfeef0429e8b"
+      }
+    }
+  ]
+}

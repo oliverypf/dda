@@ -1,0 +1,47 @@
+✔ failure router keeps assertion failures in the test failure lane (4.934218ms)
+✔ evidence and stop rules block premature success (1.116719ms)
+✔ Jev client normalizes finite-choice answers and sends no tool surface (5.641562ms)
+✔ decision engine batches unresolved Jev questions and returns a finite control action (4.947187ms)
+✔ decision engine fails closed to conservative recovery when Jev is unavailable (2.12ms)
+✔ decision engine records fallback when an enabled Jev request fails (1.840781ms)
+✔ decision state honors the configured size limit (2.871719ms)
+✔ Jev owns candidate selection and action gating without a model verifier role (20.440313ms)
+✔ decision observations keep only bounded terminal host facts (7.298438ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (4999.00375ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (10539.308906ms)
+✔ a later successful identical test resolves its failure without losing the trace (12.980625ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (3.518281ms)
+✔ rule verifier requires bounded non-empty output (0.92875ms)
+✔ task coordinator enforces transitions and optimistic version (4.037343ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.172656ms)
+✔ rule verifier detects repeated actions and stops with STALLED (3.370313ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.601094ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.843125ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.770781ms)
+✔ rule verifier does not treat empty evidence containers as proof (1.060782ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.92375ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.693906ms)
+✔ recovers CONTINUE reports and stops after a successful verification (11.206562ms)
+✔ does not recover hard failures or exceed the configured budget (1.306093ms)
+✔ recovery context contains only bounded verifier facts and action digests (0.804063ms)
+✔ terminal FAIL report stops recovery without another execute (0.785781ms)
+✔ terminal CANCELLED report also stops recovery without retry (0.931875ms)
+✔ stops before another execution when recovery selects stop and report (1.185625ms)
+✔ pauses before another execution when recovery requests user input (3.102968ms)
+✔ an unsuccessful test.execute result is a failure (TEST_CHECK_FAILED) despite a completed invocation (40.030781ms)
+✔ an unsuccessful test.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (8.791094ms)
+✔ an unsuccessful shell.execute result is a failure (EXECUTOR_RESULT_FAILED) despite a completed invocation (8.681094ms)
+✔ runs a model-requested tool and sends its result into the next round (8.043906ms)
+✔ READ_ONLY requests expose only read-only tools (6.192344ms)
+✔ rejects a hidden side-effect tool call with an actionable mode error (6.786718ms)
+✔ stops repeated workspace requests after four rounds without new evidence (16.265469ms)
+✔ stops at the configured tool-round cap instead of allowing an unbounded loop (6.026406ms)
+✔ preserves recoverable tool error codes and lets the model switch paths (9.63625ms)
+ℹ tests 39
+ℹ suites 0
+ℹ pass 39
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16205.072969

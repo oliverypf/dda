@@ -1,0 +1,81 @@
+{
+  "generatedAt": "2026-10-07T21:03:29.444Z",
+  "scope": "IMPLEMENT_THE_THREE_REQUESTED_AUTOMATED_TESTS",
+  "sourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+  "requestedTestAutomationVerified": true,
+  "oneCommandPassed": true,
+  "verifiedPersistedRealRows": 48,
+  "requirements": [
+    {
+      "requirement": "Preset interrupted task; resume from checkpoint.",
+      "verdict": "VERIFIED",
+      "evidence": "Native T07R and actual process-interruption runtime checks; restored checkpoints preserve completed work."
+    },
+    {
+      "requirement": "Preset definite failure; retry/model upgrade/Jev decision until success.",
+      "verdict": "VERIFIED",
+      "evidence": "Native T15; actual Flash missing-file failure and same-checkpoint explicit Pro success; separate actual Jev automatic recovery success."
+    },
+    {
+      "requirement": "Fixed tasks; continuously record success/recovery/human minutes/token/cost/tool rounds and compare ordinary Codex with the same model.",
+      "verdict": "VERIFIED_AUTOMATION_AND_RECORDED_AVAILABLE_DATA",
+      "evidence": "48 actual frozen-source runs, 24 matched pairs, append-only records and independently rechecked native success evidence. Missing usage/invoices remain explicitly unknown; headless human minutes are zero with NO_HUMAN_CHANNEL."
+    }
+  ],
+  "productAdvantageProven": false,
+  "cashSavingsProven": false,
+  "humanSavingsProven": false,
+  "automaticJevStrongSelectionProven": false,
+  "remainingProductValidation": [
+    "Provide actual invoices and genuine human activity to measure cash/labor savings.",
+    "Real automatic stronger-model selection is not yet observed.",
+    "Use larger representative workloads before claiming general engineering superiority."
+  ],
+  "limitations": [
+    "Local fixture success verifies test machinery and real tool execution, not production inference quality.",
+    "Implementing these tests does not mean proving that the product is worth paying for.",
+    "Failed actual tasks remain failed; missing measurement values are not filled with zero."
+  ],
+  "evidence": [
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\native-resume-retry.log",
+      "sha256": "03dac513cf121918c86c9807f27f8a89f809c5705a9f82178a106ae10e62fbf7"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\build.log",
+      "sha256": "ceeabb120100c88cdeb10f18bc748d8cf8fa153ab27207fc6750eae53146b833"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\recovery-jev-runtime.log",
+      "sha256": "f4fd0ec7ec5d14bc495913a963832f99837538cb6cf89f8bf82cfe21ed8529c4"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\fixed-task-acceptance.log",
+      "sha256": "74a3a228e93b8838a8e694bb2eb2702038a7fd430ddc7e8706c4a23ca04d4bc1"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\native-resume-retry.log",
+      "sha256": "03dac513cf121918c86c9807f27f8a89f809c5705a9f82178a106ae10e62fbf7"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\paired-fixed-tasks.log",
+      "sha256": "0084577cbd654d5e62fb319b7e0bc48139866a953185472ee4d69148e3b15bfe"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_ONE_COMMAND_2026-10-08.json",
+      "sha256": "f157b41c1fce59db80aea89ba89b57b6e9c3b601044cdb4aea2b388f4335e6af"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_COMPARE_COMPLETION_AUDIT_2026-10-08.json",
+      "sha256": "d2c6538978ace8a1fe01beadc1133893304f4bec906862cf4d0e86456578d58b"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_UPGRADE_2026-10-08.json",
+      "sha256": "ad249fd802027147df93578b41fd8446b3130a7abd8a6bf417adc472403644c9"
+    },
+    {
+      "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_AUTOMATIC_2026-10-08.json",
+      "sha256": "2df903b03218b150554831523ff22ae3488e56b5d47e692fef9b00aa2b5cfbad"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{"event":"CASE_START","runKey":"20261007T142807863Z-02cee6a9/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791383288517}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T142807863Z-02cee6a9/1-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791383329126}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T142807863Z-02cee6a9/2-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791383429056}
+hmcodex-runtime code-normalize-001 SUCCEEDED tools=3 errors=1
+{"event":"CASE_START","runKey":"20261007T142807863Z-02cee6a9/2-code-feature-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791383467786}
+hmcodex-runtime code-feature-001 SUCCEEDED tools=3 errors=1
+{
+  "batchId": "20261007T142807863Z-02cee6a9",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_LITERAL_GATE_LIVE_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 4,
+      "successes": 4,
+      "successRate": 1,
+      "recoveryOpportunities": 4,
+      "recoverySuccesses": 4,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 12,
+      "modelCalls": 17,
+      "usageCoverage": {
+        "reportedRequests": 16,
+        "totalRequests": 17,
+        "knownTokenSubtotal": 46626,
+        "pricedRequests": 16,
+        "knownPricedSubtotal": 0.008381464
+      },
+      "toolCallCount": 12,
+      "wallMs": 209796
+    }
+  }
+}

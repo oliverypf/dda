@@ -1,0 +1,135 @@
+{
+  "generatedAt": "2026-10-07T19:40:30.809Z",
+  "runtimeSourceSha256": "df857d5a78c31ffc4a78a94d01821347fca5657ae72473d63698b6ed2cc3febc",
+  "executable": {
+    "path": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\debug\\hmcodex-desktop.exe",
+    "sha256": "df3f95772ae6697f1bbf84b6e018ae490116d67cf3bd774d3a9183e4b887e9fb",
+    "modifiedAt": "2026-10-07T19:17:59.728Z"
+  },
+  "regressions": {
+    "runtime": {
+      "passed": 673,
+      "failed": 0,
+      "optionalSkipped": 1
+    },
+    "goalScripts": {
+      "passed": 38,
+      "failed": 0
+    },
+    "nativeDesktop": {
+      "passed": 28,
+      "failed": 0,
+      "cssViewport": {
+        "width": 1280,
+        "height": 474
+      },
+      "nativeWindowChromeResized": false
+    },
+    "build": {
+      "succeeded": true
+    },
+    "evidence": [
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_FULL_RUNTIME_VALIDATED_2026-10-08.log",
+        "sha256": "ca077da49a91f400b31932bac44521b4d50af3f562e90a36f9d857bf57b22de8"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_SCRIPTS_VALIDATED_2026-10-08.log",
+        "sha256": "b87e1b794219dd8105adf8ce98c85cf5005adb43bf5da2af49aa60f153e52106"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_NATIVE_2026-10-08.log",
+        "sha256": "edde6dc044a317a821b1747cdc07bebe0bd23955a8a7cb791ea54918eb7b76d3"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_BUILD_2026-10-08.log",
+        "sha256": "ad0b9cb7f44df0052b8aba488b79884a657e8c1aa5f0e4e630906c5d19267e96"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_UPGRADE_2026-10-08.json",
+        "sha256": "ad249fd802027147df93578b41fd8446b3130a7abd8a6bf417adc472403644c9"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_NODE_PREVIEW_MERGED_AUTOMATIC_2026-10-08.json",
+        "sha256": "2df903b03218b150554831523ff22ae3488e56b5d47e692fef9b00aa2b5cfbad"
+      },
+      {
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_NODE_PREVIEW_MERGED_NATIVE_2026-10-08.png",
+        "sha256": "ff5540ac7dd851d43e0de4adca4726cb844a69a6e2ec3576a561a654dbe44a0c"
+      }
+    ]
+  },
+  "sourceChanges": [
+    "Bounded known Node preview uses the same parser as execution; current authorized file context is collected.",
+    "Node.exe receives the same bounded file context.",
+    "Workspace I/O timeout timers are cleared on resolve/reject without changing deadlines or filesystem scope."
+  ],
+  "goals": [
+    {
+      "id": "checkpoint-continuation",
+      "status": "VERIFIED",
+      "scope": "Native desktop continuation and actual interrupted-process checkpoint recovery."
+    },
+    {
+      "id": "preset-failure-recovery-upgrade-jev",
+      "status": "VERIFIED_FLOW",
+      "manualUpgradePassed": true,
+      "realAutomaticRecoveryPassed": true,
+      "automaticStrongModelSelectionProven": false,
+      "scope": "Actual Flash failure; same-checkpoint explicit Pro success; separate real Jev automatic recovery succeeded on Flash."
+    },
+    {
+      "id": "continuous-fixed-task-comparison-and-economics",
+      "status": "AUTOMATION_READY_CURRENT_COMPARISON_RUNNING",
+      "plannedCurrentRuns": 48,
+      "series": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_COMPARE_SERIES_2026-10-08.json",
+      "productAdvantageProven": false,
+      "actualCashSavings": null,
+      "humanSavingsMinutes": null
+    }
+  ],
+  "completedPreviousSource": {
+    "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+    "currentSourceExperiment": false,
+    "paired": {
+      "hmCodex": {
+        "successes": 10,
+        "runs": 12,
+        "recoveries": 6,
+        "opportunities": 8
+      },
+      "ordinaryCodex": {
+        "successes": 9,
+        "runs": 12,
+        "recoveries": 5,
+        "opportunities": 8
+      },
+      "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_PAIRED_COMPLETION_AUDIT_2026-10-08.json"
+    },
+    "jevAblation": {
+      "off": {
+        "successes": 12,
+        "runs": 12,
+        "recoveries": 8,
+        "opportunities": 8
+      },
+      "on": {
+        "successes": 8,
+        "runs": 12,
+        "recoveries": 5,
+        "opportunities": 8
+      },
+      "evidence": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_ABLATION_COMPLETION_AUDIT_2026-10-08.json"
+    }
+  },
+  "remaining": [
+    "Complete the frozen merged-source paired comparison and separate Jev on/off ablation; preserve failures and timeouts.",
+    "Real automatic stronger-model selection remains unobserved.",
+    "Actual invoices and measured human activities are needed to verify cash or labor savings; missing usage stays unknown."
+  ],
+  "limitations": [
+    "Small preset task samples do not establish general engineering superiority.",
+    "Installed Codex uses third-party fallback tool configuration; this is not native GPT Codex.",
+    "A successful fixture is not real-provider or economic evidence."
+  ]
+}

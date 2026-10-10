@@ -1,0 +1,54 @@
+START build
+RUNNING build
+RUNNING build
+RUNNING build
+RUNNING build
+PASS build C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T204036354Z\build.log
+START recovery-jev-runtime
+RUNNING recovery-jev-runtime
+RUNNING recovery-jev-runtime
+PASS recovery-jev-runtime C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T204036354Z\recovery-jev-runtime.log
+START fixed-task-acceptance
+PASS fixed-task-acceptance C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T204036354Z\fixed-task-acceptance.log
+START native-resume-retry
+RUNNING native-resume-retry
+RUNNING native-resume-retry
+PASS native-resume-retry C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T204036354Z\native-resume-retry.log
+START paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+PASS paired-fixed-tasks C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T204036354Z\paired-fixed-tasks.log
+{"passed":true,"mode":"LOCAL_FIXTURE","output":"C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_MERGED_ONE_COMMAND_2026-10-08.json","comparison":"C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T204036354Z\\comparison.json"}

@@ -1,0 +1,24 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> hmcodex-desktop@0.1.0 build
+> node "%npm_config_local_prefix%/scripts/build.mjs"
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 52 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.51 kB │ gzip:  0.31 kB
+dist/assets/index-BRpvpgwK.css   40.26 kB │ gzip:  8.12 kB
+dist/assets/index-DctpfbST.js   215.19 kB │ gzip: 66.18 kB │ map: 588.46 kB
+
+✓ built in 885ms
+   Compiling hmcodex-desktop v0.1.0 (C:\Users\User\hmCodex-local\desktop\src-tauri)
+warning: linker stdout:   正在创建库 C:\Users\User\hmCodex-local\desktop\src-tauri\target\x86_64-pc-windows-msvc\debug\deps\hmcodex_desktop_lib.dll.lib 和对象 C:\Users\User\hmCodex-local\desktop\src-tauri\target\x86_64-pc-windows-msvc\debug\deps\hmcodex_desktop_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `hmcodex-desktop` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 00s
+       Built application at: C:\Users\User\hmCodex-local\desktop\src-tauri\target\x86_64-pc-windows-msvc\debug\hmcodex-desktop.exe

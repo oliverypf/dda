@@ -1,0 +1,691 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T13:41:40.895Z",
+  "sourceReport": "docs/artifacts/AGENT_GOAL_CURRENT_JEV_SOURCE_PAIRED_2026-10-07.json",
+  "sourceReportSha256": "076d1934adf3b4a8d72fbaccb302d77ddd23a4c8c3a17523378ab8d49bb14e98",
+  "batchId": "20261007T125512801Z-05e3f06f",
+  "runtimeSourceSha256": "a1489aa65ff8bfbdf24deba355bba7d2479a113f492737a0db38d065a75a4c2a",
+  "currentRuntimeMatchesBatch": true,
+  "testHarnessSourceSha256": "092eb712137cfa8f68dd54348c9a253e203281130d7e7e457dd95c595538c653",
+  "harnessNote": "Provider correlation collection was added after this batch started; the saved harness snapshot, not the present scripts, defines this batch. Its request records are not retroactively enriched.",
+  "debugExeSha256": "ad908cd1951bcec433d16416236c9ed81d690d9cf72d6c8d15db841041a3de83",
+  "batchProcessExitCode": 1,
+  "batchComplete": true,
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 12,
+      "successes": 10,
+      "successRate": 0.8333333333333334,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 6,
+      "recoverySuccessRate": 0.75,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 77,
+      "modelCalls": 89,
+      "usageCoverage": {
+        "reportedRequests": 88,
+        "totalRequests": 89,
+        "knownTokenSubtotal": 955832,
+        "pricedRequests": 88,
+        "knownPricedSubtotal": 0.054677934000000004
+      },
+      "toolCallCount": 76,
+      "wallMs": 1440104
+    },
+    "hmcodex-runtime": {
+      "runs": 12,
+      "successes": 8,
+      "successRate": 0.6666666666666666,
+      "recoveryOpportunities": 8,
+      "recoverySuccesses": 4,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 70,
+      "modelCalls": 86,
+      "usageCoverage": {
+        "reportedRequests": 84,
+        "totalRequests": 86,
+        "knownTokenSubtotal": 305688,
+        "pricedRequests": 84,
+        "knownPricedSubtotal": 0.043898112
+      },
+      "toolCallCount": 48,
+      "wallMs": 1041883
+    }
+  },
+  "perTask": {
+    "inspect-readme-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 2
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 2
+      }
+    },
+    "inspect-layout-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 2
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 2
+      }
+    },
+    "recoverable-read-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 2
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 2
+      }
+    },
+    "code-normalize-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 1
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 0
+      }
+    },
+    "code-syntax-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 1
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 2
+      }
+    },
+    "code-feature-001": {
+      "ordinary-codex": {
+        "runs": 2,
+        "successes": 2
+      },
+      "hmcodex-runtime": {
+        "runs": 2,
+        "successes": 0
+      }
+    }
+  },
+  "pairedInputsVerified": true,
+  "pairs": [
+    {
+      "taskId": "inspect-readme-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "inspect-readme-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "inspect-layout-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "inspect-layout-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "recoverable-read-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "recoverable-read-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-normalize-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-normalize-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-syntax-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-syntax-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-feature-001",
+      "iteration": 1,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    },
+    {
+      "taskId": "code-feature-001",
+      "iteration": 2,
+      "twoClients": true,
+      "sameInitialFiles": true,
+      "actualModelIdentityVerified": true,
+      "hmRuntimeMatchesFrozenBatch": true,
+      "ordinaryCodexVersion": "codex-cli 0.155.1"
+    }
+  ],
+  "decision": {
+    "activatedRuns": 12,
+    "runs": 12,
+    "calls": 113,
+    "successfulCalls": 108,
+    "proxyWallMs": 117309.14702900144,
+    "inputTokens": null,
+    "outputTokens": null,
+    "estimatedApiPriceUsd": null,
+    "actualChargeUsd": null
+  },
+  "failedHmCases": [
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/1-code-normalize-001-hmcodex-runtime",
+      "status": "FAILED",
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        }
+      ],
+      "gateCounts": {
+        "REQUEST_EVIDENCE": 5,
+        "ALLOW": 1
+      },
+      "independentCodePassed": false,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": false,
+        "ordinaryFiles": true
+      },
+      "actualSuccessfulTest": false,
+      "semanticVerdicts": [
+        {
+          "sequence": 7,
+          "choice": "FAIL",
+          "confidence": 0.55
+        }
+      ]
+    },
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/1-code-feature-001-hmcodex-runtime",
+      "status": "FAILED",
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.test.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "package.json",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "README.md",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "exitCode": null,
+          "path": "",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        }
+      ],
+      "gateCounts": {
+        "REQUEST_EVIDENCE": 7,
+        "ALLOW": 6,
+        "BLOCK": 1
+      },
+      "independentCodePassed": false,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": false,
+        "ordinaryFiles": true
+      },
+      "actualSuccessfulTest": false,
+      "semanticVerdicts": []
+    },
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/2-code-normalize-001-hmcodex-runtime",
+      "status": "FAILED",
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "exitCode": null,
+          "path": null,
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "package.json",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "README.md",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.test.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        }
+      ],
+      "gateCounts": {
+        "REQUEST_EVIDENCE": 11,
+        "ALLOW": 7,
+        "BLOCK": 2
+      },
+      "independentCodePassed": false,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": false,
+        "ordinaryFiles": true
+      },
+      "actualSuccessfulTest": false,
+      "semanticVerdicts": []
+    },
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/2-code-feature-001-hmcodex-runtime",
+      "status": "TIMED_OUT",
+      "actualTools": [
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.test.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "package.json",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.list",
+          "ok": true,
+          "exitCode": null,
+          "path": "",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "README.md",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "test.execute",
+          "ok": false,
+          "exitCode": 1,
+          "path": null,
+          "command": "node",
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ]
+        },
+        {
+          "name": "file.diff",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "file.write",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null,
+          "command": "node",
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ]
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.test.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "workspace.read",
+          "ok": true,
+          "exitCode": null,
+          "path": "name.test.mjs",
+          "command": null,
+          "args": null
+        },
+        {
+          "name": "test.execute",
+          "ok": true,
+          "exitCode": 0,
+          "path": null,
+          "command": "node",
+          "args": [
+            "--test",
+            "--test-isolation=none"
+          ]
+        }
+      ],
+      "gateCounts": {
+        "REQUEST_EVIDENCE": 9,
+        "ALLOW": 11
+      },
+      "independentCodePassed": true,
+      "scopeChecks": {
+        "onlyExpectedFiles": true,
+        "onlyTargetChanged": true,
+        "targetChanged": true,
+        "ordinaryFiles": true
+      },
+      "actualSuccessfulTest": true,
+      "semanticVerdicts": [
+        {
+          "sequence": 22,
+          "choice": "UNCERTAIN",
+          "confidence": 0.28
+        }
+      ]
+    }
+  ],
+  "successfulHmEngineeringCases": [
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/1-code-syntax-001-hmcodex-runtime",
+      "actualInitialFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--check",
+            "tags.mjs"
+          ],
+          "command": "node"
+        }
+      },
+      "actualSuccessfulTest": true
+    },
+    {
+      "runKey": "20261007T125512801Z-05e3f06f/2-code-syntax-001-hmcodex-runtime",
+      "actualInitialFailure": {
+        "name": "test.execute",
+        "exitCode": 1,
+        "input": {
+          "args": [
+            "--check",
+            "tags.mjs"
+          ],
+          "command": "node"
+        }
+      },
+      "actualSuccessfulTest": true
+    }
+  ],
+  "contentAudit": {
+    "passed": false,
+    "cases": 24,
+    "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T125512801Z-05e3f06f\\content-audit.json"
+  },
+  "engineeringChecks": {
+    "runtime": {
+      "passed": 643,
+      "failed": 0,
+      "skipped": 1,
+      "log": "docs/artifacts/GOAL_JEV_EDIT_CONTEXT_FULL_RUNTIME_2026-10-07.log"
+    },
+    "nativeDesktop": {
+      "passed": 27,
+      "failed": 0,
+      "usesLocalModelForUpgrade": true,
+      "log": "docs/artifacts/GOAL_JEV_EDIT_CONTEXT_NATIVE_2026-10-07.log"
+    },
+    "desktopScripts": {
+      "passed": 53,
+      "failed": 0,
+      "log": "docs/artifacts/GOAL_REQUEST_CORRELATION_ALL_SCRIPTS_2026-10-07.log"
+    }
+  },
+  "billing": {
+    "actualModelCharge": null,
+    "actualJevCharge": null,
+    "budgetReadHttpStatus": 403,
+    "publicJevBillingApiDiscovered": false
+  },
+  "contextProbe": {
+    "class": "ACTUAL_JEV_ARCHIVED_DECISION_PROBE_NOT_TASK_RUN",
+    "filesMatchOriginal": true,
+    "results": [
+      {
+        "condition": "ARCHIVED_ORIGINAL",
+        "status": 200,
+        "answer": {
+          "type": "choice",
+          "choice": "REQUEST_EVIDENCE",
+          "confidence": 0.16,
+          "probabilities": {
+            "BLOCK": 0.19,
+            "REQUEST_EVIDENCE": 0.37,
+            "ALLOW": 0.29,
+            "REQUIRE_APPROVAL": 0.15
+          }
+        }
+      },
+      {
+        "condition": "ARCHIVED_WITH_VERIFIED_FILE_CONTEXT",
+        "status": 200,
+        "answer": {
+          "type": "choice",
+          "choice": "ALLOW",
+          "confidence": 0.19,
+          "probabilities": {
+            "REQUEST_EVIDENCE": 0.23,
+            "REQUIRE_APPROVAL": 0.16,
+            "ALLOW": 0.39,
+            "BLOCK": 0.22
+          }
+        }
+      }
+    ],
+    "workflowFixVerified": false
+  },
+  "goalStatus": "active",
+  "goalAssessment": {
+    "checkpointRecovery": "VERIFIED_FOR_COVERED_READ_ONLY_CHECKPOINT_SCENARIOS",
+    "realFailureRecovery": "PARTIAL_ENGINEERING_2_OF_6_SUCCEEDED",
+    "sameModelComparisonAutomation": "IMPLEMENTED_AND_24_CASES_EXECUTED",
+    "realStrongUpgradeEconomics": "NOT_VERIFIED",
+    "sameCurrentSourceJevAblation": "NOT_COMPLETED",
+    "paidProductAdvantage": "NOT_DEMONSTRATED",
+    "actualCostAndHumanSavings": "UNKNOWN"
+  },
+  "auditMethod": "Identical input digest per task and iteration; frozen runtime applies to hmCodex only. Installed ordinary Codex has its own CLI version, not an hmCodex source digest."
+}

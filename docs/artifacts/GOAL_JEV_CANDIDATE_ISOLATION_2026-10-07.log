@@ -1,0 +1,14 @@
+✔ multi-agent candidate runtime audits success (6953.760625ms)
+✔ multi-agent candidate runtime audits drafts-failed (7924.396094ms)
+✔ multi-agent candidate runtime audits judge-failed (8428.167344ms)
+✔ multi-agent candidate runtime audits configured (6517.465938ms)
+✔ decision observations keep only bounded terminal host facts (1.54875ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (4209.573438ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 34147.174687

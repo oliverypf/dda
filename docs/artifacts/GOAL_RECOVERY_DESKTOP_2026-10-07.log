@@ -1,0 +1,13 @@
+
+> hmcodex-desktop@0.1.0 test
+> node "%npm_config_local_prefix%/scripts/test.mjs"
+
+
+ RUN  v4.1.11 C:/Users/User/hmCodex-local/desktop
+
+
+ Test Files  7 passed (7)
+      Tests  60 passed (60)
+   Start at  13:26:36
+   Duration  2.22s (transform 473ms, setup 0ms, import 911ms, tests 1.13s, environment 1ms)
+

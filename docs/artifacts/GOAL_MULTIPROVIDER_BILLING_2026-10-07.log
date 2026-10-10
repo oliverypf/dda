@@ -1,0 +1,15 @@
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (7.228125ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (1.559531ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (1.444062ms)
+✔ billing imports require full coverage and never turn missing charges into zero (1.424843ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (2.571875ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (1.926563ms)
+✔ real decision-provider bills are required before language-only charges become total cash cost (1.788906ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 270.311875

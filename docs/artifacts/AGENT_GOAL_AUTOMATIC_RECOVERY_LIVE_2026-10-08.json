@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-10-07T18:01:07.204Z",
+  "method": "Real active-model task with an actual preset missing-file failure and three host recovery attempts. Real Jev chooses the recovery action; a distinct bound model is available but its selection is not forced. Same read-only workspace and prompt, untouched provider answers.",
+  "activeModel": "mimo-v2.6-flash",
+  "strongModel": "mimo-v2.6-pro",
+  "runtimeRoot": "C:\\Users\\User\\hmCodex-local\\runtime",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "currentWorkspaceBuild": true,
+  "manualModelUpgrade": false,
+  "automaticRecovery": true,
+  "actualStrongExecutor": false,
+  "automaticJevStrongSelectionProven": false,
+  "passed": true,
+  "checks": {
+    "realInitialActive": true,
+    "actualInitialMissingRead": true,
+    "automaticRecoveryStarted": true,
+    "realJevRecoveryDecision": true,
+    "successfulToolAfterFailure": true,
+    "successfulRead": true,
+    "finalSuccess": true,
+    "actualJevUsed": true
+  },
+  "phases": [
+    {
+      "id": "automatic-failure-recovery",
+      "result": {
+        "code": 0,
+        "timedOut": false,
+        "wallMs": 37093
+      },
+      "ok": true,
+      "runId": "run-ceaf93fa-cdd6-4ac3-a82b-a0fafc85f398",
+      "threadId": "thread-5d68f5c4-49b6-455a-92cf-a726ba9a1dfa",
+      "models": [
+        "mimo-v2.6-flash",
+        "mimo-v2.6-flash",
+        "mimo-v2.6-flash",
+        "mimo-v2.6-flash"
+      ],
+      "jevCalls": 9
+    }
+  ],
+  "limitation": "One preset automatic-recovery experiment does not prove overall quality, economic benefit or that a stronger model is required. A same-model successful retry is reported as recovery, not model upgrade.",
+  "actualCost": null,
+  "humanSavingsMinutes": null,
+  "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-upgrade-20261007T180027513Z"
+}

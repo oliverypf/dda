@@ -1,0 +1,16 @@
+✔ verification transport recovery reuses one execution and does not duplicate action observations (7.488594ms)
+✔ hard failure and unresolved service uncertainty never become successful results (0.920156ms)
+✔ only deterministic success plus actual transient provider failure qualifies for re-verification (0.711094ms)
+✔ semantic requests retain evidence once and preserve an actual negative choice (3.181563ms)
+✔ native READ_ONLY workflow re-verifies after HTTP503 without another executor turn (PASS) (13557.522188ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (PASS) (20227.062343ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (FAIL) (18173.411094ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (SERVICE_FAILURE) (20615.025782ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 73213.482344

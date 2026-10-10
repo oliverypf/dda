@@ -1,0 +1,349 @@
+{
+  "schemaVersion": "1.0",
+  "batchId": "20261007T055657599Z-aae33255",
+  "generatedAt": "2026-10-07T06:25:14.730Z",
+  "pricing": {
+    "schemaVersion": "1.0",
+    "model": "mimo-v2.6-pro",
+    "source": "https://opencode.ai/docs/go/#usage-limits",
+    "checkedAt": "2026-10-07T06:17:33.449Z",
+    "currency": "USD",
+    "basis": "SUBSCRIPTION_QUOTA",
+    "inputPerMillion": 0.435,
+    "cachedInputPerMillion": 0.003625,
+    "outputPerMillion": 0.87,
+    "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+  },
+  "measurement": "PUBLISHED_QUOTA_RATES; NOT_ACTUAL_CASH_INVOICE",
+  "totals": {
+    "ordinary-codex": 0.008408637,
+    "hmcodex-runtime": 0.009588328
+  },
+  "relativeIncrease": 0.14029515128313896,
+  "rows": [
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-inspect-readme-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "inspect-readme-001",
+      "pricedUsage": {
+        "value": 0.001177255,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.000973965,
+          "cachedInput": 0.00005104,
+          "output": 0.00015225
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-inspect-readme-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "pricedUsage": {
+        "value": 0.000923302,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.00060726,
+          "cachedInput": 0.000003712,
+          "output": 0.00031233
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-inspect-layout-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "inspect-layout-001",
+      "pricedUsage": {
+        "value": 0.001266024,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.0009831,
+          "cachedInput": 0.00005150400000000001,
+          "output": 0.00023141999999999998
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-inspect-layout-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-layout-001",
+      "pricedUsage": {
+        "value": 0.000958914,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.00069861,
+          "cachedInput": 0.0000027840000000000004,
+          "output": 0.00025751999999999996
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-recoverable-read-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "recoverable-read-001",
+      "pricedUsage": {
+        "value": 0.001720251,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.001268895,
+          "cachedInput": 0.00008073600000000001,
+          "output": 0.00037062
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/1-recoverable-read-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "pricedUsage": {
+        "value": 0.0025609609999999996,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.001571655,
+          "cachedInput": 0.000015776000000000003,
+          "output": 0.00097353
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-inspect-readme-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-readme-001",
+      "pricedUsage": {
+        "value": 0.000655429,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.000423255,
+          "cachedInput": 0.000005104,
+          "output": 0.00022707
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-inspect-readme-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "inspect-readme-001",
+      "pricedUsage": {
+        "value": 0.001189435,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.000975705,
+          "cachedInput": 0.00005104,
+          "output": 0.00016269
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-inspect-layout-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "inspect-layout-001",
+      "pricedUsage": {
+        "value": 0.000874582,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.00060726,
+          "cachedInput": 0.000003712,
+          "output": 0.00026361
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-inspect-layout-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "inspect-layout-001",
+      "pricedUsage": {
+        "value": 0.001307784,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.0009491699999999999,
+          "cachedInput": 0.00005150400000000001,
+          "output": 0.00030711000000000003
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-recoverable-read-001-hmcodex-runtime",
+      "condition": "hmcodex-runtime",
+      "taskId": "recoverable-read-001",
+      "pricedUsage": {
+        "value": 0.00361514,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.0022785300000000004,
+          "cachedInput": 0.0000116,
+          "output": 0.00132501
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    },
+    {
+      "runKey": "20261007T055657599Z-aae33255/2-recoverable-read-001-ordinary-codex",
+      "condition": "ordinary-codex",
+      "taskId": "recoverable-read-001",
+      "pricedUsage": {
+        "value": 0.001747888,
+        "basis": "SUBSCRIPTION_QUOTA",
+        "currency": "USD",
+        "components": {
+          "uncachedInput": 0.0012093,
+          "cachedInput": 0.000112288,
+          "output": 0.0004263
+        },
+        "pricing": {
+          "schemaVersion": "1.0",
+          "model": "mimo-v2.6-pro",
+          "source": "https://opencode.ai/docs/go/#usage-limits",
+          "checkedAt": "2026-10-07T06:17:33.449Z",
+          "currency": "USD",
+          "basis": "SUBSCRIPTION_QUOTA",
+          "inputPerMillion": 0.435,
+          "cachedInputPerMillion": 0.003625,
+          "outputPerMillion": 0.87,
+          "note": "Published quota consumption rates; not a user invoice or per-task cash charge. No cached-write price applies to this model."
+        }
+      }
+    }
+  ]
+}

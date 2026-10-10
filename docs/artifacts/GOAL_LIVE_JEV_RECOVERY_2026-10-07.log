@@ -1,0 +1,33 @@
+{"event":"CASE_START","runKey":"20261007T083913520Z-79bb0596/1-recoverable-read-001-hmcodex-runtime","mode":"READ_ONLY","atMs":1791362354064}
+hmcodex-runtime recoverable-read-001 FAILED tools=1 errors=1
+{
+  "batchId": "20261007T083913520Z-79bb0596",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_LIVE_JEV_RECOVERY_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 1,
+      "successes": 0,
+      "successRate": 0,
+      "recoveryOpportunities": 1,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": 0,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 5170,
+      "actualCost": null,
+      "estimatedCost": 0.001599205,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 2,
+      "modelCalls": 3,
+      "usageCoverage": {
+        "reportedRequests": 3,
+        "totalRequests": 3,
+        "knownTokenSubtotal": 5170,
+        "pricedRequests": 3,
+        "knownPricedSubtotal": 0.001599205
+      },
+      "toolCallCount": 1,
+      "wallMs": 52576
+    }
+  }
+}

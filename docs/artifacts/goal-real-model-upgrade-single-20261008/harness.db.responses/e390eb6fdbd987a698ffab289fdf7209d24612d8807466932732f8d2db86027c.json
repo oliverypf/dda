@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-281e9526-086a-43d6-8b4b-8b1d9056f6b4",
+  "text": "Fresh bounded evidence collected via a real `workspace.read` tool call on `README.md`:\n\n- **Result:** SUCCEEDED (not truncated, 40 bytes)\n- **Exact content marker:** `GOAL_ACTUAL_TWO_MODEL_RECOVERY_20261008`\n- **Digest:** `sha256:e7beb50eb0d92859ff45a4e63248a12a0db19c453db027451ac9c27b9b57c0ba` — matches the workspace snapshot digest for README.md.\n\nThe final goal (read README.md with a real tool and report its exact marker) is now complete. The earlier terminal failure on `missing-evidence.txt` remains recorded as a failure and was not repeated; no claim is made that it succeeded.",
+  "outputDigest": "sha256:8d52c23f4049cbab22cd00dd412a58ea32218dbca354d967a592ea00348e94ba"
+}

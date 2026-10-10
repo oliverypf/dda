@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "models": [
+    {
+      "modelId": "mimo-v2.6-flash",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "endpoint": "http://127.0.0.1:52074/responses",
+      "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY",
+      "capabilities": [
+        "model.invoke.stream"
+      ],
+      "state": "ACTIVE",
+      "version": "1",
+      "updatedAtMs": 1791393271901,
+      "registeredId": "model-record-8c74816a-604a-46d4-b4e7-6f77372b13bb",
+      "recordDigest": "sha256:0ab6e6bd745e23212e123a69859e38d8c383d4cfca0d883f2e88ac78bea5fa7e"
+    },
+    {
+      "modelId": "mimo-v2.6-pro",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-pro",
+      "endpoint": "http://127.0.0.1:52075/responses",
+      "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY",
+      "capabilities": [
+        "model.invoke.stream"
+      ],
+      "state": "ACTIVE",
+      "version": "1",
+      "updatedAtMs": 1791393271944,
+      "registeredId": "model-record-85ce2b61-df95-4801-b75a-8e5c7994b52b",
+      "recordDigest": "sha256:5f7e7f783392a1477d88cba10de96b7c5f602809705eca861703f461315e02f4"
+    },
+    {
+      "modelId": "openai/mimo-v2.6-flash",
+      "provider": "openai",
+      "protocol": "responses",
+      "model": "mimo-v2.6-flash",
+      "baseURL": "https://opencode.ai/zen/go/v1",
+      "endpoint": "http://127.0.0.1:52074/responses",
+      "apiKeyEnv": "GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY",
+      "capabilities": [
+        "model.invoke.stream",
+        "tool.calls"
+      ],
+      "roles": [
+        "planner",
+        "executor",
+        "verifier"
+      ],
+      "state": "ACTIVE",
+      "version": "1",
+      "updatedAtMs": 1791393271996,
+      "registeredId": "model-record-62f92232-2781-481a-bba5-99a1b1f75a3b",
+      "recordDigest": "sha256:a23e86d068c04bc1beb87e2c5d544be8ff6cc96b61573028d36b0fd929da76bc"
+    }
+  ]
+}

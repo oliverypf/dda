@@ -1,0 +1,14 @@
+✔ Responses tool calls and results preserve their identities in the shared live adapter (3.5325ms)
+✔ both clients use the same text and developer instruction conversion (0.326093ms)
+✔ live model records returned inference IDs for success and HTTP failure without inventing charges (68.8525ms)
+✔ live decision recording forwards real answers and never records credentials (68.261562ms)
+✔ upstream inference identifiers remain distinct from charge amounts and private response headers (69.645938ms)
+✔ missing, oversized and free-text identifiers do not become fabricated correlation keys (0.327344ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 457.3075

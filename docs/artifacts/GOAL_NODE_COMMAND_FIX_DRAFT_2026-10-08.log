@@ -1,0 +1,10 @@
+✔ native one-shot executor receipts agree with both supported Node request forms (1817.050625ms)
+✔ normalization retains rejection of unrecognized process semantics and private scope (2.023281ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2298.552188

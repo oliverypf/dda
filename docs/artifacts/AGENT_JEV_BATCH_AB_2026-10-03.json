@@ -1,0 +1,14 @@
+{
+  "date":"2026-10-03",
+  "kind":"jev_on_off_batch_smoke",
+  "sampleSizePerCondition":5,
+  "fixture":"local DeepSeek-compatible SSE model + local Jev HTTP fixture",
+  "conditions":{
+    "jev-off":{"runs":5,"successes":5,"successRate":1,"wallMs":[4251,4078,4036,4153,4159],"meanWallMs":4135.4,"toolRounds":[0,0,0,0,0],"toolCallCount":[0,0,0,0,0]},
+    "jev-on":{"runs":5,"successes":5,"successRate":1,"wallMs":[4162,4145,4093,4231,4285],"meanWallMs":4183.2,"toolRounds":[0,0,0,0,0],"toolCallCount":[0,0,0,0,0]}
+  },
+  "delta":{"meanWallMs":47.8,"relativeToOff":0.01156,"successRateDelta":0,"toolRoundsDelta":0},
+  "calls":{"modelCalls":10,"jevCalls":5},
+  "validity":"VALID_SMOKE_BATCH",
+  "caveats":["n=5 per condition; local deterministic fixture, not a production model comparison","wall time includes process startup, local stores, and task execution","this fixture generated no tool calls and no manual interventions","does not establish advantage over ordinary Codex or cost savings without a paired baseline and pricing data"]
+}

@@ -1,0 +1,42 @@
+
+> hmcodex-desktop@0.1.0 test:evidence:goal
+> node "%npm_config_local_prefix%/scripts/goal-evidence-harness.mjs" --repeat 2 --output C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_EVIDENCE_RETEST_2026-10-07.json
+
+{
+  "json": "C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_EVIDENCE_RETEST_2026-10-07.json",
+  "markdown": "C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_EVIDENCE_RETEST_2026-10-07.md",
+  "conditions": {
+    "same-model-provider-baseline": {
+      "runs": 6,
+      "successes": 4,
+      "successRate": 0.6666666666666666,
+      "firstAttemptSuccesses": 4,
+      "firstAttemptSuccessRate": 0.6666666666666666,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": 0,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 112,
+      "estimatedCost": 0.000112,
+      "actualCost": null,
+      "toolRounds": 0,
+      "toolCallCount": 0
+    },
+    "hmcodex-runtime": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "firstAttemptSuccesses": 4,
+      "firstAttemptSuccessRate": 0.6666666666666666,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 256,
+      "estimatedCost": 0.00025600000000000004,
+      "actualCost": null,
+      "toolRounds": 4,
+      "toolCallCount": 4
+    }
+  }
+}

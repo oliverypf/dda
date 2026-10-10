@@ -1,0 +1,18 @@
+[
+  {
+    "ok": true,
+    "name": "workspace.read",
+    "outputDigest": "sha256:0a2fb5678e1062e81db79587d9da4e7f62e9bcfef64f5183b94d5bea2f169662",
+    "output": "{\"path\":\"README.md\",\"sizeBytes\":43,\"digest\":\"sha256:16de4f136fc9809000445f1f0248ce99e2b3069782a186b9d7306357d6f1dde3\",\"content\":\"GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a11783c93c\\n\",\"truncated\":false}",
+    "value": {
+      "path": "README.md",
+      "sizeBytes": 43,
+      "digest": "sha256:16de4f136fc9809000445f1f0248ce99e2b3069782a186b9d7306357d6f1dde3",
+      "content": "GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a11783c93c\n",
+      "truncated": false
+    },
+    "input": {
+      "path": "README.md"
+    }
+  }
+]

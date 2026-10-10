@@ -1,0 +1,5 @@
+{"event":"CASE_START","runKey":"20261007T080948936Z-66966593/1-code-normalize-001-ordinary-codex","mode":"CONTROLLED","atMs":1791360595980}
+ordinary-codex code-normalize-001 SUCCEEDED tools=13 errors=8
+{"event":"CASE_START","runKey":"20261007T080948936Z-66966593/1-code-normalize-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791360837550}
+hmcodex-runtime code-normalize-001 FAILED tools=4 errors=2
+{"event":"CASE_START","runKey":"20261007T080948936Z-66966593/1-code-syntax-001-ordinary-codex","mode":"CONTROLLED","atMs":1791360880128}

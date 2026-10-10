@@ -1,0 +1,25 @@
+{
+  "createdAt": "2026-10-07T18:40:00.793Z",
+  "target": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-node-preview-fix-20261008\\src",
+  "appliedToMain": false,
+  "files": [
+    {
+      "path": "workspace-io-timeout.mjs",
+      "originalSha256": null,
+      "stagedSha256": "610d34acb0c05d81b1618bf44bed91b6913d67b8de6ba46038eba51356291c48",
+      "changed": true
+    },
+    {
+      "path": "plugins/workspace-readonly.mjs",
+      "originalSha256": "94ca15e0906da503ab24f2796ae4510e1f6ed5c87b6a9338575abe1449294876",
+      "stagedSha256": "8e5a0e40bc217d7cfc08438f7878abf06524ae3ff9ae38d003591199d7d8dedb",
+      "changed": true
+    },
+    {
+      "path": "plugins/cordis-plugin.mjs",
+      "originalSha256": "ea95862cd77bfb569edab9fcd7f4b4f533abc901bce441e16a4e51f5256956df",
+      "stagedSha256": "ea95862cd77bfb569edab9fcd7f4b4f533abc901bce441e16a4e51f5256956df",
+      "changed": false
+    }
+  ]
+}

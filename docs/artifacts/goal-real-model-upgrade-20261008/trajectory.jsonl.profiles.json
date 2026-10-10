@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1.0",
+  "profiles": [
+    {
+      "profileId": "profile-15374e0c-2320-4373-b980-ecce8d1555fe",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-flash",
+      "capabilityId": "task.inspect",
+      "version": 1,
+      "stats": {
+        "sampleCount": 1,
+        "successCount": 1,
+        "partialCount": 0,
+        "failureCount": 0,
+        "cancelledCount": 0,
+        "unknownCount": 0,
+        "qualityMean": 1,
+        "safetyMean": 1,
+        "safetyMin": 1,
+        "latencyMeanMs": 59879,
+        "costMean": null
+      },
+      "eligibility": {
+        "status": "CONSERVATIVE",
+        "eligible": false,
+        "minSamples": 3,
+        "minQuality": 0.6,
+        "minSafety": 0.9,
+        "reasonCodes": [
+          "INSUFFICIENT_SAMPLES"
+        ]
+      },
+      "evidenceCount": 1,
+      "updatedAtMs": 1791391793692,
+      "profileDigest": "sha256:b42a5fca629c2ff24d1ee3a288db38fe0e9713a086024f9ecb945f0616dea3bc"
+    },
+    {
+      "profileId": "profile-64094282-e27a-48b8-8359-93045163f7a7",
+      "kind": "SAFETY",
+      "entityType": "executor",
+      "entityId": "restricted-windows-executor@0.1.0",
+      "version": 1,
+      "stats": {
+        "sampleCount": 1,
+        "successCount": 1,
+        "partialCount": 0,
+        "failureCount": 0,
+        "cancelledCount": 0,
+        "unknownCount": 0,
+        "qualityMean": null,
+        "safetyMean": 1,
+        "safetyMin": 1,
+        "latencyMeanMs": 59957,
+        "costMean": null
+      },
+      "eligibility": {
+        "status": "CONSERVATIVE",
+        "eligible": false,
+        "minSamples": 3,
+        "minQuality": 0.6,
+        "minSafety": 0.9,
+        "reasonCodes": [
+          "INSUFFICIENT_SAMPLES"
+        ]
+      },
+      "evidenceCount": 1,
+      "updatedAtMs": 1791391793765,
+      "profileDigest": "sha256:3917005b248f092fe9211bedafac851bb79329c0382607e9b3026e8af7bdab96"
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "profile-evidence-2d5dccc0-7dc9-4271-afe1-2c103a62066d",
+      "kind": "CAPABILITY",
+      "entityType": "model",
+      "entityId": "openai/mimo-v2.6-flash",
+      "capabilityId": "task.inspect",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "decisionId": "decision-b1476a20-294d-4abd-9140-ff2b0ff96659",
+      "outcomeId": "task-outcome-run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "sourceType": "verifier",
+      "sourceId": "verifier-run-3161251d-34bf-412b-8b10-1910b01fb575-undefined",
+      "outcome": "SUCCEEDED",
+      "quality": 1,
+      "safety": 1,
+      "latencyMs": 59879,
+      "observedAtMs": 1791391793688,
+      "evidenceDigest": "sha256:e79bf8948c0fdfb0489e126673b092d816954a53ba84816a2308a47b11aa4807"
+    },
+    {
+      "evidenceId": "profile-evidence-27745aa3-a450-4b0f-9f78-9f3a99441c95",
+      "kind": "SAFETY",
+      "entityType": "executor",
+      "entityId": "restricted-windows-executor@0.1.0",
+      "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "decisionId": "decision-b1476a20-294d-4abd-9140-ff2b0ff96659",
+      "outcomeId": "task-outcome-run-3161251d-34bf-412b-8b10-1910b01fb575",
+      "sourceType": "verifier",
+      "sourceId": "verifier-run-3161251d-34bf-412b-8b10-1910b01fb575-undefined",
+      "outcome": "SUCCEEDED",
+      "safety": 1,
+      "latencyMs": 59957,
+      "observedAtMs": 1791391793765,
+      "evidenceDigest": "sha256:64f54b9488b7cc185de86af48dc085e17771bdb1eff02aed3e03dcb5c8a280aa"
+    }
+  ]
+}

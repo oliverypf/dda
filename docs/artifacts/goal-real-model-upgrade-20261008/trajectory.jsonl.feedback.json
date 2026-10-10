@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "events": [
+    {
+      "schemaVersion": "1.0",
+      "eventId": "feedback-event-4ada82e0-1a1b-4956-802b-c462fb2525e8",
+      "kind": "FeedbackSubmitted",
+      "feedback": {
+        "schemaVersion": "1.0",
+        "feedbackId": "feedback-444a036b-dc78-4f66-a1b9-16b0dd440404",
+        "runId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+        "taskId": "run-3161251d-34bf-412b-8b10-1910b01fb575",
+        "threadId": "thread-63931aed-261d-4d0e-aa2b-880c380e9dd0",
+        "outcomeId": "task-outcome-run-3161251d-34bf-412b-8b10-1910b01fb575",
+        "outcomeStatus": "SUCCEEDED",
+        "modelIdentity": {
+          "provider": "task",
+          "protocol": "task-level",
+          "model": "task-level",
+          "modelVersion": "unknown",
+          "role": "task",
+          "pluginVersion": "unknown",
+          "modelRegistryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "candidateKey": "task/task-level/task-level/unknown/task/unknown"
+        },
+        "scenario": {
+          "taskClass": "inspect",
+          "riskClass": "unknown",
+          "operationClass": "unknown",
+          "requiredCapabilities": [],
+          "workspaceCapabilityClass": "READ_ONLY",
+          "platform": "WINDOWS",
+          "policyClass": "WINDOWS_PHASE1_READ_ONLY",
+          "scenarioKey": "sha256:ec46b6b1b145cb8f9aef5daff183106bc58d9a983b847e3cf920a5ff62d39c84"
+        },
+        "sourceType": "SYSTEM",
+        "dimensions": {
+          "quality": 1,
+          "objectiveSuccess": true,
+          "verifierPass": true,
+          "safetyIncident": false
+        },
+        "reasonCodes": [
+          "TASK_LEVEL_ATTRIBUTION"
+        ],
+        "evidenceRefs": [
+          "event-dd0f9232-cc11-464f-ae3c-7b463856985a",
+          "event-4d4fa868-1905-4a16-b3b0-6fa814c2593c"
+        ],
+        "independenceGroup": "run-3161251d-34bf-412b-8b10-1910b01fb575/event-dd0f9232-cc11-464f-ae3c-7b463856985a",
+        "submittedAtMs": 1791391794471,
+        "eventKind": "FeedbackSubmitted",
+        "recordDigest": "sha256:4593d3abc0369af871cdbfdad4474324ddf1b25f37c47adad9a462240c929b67"
+      },
+      "requestDigest": "sha256:b021025549a6486449de7d88af0531c0d98902bfcc830df314d81b4716204368",
+      "commandId": "objective-feedback:event-dd0f9232-cc11-464f-ae3c-7b463856985a",
+      "atMs": 1791391794471
+    }
+  ]
+}

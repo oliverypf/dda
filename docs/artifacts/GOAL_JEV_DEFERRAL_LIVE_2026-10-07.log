@@ -1,0 +1,35 @@
+{"event":"CASE_START","runKey":"20261007T122831636Z-e79c6f86/1-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791376116767}
+hmcodex-runtime code-syntax-001 SUCCEEDED tools=9 errors=1
+{"event":"CASE_START","runKey":"20261007T122831636Z-e79c6f86/2-code-syntax-001-hmcodex-runtime","mode":"CONTROLLED","atMs":1791376300954}
+hmcodex-runtime code-syntax-001 FAILED tools=7 errors=2
+{
+  "batchId": "20261007T122831636Z-e79c6f86",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_JEV_DEFERRAL_LIVE_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 1,
+      "successRate": 0.5,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 22,
+      "modelCalls": 26,
+      "usageCoverage": {
+        "reportedRequests": 25,
+        "totalRequests": 26,
+        "knownTokenSubtotal": 116945,
+        "pricedRequests": 25,
+        "knownPricedSubtotal": 0.016946005
+      },
+      "toolCallCount": 16,
+      "wallMs": 391015
+    }
+  }
+}

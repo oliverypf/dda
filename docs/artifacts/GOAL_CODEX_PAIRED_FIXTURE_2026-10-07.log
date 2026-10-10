@@ -1,0 +1,53 @@
+
+> hmcodex-desktop@0.1.0 test:evidence:goal
+> node "%npm_config_local_prefix%/scripts/goal-evidence-harness.mjs" --repeat 2
+
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime recoverable-read-001 SUCCEEDED tools=3 errors=1
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{
+  "batchId": "20261007T052220904Z-67c017c1",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_EVIDENCE_BENCHMARK.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 336,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "toolRounds": 8,
+      "toolCallCount": 8,
+      "wallMs": 22165
+    },
+    "hmcodex-runtime": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 432,
+      "actualCost": 0,
+      "estimatedCost": 0,
+      "toolRounds": 10,
+      "toolCallCount": 10,
+      "wallMs": 30109
+    }
+  }
+}

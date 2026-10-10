@@ -1,0 +1,20 @@
+✖ a killed read-only runtime resumes pending work without repeating completed steps (6647.589844ms)
+✔ a killed controlled write remains blocked when resumed in read-only mode (9209.077656ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16484.695312
+
+✖ failing tests:
+
+test at test\process-interruption-runtime.test.mjs:141:1
+✖ a killed read-only runtime resumes pending work without repeating completed steps (6647.589844ms)
+  TypeError: Cannot read properties of undefined (reading 'steps')
+      at exerciseInterruption (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:135:110)
+      at async TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/process-interruption-runtime.test.mjs:142:53)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

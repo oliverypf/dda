@@ -1,0 +1,73 @@
+{
+  "checkedAt": "2026-10-07T07:44:06.942Z",
+  "scope": "STAGED_CLIENT_LIVE_SERVICE",
+  "actualCharge": null,
+  "records": [
+    {
+      "ok": true,
+      "wallMs": 1349,
+      "answers": {
+        "next": {
+          "choice": "RETRY_TESTS",
+          "confidence": 0.98,
+          "scores": {
+            "ESCALATE": 0.01,
+            "RETRY_TESTS": 0.99
+          }
+        }
+      },
+      "latencyMs": 1348,
+      "model": "jev-1.13.0",
+      "requestedModel": "jev-latest",
+      "usage": {
+        "inputTokens": 377,
+        "outputTokens": 41,
+        "source": "PROVIDER_USAGE"
+      }
+    },
+    {
+      "ok": true,
+      "wallMs": 339,
+      "answers": {
+        "next": {
+          "choice": "RETRY_TESTS",
+          "confidence": 1,
+          "scores": {
+            "ESCALATE": 0,
+            "RETRY_TESTS": 1
+          }
+        }
+      },
+      "latencyMs": 339,
+      "model": "jev-1.13.0",
+      "requestedModel": "jev-latest",
+      "usage": {
+        "inputTokens": 377,
+        "outputTokens": 41,
+        "source": "PROVIDER_USAGE"
+      }
+    },
+    {
+      "ok": true,
+      "wallMs": 649,
+      "answers": {
+        "next": {
+          "choice": "RETRY_TESTS",
+          "confidence": 1,
+          "scores": {
+            "RETRY_TESTS": 1,
+            "ESCALATE": 0
+          }
+        }
+      },
+      "latencyMs": 649,
+      "model": "jev-1.13.0",
+      "requestedModel": "jev-latest",
+      "usage": {
+        "inputTokens": 377,
+        "outputTokens": 41,
+        "source": "PROVIDER_USAGE"
+      }
+    }
+  ]
+}

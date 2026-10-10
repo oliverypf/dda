@@ -1,0 +1,18 @@
+✔ model-visible tool content must match a successful durable native result (26.784219ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (2.131875ms)
+✔ a completed invocation returning exit failure does not count as a successful process (1.632968ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (2.740782ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (8.084532ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (7.104375ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (3.41375ms)
+✔ billing imports require full coverage and never turn missing charges into zero (3.663282ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (9.32375ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (1.995625ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 906.17

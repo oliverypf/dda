@@ -1,0 +1,44 @@
+✔ a later successful identical test resolves its failure without losing the trace (19.983438ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (6.267344ms)
+✔ rule verifier requires bounded non-empty output (1.473594ms)
+✔ task coordinator enforces transitions and optimistic version (5.119375ms)
+✔ rule verifier reports partial goal progress as CONTINUE (1.059219ms)
+✔ rule verifier detects repeated actions and stops with STALLED (4.049687ms)
+✖ fresh reads and preservation checks after an observed write are not a stalled loop (3.942031ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (1.307031ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.952031ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.851563ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.721407ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.737657ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.556875ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 12
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 607.9125
+
+✖ failing tests:
+
+test at runtime\test\rule-verifier.test.mjs:86:1
+✖ fresh reads and preservation checks after an observed write are not a stalled loop (3.942031ms)
+  AssertionError [ERR_ASSERTION]: changed actual read output is new evidence
+  
+  'STALLED' !== 'PASS'
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/rule-verifier.test.mjs:92:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'STALLED',
+    expected: 'PASS',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

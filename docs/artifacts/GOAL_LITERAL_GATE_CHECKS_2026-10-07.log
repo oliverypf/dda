@@ -1,0 +1,33 @@
+✔ failure router keeps assertion failures in the test failure lane (3.732813ms)
+✔ evidence and stop rules block premature success (0.578906ms)
+✔ Jev client normalizes finite-choice answers and sends no tool surface (3.299532ms)
+✔ decision engine batches unresolved Jev questions and returns a finite control action (3.825ms)
+✔ decision engine fails closed to conservative recovery when Jev is unavailable (1.951406ms)
+✔ decision engine records fallback when an enabled Jev request fails (1.427031ms)
+✔ decision state honors the configured size limit (2.19ms)
+✔ Jev owns candidate selection and action gating without a model verifier role (14.1ms)
+✔ decision observations keep only bounded terminal host facts (3.591719ms)
+✔ Jev gates receive the observed failure before the next tool and before recovery (2903.617969ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (5598.594062ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (6214.939531ms)
+✔ a later successful identical test resolves its failure without losing the trace (8.195156ms)
+✔ host-deferred proposals do not become permanent execution failures or duplicate effects (2.295937ms)
+✔ rule verifier requires bounded non-empty output (0.586407ms)
+✔ task coordinator enforces transitions and optimistic version (2.384688ms)
+✔ rule verifier reports partial goal progress as CONTINUE (0.612343ms)
+✔ rule verifier detects repeated actions and stops with STALLED (2.324062ms)
+✔ fresh reads and preservation checks after an observed write are not a stalled loop (2.246875ms)
+✔ rule verifier fails closed for paths outside the canonical workspace (0.88125ms)
+✔ rule verifier aggregates optional diff, build, test and result evidence (1.033437ms)
+✔ rule verifier treats explicitly failed build evidence as FAIL (0.476719ms)
+✔ rule verifier does not treat empty evidence containers as proof (0.407031ms)
+✔ binary workspace reads request recovery while keeping the unsuccessful action visible (0.385ms)
+✔ hard action failures report their error codes and reference the failed action after many successes (1.258906ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15088.586719

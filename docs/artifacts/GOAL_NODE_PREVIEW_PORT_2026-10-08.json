@@ -1,0 +1,35 @@
+{
+  "mergedAt": "2026-10-07T19:16:10.862Z",
+  "priorSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "changes": [
+    {
+      "path": "decision/evidence-claim.mjs",
+      "originalSha256": "05576991420225e715ca0e45f804648f5cc580da97712eac928719816633e512",
+      "stagedSha256": "cafbd142e90c3642e70b2e0d2df37d867dc4fc1bf935fe4b80120b4992ba16f2",
+      "changed": true
+    },
+    {
+      "path": "decision/workspace-context.mjs",
+      "originalSha256": "2c1dbccfdf034ebcbcc2fcd5ad37999fc1f288ddb715d04e8516c5a7065f00b6",
+      "stagedSha256": "1304599d523ca95861786a2337074b36cd901191705865c6a248063d8d6ad008",
+      "changed": true
+    },
+    {
+      "path": "workspace-io-timeout.mjs",
+      "originalSha256": null,
+      "stagedSha256": "610d34acb0c05d81b1618bf44bed91b6913d67b8de6ba46038eba51356291c48",
+      "changed": true
+    },
+    {
+      "path": "plugins/workspace-readonly.mjs",
+      "originalSha256": "94ca15e0906da503ab24f2796ae4510e1f6ed5c87b6a9338575abe1449294876",
+      "stagedSha256": "8e5a0e40bc217d7cfc08438f7878abf06524ae3ff9ae38d003591199d7d8dedb",
+      "changed": true
+    }
+  ],
+  "tests": [
+    "node-preview-runtime.test.mjs",
+    "workspace-io-timeout.test.mjs"
+  ],
+  "frozenSeriesCompleted": true
+}

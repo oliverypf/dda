@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "retrievedAt": "2026-10-07T12:58:49.756Z",
+  "source": "https://api.typesafe.ai/openapi.json",
+  "sha256": "a191f8a7df6bd6fedced8120dd0fd106f88575d1d1c8360d08900a6c7c0360d5",
+  "publicGetRoutes": [
+    {
+      "path": "/v1/models",
+      "summary": "Models V1",
+      "description": "List the models and aliases available to the authenticated account.\n\nPass a returned model name as `model` in a POST /v1/systemone request."
+    }
+  ],
+  "billingPaths": []
+}

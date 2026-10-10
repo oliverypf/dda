@@ -1,0 +1,310 @@
+{
+  "generatedAt": "2026-10-07T15:37:30.951Z",
+  "evidenceClass": "ARCHIVED_ACTUAL_TOOL_TRAJECTORY_REPLAY_CURRENT_RULE",
+  "originalBatchId": "20261007T151628814Z-d02bc679",
+  "originalTaskStatus": "FAILED",
+  "originalRuleObservation": {
+    "status": "STALLED",
+    "failureCodes": [
+      "REPEATED_ACTION"
+    ]
+  },
+  "sourceRequestSha256": "08efbb44f749c422a7ad101018cd2a846f4e4e3ab988202b43a7d4a6d443a3f1",
+  "sourceNativeEventsSha256": "0ee7d04df9e34861c35290d5c9e75e63095965da4987899e888bed41a3bf973f",
+  "currentRuntimeSourceSha256": "2f4cf8b2dc3533b1f31d1ed6ff0de4b23ed3cd5044fa093c15b8896cf25f6320",
+  "method": "Native outputs are digest matched to actual durable events and actual proposed inputs. Node purpose is derived from these archived exact inputs; no provider answer or original run grade is changed.",
+  "currentRuleReport": {
+    "status": "PASS",
+    "summary": "确定性检查通过",
+    "progress": 1,
+    "quality": 1,
+    "safety": 1,
+    "uncertainty": 0,
+    "evidence": [
+      "output:sha256:4d79c3024f9c2edd5431e19f049d600b15ecaffb3121d28ff97ceb5ba6188fc6",
+      "action:0:9c1e33f4dfbdcc92",
+      "action:1:ab9ce1c51be92f42",
+      "action:2:9666e35de912eb8b",
+      "action:3:9c1e33f4dfbdcc92",
+      "action:4:ab9ce1c51be92f42",
+      "action:5:3967d3fb9a1acb9f",
+      "action:6:33220336892b683e",
+      "action:7:5e23ecc8d361b492",
+      "action:8:0f593b85ae85d2c6",
+      "action:9:eb857154d8e7aae0",
+      "action:10:8f1c43c3293a20dd",
+      "action:11:1244aa4d69bdc9ef",
+      "action:12:9c1e33f4dfbdcc92",
+      "action:13:20f3e83506e15d0b",
+      "actions:duplicate:3-12"
+    ],
+    "failureCodes": [],
+    "nextAction": "COMPLETE",
+    "verifierVersion": "rule-1.1",
+    "checks": [
+      {
+        "id": "output.non_empty",
+        "status": "PASS",
+        "message": "模型返回了非空结果",
+        "evidence": [
+          "output:sha256:4d79c3024f9c2edd5431e19f049d600b15ecaffb3121d28ff97ceb5ba6188fc6"
+        ]
+      },
+      {
+        "id": "workspace.authorized",
+        "status": "PASS",
+        "message": "工作区已授权",
+        "evidence": []
+      },
+      {
+        "id": "tools.bounded_rounds",
+        "status": "PASS",
+        "message": "工具调用轮数为 0",
+        "evidence": []
+      },
+      {
+        "id": "tools.bounded_count",
+        "status": "PASS",
+        "message": "工具调用次数为 0",
+        "evidence": []
+      },
+      {
+        "id": "goal.coverage",
+        "status": "SKIPPED",
+        "message": "没有提供可核对的任务目标",
+        "evidence": []
+      },
+      {
+        "id": "actions.progress",
+        "status": "PASS",
+        "message": "实际执行动作均有完成证据",
+        "evidence": [
+          "action:0:9c1e33f4dfbdcc92",
+          "action:1:ab9ce1c51be92f42",
+          "action:2:9666e35de912eb8b",
+          "action:3:9c1e33f4dfbdcc92",
+          "action:4:ab9ce1c51be92f42",
+          "action:5:3967d3fb9a1acb9f",
+          "action:6:33220336892b683e",
+          "action:7:5e23ecc8d361b492",
+          "action:8:0f593b85ae85d2c6",
+          "action:9:eb857154d8e7aae0",
+          "action:10:8f1c43c3293a20dd",
+          "action:11:1244aa4d69bdc9ef",
+          "action:12:9c1e33f4dfbdcc92",
+          "action:13:20f3e83506e15d0b"
+        ]
+      },
+      {
+        "id": "actions.recovered_diagnostics",
+        "status": "PASS",
+        "message": "一次重复的受限语法诊断之后，实际执行了不同的完整测试并成功；历史重复记录保留",
+        "evidence": [
+          "actions:duplicate:3-12"
+        ]
+      },
+      {
+        "id": "actions.duplicates",
+        "status": "PASS",
+        "message": "未检测到重复动作指纹",
+        "evidence": []
+      },
+      {
+        "id": "actions.new_evidence",
+        "status": "PASS",
+        "message": "动作产生了新的结果证据",
+        "evidence": []
+      },
+      {
+        "id": "paths.scope",
+        "status": "SKIPPED",
+        "message": "没有提供需要核对的路径",
+        "evidence": []
+      },
+      {
+        "id": "evidence.result",
+        "status": "SKIPPED",
+        "message": "没有提供额外结果证据",
+        "evidence": []
+      },
+      {
+        "id": "evidence.diff",
+        "status": "SKIPPED",
+        "message": "没有提供可选证据",
+        "evidence": []
+      },
+      {
+        "id": "evidence.build",
+        "status": "SKIPPED",
+        "message": "没有提供可选证据",
+        "evidence": []
+      },
+      {
+        "id": "evidence.tests",
+        "status": "SKIPPED",
+        "message": "没有提供可选证据",
+        "evidence": []
+      }
+    ]
+  },
+  "actualTools": [
+    {
+      "id": "archived-actual-1",
+      "name": "test.execute",
+      "state": "FAILED",
+      "argumentsDigest": "sha256:58d3b7350f111e44294f4db1fbf79620d23eb866b5312a32e7b02c6c10145667",
+      "errorCode": "TEST_CHECK_FAILED",
+      "verifiedResult": {
+        "processIntent": {
+          "kind": "NODE_SYNTAX_CHECK",
+          "workingDirectory": ".",
+          "workingDirectorySource": "DEFAULT_AUTHORIZED_WORKSPACE",
+          "targetCount": 1,
+          "targets": [
+            "tags.mjs"
+          ]
+        },
+        "executionOk": false,
+        "exitCode": 1,
+        "outputDigest": "sha256:fb62a69770de3931b4717ca41ef20fa540710cd7f46ec9edab4cdaaf1450a865"
+      }
+    },
+    {
+      "id": "archived-actual-2",
+      "name": "workspace.read",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:aac7cf1261ca52327679683939d2d71a6edc54e8084b322e130099e5f9c0f57a",
+      "argumentsDigest": "sha256:fd82a8fb0f2047def9215bc39fec540eb0bffd620ed69b4f782eb4079e7a2408"
+    },
+    {
+      "id": "archived-actual-3",
+      "name": "file.write",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:af0e4ce05cc07a5e642664f358b19849273a1938ddd27afd9af5bfc731f02afe",
+      "argumentsDigest": "sha256:00f63a1fc04b10c8554d5f54e3eb33252149d65719f2c48a7ffdde32dda94fac"
+    },
+    {
+      "id": "archived-actual-4",
+      "name": "test.execute",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:1d16aa0e4c95af41b729efaec9679a23bccba352f6646e157093c619a3cb3827",
+      "argumentsDigest": "sha256:58d3b7350f111e44294f4db1fbf79620d23eb866b5312a32e7b02c6c10145667",
+      "verifiedResult": {
+        "processIntent": {
+          "kind": "NODE_SYNTAX_CHECK",
+          "workingDirectory": ".",
+          "workingDirectorySource": "DEFAULT_AUTHORIZED_WORKSPACE",
+          "targetCount": 1,
+          "targets": [
+            "tags.mjs"
+          ]
+        },
+        "executionOk": true,
+        "exitCode": 0,
+        "outputDigest": "sha256:1d16aa0e4c95af41b729efaec9679a23bccba352f6646e157093c619a3cb3827"
+      }
+    },
+    {
+      "id": "archived-actual-5",
+      "name": "workspace.read",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:794a6de1a9827e0c0858f3ad9f702c2f4337602de99081cd7f91b7415f8e4153",
+      "argumentsDigest": "sha256:fd82a8fb0f2047def9215bc39fec540eb0bffd620ed69b4f782eb4079e7a2408"
+    },
+    {
+      "id": "archived-actual-6",
+      "name": "workspace.list",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:c2956923cb250aac38b37fd05e0aea924d8148bfb8b31cccaa788cbe0a424cc3",
+      "argumentsDigest": "sha256:518341a7f82a294570cc3ba8ae0eec8f157d80c390e56cad16702940266a4eba"
+    },
+    {
+      "id": "archived-actual-7",
+      "name": "workspace.read",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:dd240624337cd53c4c995bc0c359bf20849d2ccac7b5ae3a115e81b1af106120",
+      "argumentsDigest": "sha256:8167fd97bb247a79daa499f2f8b06019eb81bd536d1dbaba57574b7f4d210419"
+    },
+    {
+      "id": "archived-actual-8",
+      "name": "workspace.read",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:b9a3096283922429e2cda7e26711e07ea7fa86b3a66d8e6c2f1f592348098c9f",
+      "argumentsDigest": "sha256:55bd310528639dacc8832623321cb31eacc2f08583c4c07d5eb51f96fb902876"
+    },
+    {
+      "id": "archived-actual-9",
+      "name": "file.diff",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:b9e312970ac1092a89799f9c87f0043dd4f616b6af932276bad0be92007b4c92",
+      "argumentsDigest": "sha256:512ed6fae4ca08628e5a1f328892498961595580dd0b39dfc575e09befa8c254"
+    },
+    {
+      "id": "archived-actual-10",
+      "name": "file.diff",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:b0d771e0c3b6b758c2d71686071f63af43e44234308470a0640db5d199172b11",
+      "argumentsDigest": "sha256:b09cacf369aeb9d4a212c54358f47bde42add314380525b43636d775867a0128"
+    },
+    {
+      "id": "archived-actual-11",
+      "name": "file.diff",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:c03f5758dbf4b5063b09997dd04c4bbc3bb0c0c76ba3b1aef2d4337fe7911bf1",
+      "argumentsDigest": "sha256:456cfa9f79d6850b63862e26a471f6eb62b0de39a37cbe49e11b3947d9483714"
+    },
+    {
+      "id": "archived-actual-12",
+      "name": "workspace.read",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:0b58bedbeb4a9f836aa6ed5812343d7e472958d1cd6d107d3484d61760bd1b59",
+      "argumentsDigest": "sha256:7d6441497d2a000b8143602a7817c90abe7db88e139f89c062a1c36cfe0ad9d6"
+    },
+    {
+      "id": "archived-actual-13",
+      "name": "test.execute",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:7afc52fda7d7e036844a3230eabbf31c2083fa41242adc7d05e256d9ad19558c",
+      "argumentsDigest": "sha256:58d3b7350f111e44294f4db1fbf79620d23eb866b5312a32e7b02c6c10145667",
+      "verifiedResult": {
+        "processIntent": {
+          "kind": "NODE_SYNTAX_CHECK",
+          "workingDirectory": ".",
+          "workingDirectorySource": "DEFAULT_AUTHORIZED_WORKSPACE",
+          "targetCount": 1,
+          "targets": [
+            "tags.mjs"
+          ]
+        },
+        "executionOk": true,
+        "exitCode": 0,
+        "outputDigest": "sha256:7afc52fda7d7e036844a3230eabbf31c2083fa41242adc7d05e256d9ad19558c"
+      }
+    },
+    {
+      "id": "archived-actual-14",
+      "name": "test.execute",
+      "state": "SUCCEEDED",
+      "outputDigest": "sha256:43e3caf64ee4e563ad74dbdd4b4e72bdb607e95c14a82fe728027de80af77fb3",
+      "argumentsDigest": "sha256:b88928005092ad5f3e720e0dd81c6a2f2e0e68e1314a5c0e0740d73abfd1702b",
+      "verifiedResult": {
+        "processIntent": {
+          "kind": "NODE_TEST",
+          "workingDirectory": ".",
+          "workingDirectorySource": "EXPLICIT_WORKSPACE_RELATIVE",
+          "targetCount": 1,
+          "targets": [
+            "tags.test.mjs"
+          ],
+          "testIsolation": "none",
+          "automaticDiscovery": false
+        },
+        "executionOk": true,
+        "exitCode": 0,
+        "outputDigest": "sha256:43e3caf64ee4e563ad74dbdd4b4e72bdb607e95c14a82fe728027de80af77fb3"
+      }
+    }
+  ],
+  "originalGradeChanged": false,
+  "limitation": "This is a rule replay only. It does not prove a new live workflow completes or that Jev gate deferrals are eliminated."
+}

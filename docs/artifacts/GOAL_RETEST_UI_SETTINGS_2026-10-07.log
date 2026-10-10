@@ -1,0 +1,5 @@
+
+> hmcodex-desktop@0.1.0 test:ui:settings
+> node "%npm_config_local_prefix%/scripts/ui-settings-test.mjs"
+
+PASS settings keyboard focus cycling and close restoration, layout, section drafts, search, Chinese instructions, reload, clear, validation, retry, mobile and dark mode

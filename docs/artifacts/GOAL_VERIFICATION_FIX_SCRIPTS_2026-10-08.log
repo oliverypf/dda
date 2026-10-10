@@ -1,0 +1,46 @@
+✔ model-visible tool content must match a successful durable native result (11.576406ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (1.0475ms)
+✔ a completed invocation returning exit failure does not count as a successful process (25.235313ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (5.037344ms)
+✔ Jev variant labels still require successful native hmCodex evidence (727.439531ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (7.066406ms)
+✔ recovery requires a real failure followed by a successful tool result (0.957969ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.798281ms)
+✖ an exited client with inherited pipes cannot hold a case beyond its deadline (1844.646562ms)
+✔ a timed out live client is terminated and cannot pass acceptance (1701.969375ms)
+✔ a failed treatment is retained, with missing latency and cost unknown (4.261406ms)
+✔ independent batches, changed input or source, and incomplete pairs cannot become paired evidence (1.702344ms)
+✔ declared off/on conditions must match observed decision-provider usage (0.681406ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (9.198906ms)
+✔ both clients use the same text and developer instruction conversion (56.952188ms)
+✔ live model records returned inference IDs for success and HTTP failure without inventing charges (394.795156ms)
+✔ live decision recording forwards real answers and never records credentials (226.513594ms)
+✔ actual simple Node commands are parsed without accepting quoted examples or compound shell scripts (24.025312ms)
+✔ source repair needs an actual seeded failure and the immutable fixture test to pass (4197.625468ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 18
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6307.236719
+
+✖ failing tests:
+
+test at scripts\goal-evidence-process.test.mjs:5:1
+✖ an exited client with inherited pipes cannot hold a case beyond its deadline (1844.646562ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/desktop/scripts/goal-evidence-process.test.mjs:17:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

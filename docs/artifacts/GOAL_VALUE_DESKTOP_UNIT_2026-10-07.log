@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/User/hmCodex-local/desktop
+
+
+ Test Files  7 passed (7)
+      Tests  60 passed (60)
+   Start at  15:32:00
+   Duration  6.32s (transform 1.85s, setup 0ms, import 2.97s, tests 3.62s, environment 3ms)
+

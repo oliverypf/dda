@@ -1,0 +1,28 @@
+{
+  "checkedAt": "2026-10-07T15:54:22.237Z",
+  "kind": "NEGATIVE_COMMAND_SEMANTICS_PROBE",
+  "input": {
+    "command": "node",
+    "args": [
+      "entry.mjs",
+      "--test"
+    ]
+  },
+  "currentIntent": {
+    "kind": "NODE_TEST",
+    "workingDirectory": ".",
+    "workingDirectorySource": "DEFAULT_AUTHORIZED_WORKSPACE",
+    "targetCount": 1,
+    "targets": [
+      "entry.mjs"
+    ],
+    "testIsolation": "default",
+    "automaticDiscovery": false
+  },
+  "actualNode": {
+    "exitCode": 0,
+    "stdout": "{\"scriptRan\":true,\"arguments\":[\"--test\"]}\n",
+    "stderr": ""
+  },
+  "limitation": "Read-only classifier probe, not a goal workflow or a model response. Active SourceN paid cohort must remain frozen; inspect real input ordering before crediting test execution."
+}

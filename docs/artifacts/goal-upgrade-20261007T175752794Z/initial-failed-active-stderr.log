@@ -1,0 +1,6 @@
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'missing-evidence.txt',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-actual-checkpoint-upgrade-p5CkX7',
+  error: 'WORKSPACE_NOT_FOUND:missing-evidence.txt'
+}

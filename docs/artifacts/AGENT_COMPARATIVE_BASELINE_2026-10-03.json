@@ -1,0 +1,87 @@
+{
+  "report": "agent-comparative-baseline",
+  "generatedAt": "2026-10-03T00:00:00+08:00",
+  "scope": "当前仓库可获得的历史证据，不是新的成对 A/B 实验",
+  "sourceEvidence": [
+    "WINDOWS_PHASE1_METRICS_2026-09-09.json",
+    "WINDOWS_PHASE2_W10_EVIDENCE.json",
+    "WINDOWS_PHASE3_EXPERIENCE_REPORT.md",
+    "WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md"
+  ],
+  "measured": {
+    "runtime": {
+      "taskRunCount": 84,
+      "runCount": 181,
+      "eventCount": 4119,
+      "commitAttempts": 1128,
+      "commitSuccesses": 1128,
+      "commitSuccessRate": 1,
+      "decisionCount": 137,
+      "outcomeCount": 133,
+      "unlinkedOutcomeCount": 4,
+      "decisionOutcomeLinkRate": 0.9708029197
+    },
+    "costEvidence": {
+      "status": "PARTIAL",
+      "recordCount": 0,
+      "calls": 0,
+      "actualCost": null,
+      "localFixtureProviderCost": 0,
+      "reason": "历史真实执行报告没有成本记录；新增本地 fixture 不产生外部 provider 账单，但生产价格和本机计算成本未建模"
+    }
+  },
+  "comparisons": {
+    "codeTaskVsCodex": {
+      "status": "LOCAL_CAPABILITY_SMOKE",
+      "hmcodexObservedProxy": {
+        "uiFunctionalChecks": {"passed": 20, "total": 20, "successRate": 1},
+        "realTaskRecoveryEvidence": {"initialAttempt": "recoverable_tool_error", "subsequentAttempt": "succeeded", "manualIntervention": 0},
+        "scope": "历史 Windows UI/真实任务验收代理，不是代码任务对照"
+      },
+      "ordinaryCodex": {"successRate": 1, "reworkCount": 0, "testPassRate": 1, "sampleSize": 1},
+      "hmcodexControlledFixture": {"successRate": 1, "reworkCount": 0, "testPassRate": 1, "sampleSize": 1, "toolRounds": 2},
+      "latestSmoke": "AGENT_CODE_TASK_AB_2026-10-03.json",
+      "successRate": null,
+      "reworkCount": null,
+      "testPassRate": null,
+      "reason": "仓库有 hmCodex 的 UI/真实任务验收代理（20/20；一次可恢复工具错误后成功），但没有同一代码任务的普通 Codex 运行记录，不能计算成对差值"
+    },
+    "modelVsBaseline": {
+      "status": "LOCAL_FIXTURE_BATCH",
+      "sampleSize": 5,
+      "inputTokens": {"modelBaselinePerRun": 12, "hmcodexPerRun": 12},
+      "outputTokens": {"modelBaselinePerRun": 4, "hmcodexPerRun": 4},
+      "totalCost": null,
+      "toolRounds": {"modelBaselinePerRun": 0, "hmcodexPerRun": 0},
+      "wallMs": {"modelBaselineMean": 16.4, "hmcodexMean": 4941.4},
+      "reason": "同一 local fixture 的原始 provider 直连与 hmCodex 批次；没有价格表，且直连不等于完整普通 Codex"
+    },
+    "jevOnVsOff": {
+      "status": "LOCAL_SMOKE_BATCH",
+      "sampleSizePerCondition": 5,
+      "latencyMs": {"jevOffMean": 4135.4, "jevOnMean": 4183.2, "delta": 47.8, "relativeDelta": 0.01156},
+      "errorAttempts": 0,
+      "manualInterventions": 0,
+      "successRate": {"jevOff": 1, "jevOn": 1},
+      "errorPathBatch": {"sampleSizePerCondition": 3, "jevOffMeanMs": 9092, "jevOnMeanMs": 7792.3, "errorAttemptsPerRun": {"jevOff": 1, "jevOn": 1}, "manualInterventionsPerRun": {"jevOff": 0, "jevOn": 0}, "successRate": {"jevOff": 0, "jevOn": 0}},
+      "reason": "成功路径和错误路径均为本地 fixture A/B；不代表生产模型或普通 Codex"
+    }
+  },
+  "minimumExperimentSchema": {
+    "taskId": "固定任务编号",
+    "condition": "codex|hmcodex|model-baseline|jev-on|jev-off",
+    "provider": "服务商和模型版本",
+    "startedAtMs": "开始时间",
+    "finishedAtMs": "结束时间",
+    "status": "success|partial|failed|unknown",
+    "testsPassed": "通过数/总数",
+    "reworkCount": "返工轮数",
+    "inputTokens": "输入 token",
+    "outputTokens": "输出 token",
+    "cost": "实际费用或可复算单价",
+    "toolRounds": "工具轮数",
+    "errorAttempts": "错误尝试次数",
+    "manualInterventions": "人工介入次数"
+  },
+  "conclusion": "当前能证明的是事件/提交/决策链的工程完整性代理指标；本地 Jev 冒烟批次未显示加速；仍不能证明代码成功率或节省 token/费用。"
+}

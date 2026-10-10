@@ -1,0 +1,11 @@
+✔ settled I/O preserves its value or original error and releases the long timer (5.161719ms)
+✔ pending I/O still reaches its original deadline and error classification (47.347031ms)
+✔ actual workspace I/O finishes yet the frozen process stays alive; staged process exits promptly without shortening the I/O deadline (3990.527344ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4456.561406

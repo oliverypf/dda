@@ -1,0 +1,454 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-10-07T10:47:29.706Z",
+  "goalStatus": "active",
+  "progress": "真实进程中断恢复已补齐，收益验证仍未完成",
+  "runtimeSourceSha256": "a51d19434c4cdd6676ea4aa8a25019035307deaf486a63b831977410a7b62683",
+  "sourceManifest": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\GOAL_PROCESS_INTERRUPTION_SOURCE_MANIFEST_2026-10-07.json",
+  "desktopExecutable": "C:\\Users\\User\\hmCodex-local\\desktop\\src-tauri\\target\\x86_64-pc-windows-msvc\\debug\\hmcodex-desktop.exe",
+  "desktopExecutableSha256": "24021de73a25cf7c31b2468cf78ac28c48fe3c92c21f80c437bcd963ecc64722",
+  "checks": {
+    "runtime": {
+      "tests": 634,
+      "pass": 633,
+      "fail": 0,
+      "skipped": 1
+    },
+    "scripts": {
+      "tests": 46,
+      "pass": 46,
+      "fail": 0,
+      "skipped": 0
+    },
+    "oneCommand": {
+      "schemaVersion": "1.0",
+      "startedAt": "2026-10-07T10:27:56.547Z",
+      "mode": "LOCAL_FIXTURE",
+      "steps": [
+        {
+          "id": "build",
+          "passed": true,
+          "exitCode": 0,
+          "timedOut": false,
+          "wallMs": 49172,
+          "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\build.log"
+        },
+        {
+          "id": "recovery-jev-runtime",
+          "passed": true,
+          "exitCode": 0,
+          "timedOut": false,
+          "wallMs": 43333,
+          "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\recovery-jev-runtime.log"
+        },
+        {
+          "id": "native-resume-retry",
+          "passed": true,
+          "exitCode": 0,
+          "timedOut": false,
+          "wallMs": 80331,
+          "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\native-resume-retry.log"
+        },
+        {
+          "id": "paired-fixed-tasks",
+          "passed": true,
+          "exitCode": 0,
+          "timedOut": false,
+          "wallMs": 904193,
+          "log": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\paired-fixed-tasks.log"
+        }
+      ],
+      "limitations": [
+        "Fixture inference verifies the recovery and test machinery, not production model quality.",
+        "Published quota value is not an invoice. Missing cash charges and human activity remain unknown.",
+        "This command covers the three agent goals; it does not certify every product feature."
+      ],
+      "completedAt": "2026-10-07T10:45:53.614Z",
+      "passed": true,
+      "comparison": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\comparison.json"
+    },
+    "native": {
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0
+    },
+    "processInterruption": {
+      "passed": 4,
+      "failed": 0,
+      "scenarios": [
+        "JSON journal: kill read-only runtime and resume remaining work without re-planning or repeating the completed step",
+        "Actual file.write before forced termination stays blocked after a read-only resume",
+        "Read-only source stays blocked if the resumed run switches to CONTROLLED",
+        "SQLite event store: kill read-only runtime and resume remaining work"
+      ],
+      "sourceEvidence": "Actual source TaskRunCreated.requestedMode and current host mode both enforce READ_ONLY; absent or ambiguous source evidence stays blocked.",
+      "completedStepInvariant": "Original output digest and attempt remain in durable PlanStepStateChanged events."
+    },
+    "fixtureComparison": {
+      "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T102756538Z\\comparison.json",
+      "batchId": "20261007T103049947Z-5a7e5d3d",
+      "conditions": {
+        "ordinary-codex": {
+          "runs": 12,
+          "successes": 12,
+          "successRate": 1,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 8,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 960,
+          "actualCost": 0,
+          "estimatedCost": 0,
+          "pricingBasis": null,
+          "toolRounds": 28,
+          "modelCalls": 40,
+          "usageCoverage": {
+            "reportedRequests": 40,
+            "totalRequests": 40,
+            "knownTokenSubtotal": 960,
+            "pricedRequests": 0,
+            "knownPricedSubtotal": 0
+          },
+          "toolCallCount": 28,
+          "wallMs": 697178
+        },
+        "hmcodex-runtime": {
+          "runs": 12,
+          "successes": 12,
+          "successRate": 1,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 8,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 1056,
+          "actualCost": 0,
+          "estimatedCost": 0,
+          "pricingBasis": null,
+          "toolRounds": 30,
+          "modelCalls": 44,
+          "usageCoverage": {
+            "reportedRequests": 44,
+            "totalRequests": 44,
+            "knownTokenSubtotal": 1056,
+            "pricedRequests": 0,
+            "knownPricedSubtotal": 0
+          },
+          "toolCallCount": 30,
+          "wallMs": 170350
+        }
+      },
+      "contentAudit": {
+        "passed": true,
+        "cases": 24,
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T103049947Z-5a7e5d3d\\content-audit.json"
+      }
+    }
+  },
+  "priorLiveEvidence": {
+    "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_AUDIT_2026-10-07.json",
+    "runtimeSourceSha256": "e3f05eae3507f516cbffadb31814763f04ee4a69f5d3813f0fb3033f76dbb2ea",
+    "paired": {
+      "batchId": "20261007T092219874Z-08e88e14",
+      "model": "mimo-v2.6-pro",
+      "codexVersion": "codex-cli 0.155.1",
+      "decisionMode": "OFF",
+      "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_CURRENT_SOURCE_PAIRED_2026-10-07.json",
+      "sourceSha256": "d01c9c06f1f966967460ffdcd4aa49e616c00fa7002d027cfa914a4b2fe731e0",
+      "conditions": {
+        "ordinary-codex": {
+          "runs": 12,
+          "successes": 8,
+          "successRate": 0.6666666666666666,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 4,
+          "recoverySuccessRate": 0.5,
+          "manualInterventionMinutes": 0,
+          "totalTokens": null,
+          "actualCost": null,
+          "estimatedCost": null,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 57,
+          "modelCalls": 74,
+          "usageCoverage": {
+            "reportedRequests": 67,
+            "totalRequests": 74,
+            "knownTokenSubtotal": 678209,
+            "pricedRequests": 67,
+            "knownPricedSubtotal": 0.04168518
+          },
+          "toolCallCount": 55,
+          "wallMs": 1539496
+        },
+        "hmcodex-runtime": {
+          "runs": 12,
+          "successes": 11,
+          "successRate": 0.9166666666666666,
+          "recoveryOpportunities": 8,
+          "recoverySuccesses": 7,
+          "recoverySuccessRate": 0.875,
+          "manualInterventionMinutes": 0,
+          "totalTokens": null,
+          "actualCost": null,
+          "estimatedCost": null,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 29,
+          "modelCalls": 45,
+          "usageCoverage": {
+            "reportedRequests": 42,
+            "totalRequests": 45,
+            "knownTokenSubtotal": 102165,
+            "pricedRequests": 42,
+            "knownPricedSubtotal": 0.021810233
+          },
+          "toolCallCount": 33,
+          "wallMs": 732218
+        }
+      },
+      "failures": [
+        {
+          "runKey": "20261007T092219874Z-08e88e14/1-code-syntax-001-ordinary-codex",
+          "status": "FAILED",
+          "checks": {
+            "processCompleted": true,
+            "agentCompleted": true,
+            "correctAnswer": true,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": false,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": true
+          },
+          "usageCoverage": {
+            "reportedRequests": 4,
+            "totalRequests": 4,
+            "knownTokenSubtotal": 36448,
+            "pricedRequests": 4,
+            "knownPricedSubtotal": 0.0023806390000000004
+          },
+          "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\1-code-syntax-001-ordinary-codex"
+        },
+        {
+          "runKey": "20261007T092219874Z-08e88e14/1-code-feature-001-ordinary-codex",
+          "status": "FAILED",
+          "checks": {
+            "processCompleted": true,
+            "agentCompleted": true,
+            "correctAnswer": false,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": false,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": false
+          },
+          "usageCoverage": {
+            "reportedRequests": 9,
+            "totalRequests": 10,
+            "knownTokenSubtotal": 93383,
+            "pricedRequests": 9,
+            "knownPricedSubtotal": 0.005011751
+          },
+          "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\1-code-feature-001-ordinary-codex"
+        },
+        {
+          "runKey": "20261007T092219874Z-08e88e14/2-recoverable-read-001-hmcodex-runtime",
+          "status": "TIMED_OUT",
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": false,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": true,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": true
+          },
+          "usageCoverage": {
+            "reportedRequests": 4,
+            "totalRequests": 6,
+            "knownTokenSubtotal": 6700,
+            "pricedRequests": 4,
+            "knownPricedSubtotal": 0.001449507
+          },
+          "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-recoverable-read-001-hmcodex-runtime"
+        },
+        {
+          "runKey": "20261007T092219874Z-08e88e14/2-code-syntax-001-ordinary-codex",
+          "status": "TIMED_OUT",
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": false,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": false,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": false
+          },
+          "usageCoverage": {
+            "reportedRequests": 9,
+            "totalRequests": 11,
+            "knownTokenSubtotal": 91343,
+            "pricedRequests": 9,
+            "knownPricedSubtotal": 0.005076971999999999
+          },
+          "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-code-syntax-001-ordinary-codex"
+        },
+        {
+          "runKey": "20261007T092219874Z-08e88e14/2-code-feature-001-ordinary-codex",
+          "status": "TIMED_OUT",
+          "checks": {
+            "processCompleted": false,
+            "agentCompleted": false,
+            "correctAnswer": true,
+            "actualSuccessfulTool": true,
+            "actualSuccessfulTest": true,
+            "actualInjectedFailure": true,
+            "successfulToolAfterFailure": true,
+            "workspaceScopeRespected": true
+          },
+          "usageCoverage": {
+            "reportedRequests": 12,
+            "totalRequests": 14,
+            "knownTokenSubtotal": 137000,
+            "pricedRequests": 12,
+            "knownPricedSubtotal": 0.0084912
+          },
+          "source": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\2-code-feature-001-ordinary-codex"
+        }
+      ],
+      "allSuccessfulRowsModelIdentityMatched": true,
+      "contentAudit": {
+        "passed": false,
+        "cases": 24,
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T092219874Z-08e88e14\\content-audit.json",
+        "passedCases": 21,
+        "allSuccessfulRowsHaveEvidence": true
+      },
+      "engineeringSubset": {
+        "ordinary-codex": {
+          "runs": 6,
+          "successes": 2,
+          "successRate": 0.3333333333333333,
+          "recoveryOpportunities": 6,
+          "recoverySuccesses": 2,
+          "recoverySuccessRate": 0.3333333333333333,
+          "manualInterventionMinutes": 0,
+          "totalTokens": null,
+          "actualCost": null,
+          "estimatedCost": null,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 49,
+          "modelCalls": 58,
+          "usageCoverage": {
+            "reportedRequests": 53,
+            "totalRequests": 58,
+            "knownTokenSubtotal": 560265,
+            "pricedRequests": 53,
+            "knownPricedSubtotal": 0.033169707
+          },
+          "toolCallCount": 47,
+          "wallMs": 1378759
+        },
+        "hmcodex-runtime": {
+          "runs": 6,
+          "successes": 6,
+          "successRate": 1,
+          "recoveryOpportunities": 6,
+          "recoverySuccesses": 6,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 75488,
+          "actualCost": null,
+          "estimatedCost": 0.014905361999999998,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 19,
+          "modelCalls": 25,
+          "usageCoverage": {
+            "reportedRequests": 25,
+            "totalRequests": 25,
+            "knownTokenSubtotal": 75488,
+            "pricedRequests": 25,
+            "knownPricedSubtotal": 0.014905361999999998
+          },
+          "toolCallCount": 23,
+          "wallMs": 294354
+        }
+      }
+    },
+    "liveJev": {
+      "batchId": "20261007T090526039Z-99955e26",
+      "sourceRuntimeRoot": "C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-jev-evidence-e6n90e",
+      "sourceSha256": "e3f05eae3507f516cbffadb31814763f04ee4a69f5d3813f0fb3033f76dbb2ea",
+      "conditions": {
+        "hmcodex-runtime": {
+          "runs": 2,
+          "successes": 2,
+          "successRate": 1,
+          "recoveryOpportunities": 2,
+          "recoverySuccesses": 2,
+          "recoverySuccessRate": 1,
+          "manualInterventionMinutes": 0,
+          "totalTokens": 17652,
+          "actualCost": null,
+          "estimatedCost": 0.005026077,
+          "pricingBasis": "SUBSCRIPTION_QUOTA",
+          "toolRounds": 6,
+          "modelCalls": 10,
+          "usageCoverage": {
+            "reportedRequests": 10,
+            "totalRequests": 10,
+            "knownTokenSubtotal": 17652,
+            "pricedRequests": 10,
+            "knownPricedSubtotal": 0.005026077
+          },
+          "toolCallCount": 6,
+          "wallMs": 88427
+        }
+      },
+      "contentAudit": {
+        "passed": true,
+        "cases": 2,
+        "path": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\20261007T090526039Z-99955e26\\content-audit.json"
+      },
+      "decision": {
+        "calls": 20,
+        "successfulCalls": 20,
+        "inputTokens": 53599,
+        "outputTokens": 1834,
+        "estimatedApiCost": 0.0022511579999999996,
+        "actualCost": null
+      }
+    },
+    "applicability": "Prior frozen source; never relabel as the current source."
+  },
+  "requirements": [
+    {
+      "id": "checkpoint-resume",
+      "status": "ENGINEERING_PASS",
+      "evidence": "Current native button flow plus four real process interruption scenarios"
+    },
+    {
+      "id": "failure-recovery",
+      "status": "ENGINEERING_PASS_WITH_LIMITS",
+      "evidence": "Current native and runtime fixture upgrades; prior-source actual Mimo+Jev recovery 2/2",
+      "missing": "Actual low-price/strong-model routing and same-source Jev on/off contribution comparison"
+    },
+    {
+      "id": "fixed-task-metrics-and-roi",
+      "status": "PARTIAL",
+      "evidence": "Current 24-case local paired validation, prior 24-case live comparison, append-only metrics and billing/activity reconciliation",
+      "missing": "Actual invoices and real human intervention activity; broad product advantage proof"
+    }
+  ],
+  "remaining": [
+    "Validate actual low-price/strong-model routing and Jev on/off at one frozen source, including decision latency and cost components.",
+    "Extend the fixed tasks to multi-file changes, real repository builds and long tasks; improve network timeout reliability.",
+    "Read actual supplier charges and genuine human activities, then compare total cost and human effort per successful task."
+  ],
+  "limitations": [
+    "Local fixture inference validates engineering behavior and test machinery, not production model quality or savings.",
+    "Unknown interrupted writes are deliberately blocked; the tested automatic continuation applies only when both old and new host modes enforce READ_ONLY.",
+    "The prior live comparison remains attached to its original source snapshot.",
+    "No new paid model benchmark or production configuration change occurred in this follow-up."
+  ]
+}

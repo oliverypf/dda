@@ -1,0 +1,28 @@
+START build
+RUNNING build
+RUNNING build
+PASS build C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T091052934Z\build.log
+START recovery-jev-runtime
+PASS recovery-jev-runtime C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T091052934Z\recovery-jev-runtime.log
+START native-resume-retry
+RUNNING native-resume-retry
+PASS native-resume-retry C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T091052934Z\native-resume-retry.log
+START paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+RUNNING paired-fixed-tasks
+PASS paired-fixed-tasks C:\Users\User\hmCodex-local\docs\artifacts\goal-validation-20261007T091052934Z\paired-fixed-tasks.log
+{"passed":true,"mode":"LOCAL_FIXTURE","output":"C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_JEV_MERGED_VALIDATION_2026-10-07.json","comparison":"C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-validation-20261007T091052934Z\\comparison.json"}

@@ -1,0 +1,64 @@
+✔ decision observations keep only bounded terminal host facts (2.945781ms)
+✖ Jev gates receive the observed failure before the next tool and before recovery (1740.40125ms)
+✔ a controlled failing test can be repaired only after the Jev wire carries process intent and host policy (4828.092187ms)
+✔ autodiscovered tests receive fresh file context and finish after post-write preservation reads (5270.908594ms)
+node:internal/modules/esm/resolve:271
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\User\hmCodex-local\runtime\src\decision\registry-observation.mjs' imported from C:\Users\User\hmCodex-local\runtime\test\readonly-registry-observation.test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:992:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:759:56)
+    at #resolve (node:internal/modules/esm/loader:683:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:603:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:163:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:253:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/User/hmCodex-local/runtime/src/decision/registry-observation.mjs'
+}
+
+Node.js v24.19.0
+✖ runtime\test\readonly-registry-observation.test.mjs (171.085ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 3
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12124.364844
+
+✖ failing tests:
+
+test at runtime\test\jev-tool-evidence.test.mjs:40:1
+✖ Jev gates receive the observed failure before the next tool and before recovery (1740.40125ms)
+  AssertionError [ERR_ASSERTION]: [workspace-failure] {
+    operation: 'read.resolve',
+    requestedPath: 'missing.txt',
+    root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-jev-tool-facts-YtvHyB\\workspace',
+    error: 'WORKSPACE_NOT_FOUND:missing.txt'
+  }
+  de-cordis","os":["windows"]},"contributions":[{"id":"dream-scheduler.contribution","type":"skill","entrypoint":"dream-scheduler","capabilities":["memory.dream.schedule"],"permissions":["trajectory.read.redacted"],"permissionCeiling":"READ_ONLY"}],"digest":"sha256:5e3a408c6f7f94558b4394d87df175db6d0f58fc4034bd72709ee5035a478ac8","lifecycle":"ACTIVE","source":"BUNDLED_SIGNED"},{"schemaVersion":"1.0","id":"evolution-registry","name":"Evolution Proposal Registry","version":"0.1.0","publisher":{"id":"com.hmcodex","displayName":"dda"},"pluginApi":">=1.0 <2.0","harnessProtocol":">=1.0 <2.0","platform":{"kind":"node-cordis","os":["windows"]},"contributions":[{"id":"evolution-registry.contribution","type":"skill","entrypoint":"evolution-registry","capabilities":["profile.propose-update"],"permissions":["trajectory.read.redacted"],"permissionCeiling":"READ_ONLY"}],"digest":"sha256:d0ea296f7d25a16e70f3439544a935b5472aa655ab520c60a5bd0cf7445f1fe4","lifecycle":"ACTIVE","source":"BUNDLED_SIGNED"}]}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/runtime/test/jev-tool-evidence.test.mjs:110:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at runtime\test\readonly-registry-observation.test.mjs:1:1
+✖ runtime\test\readonly-registry-observation.test.mjs (171.085ms)
+  'test failed'

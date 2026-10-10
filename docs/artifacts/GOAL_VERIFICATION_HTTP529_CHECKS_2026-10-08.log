@@ -1,0 +1,28 @@
+✔ native one-shot executor receipts agree with both supported Node request forms (1678.540625ms)
+✔ normalization retains rejection of unrecognized process semantics and private scope (1.860625ms)
+✔ checkpoint lineage carries actual prior read failure without copying arbitrary messages or commands (5.099375ms)
+✔ unknown modes, changed goals, wrong checkpoints, metadata refusals and any actual side effects do not become resume facts (3.377344ms)
+✔ later checkpoints preserve validated earlier read observations across the same thread lineage (1.737812ms)
+✔ recovers CONTINUE reports and stops after a successful verification (8.577968ms)
+✔ does not recover hard failures or exceed the configured budget (1.223594ms)
+✔ recovery context contains only bounded verifier facts and action digests (0.774219ms)
+✔ terminal FAIL report stops recovery without another execute (0.573906ms)
+✔ terminal CANCELLED report also stops recovery without retry (0.577344ms)
+✔ stops before another execution when recovery selects stop and report (0.653593ms)
+✔ pauses before another execution when recovery requests user input (4.393281ms)
+✔ verification transport recovery reuses one execution and does not duplicate action observations (6.946562ms)
+✔ hard failure and unresolved service uncertainty never become successful results (0.934532ms)
+✔ only deterministic success plus actual transient provider failure qualifies for re-verification (0.651563ms)
+✔ semantic requests retain evidence once and preserve an actual negative choice (2.894531ms)
+✔ native READ_ONLY workflow re-verifies after HTTP503 without another executor turn (PASS) (10672.257656ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (PASS) (16677.486563ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (FAIL) (17840.292031ms)
+✔ native CONTROLLED workflow re-verifies after HTTP503 without another executor turn (SERVICE_FAILURE) (17092.852344ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 63101.890313

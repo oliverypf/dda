@@ -1,0 +1,29 @@
+✔ model-visible tool content must match a successful durable native result (5.384844ms)
+✔ canonical hashing accepts field ordering but excludes snapshot and assistant text (0.3625ms)
+✔ a completed invocation returning exit failure does not count as a successful process (0.489844ms)
+✔ successful test evidence requires a matching native invocation of the actual test suite (0.914687ms)
+✔ a successful agent status and correct sentence without real tool execution cannot pass (0.464219ms)
+✔ recovery requires a real failure followed by a successful tool result (0.334844ms)
+✔ incorrect answers, changed read-only workspaces and timeouts fail external acceptance (0.243281ms)
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (1545.967813ms)
+✔ a timed out live client is terminated and cannot pass acceptance (726.027812ms)
+✔ Responses tool calls and results preserve their identities in the shared live adapter (1.436562ms)
+✔ both clients use the same text and developer instruction conversion (0.521563ms)
+✔ cost uses separate cached and uncached rates and keeps unknown usage unknown (1.500312ms)
+✔ human active time unions overlapping activities, deduplicates events and excludes automation (0.917344ms)
+✔ incomplete activities remain unknown; headless zeros cannot hide human events (0.454062ms)
+✔ billing imports require full coverage and never turn missing charges into zero (0.788281ms)
+✔ later billing derives a report without changing raw measurements or claiming missing charges (2.031407ms)
+✔ observed activity stays unknown with a missing endpoint; headless runs cannot gain human time (0.954375ms)
+✔ code-normalize-001 starts with a real failure and validates the fixed code independently (882.66125ms)
+✔ code-syntax-001 starts with a real failure and validates the fixed code independently (824.190313ms)
+✔ code-feature-001 starts with a real failure and validates the fixed code independently (901.609844ms)
+✔ syntax-valid code that passes the visible example can still fail independent acceptance (653.676719ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5690.7025

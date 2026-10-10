@@ -1,0 +1,89 @@
+✔ a long model answer retains literal reported values after the real 500-character boundary (9.579843ms)
+✔ native process status and the end of a large test log survive without malformed JSON (2.573125ms)
+✔ JSON escaping and whitespace normalization cannot alter a short actual tool result (1.024687ms)
+✔ a proposed process exposes its test operation without disclosing flag values or inline code (9.579063ms)
+✔ tool policy distinguishes configured capability from a required host execution check (2.49ms)
+✔ out-of-workspace paths are classified without revealing absolute or traversal paths (4.371562ms)
+✔ file edits carry the actual proposed change as bounded untrusted data (1.529375ms)
+✔ an actual failed process preserves stderr evidence when stdout is empty (0.745ms)
+✔ automatic test context reads current authorized files rather than stale snapshot contents (160.874375ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'private-store.mjs',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-decision-context-policy-gOk342',
+  error: 'WORKSPACE_EXCLUDED_PATH:private-store.mjs'
+}
+✔ context collection preserves workspace exclusions and never follows opaque or escaped proposals (36.898125ms)
+✔ actual failed and successful tests remain visible after a long chain and state compaction (6.339844ms)
+✔ native one-shot executor receipts agree with both supported Node request forms (2413.647656ms)
+✔ normalization retains rejection of unrecognized process semantics and private scope (2.203594ms)
+✔ safe Node request forms share one bounded untrusted preview without claiming a lease or execution (23.089687ms)
+✔ real one-shot executor semantics still agree with every request preview (1955.794687ms)
+✔ full command strings collect current authorized fixture files, while excluded data stays absent (96.088907ms)
+✔ private overrides, inline code, outside paths, preloads and ambiguous commands are not normalized as bounded tests (1.584688ms)
+✔ Node process scope distinguishes default discovery, targeted tests and syntax diagnosis without implying execution (15.306562ms)
+✔ settled workspace I/O preserves its value or original error and releases the timer (15.811562ms)
+✔ pending workspace I/O still reaches its unchanged deadline and classification (69.853282ms)
+✔ native workspace I/O exits after completion without reducing the 60-second I/O deadline (3957.433437ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: '.env',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-sxMh6k',
+  error: 'WORKSPACE_SENSITIVE_PATH'
+}
+✔ lists and reads bounded workspace content through canonical relative paths (382.876563ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: '../outside',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-reject-dOjTE5',
+  error: 'WORKSPACE_INVALID_PATH'
+}
+[workspace-failure] {
+  operation: 'list',
+  requestedPath: 'missing',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-reject-dOjTE5',
+  error: 'WORKSPACE_NOT_FOUND:missing'
+}
+✔ rejects traversal and binary content while paging oversized text reads (100.88375ms)
+[workspace-failure] {
+  operation: 'list',
+  requestedPath: '',
+  root: null,
+  error: 'WORKSPACE_NOT_AUTHORIZED'
+}
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'README.md',
+  root: null,
+  error: 'WORKSPACE_NOT_AUTHORIZED'
+}
+✔ keeps a full bounded UTF-8 text file usable through the registry-sized limit (16.459063ms)
+✔ reports an unauthorized workspace without touching the filesystem (2.33625ms)
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'trajectory.jsonl',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-excluded-LnRvnY',
+  error: 'WORKSPACE_EXCLUDED_PATH:trajectory.jsonl'
+}
+[workspace-failure] {
+  operation: 'list',
+  requestedPath: 'trajectory.jsonl.runs',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-excluded-LnRvnY',
+  error: 'WORKSPACE_EXCLUDED_PATH:trajectory.jsonl.runs'
+}
+[workspace-failure] {
+  operation: 'read.resolve',
+  requestedPath: 'trajectory.jsonl.cancels.json.lock',
+  root: 'C:\\Users\\User\\AppData\\Local\\Temp\\hmcodex-workspace-excluded-LnRvnY',
+  error: 'WORKSPACE_EXCLUDED_PATH:trajectory.jsonl.cancels.json.lock'
+}
+✔ excludes host-owned runtime stores from snapshot, listing and reads (110.735468ms)
+✔ reads ANSI-colored build logs without changing file evidence or paging offsets (88.953437ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5031.530938

@@ -1,0 +1,13 @@
+✔ the frozen source has a contradictory opaque preview for a known Node test request (4.992969ms)
+✔ staged safe Node request forms share one bounded untrusted preview without claiming a lease or execution (6.829844ms)
+✔ real one-shot executor semantics still agree with every staged request preview (1381.886406ms)
+✔ full command strings now collect current authorized fixture files, while excluded data stays absent (122.206562ms)
+✔ private overrides, inline code, outside paths, preloads and ambiguous commands are not normalized as bounded tests (1.607813ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62010.068594

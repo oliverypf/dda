@@ -1,0 +1,39 @@
+
+> hmcodex-desktop@0.1.0 test:ui:diagnostics
+> node "%npm_config_local_prefix%/scripts/ui-diagnostics-test.mjs"
+
+设置与诊断
+设置与诊断
+运行时状态
+本地运行时 · 健康检查通过
+就绪
+诊断导出
+诊断包尚未生成
+未生成
+提示缓存
+尚无模型用量记录
+未知
+最近恢复检查
+4 条待恢复记录 · 12:44
+执行 2 · 角色 1 · 后台记忆整理 1 · 待审批 2 · 已撤销授权 1 · 工作区 就绪 · 差异 3（暂存 1 / 未暂存 1 / 未跟踪 1 / 冲突 0）
+已核对
+恢复详情
+逐项恢复事实
+2 条记录
+暂无可恢复执行记录
+待处理审批
+记录 approval-fixture · 操作 op-fixture
+状态 已呈现 · 运行 run-fixture
+已呈现
+查看状态
+安全取消
+一次性授权
+记录 lease-fixture · 操作 op-fixture
+状态 已撤销 · 运行 run-fixture · 原因 原执行进程已退出
+已撤销
+查看状态
+工作区检查：未发现状态码 · 路径摘要 0 条
+远端状态：仅本地 · 当前运行时未配置远端恢复源
+导出完成：C:/fixture/exports/export-all-1.json
+恢复检查导出全部数据
+PASS diagnostics recovery detail and export completion feedback

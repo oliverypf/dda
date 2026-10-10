@@ -1,0 +1,35 @@
+
+> hmcodex-desktop@0.1.0 test:scripts
+> node "%npm_config_local_prefix%/scripts/run-script-tests.mjs"
+
+✔ Phase 1.5 build fixes the controlled channel without mutating caller environment (3.989844ms)
+✔ controlled build invokes the local Windows CLI and supports fast mode (0.995313ms)
+✔ full local build fixes the release channel without mutating caller environment (0.460937ms)
+✔ Phase 1 build fixes the compiled channel without mutating caller environment (3.663906ms)
+✔ build invokes the local Windows CLI with the fixed channel and propagates failure (2.648906ms)
+✔ the sampler credits only the wall clock between real samples (53.095ms)
+✔ the sampler records a real store count and fails closed without a state path (434.309531ms)
+✔ each sample names the physical store file it read (147.408437ms)
+✔ phase3 evidence check passes and writes artifact (536.297969ms)
+✔ w10 evidence stays NOT_READY without a real install, window and signed reports (60.38125ms)
+✔ long run only credits observed wall clock inside the gap tolerance (186.556562ms)
+✔ signed release evidence must declare ok:true (248.625469ms)
+✔ retention needs a recorded observation start before it can be partial (20.236093ms)
+✔ install lifecycle evidence must be present, elevated and complete (2.341563ms)
+✔ install lifecycle evidence accepts only fully verified elevated steps (388.043281ms)
+✔ install lifecycle evidence rejects fabricated, partial and tampered records (757.864063ms)
+✔ the evidence record names the physical store file it read (274.402187ms)
+✔ derives one coherent desktop, workspace, and runtime root (12.006718ms)
+✔ honors an explicit desktop root before the caller directory (18.528906ms)
+✔ a real profile file lists the package copy as a different physical file (63.328906ms)
+✔ the same inode identifies a store read through the package local cache (91.880468ms)
+✔ the unredacted profile alias is reported only when it is another file (84.901718ms)
+✔ paths outside the profile root have no package twins (4.247812ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2950.603281

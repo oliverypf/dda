@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-f359f4de-d20e-4d05-a8c9-4728a0897b29",
+  "text": "Fresh bounded evidence obtained via `workspace.read` of `README.md` (the previously failed `workspace.read` of `missing-evidence.txt` with `WORKSPACE_NOT_FOUND` remains recorded and was not retried, as no new evidence supports retrying it).\n\n**Evidence report:**\n- Path: `README.md`\n- Size: 40 bytes\n- Digest: `sha256:c26a76b6e7df2afa481b62a144c52fd5b87d8352e145312f8373a07edeb17270` (matches the snapshot-selected file digest)\n- Truncated: false\n- **Exact evidence marker: `GOAL_ACTUAL_CHECKPOINT_UPGRADE_20261008`**\n\nThis completes the remaining goal for the verifier recovery stage of the `execute` step: the evidence marker has been read and reported with tool-backed proof. No files were modified (read-only mode preserved).",
+  "outputDigest": "sha256:b1cb37154f6fb4fa9caef050ff4cdae22de6994b0f5c190fc86389a930d9adb3"
+}

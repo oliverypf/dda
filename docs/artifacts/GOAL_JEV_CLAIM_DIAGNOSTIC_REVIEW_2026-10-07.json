@@ -1,0 +1,596 @@
+{
+  "schemaVersion": "1.0",
+  "batchId": "20261007T114245110Z-87c8c135",
+  "runtimeSourceSha256": "3661b0be9c7a0574562d3524f9f926b08adedd8278271b73ac15f6962ee59c2d",
+  "conditions": {
+    "hmcodex-runtime": {
+      "runs": 2,
+      "successes": 1,
+      "successRate": 0.5,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 1,
+      "recoverySuccessRate": 0.5,
+      "manualInterventionMinutes": 0,
+      "totalTokens": null,
+      "actualCost": null,
+      "estimatedCost": null,
+      "pricingBasis": "SUBSCRIPTION_QUOTA",
+      "toolRounds": 12,
+      "modelCalls": 16,
+      "usageCoverage": {
+        "reportedRequests": 15,
+        "totalRequests": 16,
+        "knownTokenSubtotal": 41470,
+        "pricedRequests": 15,
+        "knownPricedSubtotal": 0.006155510999999999
+      },
+      "toolCallCount": 10,
+      "wallMs": 196341
+    }
+  },
+  "rows": [
+    {
+      "taskId": "recoverable-read-001",
+      "status": "SUCCEEDED",
+      "error": null,
+      "claimChecks": [
+        {
+          "sequence": 3,
+          "id": "verified-tool-result-1-2",
+          "claimLength": 168,
+          "validJson": true,
+          "nativeOk": null,
+          "nativeExitCode": null,
+          "untrustedModelTruncated": null,
+          "quotedCodeCount": 0
+        },
+        {
+          "sequence": 3,
+          "id": "model-answer-1",
+          "claimLength": 495,
+          "validJson": true,
+          "nativeOk": null,
+          "nativeExitCode": null,
+          "untrustedModelTruncated": true,
+          "quotedCodeCount": 2
+        },
+        {
+          "sequence": 10,
+          "id": "verified-tool-result-2-2",
+          "claimLength": 168,
+          "validJson": true,
+          "nativeOk": null,
+          "nativeExitCode": null,
+          "untrustedModelTruncated": null,
+          "quotedCodeCount": 0
+        },
+        {
+          "sequence": 10,
+          "id": "verified-tool-result-2-3",
+          "claimLength": 168,
+          "validJson": true,
+          "nativeOk": null,
+          "nativeExitCode": null,
+          "untrustedModelTruncated": null,
+          "quotedCodeCount": 0
+        },
+        {
+          "sequence": 10,
+          "id": "model-answer-2",
+          "claimLength": 497,
+          "validJson": true,
+          "nativeOk": null,
+          "nativeExitCode": null,
+          "untrustedModelTruncated": true,
+          "quotedCodeCount": 3
+        }
+      ],
+      "requestOutcomes": [
+        {
+          "sequence": 1,
+          "status": null,
+          "error": 20,
+          "wallMs": 5011.904999999999,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": null
+        },
+        {
+          "sequence": 2,
+          "status": 200,
+          "error": null,
+          "wallMs": 926.6903129999992,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.8,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.04,
+                "ALLOW": 0.85,
+                "BLOCK": 0.11,
+                "REQUIRE_APPROVAL": 0
+              }
+            }
+          }
+        },
+        {
+          "sequence": 3,
+          "status": 200,
+          "error": null,
+          "wallMs": 1216.7215619999988,
+          "questions": [
+            "verification"
+          ],
+          "answers": {
+            "verification": {
+              "type": "choice",
+              "choice": "PASS",
+              "confidence": 0.89,
+              "probabilities": {
+                "PASS": 0.93,
+                "UNCERTAIN": 0.05,
+                "FAIL": 0.02
+              }
+            }
+          }
+        },
+        {
+          "sequence": 4,
+          "status": 200,
+          "error": null,
+          "wallMs": 344.295312000002,
+          "questions": [
+            "failureType",
+            "evidence",
+            "test",
+            "stop",
+            "escalation"
+          ],
+          "answers": {
+            "failureType": {
+              "type": "choice",
+              "choice": "TOOL_ERROR",
+              "confidence": 0.56,
+              "probabilities": {
+                "UNKNOWN": 0.27,
+                "NONE": 0.13,
+                "CODE_ERROR": 0,
+                "DEPENDENCY": 0,
+                "BAD_ASSUMPTION": 0,
+                "TOOL_ERROR": 0.6,
+                "TIMEOUT": 0,
+                "TEST_FAILURE": 0,
+                "ENVIRONMENT": 0,
+                "PERMISSION": 0
+              }
+            },
+            "evidence": {
+              "type": "choice",
+              "choice": "MISSING_EXECUTION_EVIDENCE",
+              "confidence": 0.3,
+              "probabilities": {
+                "MISSING_TEST_EVIDENCE": 0.23,
+                "SUFFICIENT": 0.01,
+                "CONFLICTING_EVIDENCE": 0.07,
+                "UNKNOWN": 0.26,
+                "MISSING_EXECUTION_EVIDENCE": 0.42,
+                "MISSING_ENVIRONMENT_EVIDENCE": 0.01
+              }
+            },
+            "test": {
+              "type": "choice",
+              "choice": "NONE",
+              "confidence": 1,
+              "probabilities": {
+                "RUN_BUILD": 0,
+                "RUN_LINT": 0,
+                "RUN_INTEGRATION_TEST": 0,
+                "RUN_TYPECHECK": 0,
+                "NONE": 1,
+                "RUN_TARGETED_TEST": 0,
+                "RUN_UNIT_TEST": 0,
+                "RUN_FULL_TEST": 0
+              }
+            },
+            "stop": {
+              "type": "choice",
+              "choice": "CONTINUE_EXECUTION",
+              "confidence": 0.86,
+              "probabilities": {
+                "STOP_SUCCESS": 0,
+                "NEED_REPLAN": 0.01,
+                "NEED_MORE_EVIDENCE": 0.09,
+                "NEED_ESCALATION": 0.01,
+                "CONTINUE_EXECUTION": 0.89
+              }
+            },
+            "escalation": {
+              "type": "choice",
+              "choice": "LOCAL_CONTINUE",
+              "confidence": 0.35,
+              "probabilities": {
+                "USE_NORMAL_MODEL": 0.03,
+                "LOCAL_CONTINUE": 0.48,
+                "RETRY_CHEAP": 0.07,
+                "COLLECT_EVIDENCE": 0.39,
+                "USE_STRONG_MODEL": 0.03
+              }
+            }
+          }
+        },
+        {
+          "sequence": 5,
+          "status": 200,
+          "error": null,
+          "wallMs": 445.50781200000347,
+          "questions": [
+            "candidate"
+          ],
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "diagnosis-UNKNOWN_VERIFIER_FAILURE",
+              "confidence": 0.82,
+              "probabilities": {
+                "diagnosis-UNKNOWN_VERIFIER_FAILURE": 0.91,
+                "diagnosis-stop": 0.09
+              }
+            }
+          }
+        },
+        {
+          "sequence": 6,
+          "status": 200,
+          "error": null,
+          "wallMs": 253.03812499999913,
+          "questions": [
+            "candidate"
+          ],
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "probe-readonly-evidence",
+              "confidence": 0.86,
+              "probabilities": {
+                "probe-readonly-evidence": 0.91,
+                "probe-stop": 0.03,
+                "probe-repeat-verification": 0.06
+              }
+            }
+          }
+        },
+        {
+          "sequence": 7,
+          "status": 200,
+          "error": null,
+          "wallMs": 417.2681250000023,
+          "questions": [
+            "candidate"
+          ],
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "collect-evidence",
+              "confidence": 0.29,
+              "probabilities": {
+                "stop-and-report": 0.32,
+                "request-user": 0.17,
+                "collect-evidence": 0.47,
+                "change-approach": 0.04
+              }
+            }
+          }
+        },
+        {
+          "sequence": 8,
+          "status": 200,
+          "error": null,
+          "wallMs": 336.53343699999823,
+          "questions": [
+            "candidate"
+          ],
+          "answers": {
+            "candidate": {
+              "type": "choice",
+              "choice": "replan-collect-evidence",
+              "confidence": 0.66,
+              "probabilities": {
+                "replan-collect-evidence": 0.77,
+                "replan-narrow-scope": 0.22,
+                "replan-change-role": 0.01
+              }
+            }
+          }
+        },
+        {
+          "sequence": 9,
+          "status": 200,
+          "error": null,
+          "wallMs": 1235.6317189999972,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.92,
+              "probabilities": {
+                "BLOCK": 0.04,
+                "ALLOW": 0.94,
+                "REQUEST_EVIDENCE": 0.02,
+                "REQUIRE_APPROVAL": 0
+              }
+            }
+          }
+        },
+        {
+          "sequence": 10,
+          "status": 200,
+          "error": null,
+          "wallMs": 1348.4828130000096,
+          "questions": [
+            "verification"
+          ],
+          "answers": {
+            "verification": {
+              "type": "choice",
+              "choice": "PASS",
+              "confidence": 0.49,
+              "probabilities": {
+                "UNCERTAIN": 0.06,
+                "PASS": 0.66,
+                "FAIL": 0.28
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "taskId": "code-syntax-001",
+      "status": "FAILED",
+      "error": "PLAN_STEP_FAILED:execute:FAIL",
+      "claimChecks": [],
+      "requestOutcomes": [
+        {
+          "sequence": 1,
+          "status": 200,
+          "error": null,
+          "wallMs": 1740.9132809999865,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.63,
+              "probabilities": {
+                "ALLOW": 0.27,
+                "BLOCK": 0.01,
+                "REQUEST_EVIDENCE": 0.72,
+                "REQUIRE_APPROVAL": 0
+              }
+            }
+          }
+        },
+        {
+          "sequence": 2,
+          "status": null,
+          "error": 20,
+          "wallMs": 5019.382343000005,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": null
+        },
+        {
+          "sequence": 3,
+          "status": 200,
+          "error": null,
+          "wallMs": 966.7546870000078,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.68,
+              "probabilities": {
+                "BLOCK": 0.03,
+                "REQUEST_EVIDENCE": 0.21,
+                "REQUIRE_APPROVAL": 0,
+                "ALLOW": 0.76
+              }
+            }
+          }
+        },
+        {
+          "sequence": 4,
+          "status": 200,
+          "error": null,
+          "wallMs": 280.0484370000049,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.31,
+              "probabilities": {
+                "ALLOW": 0.44,
+                "REQUEST_EVIDENCE": 0.48,
+                "REQUIRE_APPROVAL": 0,
+                "BLOCK": 0.08
+              }
+            }
+          }
+        },
+        {
+          "sequence": 5,
+          "status": 200,
+          "error": null,
+          "wallMs": 1024.258124999993,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.29,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.47,
+                "ALLOW": 0.41,
+                "REQUIRE_APPROVAL": 0,
+                "BLOCK": 0.12
+              }
+            }
+          }
+        },
+        {
+          "sequence": 6,
+          "status": 200,
+          "error": null,
+          "wallMs": 1410.6590629999992,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.69,
+              "probabilities": {
+                "ALLOW": 0.77,
+                "REQUIRE_APPROVAL": 0,
+                "REQUEST_EVIDENCE": 0.2,
+                "BLOCK": 0.03
+              }
+            }
+          }
+        },
+        {
+          "sequence": 7,
+          "status": 200,
+          "error": null,
+          "wallMs": 400.45625000001746,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.48,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0,
+                "REQUEST_EVIDENCE": 0.3,
+                "ALLOW": 0.61,
+                "BLOCK": 0.09
+              }
+            }
+          }
+        },
+        {
+          "sequence": 8,
+          "status": 200,
+          "error": null,
+          "wallMs": 336.79625000001397,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.33,
+              "probabilities": {
+                "REQUEST_EVIDENCE": 0.44,
+                "BLOCK": 0.06,
+                "REQUIRE_APPROVAL": 0,
+                "ALLOW": 0.5
+              }
+            }
+          }
+        },
+        {
+          "sequence": 9,
+          "status": 200,
+          "error": null,
+          "wallMs": 2276.685781999986,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "REQUEST_EVIDENCE",
+              "confidence": 0.27,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0,
+                "REQUEST_EVIDENCE": 0.45,
+                "ALLOW": 0.36,
+                "BLOCK": 0.19
+              }
+            }
+          }
+        },
+        {
+          "sequence": 10,
+          "status": 200,
+          "error": null,
+          "wallMs": 1197.5581249999814,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": {
+            "actionGate": {
+              "type": "choice",
+              "choice": "ALLOW",
+              "confidence": 0.73,
+              "probabilities": {
+                "REQUIRE_APPROVAL": 0,
+                "ALLOW": 0.8,
+                "BLOCK": 0.01,
+                "REQUEST_EVIDENCE": 0.19
+              }
+            }
+          }
+        },
+        {
+          "sequence": 11,
+          "status": null,
+          "error": 20,
+          "wallMs": 5013.569999999978,
+          "questions": [
+            "actionGate"
+          ],
+          "answers": null
+        },
+        {
+          "sequence": 12,
+          "status": null,
+          "error": 20,
+          "wallMs": 5007.998905999993,
+          "questions": [
+            "failureType",
+            "evidence",
+            "test",
+            "stop",
+            "escalation"
+          ],
+          "answers": null
+        }
+      ]
+    }
+  ]
+}

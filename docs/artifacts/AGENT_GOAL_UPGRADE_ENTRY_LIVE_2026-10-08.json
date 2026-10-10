@@ -1,0 +1,61 @@
+{
+  "generatedAt": "2026-10-07T17:59:03.885Z",
+  "method": "Real active-model task with one recovery attempt to preserve its observed initial failure, then the existing explicit user-model override and checkpoint-resume CLI with the distinct configured upgrade model. Same read-only workspace and prompt, real untouched Jev answers. No provider response is fabricated.",
+  "activeModel": "mimo-v2.6-flash",
+  "strongModel": "mimo-v2.6-pro",
+  "runtimeRoot": "C:\\Users\\User\\hmCodex-local\\runtime",
+  "runtimeSourceSha256": "81a07cf9915c7950ba5c45ada4f5f4c865a5194218d69edad3020a6554fb05f3",
+  "currentWorkspaceBuild": true,
+  "manualModelUpgrade": true,
+  "automaticJevStrongSelectionProven": false,
+  "passed": true,
+  "checks": {
+    "realInitialActive": true,
+    "initialTaskFailed": true,
+    "actualInitialMissingRead": true,
+    "resumedSameThread": true,
+    "checkpointRestored": true,
+    "actualStrongExecutor": true,
+    "successfulRead": true,
+    "finalSuccess": true,
+    "actualJevUsed": true
+  },
+  "phases": [
+    {
+      "id": "initial-failed-active",
+      "result": {
+        "code": 1,
+        "timedOut": false,
+        "wallMs": 33003
+      },
+      "ok": false,
+      "error": "PLAN_STEP_FAILED:execute:CONTINUE",
+      "runId": "run-dd1c95c5-0b23-4e42-9d1f-b7698570df36",
+      "models": [
+        "mimo-v2.6-flash",
+        "mimo-v2.6-flash"
+      ],
+      "jevCalls": 3
+    },
+    {
+      "id": "resume-with-bound-strong",
+      "result": {
+        "code": 0,
+        "timedOut": false,
+        "wallMs": 31559
+      },
+      "ok": true,
+      "runId": "run-cac5d342-f64c-43f9-8b2c-cd24bb68c12a",
+      "threadId": "thread-ff08643d-de16-40b4-9905-c4aedc043afa",
+      "models": [
+        "mimo-v2.6-pro",
+        "mimo-v2.6-pro"
+      ],
+      "jevCalls": 2
+    }
+  ],
+  "limitation": "One preset checkpoint/explicit-upgrade experiment is a flow test. Initial recovery budget1 versus retry budget2 is intentional fixture stimulation; it does not prove that the upgrade model is needed, better, cheaper or selected automatically by Jev.",
+  "actualCost": null,
+  "humanSavingsMinutes": null,
+  "evidenceDirectory": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\goal-upgrade-20261007T175752794Z"
+}

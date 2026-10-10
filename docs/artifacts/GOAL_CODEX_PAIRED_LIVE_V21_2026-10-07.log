@@ -1,0 +1,53 @@
+
+> hmcodex-desktop@0.1.0 test:evidence:goal
+> node "%npm_config_local_prefix%/scripts/goal-evidence-harness.mjs" --repeat 2 --live-config C:/Users/User/AppData/Local/hmCodex/model-config.json --output C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_LIVE_V21_2026-10-07.json
+
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+hmcodex-runtime recoverable-read-001 FAILED tools=4 errors=2
+hmcodex-runtime inspect-readme-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-readme-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime inspect-layout-001 SUCCEEDED tools=1 errors=0
+ordinary-codex inspect-layout-001 SUCCEEDED tools=1 errors=0
+hmcodex-runtime recoverable-read-001 FAILED tools=4 errors=2
+ordinary-codex recoverable-read-001 SUCCEEDED tools=2 errors=1
+{
+  "batchId": "20261007T054317201Z-48e773ed",
+  "output": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\AGENT_GOAL_LIVE_V21_2026-10-07.json",
+  "history": "C:\\Users\\User\\hmCodex-local\\docs\\artifacts\\agent-goal-runs\\history.jsonl",
+  "conditions": {
+    "ordinary-codex": {
+      "runs": 6,
+      "successes": 6,
+      "successRate": 1,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 2,
+      "recoverySuccessRate": 1,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 116941,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 8,
+      "toolCallCount": 8,
+      "wallMs": 108529
+    },
+    "hmcodex-runtime": {
+      "runs": 6,
+      "successes": 4,
+      "successRate": 0.6666666666666666,
+      "recoveryOpportunities": 2,
+      "recoverySuccesses": 0,
+      "recoverySuccessRate": 0,
+      "manualInterventionMinutes": 0,
+      "totalTokens": 30472,
+      "actualCost": null,
+      "estimatedCost": null,
+      "toolRounds": 12,
+      "toolCallCount": 12,
+      "wallMs": 150796
+    }
+  }
+}

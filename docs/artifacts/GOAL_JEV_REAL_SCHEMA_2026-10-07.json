@@ -1,0 +1,59 @@
+{
+  "checkedAt": "2026-10-07T07:38:54.333Z",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "source": "https://api.typesafe.ai/openapi.json",
+  "actualCharge": null,
+  "probes": [
+    {
+      "name": "legacy-question-schema",
+      "status": 422,
+      "latencyMs": 1114,
+      "response": {
+        "detail": [
+          {
+            "type": "missing",
+            "loc": [
+              "body",
+              "questions",
+              "next",
+              "choice",
+              "criteria"
+            ],
+            "msg": "Field required",
+            "input": {
+              "type": "choice",
+              "prompt": "Choose the next bounded operation.",
+              "choices": [
+                "RETRY_TESTS",
+                "ESCALATE"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "documented-question-schema",
+      "status": 200,
+      "latencyMs": 1520,
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "next": {
+            "type": "choice",
+            "choice": "RETRY_TESTS",
+            "confidence": 1,
+            "probabilities": {
+              "ESCALATE": 0,
+              "RETRY_TESTS": 1
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 400,
+          "output_tokens": 41
+        }
+      }
+    }
+  ]
+}

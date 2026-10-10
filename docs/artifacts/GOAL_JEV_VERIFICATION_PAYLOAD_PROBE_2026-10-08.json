@@ -1,0 +1,124 @@
+{
+  "checkedAt": "2026-10-07T16:58:34.980Z",
+  "source": "docs/artifacts/agent-goal-runs/20261007T162508744Z-b72917fe/2-inspect-readme-001-hmcodex-runtime/jev-requests.json",
+  "method": "Four actual Jev requests using two archived actual execution states, alternating condition order. Compact request omits only the byte-identical evidence copy in question context. Full host state, requirements, finite choices and criteria remain identical. Raw answers preserved.",
+  "limitation": "Diagnostic decision requests during an independent live batch. They do not prove task recovery, economic advantage or reliable latency under all loads.",
+  "rows": [
+    {
+      "stateIndex": 1,
+      "archivedSequence": 2,
+      "condition": "BASELINE_DUPLICATED",
+      "requestChars": 10599,
+      "stateSha256": "0f81284599718299e2673d13798ccd178175a98d5e68c811d47f18a27c1d129c",
+      "status": 200,
+      "wallMs": 1290,
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "verification": {
+            "type": "choice",
+            "choice": "PASS",
+            "confidence": 0.89,
+            "probabilities": {
+              "FAIL": 0.04,
+              "UNCERTAIN": 0.03,
+              "PASS": 0.93
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 5317,
+          "output_tokens": 40
+        }
+      },
+      "actualCost": null
+    },
+    {
+      "stateIndex": 1,
+      "archivedSequence": 2,
+      "condition": "SINGLE_COPY",
+      "requestChars": 6780,
+      "stateSha256": "0f81284599718299e2673d13798ccd178175a98d5e68c811d47f18a27c1d129c",
+      "status": 200,
+      "wallMs": 464,
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "verification": {
+            "type": "choice",
+            "choice": "PASS",
+            "confidence": 0.85,
+            "probabilities": {
+              "PASS": 0.9,
+              "UNCERTAIN": 0.06,
+              "FAIL": 0.04
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 3455,
+          "output_tokens": 40
+        }
+      },
+      "actualCost": null
+    },
+    {
+      "stateIndex": 2,
+      "archivedSequence": 10,
+      "condition": "SINGLE_COPY",
+      "requestChars": 7620,
+      "stateSha256": "323ce34b810b8daa8e3fcf41fd1b631d9bc9f8bdd6c6b93800f45f6776cc6df0",
+      "status": 200,
+      "wallMs": 366,
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "verification": {
+            "type": "choice",
+            "choice": "PASS",
+            "confidence": 0.58,
+            "probabilities": {
+              "FAIL": 0.17,
+              "PASS": 0.72,
+              "UNCERTAIN": 0.11
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 3886,
+          "output_tokens": 40
+        }
+      },
+      "actualCost": null
+    },
+    {
+      "stateIndex": 2,
+      "archivedSequence": 10,
+      "condition": "BASELINE_DUPLICATED",
+      "requestChars": 12279,
+      "stateSha256": "323ce34b810b8daa8e3fcf41fd1b631d9bc9f8bdd6c6b93800f45f6776cc6df0",
+      "status": 200,
+      "wallMs": 561,
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "verification": {
+            "type": "choice",
+            "choice": "PASS",
+            "confidence": 0.52,
+            "probabilities": {
+              "PASS": 0.6799999999999999,
+              "FAIL": 0.2,
+              "UNCERTAIN": 0.12
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 6177,
+          "output_tokens": 40
+        }
+      },
+      "actualCost": null
+    }
+  ]
+}

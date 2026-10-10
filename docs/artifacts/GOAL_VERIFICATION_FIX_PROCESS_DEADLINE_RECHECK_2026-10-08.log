@@ -1,0 +1,10 @@
+✔ an exited client with inherited pipes cannot hold a case beyond its deadline (1647.526094ms)
+✔ a timed out live client is terminated and cannot pass acceptance (1206.037812ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3653.111563

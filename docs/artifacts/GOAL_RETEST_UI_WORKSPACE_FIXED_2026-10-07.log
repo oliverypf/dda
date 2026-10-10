@@ -1,0 +1,11 @@
+
+> hmcodex-desktop@0.1.0 test:ui:workspace
+> node "%npm_config_local_prefix%/scripts/ui-workspace-test.mjs"
+
+PASS new-task typing and selection survive delayed native hydration
+PASS switched root starts a fresh thread; following turn continues it
+PASS historical thread switches to its project before continuing
+PASS cancel and same-directory selection retain the active thread/checkpoint
+PASS directory-list failure still synchronizes native root and thread binding
+PASS directory selection and active tasks cannot race or switch twice
+PASS in-flight old workspace reads cannot overwrite the new workspace

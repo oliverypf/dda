@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "run-9aafc233-35df-430b-b7ee-2e01a38636c1",
+  "text": "Read completed with fresh tool evidence.\n\n**workspace.read result for `README.md`:**\n- Size: 43 bytes\n- Digest: `sha256:70ce0deaabbc0a04489afd9dae650ded210eebcab0303b6107ad1ebfae571cea`\n- Exact content: `GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117ddce08`\n- Not truncated\n\n**Evidence marker:** `GOAL_ACTUAL_CHECKPOINT_UPGRADE_1a117ddce08`\n\nPrior stage remains as recorded: the first tool call (`workspace.read` of the missing file) failed with `WORKSPACE_NOT_FOUND`. This continuation read `README.md` successfully and reports only its actual observed result. Workspace left untouched (read-only).",
+  "outputDigest": "sha256:38fb5900e1d708a7ed5f90666dd0781d33fbe63e58848a10b2b6f7a7d7decb36"
+}

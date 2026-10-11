@@ -168,6 +168,17 @@ They only select from bounded candidates;
 the router, recovery controller, safety checks, and state machine remain
 authoritative.
 
+Speed MVP flags (all default OFF; see `docs/JEV_SPEED_MVP.md`):
+`DDA_JEV_READONLY_FAST_PATH=1` lets only `workspace.list|read|focus` and
+`kernel.workspace_list|read|focus` with a relative in-workspace path skip the
+ACTION_GATE Jev round-trip (`kernel.session_*`, `kernel.host_request`, side
+effects and opaque paths are still gated), and `DDA_JEV_PLAN_TIER_ENABLED=1`
+lets Jev pick `DIRECT` / `PLAN` / `PLAN_COUNCIL` before the multi-agent planner
+(the planner always runs; only the council can be skipped; mutually exclusive
+with `DDA_JEV_TOPOLOGY_ENABLED`). Every task result reports
+`decisionLayer.metrics` (per-kind Jev requests, latency, fallbacks, short
+circuits and per-stage wall-clock time).
+
 The decision engine is resolved once, from the file-backed `decision` block and
 the `DDA_JEV_*` overrides, before task classification, so `CLASSIFY_TASK`,
 `SELECT_ROUTE`, and `SELECT_TOPOLOGY` all consult the same opt-in engine. These

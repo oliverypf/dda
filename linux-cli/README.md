@@ -15,19 +15,39 @@
 ## 要求
 
 - Linux x86_64、glibc
-- Node.js 24 或更新版本（`package.json` 的 `engines` 要求 `>=24.0.0`）
+- Node.js 24 或更新版本（`package.json` 的 `engines` 要求 `>=24.0.0`）。CLI 启动时会检查 Node 主版本，低于 24 直接以 `DEPENDENCY_ERROR`（退出码 10）干净失败，不会再暴露底层 `node:sqlite` 的隐晦报错
 - 不需要桌面会话、`DISPLAY` 或 Wayland
 
 ## 安装
 
-在仓库根目录：
+### 从仓库运行
 
 ```bash
 chmod +x linux-cli/bin/dda.mjs
 node linux-cli/bin/dda.mjs --version
 ```
 
-也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。Windows 可以使用 `linux-cli/bin/dda.cmd`。发布形态目前是仓库内的 Node 入口；deb、AppImage、ARM64、musl 和单文件打包还没有做。
+也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。Windows 可以使用 `linux-cli/bin/dda.cmd`。
+
+### 自包含 tar.gz 起步件
+
+```bash
+# 打包前先装好 runtime 依赖（脚本缺依赖会报 RUNTIME_DEPENDENCIES_MISSING）
+(cd runtime && npm install)
+node linux-cli/scripts/pack.mjs
+# 产出 linux-cli/dist/dda-cli-<version>.tar.gz（内含 linux-cli + runtime + runtime/node_modules）
+
+# 在目标机（需已安装 Node.js 24）上安装：
+tar -xzf dda-cli-<version>.tar.gz -C /opt
+export PATH="/opt/dda-cli/bin:$PATH"
+dda --version
+dda health
+```
+
+解包后的 `bin/dda` 是一个 POSIX 启动脚本，用宿主机的 `node` 运行捆绑的入口，捆绑包自带
+`runtime/node_modules`，不需要再联网安装依赖。`node linux-cli/scripts/pack.mjs` 会打印产物路径、字节数和 sha256。
+
+发布形态目前只有上面两种：仓库内 Node 入口和自包含 tar.gz 起步件。deb、AppImage、npm registry 包、ARM64、musl 和单文件（Node SEA）打包都还没有做。
 
 ## 数据目录
 
@@ -97,7 +117,7 @@ dda task --workspace /path/to/project --prompt "运行测试" \
 
 digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。没有 TTY 又没指定 `jsonl` / `deny` 时直接返回 `APPROVAL_UNAVAILABLE`（退出码 5）。审批被拒绝或过期后任务失败，退出码是 5，jsonl 结果带 `"approval":"DECLINED"`。CLI 不保存“以后自动批准”。
 
-当前限制：`CONTROLLED` 在 Linux 上映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（受 lease、审批和审计约束的受控策略），不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机还没验证。
+当前限制：`CONTROLLED` 在 Linux 上映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（受 lease、审批和审计约束的受控策略），不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机冒烟（on-device smoke）还没做——`%LOCALAPPDATA%` 布局、进程组清理、受控审批和鸿蒙 PC 上的 Node.js 24 都只在 Linux 上以平台注入的方式回归过。
 
 ## 退出码
 
@@ -122,9 +142,16 @@ digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。
 node --test linux-cli/test/*.test.mjs runtime/test/platform.test.mjs runtime/test/release-channel.test.mjs
 ```
 
-`linux-cli/test/controlled-approval.test.mjs` 用假模型服务端到端覆盖 deny、jsonl 批准、digest 不一致、stdin 结束、终端 y/n，以及通过 `bin/dda.mjs` 的 stdin 审批。`linux-cli/test/jev-opt-in.test.mjs` 覆盖 Jev 的显式开启规则。
+`linux-cli/test/controlled-approval.test.mjs` 用假模型服务端到端覆盖 deny、jsonl 批准、digest 不一致、stdin 结束、终端 y/n，以及通过 `bin/dda.mjs` 的 stdin 审批。`linux-cli/test/jev-opt-in.test.mjs` 覆盖 Jev 的显式开启规则。`linux-cli/test/node-check.test.mjs` 覆盖 Node >= 24 启动门。`linux-cli/test/contract-nits.test.mjs` 覆盖超时写入 `UNKNOWN` 记录并被 recovery 看到、以及未知状态事件的分类。`linux-cli/test/packaging.test.mjs` 在 Node 24 上冒烟验证打包产物解包后能跑 `--version` 和 `health`。
+
+## 超时与取消
+
+- CLI 超时不等于动作被取消：超时后输出 `TASK_RESULT_UNKNOWN`（`state: UNKNOWN`），并在数据目录写入 `cli-unknown-outcomes.json` 一条 `UNKNOWN` 记录。
+- `dda recovery` 会把这些 CLI 记录作为 `cliUnknownOutcomes` 字段一并返回，便于对账。
+- SIGINT/SIGTERM 中断后，如果 runtime 没来得及写取消终态，CLI 会补写一条 `CANCELLED` 记录，保证取消状态不被跳过。
 
 ## 还未做
 
-- deb、AppImage、ARM64、musl、Node SEA
+- deb、AppImage、npm registry 包、ARM64、musl、Node SEA（已交付的只有自包含 tar.gz 起步件）
+- Windows / 鸿蒙真机冒烟（on-device smoke）
 - 把受控执行变成默认能力。现在默认仍是只读，受控动作要显式打开，并经过 runtime 原有的 Lease、审批和审计

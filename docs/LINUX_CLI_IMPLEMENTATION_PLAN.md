@@ -1,7 +1,7 @@
 # Linux CLI 实施计划
 
 版本：v1.0
-状态：L1、L2 基线已实现；L3 终端审批已接入 `dda` 入口并有 Linux 端到端测试，`CONTROLLED` 映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门）；L4 只有从仓库运行的入口，安装包（tar.gz / npm 等）尚未交付
+状态：L1、L2 基线已实现；L3 终端审批已接入 `dda` 入口并有 Linux 端到端测试，`CONTROLLED` 映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门）；L4 已交付自包含 tar.gz 打包起步件（`linux-cli/scripts/pack.mjs` 产出 `linux-cli` + `runtime` + `runtime/node_modules` 捆绑包和 `bin/dda` 启动脚本，并有 Node 24 冒烟测试），deb、AppImage、npm registry 发布和单文件打包仍未交付。启动时强制要求 Node.js >= 24，低版本以 `DEPENDENCY_ERROR`（退出码 10）干净失败，避免 `node:sqlite` 的隐晦错误。Windows / 鸿蒙仍只在 Linux 上做过回归，真机冒烟（on-device smoke）尚未完成
 目标平台：Linux 无界面 CLI
 适用实现：现有 Node/Cordis runtime、`contracts/v1`、Linux CLI 应用层和 Linux 平台适配层
 
@@ -165,7 +165,14 @@ contracts/v1 + local stores + provider adapters
 - `dda` 可执行入口；
 - 版本、runtime、provider 和 platform 信息可通过 `support-info` 查询。
 
-后续再评估 deb、AppImage、ARM64、musl 和 Node SEA。发布形式不能先于行为契约稳定化。
+已交付（起步件）：
+
+- `node linux-cli/scripts/pack.mjs` 产出 `linux-cli/dist/dda-cli-<version>.tar.gz`，内含 `linux-cli`、`runtime` 源码和 `runtime/node_modules`，解包即可用现有 Node.js 24 运行，无需额外安装依赖；
+- 捆绑包提供 `bin/dda` POSIX 启动脚本：把 `bin/` 加入 `PATH` 即可运行 `dda`；
+- 打包前需在 `runtime/` 执行过 `npm install`（脚本缺依赖时报 `RUNTIME_DEPENDENCIES_MISSING`）；
+- `linux-cli/test/packaging.test.mjs` 在 Node 24 上冒烟验证解包后的入口能跑 `--version` 和 `health`。
+
+后续再评估 deb、AppImage、ARM64、musl 和 Node SEA（均未交付）。发布形式不能先于行为契约稳定化。安装方式目前只有仓库内入口和上面的 tar.gz 起步件，没有 deb / AppImage / npm registry 包。
 
 ## 5. 工作包清单
 
@@ -214,12 +221,14 @@ CLI 可以调用现有 `runtime/src/index.mjs`，但不要从 `desktop/src/main.
 - 保留旧命令和旧环境变量；
 - Windows 的 channel 名称可以继续存在，通过兼容映射连接到新的平台中立策略；
 - Linux 的路径和信号实现不能通过修改 Windows 路径测试来实现。
+- **未完成**：Windows 真机冒烟（on-device smoke）。目前只在 Linux 上以 `win32` 平台注入做过路径 / 身份回归，`%LOCALAPPDATA%` 布局、进程组清理、受控审批和 `node:sqlite` 在真实 Windows + Node 24 上尚未验证。
 
 ### 7.2 HarmonyOS
 
 - 保留现有 ArkUI 页面和迁移期服务；
 - 不要求 Linux CLI 直接复用 ArkTS UI；
 - 通过 `contracts/v1` 和行为 fixture 保持事件语义一致。
+- **未完成**：鸿蒙 PC 真机冒烟（on-device smoke）。平台探测只在 Linux 上通过 `release` / `OHOS_SDK_HOME` 等注入验证过，鸿蒙 PC 上的 Node.js 24、数据目录布局和 CLI 行为尚未在真机验证。
 
 ### 7.3 旧数据
 

@@ -8,14 +8,12 @@
 import { appendFile, mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { format } from 'node:util';
+import { createPlatformPaths } from './platform/paths.mjs';
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LEVELS = Object.freeze(['INFO', 'WARN', 'ERROR', 'FATAL']);
 
-export const logsDir = (env = process.env) => {
-  const dataRoot = env.LOCALAPPDATA ?? env.APPDATA ?? env.XDG_CONFIG_HOME;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'logs') : undefined;
-};
+export const logsDir = (env = process.env) => createPlatformPaths(env).logDir();
 
 const dayStamp = (date = new Date()) => {
   const year = date.getFullYear();
@@ -36,7 +34,7 @@ let writeQueue = Promise.resolve();
 let installed = false;
 
 /**
- * Append one entry to `%LOCALAPPDATA%\hmCodex\logs\runtime-YYYYMMDD.log`.
+ * Append one entry to the platform log directory as `runtime-YYYYMMDD.log`.
  * Rotate to `.1` (single previous generation) once the active file exceeds 5MB.
  * Returns the write promise purely for internal sequencing; callers must not
  * surface failures from it.

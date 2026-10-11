@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { pluginGovernanceDigest } from './plugin-governance.mjs';
 import { KNOWN_PERMISSIONS, PERMISSION_CEILINGS, permissionsExceedingCeiling } from './plugin-permissions.mjs';
 import { emptyPluginRevocations, pluginRevocationHit, readPluginRevocations } from './plugin-revocations.mjs';
-import { preferMappedPath } from './windows-path.mjs';
-import { resolveReleaseChannel } from './release-channel.mjs';
+import { preferMappedPath } from './platform/workspace-path.mjs';
+import { isControlledRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 
 const MAX_PLUGIN_BYTES = 2 * 1024 * 1024;
 const MODULE_EXTENSIONS = new Set(['.mjs', '.js', '.cjs']);
@@ -235,7 +235,7 @@ export class DynamicPluginLoader {
   async discover({ manifest, entryPath, packageDigest, signature } = {}) {
     validatePluginManifest(manifest);
     const channel = resolveReleaseChannel();
-    if (['WINDOWS_PHASE1_5_CONTROLLED', 'WINDOWS_FULL_LOCAL'].includes(channel) && !signature) {
+    if (isControlledRelease(channel) && !signature) {
       throw new Error('PLUGIN_SIGNATURE_REQUIRED');
     }
     const verifiedSignature = signature ? verifyPluginSignature(manifest, signature) : undefined;
@@ -259,7 +259,7 @@ export class DynamicPluginLoader {
   }
 
   async load(pluginId) {
-    if (resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY') {
+    if (isReadOnlyRelease()) {
       throw new Error('RELEASE_CHANNEL_DYNAMIC_PLUGIN_DISABLED');
     }
     this.#governance.assertLoadable(pluginId);

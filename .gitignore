@@ -16,6 +16,9 @@
 # ---- Node ----
 node_modules/
 
+# ---- linux-cli packaging output ----
+/linux-cli/dist/
+
 # ---- Rust / Cargo build output ----
 # Real target dir plus the target-x64 / target-reliable / target-unlimited
 # variants produced by the build scripts.

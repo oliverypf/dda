@@ -1,7 +1,7 @@
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { canonicalJson } from '../model-tool-calls.mjs';
 import { logger } from '../logger.mjs';
-import { canonicalMappedPath } from '../windows-path.mjs';
+import { canonicalMappedPath } from '../platform/workspace-path.mjs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { sha256Digest } from '../trajectory-store.mjs';

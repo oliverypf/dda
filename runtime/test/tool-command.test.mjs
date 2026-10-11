@@ -30,7 +30,7 @@ test('lists and invokes read-only workspace tools without a model request', asyn
   assert.equal(listed.code, 0, `${listed.stderr}\n${listed.stdout}`);
   const listing = JSON.parse(listed.stdout.trim());
   assert.equal(listing.ok, true);
-  assert.deepEqual(listing.tools.map((tool) => tool.name), ['workspace.list', 'workspace.read']);
+  assert.deepEqual(listing.tools.map((tool) => tool.name), ['workspace.list', 'workspace.read', 'workspace.focus']);
   assert.equal(JSON.stringify(listing).includes('must-not-leak'), false);
 
   const read = await run([

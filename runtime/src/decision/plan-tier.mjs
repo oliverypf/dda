@@ -10,6 +10,9 @@
 // A tier can therefore only remove the council, never add model turns.
 // Flag off, Jev disabled/timeout/unknown choice, resumed plan, or
 // DDA_JEV_TOPOLOGY_ENABLED => no tier; today's behavior is kept.
+//
+// CONTROLLED + modify/test: host forces PLAN_COUNCIL only. Skipping the
+// council (DIRECT or PLAN) is never offered there so the quality net stays.
 
 export const PLAN_TIERS = Object.freeze(['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
 
@@ -25,11 +28,14 @@ export const planTierInactiveReason = ({ agentMode, decisionEnabled, planTierEna
   return undefined;
 };
 
-/** Host-filtered candidates. CONTROLLED modify/test keeps the council
- * eligible, so DIRECT is not offered there. */
-export const planTierCandidates = ({ mode, taskClass } = {}) => PLAN_TIERS.filter((tier) => !(
-  tier === 'DIRECT' && mode === 'CONTROLLED' && ['modify', 'test'].includes(taskClass)
-));
+/** Host-filtered candidates. CONTROLLED modify/test forces PLAN_COUNCIL —
+ * neither DIRECT nor PLAN is offered, so the council cannot be skipped. */
+export const planTierCandidates = ({ mode, taskClass } = {}) => {
+  if (mode === 'CONTROLLED' && ['modify', 'test'].includes(taskClass)) {
+    return ['PLAN_COUNCIL'];
+  }
+  return [...PLAN_TIERS];
+};
 
 /** Map a tier onto the council decision. Unknown tier => heuristic. */
 export const councilForTier = (tier, heuristic) => {

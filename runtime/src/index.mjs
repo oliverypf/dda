@@ -2512,8 +2512,10 @@ async function runTask() {
       const plannerProvider = roleProviders.get(plannerBinding?.modelId) ?? defaultUsageProvider;
       // DDA_JEV_PLAN_TIER_ENABLED (default OFF): choose DIRECT / PLAN /
       // PLAN_COUNCIL before the planner turn. The tier never skips the
-      // planner; DIRECT/PLAN only skip the council. Any failure keeps the
-      // existing council heuristic. Resumed plans are never re-tiered.
+      // planner; DIRECT/PLAN only skip the council. CONTROLLED+modify/test
+      // is host-filtered to PLAN_COUNCIL only (council cannot be skipped).
+      // Any failure keeps the existing council heuristic. Resumed plans
+      // are never re-tiered.
       const planTierInactive = planTierInactiveReason({
         agentMode,
         decisionEnabled: decisionEngine?.enabled === true,

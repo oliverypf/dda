@@ -65,8 +65,11 @@ test('plan tier: inactive reasons, host filtering and council mapping', () => {
   assert.deepEqual(PLAN_TIERS, ['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
   assert.deepEqual(planTierCandidates({ mode: 'READ_ONLY', taskClass: 'inspect' }), ['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
   assert.deepEqual(planTierCandidates({ mode: 'CONTROLLED', taskClass: 'inspect' }), ['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
-  assert.deepEqual(planTierCandidates({ mode: 'CONTROLLED', taskClass: 'modify' }), ['PLAN', 'PLAN_COUNCIL']);
-  assert.deepEqual(planTierCandidates({ mode: 'CONTROLLED', taskClass: 'test' }), ['PLAN', 'PLAN_COUNCIL']);
+  assert.deepEqual(planTierCandidates({ mode: 'CONTROLLED', taskClass: 'modify' }), ['PLAN_COUNCIL'],
+    'CONTROLLED modify forces council; DIRECT/PLAN are never offered');
+  assert.deepEqual(planTierCandidates({ mode: 'CONTROLLED', taskClass: 'test' }), ['PLAN_COUNCIL'],
+    'CONTROLLED test forces council; DIRECT/PLAN are never offered');
+  assert.deepEqual(planTierCandidates({ mode: 'READ_ONLY', taskClass: 'modify' }), ['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
   for (const heuristic of [true, false]) {
     assert.equal(councilForTier('DIRECT', heuristic), false);
     assert.equal(councilForTier('PLAN', heuristic), false);

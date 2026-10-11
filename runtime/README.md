@@ -90,30 +90,43 @@ The Agent Loop uses Jev as the Decision Plane. Jev receives bounded evidence
 and finite choices for recovery, candidate selection, tool/action gating, and
 behavior verification; it cannot call tools, grant permissions, or invent
 commands. Planner and Executor remain the existing Execution Plane, while
-deterministic rules and Runtime Safety remain hard boundaries. Enable it in
-`model-config.json` and provide the key through the declared environment
-variable:
+deterministic rules and Runtime Safety remain hard boundaries. Keys and
+endpoints are supplied by the deployment environment, not committed here;
+configure the `decision` block in a local `model-config.json`. See
+`model-config.example.json` for a full decision block (an OpenRouter System One
+route), and provide the credential through the variable it names.
 
-```json
-{
-  "decision": {
-    "enabled": true,
-    "enforce": true,
-    "endpoint": "https://api.typesafe.ai/v1/system_one",
-    "model": "jev-latest",
-    "apiKeyEnv": "JEV_API_KEY",
-    "timeoutMs": 1200,
-    "maxStateChars": 16000,
-    "classificationEnabled": false,
-    "routeSelectionEnabled": false,
-    "topologyEnabled": false,
-    "planReviewEnabled": false,
-    "diagnosisEnabled": false,
-    "recoveryDirectionEnabled": false,
-    "contextPackEnabled": false
-  }
-}
-```
+Jev speaks the official System One protocol (`POST .../systemone` with
+`{model, state, questions}`); no adapter is needed. Two endpoints accept it:
+
+| Route | `endpoint` | `apiKeyEnv` | `model` |
+| --- | --- | --- | --- |
+| OpenRouter | `https://openrouter.ai/api/v1/systemone` | `OPENROUTER_API_KEY` | `jev-latest` or `typesafe/jev-1.13` |
+| TypeSafe direct | `https://api.typesafe.ai/v1/systemone` | `JEV_API_KEY` | `jev-latest` |
+
+The path is `systemone`; `system_one` returns 404. On OpenRouter, use a
+decision model such as `jev-latest` / `typesafe/jev-1.13`. Do not use
+`typesafe/jev-router`: it is a chat-completions router that forwards to other
+models, and the System One endpoint rejects it with HTTP 400.
+
+Jev is an explicit per-deployment opt-in. The decision plane counts as
+configured when the local `model-config.json` has a `decision` block or the
+environment sets any `HMCODEX_JEV_*` variable (for example
+`HMCODEX_JEV_ENABLED=1`, or `HMCODEX_JEV_ENDPOINT` plus
+`HMCODEX_JEV_API_KEY_ENV`). Once configured, `enabled` defaults to true and Jev
+runs when the named credential variable is set. A bare `JEV_API_KEY` alone does
+not enable Jev, and `HMCODEX_JEV_ENABLED=0` / `decision.enabled: false` turns a
+configured deployment off. The task result reports the effective state in
+`decisionLayer.enabled` and `decisionLayer.configured`.
+
+Without an endpoint override the runtime targets TypeSafe direct with
+`JEV_API_KEY`. The `dda` CLI forwards the credential variable each plane
+actually uses: the one named by the config (`apiKeyEnv`) or by
+`HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`, plus the
+`OPENCODE_GO_API_KEY` / `JEV_API_KEY` defaults, but only while that plane still
+targets its default host. A default key is never forwarded to an overridden
+`HMCODEX_MODEL_ENDPOINT` / `HMCODEX_JEV_ENDPOINT`, so a custom host must name
+its own key variable.
 
 `enforce` applies the bounded Jev result to recovery and tool execution. A
 `BLOCK` or `REQUEST_EVIDENCE` action is refused before `ToolRegistry.invoke`;

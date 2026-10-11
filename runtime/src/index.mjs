@@ -10,10 +10,10 @@ import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
-import { assertReleaseExecutionMode, assertReleaseHarnessStore, resolveReleaseChannel } from './release-channel.mjs';
+import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { defaultModelConfigPath, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
+import { defaultModelConfigPath, isDecisionPlaneConfigured, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
 import { logger } from './logger.mjs';
 import { createTrajectoryStore, sha256Digest, parseLegacyTrajectoryEvents } from './trajectory-store.mjs';
 import { createGitObserver } from './git-observer.mjs';
@@ -67,7 +67,9 @@ import { assessBayesian, rankSafeCandidates } from './bayesian-assessment.mjs';
 import { createModelScenarioProfileRegistry } from './model-scenario-profile.mjs';
 import { evaluateDecisionTrace, exportLearningSample } from './decision-evaluation.mjs';
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegistry } from './runtime-safety-monitor.mjs';
-import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
+import { createPlatformExecutor } from './platform/executor.mjs';
+import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
+import { resolveStoreFile } from './platform/paths.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
@@ -91,7 +93,7 @@ import { createPlanStepCoordinator } from './plan-step-coordinator.mjs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { canonicalMappedPath, preferMappedPath } from './windows-path.mjs';
+import { canonicalMappedPath, preferMappedPath } from './platform/workspace-path.mjs';
 import { assessStorageCapacity, assertStorageCapacityForRun, DEFAULT_MAX_BYTES } from './storage-capacity.mjs';
 import { buildModelLock, buildPluginLock, buildReleaseDecision, buildSbom, isControlledReleaseChannel, releaseDigest, releaseFileDigest, writeReleaseArtifacts } from './release-manifest.mjs';
 import { redactRuntimeArgv } from './runtime-log-redaction.mjs';
@@ -257,20 +259,11 @@ const executionOptions = (mode) => ({
       : {})
 });
 
-const defaultEvolutionStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'evolution-proposals.json') : undefined;
-};
+const defaultEvolutionStore = () => resolveStoreFile('evolution-proposals.json');
 
-const defaultEvolutionEvaluationStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'evolution-evaluations.json') : undefined;
-};
+const defaultEvolutionEvaluationStore = () => resolveStoreFile('evolution-evaluations.json');
 
-const defaultTrajectoryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'trajectory.jsonl') : undefined;
-};
+const defaultTrajectoryStore = () => resolveStoreFile('trajectory.jsonl');
 
 const auditSigningOptions = () => {
   const keyEnv = argValue('--audit-signing-key-env') ?? process.env.HMCODEX_GIT_AUDIT_SIGNING_KEY_ENV ?? 'HMCODEX_GIT_AUDIT_SIGNING_KEY';
@@ -279,88 +272,31 @@ const auditSigningOptions = () => {
   return key ? { signingKey: key, signingKeyRef: keyEnv } : {};
 };
 
-const defaultGitAuditStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'git-audit.json') : undefined;
-};
+const defaultGitAuditStore = () => resolveStoreFile('git-audit.json');
 
-const defaultHarnessEventStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'hmcodex.db') : undefined;
-};
+const defaultHarnessEventStore = () => resolveStoreFile('hmcodex.db');
 
 // Task execution and recovery must resolve the same authority for an identical
 // trajectory scope. Legacy storage remains a pre-Phase-1 compatibility path.
 const taskHarnessEventStore = (trajectoryPath, scopedTrajectory) => assertReleaseHarnessStore(
   arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore()
-      : resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY' && trajectoryPath ? `${trajectoryPath}.db` : undefined))
+      : isReadOnlyRelease() && trajectoryPath ? `${trajectoryPath}.db` : undefined))
 );
 
-const defaultThreadStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'threads.json') : undefined;
-};
-
-const defaultRoleContextStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'role-contexts.json') : undefined;
-};
-
-const defaultMemoryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'memory.json') : undefined;
-};
-
-const defaultDreamStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'dream-runs.json') : undefined;
-};
-
-const defaultFeedbackStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'feedback.json') : undefined;
-};
-
-const defaultModelScenarioProfileStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-scenario-profiles.json') : undefined;
-};
-
-const defaultDecisionTraceStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'decision-trace.json') : undefined;
-};
-
-const defaultProfileStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'profiles.json') : undefined;
-};
-
-const defaultModelRegistryStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-registry.json') : undefined;
-};
-
-const defaultCreditBlameStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'credit-blame.json') : undefined;
-};
-
-const defaultModelEgressStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'model-egress.json') : undefined;
-};
-
-const defaultPluginGovernanceStore = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'plugin-governance.json') : undefined;
-};
-
-const defaultPluginRoot = () => {
-  const dataRoot = process.env.HMCODEX_DATA_DIR ?? process.env.LOCALAPPDATA ?? process.env.APPDATA;
-  return dataRoot ? join(dataRoot, 'hmCodex', 'plugins') : undefined;
-};
+const defaultThreadStore = () => resolveStoreFile('threads.json');
+const defaultRoleContextStore = () => resolveStoreFile('role-contexts.json');
+const defaultMemoryStore = () => resolveStoreFile('memory.json');
+const defaultDreamStore = () => resolveStoreFile('dream-runs.json');
+const defaultFeedbackStore = () => resolveStoreFile('feedback.json');
+const defaultModelScenarioProfileStore = () => resolveStoreFile('model-scenario-profiles.json');
+const defaultDecisionTraceStore = () => resolveStoreFile('decision-trace.json');
+const defaultProfileStore = () => resolveStoreFile('profiles.json');
+const defaultModelRegistryStore = () => resolveStoreFile('model-registry.json');
+const defaultCreditBlameStore = () => resolveStoreFile('credit-blame.json');
+const defaultModelEgressStore = () => resolveStoreFile('model-egress.json');
+const defaultPluginGovernanceStore = () => resolveStoreFile('plugin-governance.json');
+const defaultPluginRoot = () => resolveStoreFile('plugins');
 
 const safeRuntimeMessage = (error, fallback = '') => {
   const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
@@ -410,7 +346,8 @@ const manifests = () => {
   registry.register(pluginManifest('model-deepseek', 'DeepSeek Model Provider', 'model-provider', ['model.invoke.stream'], ['network.connect.host']));
   registry.register(pluginManifest('model-openai-compatible', 'OpenAI Compatible Model Provider', 'model-provider', ['model.invoke.stream'], ['network.connect.host']));
   registry.register(pluginManifest('tool-registry', 'Provider-neutral Tool Registry', 'tooling', ['tool.list', 'tool.invoke.readonly', 'tool.invoke.controlled'], ['workspace.read.metadata', 'workspace.read.content', 'executor.invoke.controlled']));
-  registry.register(pluginManifest('executor-windows', 'Restricted Windows Executor', 'executor', ['executor.invoke.controlled'], ['filesystem.write.workspace', 'process.spawn.restricted']));
+  const executor = executorDescriptor();
+  registry.register(pluginManifest(executor.pluginId, executor.title, 'executor', ['executor.invoke.controlled'], ['filesystem.write.workspace', 'process.spawn.restricted']));
   registry.register(pluginManifest('executor-tools', 'Controlled Executor Tools', 'tooling', ['tool.invoke.controlled'], ['executor.invoke.controlled']));
   registry.register(pluginManifest('task-runner', 'Cordis Task Runner', 'agent', ['task.run.readonly', 'task.run.controlled'], ['workspace.read.snapshot', 'tool.invoke.readonly', 'tool.invoke.controlled']));
   registry.register(pluginManifest('task-run-coordinator', 'Task Run Coordinator', 'agent', ['task.state.transition'], ['trajectory.write']));
@@ -648,7 +585,7 @@ async function runTask() {
         bindingSnapshot: allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation })),
         capabilitySnapshot: { releaseChannel, capabilities: approvedCapabilities, commands: approvedCommands, ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}) },
         releaseChannel,
-        executorIdentity: 'restricted-windows-executor@0.1.0',
+        executorIdentity: executorDescriptor().id,
         policyVersion: 'runtime-safety-1'
       });
       await executionState.transition(intent.recordId, 'SAFETY_EVALUATING');
@@ -1267,7 +1204,8 @@ async function runTask() {
   // the same opt-in engine instead of a separate env-only instance. Each
   // decision point is additionally gated by its own feature flag and fails
   // closed to the deterministic rules whenever Jev is disabled, unavailable or
-  // returns an illegal choice.
+  // returns an illegal choice. Opt-in uses the shared isDecisionPlaneConfigured
+  // rule so a bare JEV_API_KEY never turns the plane on.
   let fileConfig = {};
   let decisionExplicitlyConfigured = false;
   let pendingDecisionLayer;
@@ -1331,7 +1269,7 @@ async function runTask() {
     return feedbackRegistry.submit({
       runId, taskId: runId, threadId: thread.id, outcomeId,
       modelIdentity: identity,
-      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: 'WINDOWS', policyClass: resolveReleaseChannel() },
+      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: scenarioPlatform(), policyClass: resolveReleaseChannel() },
       sourceType: 'SYSTEM', outcomeStatus: status, dimensions,
       evidenceRefs: [event.eventId, ...(finalVerificationEventId ? [finalVerificationEventId] : [])],
       reasonCodes: [taskLevel ? 'TASK_LEVEL_ATTRIBUTION' : 'OBJECTIVE_OUTCOME'],
@@ -1499,8 +1437,9 @@ async function runTask() {
   fileConfig = await loadModelConfig(configuredPath, {
     required: configArgument !== undefined || environmentConfigPath !== undefined
   });
-  decisionExplicitlyConfigured = Boolean(fileConfig?.decision)
-    || process.env.HMCODEX_JEV_ENABLED !== undefined;
+  // Jev is opt-in per deployment: a `decision` block or any non-empty
+  // HMCODEX_JEV_* variable. A bare JEV_API_KEY alone never enables it.
+  decisionExplicitlyConfigured = isDecisionPlaneConfigured({ fileConfig, env: process.env });
   decisionConfig = resolveDecisionConfig({ fileConfig, env: process.env });
   {
     const jevApiKey = process.env[decisionConfig.apiKeyEnv]?.trim();
@@ -2006,7 +1945,7 @@ async function runTask() {
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...executionOptions(mode)
   });
-  const executor = new RestrictedWindowsExecutor({ monitor });
+  const executor = createPlatformExecutor({ monitor });
   const networkAdapter = new RestrictedNetworkAdapter({ monitor });
   const leaseTtlRaw = arg('--lease-ttl-ms', process.env.HMCODEX_LEASE_TTL_MS);
   const leaseTtlMs = leaseTtlRaw === undefined ? undefined : Number(leaseTtlRaw);
@@ -2036,7 +1975,7 @@ async function runTask() {
         bindingSnapshot: allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation })),
         capabilitySnapshot: context.capabilitySnapshot,
         releaseChannel,
-        executorIdentity: 'restricted-windows-executor@0.1.0',
+        executorIdentity: executorDescriptor().id,
         operationId: context.intent.operationId,
         policyVersion: 'runtime-safety-1'
       });
@@ -2095,7 +2034,7 @@ async function runTask() {
   const plugins = [
     readonlyWorkspacePlugin(workspace),
     toolRegistryPlugin(toolRegistry),
-    executorPlugin(executor),
+    executorPlugin(executor, executorDescriptor().pluginId),
     executorToolsPlugin({
       leaseProvider,
       workspace,
@@ -2283,7 +2222,7 @@ async function runTask() {
   await pluginGovernance.load();
   const dynamicRecords = pluginGovernance.list();
   const builtinPluginIds = manifests().map((manifest) => manifest.id);
-  if (resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY') {
+  if (isReadOnlyRelease()) {
     // In-process dynamic modules can execute unrestricted code at import.
     // Keep their governance records intact while the release gate is closed.
     dynamicPluginResults = dynamicRecords.filter((record) => record.state === 'ACTIVE').map((record) => ({
@@ -4296,7 +4235,7 @@ async function runTask() {
     await profileRegistry.recordEvidence({
       kind: 'SAFETY',
       entityType: 'executor',
-      entityId: 'restricted-windows-executor@0.1.0',
+      entityId: executorDescriptor().id,
       runId,
       decisionId: verificationDecision.decisionId,
       outcomeId: `task-outcome-${runId}`,
@@ -4456,7 +4395,7 @@ async function runTask() {
       decisionLayer: {
         enabled: decisionEngine?.enabled ?? false,
         enforce: decisionEngine?.enforce ?? false,
-        configured: decisionConfig?.enabled ?? false,
+        configured: decisionExplicitlyConfigured && (decisionConfig?.enabled ?? false),
         evaluations: decisionLayerEvaluations,
         last: decisionEngine?.summary?.()
       },
@@ -5102,8 +5041,8 @@ async function runReleaseCheckCommand() {
     // approved release candidate: READ_ONLY, CONTROLLED and the phase-2 target
     // WINDOWS_FULL_LOCAL. Excluding the target channel made the phase-2 release
     // candidate fail its own gate on a passing report.
-    releaseChannel: releaseChannel !== 'WINDOWS_MVP_PRE_PHASE1',
-    sideEffectRejection: releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? sideEffectRejection.blocked : !sideEffectRejection.blocked,
+    releaseChannel: isApprovedRelease(releaseChannel),
+    sideEffectRejection: isReadOnlyRelease(releaseChannel) ? sideEffectRejection.blocked : !sideEffectRejection.blocked,
     eventStore: verification.ok,
     readModelChecksum: typeof projection.projectionChecksum === 'string' && /^sha256:[0-9a-f]{64}$/u.test(projection.projectionChecksum),
     hasRuns: runIds.length > 0,
@@ -5266,7 +5205,7 @@ async function runHarnessEventStoreCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
     || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const harnessPath = resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY'
+  const harnessPath = isReadOnlyRelease()
     ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
     : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore() : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
@@ -5475,7 +5414,7 @@ async function runGitAuditCommand() {
 async function runMemoryCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const phase1 = resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY';
+  const phase1 = isReadOnlyRelease();
   const storagePath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
   const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
@@ -5841,7 +5780,7 @@ const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, p
 async function runDreamCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const phase1 = resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY';
+  const phase1 = isReadOnlyRelease();
   const memoryPath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
   const dreamPath = arg('--dream-store', process.env.HMCODEX_DREAM_STORE
@@ -5958,7 +5897,7 @@ const readPluginManifest = async () => {
 async function runPluginCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const phase1 = resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY';
+  const phase1 = isReadOnlyRelease();
   const storagePath = arg(
     '--plugin-store',
     arg('--governance-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE
@@ -6146,7 +6085,7 @@ const readJsonValue = async (name, { required = true } = {}) => {
 async function runEvolutionCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const phase1 = resolveReleaseChannel() === 'WINDOWS_PHASE1_READ_ONLY';
+  const phase1 = isReadOnlyRelease();
   const proposalPath = arg('--evolution-store', process.env.HMCODEX_EVOLUTION_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-proposals.json` : defaultEvolutionStore()));
   const reportPath = arg('--evaluation-store', process.env.HMCODEX_EVALUATION_STORE
@@ -6622,8 +6561,8 @@ try {
           releaseChannel: resolveReleaseChannel(),
           runtime: { node: process.version, platform: process.platform },
           gates: {
-            controlled: resolveReleaseChannel() !== 'WINDOWS_PHASE1_READ_ONLY',
-            dynamicPlugins: resolveReleaseChannel() !== 'WINDOWS_PHASE1_READ_ONLY'
+            controlled: !isReadOnlyRelease(),
+            dynamicPlugins: !isReadOnlyRelease()
           },
           storage: {
             backend: 'HARNESS_EVENT_STORE_DEFAULT',

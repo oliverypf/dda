@@ -1,0 +1,19 @@
+{
+  "name": "@dda/linux-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless dda CLI for Linux, Windows, and HarmonyOS PC. It drives the shared Node runtime and does not ship a GUI.",
+  "bin": {
+    "dda": "./bin/dda.mjs",
+    "hmcodex": "./bin/dda.mjs"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node ./bin/dda.mjs",
+    "test": "node --test",
+    "pack:tarball": "node ./scripts/pack.mjs"
+  }
+}

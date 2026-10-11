@@ -76,7 +76,11 @@ const processOutputSchema = {
     action: { type: 'string' },
     commandDigest: { type: 'string' },
     cwd: { type: 'string' },
-    lease: { type: ['string', 'null'] }
+    lease: { type: ['string', 'null'] },
+    // The Linux/HarmonyOS POSIX executor reports whether the outcome was
+    // observed or is unknown (timeout/abort). Without this the approved
+    // CONTROLLED shell result was rejected as TOOL_INVALID_OUTPUT.
+    state: { type: 'string', enum: ['OBSERVED', 'UNKNOWN'] }
   },
   required: ['ok', 'timedOut', 'aborted', 'truncated', 'stdout', 'stderr', 'action', 'cwd'],
   additionalProperties: false
@@ -90,7 +94,8 @@ const writeOutputSchema = {
     path: { type: 'string' },
     bytesWritten: { type: 'integer', minimum: 0 },
     contentDigest: { type: 'string' },
-    lease: { type: ['string', 'null'] }
+    lease: { type: ['string', 'null'] },
+    state: { type: 'string', enum: ['OBSERVED'] }
   },
   required: ['ok', 'action', 'path', 'bytesWritten', 'contentDigest'],
   additionalProperties: false

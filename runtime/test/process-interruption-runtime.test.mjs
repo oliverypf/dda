@@ -41,7 +41,7 @@ const emitCall = (res, name, args, id) => emitGoalResponse(res, [{
   type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args)
 }]);
 
-const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_ONLY', releaseChannel = 'WINDOWS_FULL_LOCAL' } = {}) => {
+const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_ONLY', releaseChannel = 'WINDOWS_FULL_LOCAL', expectLineageRejected = false } = {}) => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-process-interruption-'));
   t.diagnostic(`Evidence directory: ${root}`);
   const workspace = join(root, 'workspace');
@@ -143,11 +143,17 @@ const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_
   const resumeRequests = requests.slice(beforeResume);
   assert.equal(resumeRequests.filter(x => /Planner role/iu.test(String(x.body.instructions ?? ''))).length, 0);
   assert.equal(resumeRequests.filter(x => inputText(x.body).includes('Current validated plan step: completed')).length, 0);
-  const durablePlan = events.filter(event => event.runId === resumedRun.runId && event.kind === 'PlanStepStateChanged').at(-1)?.payload;
-  const afterCompleted = durablePlan?.steps?.find(step => step.stepId === 'completed');
-  assert.ok(afterCompleted, resumed.stderr + resumed.stdout);
-  assert.equal(afterCompleted.outputDigest, completed.outputDigest);
-  assert.equal(afterCompleted.attempt, completed.attempt);
+  const durablePlan = expectLineageRejected
+    ? undefined
+    : events.filter(event => event.runId === resumedRun.runId && event.kind === 'PlanStepStateChanged').at(-1)?.payload;
+  // A fail-closed lineage rejection aborts before the interrupted step is
+  // reconciled, so it never emits a resumed plan to compare against.
+  if (!expectLineageRejected) {
+    const afterCompleted = durablePlan?.steps?.find(step => step.stepId === 'completed');
+    assert.ok(afterCompleted, resumed.stderr + resumed.stdout);
+    assert.equal(afterCompleted.outputDigest, completed.outputDigest);
+    assert.equal(afterCompleted.attempt, completed.attempt);
+  }
   return { resumed, after, completed, durablePlan, requests: resumeRequests, events, resumedRun, workspace };
 };
 
@@ -181,10 +187,21 @@ test('a killed controlled write remains blocked when resumed in read-only mode',
 });
 
 test('a read-only source does not authorize replay after upgrading the resume mode', { timeout: 60000 }, async t => {
-  const { resumed, after, requests } = await exerciseInterruption(t, { resumeMode: 'CONTROLLED' });
+  const { resumed, after, requests, workspace } = await exerciseInterruption(t, { resumeMode: 'CONTROLLED', expectLineageRejected: true });
   assert.notEqual(resumed.code, 0);
-  assert.equal(after.checkpoint.plan.steps[1].errorCode, 'SIDE_EFFECT_OUTCOME_UNCERTAIN');
+  const payload = JSON.parse(resumed.stdout.trim());
+  assert.equal(payload.ok, false);
+  // The controlled resume walks the checkpoint lineage and refuses closed: a
+  // read-only source run can never form a valid controlled lineage, so no
+  // written-file facts are replayed.
+  assert.equal(payload.error, 'RECOVERY_LINEAGE_INVALID');
+  // The rejection happens before any model turn or interrupted-step retry.
   assert.equal(requests.length, 0);
+  assert.notEqual(after.checkpoint.plan.steps[1].status, 'SUCCEEDED');
+  // No write is authorized into the read-only workspace and the pending read
+  // stays untouched.
+  await assert.rejects(readFile(join(workspace, 'result.txt'), 'utf8'), { code: 'ENOENT' });
+  assert.equal(await readFile(join(workspace, 'second.txt'), 'utf8'), 'SECOND_STEP_NATIVE_EVIDENCE');
 });
 
 test('a killed read-only runtime resumes with the phase-one SQLite event store', { timeout: 60000 }, async t => {

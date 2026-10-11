@@ -63,7 +63,7 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
   const database = await readFile(`${result.trajectoryStore}.db`);
   assert.equal(database.subarray(0, 16).toString(), 'SQLite format 3\0');
   await assert.rejects(readFile(result.trajectoryStore), { code: 'ENOENT' });
-  assert.deepEqual(payload.tools.map((tool) => tool.name), ['workspace.list', 'workspace.read']);
+  assert.deepEqual(payload.tools.map((tool) => tool.name), ['workspace.list', 'workspace.read', 'workspace.focus']);
   assert.ok(payload.plugins.some((plugin) => plugin.id === 'model-deepseek'));
   const scopedThreads = JSON.parse(await readFile(`${result.trajectoryStore}.threads.json`, 'utf8'));
   assert.ok(scopedThreads.threads.some((thread) => thread.title === '检查 README'));

@@ -70,6 +70,7 @@ import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegi
 import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
 import { resolveStoreFile } from './platform/paths.mjs';
+import { isResidentKernelEnabled } from './kernel/feature.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
@@ -1219,6 +1220,7 @@ async function runTask() {
   let root;
   let mcpHost;
   let playwrightHost;
+  let residentKernel;
   let allocatedRoles = [];
   // S2-12: the candidate judge must never score a draft from inside a context
   // that produced it, so it gets its own dedicated role context when the
@@ -2058,6 +2060,26 @@ async function runTask() {
     })
   });
   registerReadonlyWorkspaceTools(toolRegistry, workspace);
+  // Phase-1 resident kernel (default OFF, Linux-only). When enabled and the
+  // sandbox is available, the kernel ops become the primary model tool surface;
+  // the discrete read-only workspace tools above stay registered as a fallback.
+  // The kernel is read-only in Phase-1 and refuses every side-effect request.
+  if (isResidentKernelEnabled(process.env)) {
+    const { attachResidentKernel } = await import('./kernel/kernel-tools.mjs');
+    residentKernel = await attachResidentKernel({
+      registry: toolRegistry,
+      workspaceRoot,
+      excludedPaths: workspaceExcludedPaths,
+      sessionId: runId,
+      sessionStatePath: arg('--kernel-session-store', process.env.HMCODEX_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
+      env: process.env
+    });
+    emitEvent(residentKernel.attached ? 'kernel.attached' : 'kernel.unavailable', {
+      runId,
+      reason: residentKernel.availability?.reason,
+      ...(residentKernel.availability?.error ? { error: residentKernel.availability.error } : {})
+    });
+  }
   mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });
   await mcpHost.connectAndRegister(toolRegistry);
   if (mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0) {
@@ -4638,6 +4660,7 @@ async function runTask() {
       for (const providerContext of roleProviderContexts) await Promise.resolve(providerContext?.fiber?.dispose?.()).catch(() => {});
       await Promise.resolve(mcpHost?.close?.()).catch(() => {});
       await Promise.resolve(playwrightHost?.close?.()).catch(() => {});
+      await Promise.resolve(residentKernel?.stop?.()).catch(() => {});
       if (root) await root.fiber.dispose();
     } finally {
       cleanupTaskResources();

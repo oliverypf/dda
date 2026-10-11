@@ -5,11 +5,48 @@ const DEFAULT_ROUTES = Object.freeze({
   unknown: { planner: 'default', executor: 'default', verifier: 'rule' }
 });
 
+const CLASSIFIERS = Object.freeze([
+  ['test', /\b(test|build|compile)\b/u, ['测试', '构建', '编译']],
+  ['modify', /\b(write|edit|modify|patch|fix)\b/u, ['写入', '修改', '修复']],
+  ['inspect', /\b(read|inspect|review|check|understand|overview|analyze)\b/u, ['分析', '检查', '查看', '读取', '理解', '了解', '概览', '梳理', '盘点', '项目理解', '项目概览']]
+]);
+
+// Small pre-verb window: "do not ever modify" is 3 tokens before the verb.
+const NEGATION_WINDOW_WORDS = 3;
+const NEGATION_PHRASES = Object.freeze(['do not', "don't", 'dont', 'never', 'no', 'without']);
+
+const normalizePrompt = (prompt) => String(prompt ?? '').toLowerCase().replaceAll('\u2019', "'");
+
+const tokenizeBefore = (text, index, wordCount) => text
+  .slice(0, index)
+  .trimEnd()
+  .split(/\s+/u)
+  .map((token) => token.replace(/^[^a-z0-9']+|[^a-z0-9']+$/gu, ''))
+  .filter(Boolean)
+  .slice(-wordCount);
+
+const windowContainsNegation = (tokens) => {
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let end = start + 1; end <= tokens.length; end += 1) {
+      if (NEGATION_PHRASES.includes(tokens.slice(start, end).join(' '))) return true;
+    }
+  }
+  return false;
+};
+
+const hasUnnegatedMatch = (text, pattern) => {
+  const matcher = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+  for (const match of text.matchAll(matcher)) {
+    if (!windowContainsNegation(tokenizeBefore(text, match.index, NEGATION_WINDOW_WORDS))) return true;
+  }
+  return false;
+};
+
 export const classifyTask = (prompt) => {
-  const text = String(prompt ?? '').toLowerCase();
-  if (/\b(test|build|compile)\b/u.test(text) || ['测试', '构建', '编译'].some((word) => text.includes(word))) return 'test';
-  if (/\b(write|edit|modify|patch|fix)\b/u.test(text) || ['写入', '修改', '修复'].some((word) => text.includes(word))) return 'modify';
-  if (/\b(read|inspect|review|check|understand|overview|analyze)\b/u.test(text) || ['分析', '检查', '查看', '读取', '理解', '了解', '概览', '梳理', '盘点', '项目理解', '项目概览'].some((word) => text.includes(word))) return 'inspect';
+  const text = normalizePrompt(prompt);
+  for (const [taskClass, pattern, zh] of CLASSIFIERS) {
+    if (hasUnnegatedMatch(text, pattern) || zh.some((word) => text.includes(word))) return taskClass;
+  }
   return 'unknown';
 };
 

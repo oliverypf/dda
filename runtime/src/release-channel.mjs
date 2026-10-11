@@ -9,9 +9,12 @@ export const RELEASE_CHANNELS = Object.freeze([
 
 // Platform names are policy aliases. They canonicalize onto the existing
 // channel gates so READ_ONLY and CONTROLLED keep the same meaning everywhere.
+// CONTROLLED maps to the Phase 1.5 controlled channel, not the phase-2 target
+// WINDOWS_FULL_LOCAL: the Linux CLI only ships the restricted controlled policy
+// (lease + approval + audit), so it must not inherit the full-local release gate.
 const RELEASE_CHANNEL_ALIASES = Object.freeze({
   LINUX_CLI_READ_ONLY: READ_ONLY_RELEASE_CHANNEL,
-  LINUX_CLI_CONTROLLED: 'WINDOWS_FULL_LOCAL'
+  LINUX_CLI_CONTROLLED: 'WINDOWS_PHASE1_5_CONTROLLED'
 });
 
 const canonicalReleaseChannel = (value) => RELEASE_CHANNEL_ALIASES[value] ?? value;

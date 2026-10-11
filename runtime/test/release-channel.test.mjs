@@ -18,7 +18,7 @@ test('Phase 1 denies controlled modes and unknown channels fail closed', () => {
   }
   for (const channel of RELEASE_CHANNELS) assert.equal(resolveReleaseChannel(channel), channel);
   assert.equal(resolveReleaseChannel('LINUX_CLI_READ_ONLY'), 'WINDOWS_PHASE1_READ_ONLY');
-  assert.equal(resolveReleaseChannel('LINUX_CLI_CONTROLLED'), 'WINDOWS_FULL_LOCAL');
+  assert.equal(resolveReleaseChannel('LINUX_CLI_CONTROLLED'), 'WINDOWS_PHASE1_5_CONTROLLED');
   assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_READ_ONLY/);
   assert.equal(assertReleaseHarnessStore('hmcodex.db', 'LINUX_CLI_READ_ONLY'), 'hmcodex.db');
   assert.equal(isReadOnlyRelease('LINUX_CLI_READ_ONLY'), true);

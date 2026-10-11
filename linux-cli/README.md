@@ -15,7 +15,7 @@
 ## 要求
 
 - Linux x86_64、glibc
-- Node.js 24 或更新版本。当前仓库也可以在 Node.js 22 上做本地验证
+- Node.js 24 或更新版本（`package.json` 的 `engines` 要求 `>=24.0.0`）
 - 不需要桌面会话、`DISPLAY` 或 Wayland
 
 ## 安装
@@ -97,7 +97,7 @@ dda task --workspace /path/to/project --prompt "运行测试" \
 
 digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。没有 TTY 又没指定 `jsonl` / `deny` 时直接返回 `APPROVAL_UNAVAILABLE`（退出码 5）。审批被拒绝或过期后任务失败，退出码是 5，jsonl 结果带 `"approval":"DECLINED"`。CLI 不保存“以后自动批准”。
 
-当前限制：`CONTROLLED` 在 Linux 上映射到 `WINDOWS_FULL_LOCAL` 通道，还没有按 Phase 1.5 门禁通道单独验收；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机还没验证。
+当前限制：`CONTROLLED` 在 Linux 上映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（受 lease、审批和审计约束的受控策略），不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机还没验证。
 
 ## 退出码
 

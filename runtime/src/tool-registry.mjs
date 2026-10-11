@@ -467,7 +467,7 @@ export class ToolRegistry {
     return [...this.#tools.values()].map(publicDefinition);
   }
 
-  async invoke(name, input = {}) {
+  async invoke(name, input = {}, context = undefined) {
     const startedAt = Date.now();
     let inputDigest;
     let invocationCallbackFailed = false;
@@ -482,7 +482,7 @@ export class ToolRegistry {
 
       let value;
       try {
-        value = await tool.handler(safeInput);
+        value = await tool.handler(safeInput, context);
       } catch (error) {
         if (error instanceof ToolRegistryError) throw error;
         const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)

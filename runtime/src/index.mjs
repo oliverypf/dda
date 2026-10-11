@@ -71,7 +71,7 @@ import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
 import { resolveStoreFile } from './platform/paths.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
-import { createExplicitLeaseProvider } from './controlled-tools.mjs';
+import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
@@ -457,6 +457,17 @@ async function runTask() {
   });
   setRuntimePhase('INITIALIZING');
   const pendingApprovals = new Map();
+  // Mid-task Jev action-gate decisions, persisted by tool-call id and argument
+  // hash so the lease provider and approval path can honor a REQUIRE_APPROVAL
+  // for the exact proposed action. A genuine Jev opinion (not the conservative
+  // rule fallback) is what forces an explicit approval; the operator's pre-task
+  // capability setup still governs the non-risky path.
+  const gateApprovalDecisions = new Map();
+  const gateDecisionFor = ({ context } = {}) => {
+    const entry = (context?.toolCallId && gateApprovalDecisions.get(context.toolCallId))
+      ?? (context?.argumentsDigest && gateApprovalDecisions.get(context.argumentsDigest));
+    return entry ? { requireApproval: entry.requireApproval === true } : undefined;
+  };
   const approvalInterface = eventOutput === 'stdout' && mode === EXECUTION_MODES.CONTROLLED
     ? createInterface({ input: process.stdin })
     : undefined;
@@ -509,13 +520,13 @@ async function runTask() {
       // Ignore malformed host input; the pending approval will expire safely.
     }
   });
-  const requestApproval = async ({ capability, request }) => {
+  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk } = {}) => {
     const requestId = `approval-${randomUUID()}`;
     const requestDigest = executionDigest({ capability, request });
     const approvalExpiresAt = Date.now() + APPROVAL_TTL_MS;
-    const risk = capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
+    const risk = providedRisk ?? (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
       ? 'HIGH'
-      : capability === CAPABILITIES.TEST ? 'MEDIUM' : 'LOW';
+      : capability === CAPABILITIES.TEST ? 'MEDIUM' : 'LOW');
     const safeRequest = {
       capability,
       requestDigest,
@@ -633,6 +644,24 @@ async function runTask() {
         scopeSnapshotDigest: scopeSnapshot.snapshotDigest
       });
       if (!approvalInterface) {
+        // No live approver is connected. A risk-based or dangerous action must
+        // not be silently granted by host policy; only a pre-approved, non-risky
+        // action keeps the prior EXPLICIT_HOST_POLICY auto-approval.
+        if (resolveApprovalOutcome({ requireApproval, hasLiveApprover: false }) === APPROVAL_OUTCOMES.REFUSE) {
+          await executionState.transition(approval.recordId, 'DECLINED', { reason: 'APPROVAL_REQUIRED_NO_LIVE_APPROVER' });
+          await executionState.transition(intent.recordId, 'REJECTED', { reason: 'APPROVAL_REQUIRED_NO_LIVE_APPROVER' });
+          approvalContexts.delete(requestDigest);
+          emitEvent('approval.refused', {
+            requestId,
+            capability,
+            requestDigest,
+            risk,
+            reason: 'NO_LIVE_APPROVER',
+            ...(pending.context?.intent ? { intentId: pending.context.intent.recordId } : {}),
+            ...(pending.context?.approval ? { approvalId: pending.context.approval.recordId } : {})
+          });
+          return false;
+        }
         await executionState.transition(approval.recordId, 'APPROVED', { reason: 'EXPLICIT_HOST_POLICY' });
         await executionState.transition(intent.recordId, 'APPROVED', { reason: 'EXPLICIT_HOST_POLICY' });
         return true;
@@ -1957,6 +1986,7 @@ async function runTask() {
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...(leaseTtlMs === undefined ? {} : { ttlMs: leaseTtlMs }),
     requestApproval,
+    gateDecisionFor,
     onLeaseIssued: async ({ capability, request, lease }) => {
       const context = approvalContexts.get(executionDigest({ capability, request }));
       if (!context?.intent) return;
@@ -3135,6 +3165,16 @@ async function runTask() {
                   }
                 : undefined
             });
+            // Persist a genuine mid-task REQUIRE_APPROVAL (a real Jev opinion,
+            // not the conservative rule fallback) keyed by tool-call id and
+            // argument hash, so the lease provider and approval path can require
+            // an explicit approval for exactly this proposed action. The rule
+            // fallback keeps the operator's pre-task capability setup intact.
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && toolGate.source === 'jev' && toolGate.fallbackUsed !== true) {
+              const gateEntry = { requireApproval: true, reasonCode: toolGate.reasonCode ?? 'JEV_ACTION_GATE_REQUIRE_APPROVAL' };
+              gateApprovalDecisions.set(call.id, gateEntry);
+              if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
+            }
             const toolDecision = await recordDecision({
               stepId: `${step.stepId}-tool-${attempt}-${call.id}`,
               role: 'executor',

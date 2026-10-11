@@ -434,7 +434,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 && typeof finalArguments.path === 'string' && observedFileDigests.has(pathKey(finalArguments.path))) {
                 finalArguments = { ...finalArguments, expectedDigest: observedFileDigests.get(pathKey(finalArguments.path)) };
               }
-              output = await ctx.toolRegistry.invoke(call.name, finalArguments);
+              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: sha256Digest(call.arguments) });
               if (output?.path && output.ok !== false) {
                 const currentDigest = ['workspace.read', 'workspace.focus'].includes(call.name) ? output.digest
                   : ['file.write', 'file.patch'].includes(call.name) ? output.contentDigest : undefined;

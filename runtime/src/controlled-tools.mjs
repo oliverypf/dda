@@ -1,3 +1,4 @@
+import { isAbsolute, resolve as resolvePath, relative as relativePath, sep as pathSep } from 'node:path';
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
 import { applyTextPatch, MAX_PATCH_TEXT, MAX_PATCH_FILE_BYTES, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
 import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
@@ -208,12 +209,92 @@ const normalizeList = (value) => Array.isArray(value)
   ? [...new Set(value.filter((item) => typeof item === 'string' && item.length > 0))]
   : [];
 
+// Risk-based approval outcomes. A dangerous action or a mid-task REQUIRE_APPROVAL
+// must reach a human when one can answer, and must never be silently granted a
+// lease when no live approver exists.
+export const APPROVAL_OUTCOMES = Object.freeze({ PROMPT: 'PROMPT', REFUSE: 'REFUSE', AUTO_APPROVE: 'AUTO_APPROVE' });
+
+/**
+ * Decide the approval outcome for a side-effect request. This is the single
+ * fail-closed policy shared by the host: when no live approver is connected a
+ * request that requires approval is refused rather than auto-approved by host
+ * policy; a pre-approved, non-risky request keeps the prior host-policy path.
+ */
+export const resolveApprovalOutcome = ({ requireApproval = false, hasLiveApprover = false } = {}) =>
+  hasLiveApprover
+    ? APPROVAL_OUTCOMES.PROMPT
+    : requireApproval ? APPROVAL_OUTCOMES.REFUSE : APPROVAL_OUTCOMES.AUTO_APPROVE;
+
+const baseRiskForCapability = (capability) => {
+  if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK) return 'HIGH';
+  if (capability === CAPABILITIES.TEST) return 'MEDIUM';
+  return 'LOW';
+};
+
+// Secret material a controlled write must never touch without an explicit human
+// decision, matched on any path segment so a nested .ssh/ or .aws/ still trips.
+const SECRET_PATH_SEGMENT = /^(\.env(\..+)?|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|id_rsa|id_dsa|id_ecdsa|id_ed25519|credentials|secrets?)$/i;
+const SECRET_PATH_EXTENSION = /\.(pem|key|p12|pfx|keystore|jks|asc|ppk)$/i;
+
+const isSecretPath = (path) => {
+  const segments = String(path).split(/[\\/]+/).filter(Boolean);
+  if (segments.some((segment) => SECRET_PATH_SEGMENT.test(segment))) return true;
+  const basename = segments.at(-1) ?? '';
+  return SECRET_PATH_EXTENSION.test(basename) || /(^|[._-])secret/i.test(basename);
+};
+
+const pathEscapesWorkspace = (path, workspaceRoot) => {
+  if (!workspaceRoot) return isAbsolute(path) || String(path).split(/[\\/]+/).includes('..');
+  const resolved = resolvePath(workspaceRoot, path);
+  const rel = relativePath(workspaceRoot, resolved);
+  return rel === '..' || rel.startsWith(`..${pathSep}`) || rel.startsWith('../') || isAbsolute(rel);
+};
+
+const hasRecursiveForceRemove = (line) => /\brm\b/.test(line)
+  && (/(^|\s)-{1,2}[a-z]*r[a-z]*f/i.test(line) || /(^|\s)-{1,2}[a-z]*f[a-z]*r/i.test(line)
+    || (/--recursive/i.test(line) && /--force/i.test(line))
+    || (/(^|\s)-[a-z]*r/i.test(line) && /(^|\s)-[a-z]*f/i.test(line)));
+
+/**
+ * A small, deterministic danger check applied before any lease is issued. It
+ * never relaxes a decision: a match forces HIGH risk and an explicit approval,
+ * independent of (and in addition to) the Jev action gate. It covers the
+ * highest-impact irreversible actions: recursive force removal, privilege
+ * escalation, destructive git operations, piping a download into a shell, and
+ * writes that escape the workspace or target secret material.
+ */
+export const assessRequestRisk = ({ capability, request = {}, workspaceRoot } = {}) => {
+  const reasons = [];
+  if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
+    const command = typeof request.command === 'string' ? request.command : '';
+    const args = Array.isArray(request.args) ? request.args.filter((item) => typeof item === 'string') : [];
+    const line = [command, ...args].join(' ');
+    const lower = line.toLowerCase();
+    if (hasRecursiveForceRemove(lower)) reasons.push('DANGEROUS_RECURSIVE_REMOVE');
+    if (/(^|\s|[\\/])sudo(\s|$)/.test(lower)) reasons.push('DANGEROUS_PRIVILEGE_ESCALATION');
+    if (/\bgit\s+push\b/.test(lower)) reasons.push('DANGEROUS_GIT_PUSH');
+    if (/\bgit\s+reset\b[\s\S]*--hard\b/.test(lower)) reasons.push('DANGEROUS_GIT_RESET_HARD');
+    if (/\bgit\s+clean\b[\s\S]*(^|\s)-[a-z]*f/.test(lower)) reasons.push('DANGEROUS_GIT_CLEAN_FORCE');
+    if (/\b(curl|wget|fetch)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|dash|python[0-9.]*|node|ruby|perl)\b/.test(lower)
+      || /\|\s*(sudo\s+)?(sh|bash|zsh|dash)\b/.test(lower)) reasons.push('DANGEROUS_PIPE_TO_SHELL');
+  }
+  if (capability === CAPABILITIES.WRITE_FILE) {
+    const path = typeof request.path === 'string' ? request.path : '';
+    if (path) {
+      if (pathEscapesWorkspace(path, workspaceRoot)) reasons.push('DANGEROUS_WRITE_OUTSIDE_WORKSPACE');
+      if (isSecretPath(path)) reasons.push('DANGEROUS_SECRET_FILE_PATH');
+    }
+  }
+  const dangerous = reasons.length > 0;
+  return { dangerous, risk: dangerous ? 'HIGH' : baseRiskForCapability(capability), reasons };
+};
+
 /**
  * Create the only lease path used by model-facing side-effect tools. The
  * model never receives this callback or a lease object; the host decides
  * whether an explicitly approved capability may get one one-shot lease.
  */
-export const createExplicitLeaseProvider = ({ monitor, capabilities = [], commands = [], networkTargets = [], ttlMs, requestApproval, onLeaseIssued } = {}) => {
+export const createExplicitLeaseProvider = ({ monitor, capabilities = [], commands = [], networkTargets = [], ttlMs, requestApproval, gateDecisionFor, onLeaseIssued } = {}) => {
   const approvedCapabilities = new Set(normalizeList(capabilities));
   const approvedCommands = normalizeList(commands);
   const approvedNetworkTargets = (Array.isArray(networkTargets) ? networkTargets : []).map((target) => {
@@ -223,14 +304,23 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
     }
     return parsed;
   });
-  const provider = async ({ capability, request }) => {
+  const provider = async ({ capability, request, context } = {}) => {
     if (!monitor || monitor.mode !== EXECUTION_MODES.CONTROLLED) return undefined;
     if (!approvedCapabilities.has(capability)) return undefined;
     if ((capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) && approvedCommands.length === 0) {
       return undefined;
     }
+    // A mid-task Jev REQUIRE_APPROVAL (persisted by tool-call id/arg hash) or a
+    // deterministic danger match forces an explicit approval. Pre-approved,
+    // non-risky actions keep their prior host-policy path.
+    const assessment = assessRequestRisk({ capability, request, workspaceRoot: monitor.workspaceRoot });
+    const gate = typeof gateDecisionFor === 'function' ? await gateDecisionFor({ capability, request, context }) : undefined;
+    const requireApproval = assessment.dangerous || gate?.requireApproval === true;
+    // Fail closed: a risky action may never receive a lease when there is no
+    // approval mechanism at all to answer for it.
+    if (requireApproval && typeof requestApproval !== 'function') return undefined;
     if (typeof requestApproval === 'function') {
-      const approved = await requestApproval({ capability, request });
+      const approved = await requestApproval({ capability, request, context, requireApproval, risk: assessment.risk, dangerReasons: assessment.reasons });
       if (!approved) return undefined;
     }
     const lease = monitor.issueLease({
@@ -274,10 +364,10 @@ export const registerExecutorTools = (registry, executor, {
   const commandGuidance = Array.isArray(leaseProvider?.approvedCommands)
     ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}; executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. Use workspace.list/workspace.read for inspection. Do not substitute an unapproved shell or bypass a denied command.`
     : '';
-  const executeWithLease = async (capability, input, operation) => {
+  const executeWithLease = async (capability, input, operation, context) => {
     let lease;
     try {
-      lease = await getLease({ capability, request: input });
+      lease = await getLease({ capability, request: input, context });
       if (typeof leaseProvider === 'function' && !lease) throw new SafetyError(SAFETY_ERROR_CODES.LEASE_REQUIRED);
       await onLeaseStarted?.({ capability, request: input, lease });
       const result = await operation(lease);
@@ -304,7 +394,7 @@ export const registerExecutorTools = (registry, executor, {
     outputSchema: processOutputSchema,
     readOnly: false,
     metadata: commandMetadata(CAPABILITIES.SHELL),
-    handler: async (input) => executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }))
+    handler: async (input, context) => executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }), context)
   });
   registry.register({
     name: 'file.write',
@@ -313,7 +403,7 @@ export const registerExecutorTools = (registry, executor, {
     outputSchema: writeOutputSchema,
     readOnly: false,
     metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
-    handler: async (input) => {
+    handler: async (input, context) => {
       let request = input;
       if (workspace && typeof workspace.read === 'function') {
         let current;
@@ -326,7 +416,7 @@ export const registerExecutorTools = (registry, executor, {
         if (expected !== undefined && expected !== current) throw new TextPatchError('WRITE_STALE_DIGEST');
         request = { ...input, expectedDigest: current };
       }
-      return executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }));
+      return executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }), context);
     }
   });
   if (workspace && typeof workspace.read === 'function') {
@@ -360,14 +450,14 @@ export const registerExecutorTools = (registry, executor, {
       outputSchema: patchOutputSchema,
       readOnly: false,
       metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
-      handler: async ({ path, expectedDigest, replacements }) => {
+      handler: async ({ path, expectedDigest, replacements }, context) => {
         const current = await readCompleteText(workspace, path, { maxBytes: MAX_PATCH_FILE_BYTES });
         const content = applyTextPatch(current.content, replacements, expectedDigest);
         const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
           const latest = await workspace.read(current.path);
           if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');
           return executor.writeFile({ path: current.path, content, expectedDigest: current.digest }, { lease });
-        });
+        }, context);
         return {
           ...writeResult,
           action: 'patch_file',
@@ -386,7 +476,7 @@ export const registerExecutorTools = (registry, executor, {
     readOnly: false,
     metadata: { ...commandMetadata(CAPABILITIES.TEST),
       ...(executor instanceof RestrictedWindowsExecutor ? { processObservationPolicy: 'RESTRICTED_WINDOWS_NO_PRELOAD' } : {}) },
-    handler: async (input) => executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }))
+    handler: async (input, context) => executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }), context)
   });
   if (networkAdapter) {
     if (typeof networkAdapter.request !== 'function') throw new TypeError('EXECUTOR_NETWORK_ADAPTER_INVALID');
@@ -397,7 +487,7 @@ export const registerExecutorTools = (registry, executor, {
       outputSchema: networkOutputSchema,
       readOnly: false,
       metadata: effectMetadata(CAPABILITIES.NETWORK),
-      handler: async (input) => executeWithLease(CAPABILITIES.NETWORK, input, (lease) => networkAdapter.request(input, { lease }))
+      handler: async (input, context) => executeWithLease(CAPABILITIES.NETWORK, input, (lease) => networkAdapter.request(input, { lease }), context)
     });
   }
   return registry;

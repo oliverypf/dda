@@ -10,7 +10,13 @@ import {
 const file = () => ({ isFile: () => true, isDirectory: () => false });
 const directory = () => ({ isFile: () => false, isDirectory: () => true });
 
-test('sidecar configuration requires a loopback URL and absolute Windows executable', async () => {
+test('sidecar configuration requires a loopback URL and absolute Windows executable', {
+  // The sidecar is owned by the Windows desktop host, and this case asserts
+  // Windows path semantics (drive-absolute executables, `.exe` extension).
+  // `node:path` resolves against the running OS, so the Windows fixture paths
+  // only validate on win32; elsewhere skip rather than assert a POSIX error.
+  skip: process.platform === 'win32' ? false : 'win32-only: Windows path semantics'
+}, async () => {
   const statImpl = async (path) => path.endsWith('openviking-server.exe') ? file() : directory();
   const config = await resolveOpenVikingSidecarConfig({
     platform: 'win32',

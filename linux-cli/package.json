@@ -13,6 +13,7 @@
   },
   "scripts": {
     "start": "node ./bin/dda.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "pack:tarball": "node ./scripts/pack.mjs"
   }
 }

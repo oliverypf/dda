@@ -44,7 +44,7 @@ test('falls back on a non-Linux platform instead of failing', async () => {
   const registry = registryWithFallback(root);
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 's',
-    env: { HMCODEX_RESIDENT_KERNEL: '1', HMCODEX_PLATFORM: 'linux-cli' },
+    env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
     platform: 'darwin'
   });
   assert.equal(handle.attached, false);
@@ -59,7 +59,7 @@ test('registers the kernel surface alongside the read-only fallback when availab
   const storagePath = join(root, '.state.json');
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 'sess', sessionStatePath: storagePath,
-    env: { HMCODEX_RESIDENT_KERNEL: '1', HMCODEX_PLATFORM: 'linux-cli' },
+    env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
     platform: 'linux'
   });
   try {
@@ -89,7 +89,7 @@ test('surfaces the side-effect refusal through the tool error code', async () =>
   const registry = registryWithFallback(root);
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 'sess2',
-    env: { HMCODEX_RESIDENT_KERNEL: '1', HMCODEX_PLATFORM: 'linux-cli' },
+    env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
     platform: 'linux'
   });
   try {

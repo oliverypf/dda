@@ -88,8 +88,8 @@ The two freeze invariants are enforced by the supervisor:
 ### 3.4 Availability and fallback
 
 `residentKernelAvailability(env)` returns `available` only when all hold:
-feature enabled (`HMCODEX_RESIDENT_KERNEL` truthy), portable Linux CLI identity
-(`HMCODEX_PLATFORM`), Node >=24, and a sandbox. Every failure carries a stable
+feature enabled (`DDA_RESIDENT_KERNEL` truthy), portable Linux CLI identity
+(`DDA_PLATFORM`), Node >=24, and a sandbox. Every failure carries a stable
 reason (`DISABLED`, `NODE_TOO_OLD`, `NON_LINUX_PLATFORM_IDENTITY`,
 `NON_LINUX_PLATFORM`, ...). When unavailable, `attachResidentKernel()` returns a
 no-op handle and the discrete read-only tools remain the surface.
@@ -107,9 +107,9 @@ or `kernel.unavailable` runtime event with the availability reason.
 
 | Variable / flag | Meaning | Default |
 | --- | --- | --- |
-| `HMCODEX_RESIDENT_KERNEL` | Enable the resident kernel | off |
-| `HMCODEX_RESIDENT_KERNEL_SANDBOX` | Force/disable the sandbox check (testing) | auto |
-| `HMCODEX_KERNEL_SESSION_STORE` / `--kernel-session-store` | Durable session-state file | `kernel-session.json` under the data dir |
+| `DDA_RESIDENT_KERNEL` | Enable the resident kernel | off |
+| `DDA_RESIDENT_KERNEL_SANDBOX` | Force/disable the sandbox check (testing) | auto |
+| `DDA_KERNEL_SESSION_STORE` / `--kernel-session-store` | Durable session-state file | `kernel-session.json` under the data dir |
 
 ## 6. Security boundaries preserved
 

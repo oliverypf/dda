@@ -2071,7 +2071,7 @@ async function runTask() {
       workspaceRoot,
       excludedPaths: workspaceExcludedPaths,
       sessionId: runId,
-      sessionStatePath: arg('--kernel-session-store', process.env.HMCODEX_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
+      sessionStatePath: arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
       env: process.env
     });
     emitEvent(residentKernel.attached ? 'kernel.attached' : 'kernel.unavailable', {

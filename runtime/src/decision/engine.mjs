@@ -23,6 +23,7 @@ import {
   fallbackTest,
   normalizeDecisionChoice
 } from './rules.mjs';
+import { createJevMetrics } from './jev-metrics.mjs';
 
 const clone = (value) => structuredClone(value);
 
@@ -137,6 +138,7 @@ export class DecisionEngine {
   #now;
   #last;
   #config;
+  #metrics = createJevMetrics();
 
   constructor({ client, enabled = false, enforce = false, now = Date.now, config = {} } = {}) {
     this.#client = client;
@@ -150,7 +152,53 @@ export class DecisionEngine {
   get enforce() { return this.#enforce; }
   get lastResult() { return this.#last ? clone(this.#last) : undefined; }
 
+  /** Per-kind Jev counters (requests, latency, fallbacks, rule short
+   * circuits). Measurement only; it never alters a decision. */
+  metrics() { return this.#metrics.summary(); }
+
+  async #request(kind, payload) {
+    const startedAtMs = this.#now();
+    try {
+      const response = await this.#client.decide(payload);
+      this.#metrics.recordRequest(kind, { latencyMs: Number(response?.latencyMs) || Math.max(0, this.#now() - startedAtMs), ok: true });
+      return response;
+    } catch (error) {
+      this.#metrics.recordRequest(kind, { latencyMs: Number(error?.latencyMs) || Math.max(0, this.#now() - startedAtMs), ok: false });
+      throw error;
+    }
+  }
+
   async decide(input = {}) {
+    const result = await this.#decide(input);
+    this.#metrics.recordDecision('DECISION_LAYER', { fallbackUsed: result.fallbackUsed === true });
+    return result;
+  }
+
+  async decideActionGate(input = {}) {
+    const result = await this.#decideActionGate(input);
+    this.#metrics.recordDecision('ACTION_GATE', {
+      fallbackUsed: result.fallbackUsed === true,
+      ...(input?.hardDecision ? { shortCircuitReason: result.reasonCode ?? 'HARD_DECISION' } : {})
+    });
+    return result;
+  }
+
+  async selectCandidates(input = {}) {
+    const result = await this.#selectCandidates(input);
+    this.#metrics.recordDecision(input?.state?.action?.kind ?? 'SELECT_CANDIDATE', { fallbackUsed: result.fallbackUsed === true });
+    return result;
+  }
+
+  async judgeVerification(input = {}) {
+    const result = await this.#judgeVerification(input);
+    this.#metrics.recordDecision('VERIFY_BEHAVIOR', {
+      fallbackUsed: result.fallbackUsed === true,
+      ...(result.reasonCode === 'RULE_VERIFIER_FAILED' ? { shortCircuitReason: 'RULE_VERIFIER_FAILED' } : {})
+    });
+    return result;
+  }
+
+  async #decide(input = {}) {
     const startedAtMs = this.#now();
     const state = createDecisionState(input, { maxStateChars: this.#config.maxStateChars });
     let failure = deterministicFailureRouter({ action: state.action, observation: state.observation });
@@ -170,7 +218,7 @@ export class DecisionEngine {
     let fallbackReason;
     if (Object.keys(questions).length > 0 && this.#enabled) {
       try {
-        const response = await this.#client.decide({ state, questions, signal: input.signal });
+        const response = await this.#request('DECISION_LAYER', { state, questions, signal: input.signal });
         jevAnswers = response.answers ?? {};
         jevLatencyMs = Number(response.latencyMs) || 0;
       } catch (error) {
@@ -230,7 +278,7 @@ export class DecisionEngine {
    * registry is invoked. Hard policy remains outside this method; this is the
    * semantic gate for suitability and safety.
    */
-  async decideActionGate({ state = {}, signal, hardDecision } = {}) {
+  async #decideActionGate({ state = {}, signal, hardDecision } = {}) {
     const startedAtMs = this.#now();
     const normalizedState = createDecisionState({ ...state, action: state.action ?? state.toolRequest }, { maxStateChars: this.#config.maxStateChars });
     if (hardDecision) return { ...hardDecision, decisionType: 'ACTION_GATE', state: normalizedState };
@@ -254,7 +302,7 @@ export class DecisionEngine {
     let jevLatencyMs = 0;
     if (this.#enabled) {
       try {
-        const response = await this.#client.decide({ state: normalizedState, questions, signal });
+        const response = await this.#request('ACTION_GATE', { state: normalizedState, questions, signal });
         answer = response.answers?.actionGate;
         jevLatencyMs = Number(response.latencyMs) || 0;
       } catch (error) {
@@ -283,7 +331,7 @@ export class DecisionEngine {
 
   /** Select one supplied candidate. Jev receives evidence and bounded draft
    * metadata, never tools or permission to create another candidate. */
-  async selectCandidates({ state = {}, candidates = [], evidence = [], signal } = {}) {
+  async #selectCandidates({ state = {}, candidates = [], evidence = [], signal } = {}) {
     const normalizedCandidates = candidates.filter((candidate) => candidate?.candidateId || candidate?.bindingId)
       .slice(0, 8)
       .map((candidate) => ({
@@ -314,7 +362,7 @@ export class DecisionEngine {
       }
     };
     try {
-      const response = await this.#client.decide({
+      const response = await this.#request(state?.action?.kind ?? 'SELECT_CANDIDATE', {
         state: createDecisionState({ ...state, evidence }, { maxStateChars: this.#config.maxStateChars }),
         questions,
         signal
@@ -341,14 +389,14 @@ export class DecisionEngine {
 
   /** Use Jev as the semantic behavior/result judge. Deterministic rule checks
    * are still authoritative hard evidence and are never upgraded by PASS. */
-  async judgeVerification({ state = {}, evidence = [], signal, ruleStatus } = {}) {
+  async #judgeVerification({ state = {}, evidence = [], signal, ruleStatus } = {}) {
     const normalizedState = createDecisionState({ ...state, evidence }, { maxStateChars: this.#config.maxStateChars });
     const hardFailure = ['FAIL', 'FAILED', 'ERROR'].includes(String(ruleStatus ?? '').toUpperCase());
     if (hardFailure) return { decision: 'FAIL', confidence: 1, source: 'rule', fallbackUsed: false, reasonCode: 'RULE_VERIFIER_FAILED', decisionType: 'VERIFY_BEHAVIOR', state: normalizedState };
     if (!this.#enabled) return { decision: ruleStatus === 'PASS' ? 'PASS' : 'UNCERTAIN', confidence: 0.2, source: 'rule', fallbackUsed: true, reasonCode: 'JEV_DISABLED_VERIFICATION_FALLBACK', decisionType: 'VERIFY_BEHAVIOR', state: normalizedState };
     const definition = QUESTION_DEFINITIONS.verification;
     try {
-      const response = await this.#client.decide({
+      const response = await this.#request('VERIFY_BEHAVIOR', {
         state: normalizedState,
         questions: { verification: { type: 'choice', prompt: definition.prompt, choices: definition.choices, context: { ruleStatus } } },
         signal, purpose: 'verification'

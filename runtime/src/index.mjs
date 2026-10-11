@@ -10,6 +10,9 @@ import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
+import { createStageTimer } from './decision/jev-metrics.mjs';
+import { READONLY_FAST_PATH_REASON, readonlyFastPathDecision } from './decision/readonly-fast-path.mjs';
+import { councilForTier, planTierCandidates, planTierInactiveReason } from './decision/plan-tier.mjs';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
@@ -1249,6 +1252,9 @@ async function runTask() {
   let decisionExplicitlyConfigured = false;
   let pendingDecisionLayer;
   const decisionLayerEvaluations = [];
+  // Speed MVP measurement: wall-clock per stage. Additive output only.
+  const stageTimer = createStageTimer();
+  let planTierSelection;
   let streamedResponseText = "";
   let plannerTurn;
   let plannerPlan;
@@ -2504,6 +2510,59 @@ async function runTask() {
       });
       const plannerBinding = roleBindingResolution.roles.planner;
       const plannerProvider = roleProviders.get(plannerBinding?.modelId) ?? defaultUsageProvider;
+      // DDA_JEV_PLAN_TIER_ENABLED (default OFF): choose DIRECT / PLAN /
+      // PLAN_COUNCIL before the planner turn. The tier never skips the
+      // planner; DIRECT/PLAN only skip the council. Any failure keeps the
+      // existing council heuristic. Resumed plans are never re-tiered.
+      const planTierInactive = planTierInactiveReason({
+        agentMode,
+        decisionEnabled: decisionEngine?.enabled === true,
+        planTierEnabled: decisionConfig?.planTierEnabled === true,
+        topologyEnabled: decisionConfig?.topologyEnabled === true,
+        resumedPlan: Boolean(restoredResumePlan)
+      });
+      if (decisionConfig?.planTierEnabled === true && planTierInactive) {
+        planTierSelection = { tier: undefined, source: 'rule', reasonCode: planTierInactive };
+        emitEvent('plan.tier_selected', planTierSelection);
+      }
+      if (!planTierInactive) {
+        const tierCandidates = planTierCandidates({ mode, taskClass });
+        const tierResult = await stageTimer.time('planTier', () => decisionEngine.selectCandidates({
+          state: {
+            taskId: runId,
+            goal: prompt,
+            currentStep: 'plan-tier-selection',
+            action: { kind: 'SELECT_PLAN_TIER', summary: 'Choose whether the council may review the plan (planner always runs)' },
+            observation: { status: 'PRE_PLANNER', taskClass, executionMode: mode },
+            evidence: [{ id: `plan-tier-${runId}`, type: 'route', claim: `Task classified as ${taskClass} in ${mode}`, source: `task-class:${taskClass}` }]
+          },
+          candidates: tierCandidates.map((tier, index) => ({ candidateId: tier, modelId: tier, status: 'SUCCEEDED', expectedCost: index + 1, expectedLatencyMs: index + 1 })),
+          signal: taskAbortController.signal
+        }));
+        const selectedTier = tierResult.source === 'jev' && tierCandidates.includes(tierResult.selectedCandidateId)
+          ? tierResult.selectedCandidateId : undefined;
+        planTierSelection = {
+          tier: selectedTier,
+          source: selectedTier ? 'jev' : 'rule',
+          reasonCode: selectedTier ? 'JEV_DECISION' : (tierResult.reasonCode ?? 'PLAN_TIER_FALLBACK_HEURISTIC'),
+          candidates: tierCandidates
+        };
+        await recordDecision({
+          stepId: 'plan-tier-selection',
+          role: 'decision-engine',
+          roleContextId: `${runId}-decision-engine`,
+          decisionType: 'SELECT_PLAN_TIER',
+          actionKind: 'PLAN_TIER',
+          parentDecisionIds: [allocationDecision.decisionId],
+          summary: selectedTier ? `Jev selected plan tier ${selectedTier}` : 'Plan tier fell back to the existing council heuristic',
+          outputRefs: [`plan-tier-${runId}`],
+          options: tierCandidates.map((optionId) => ({ optionId, actionKind: 'PLAN_TIER', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: optionId === (selectedTier ?? 'PLAN_COUNCIL') ? [] : ['NOT_SELECTED'] })),
+          selectedOptionId: selectedTier ?? 'PLAN_COUNCIL',
+          reasonCodes: selectedTier ? ['JEV_DECISION'] : ['RULE_FALLBACK', 'PLAN_TIER_FALLBACK_HEURISTIC'],
+          selectionCriteria: ['pre-planner-plan-tier']
+        });
+        emitEvent('plan.tier_selected', planTierSelection);
+      }
       if (restoredResumePlan) {
         plannerPlan = restoredResumePlan;
         plannerTurn = {
@@ -2515,17 +2574,18 @@ async function runTask() {
         emitEvent('planner.restored', { sourceRunId: resumeSourceRunId, planDigest: plannerPlan.planDigest, stepCount: plannerPlan.steps.length });
       } else {
         if (plannerBinding?.kind !== 'MODEL' || !plannerProvider) throw new Error('PLANNER_MODEL_UNAVAILABLE');
-        plannerTurn = await runPlannerTurn({
+        plannerTurn = await stageTimer.time('planner', () => runPlannerTurn({
           provider: plannerProvider,
           prompt,
           context: [historyContext, `Workspace snapshot digest: ${snapshot.snapshotDigest}.`, `Entry count: ${snapshot.entries.length}.`].filter(Boolean).join('\n'),
           contextId: plannerContext?.contextId ?? `${runId}-planner`,
           onEvent: roleTurnEvent
-        });
+        }));
         plannerPlan = plannerTurn.plan;
       }
       let shouldDeliberate = !restoredResumePlan
         && (plannerPlan.steps.length > 2 || ['modify', 'test'].includes(taskClass));
+      if (planTierSelection?.tier) shouldDeliberate = councilForTier(planTierSelection.tier, shouldDeliberate);
       if (!restoredResumePlan && decisionEngine?.enabled && decisionConfig?.topologyEnabled === true) {
         const topologyCandidates = [
           { candidateId: 'DIRECT_EXECUTE', modelId: 'DIRECT_EXECUTE', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 1 },
@@ -2554,7 +2614,7 @@ async function runTask() {
             parentDecisionIds: [plannerDecision?.decisionId ?? allocationDecision.decisionId],
             summary: `Jev selected ${topologySelection.selectedCandidateId}`,
             outputRefs: [`topology-${runId}`],
-            options: topologyCandidates.map(({ candidateId: optionId }) => ({ optionId, actionKind: 'TOPOLOGY', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [`plan-topology-${runId}`], riskCodes: [], rejectionReasonCodes: optionId === topologySelection.selectedCandidateId ? [] : ['NOT_SELECTED_BY_JEV'] })),
+            options: topologyCandidates.map(({ candidateId: optionId }) => ({ optionId, actionKind: 'TOPOLOGY', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: optionId === topologySelection.selectedCandidateId ? [] : ['NOT_SELECTED_BY_JEV'] })),
             selectedOptionId: topologySelection.selectedCandidateId,
             reasonCodes: ['JEV_DECISION'],
             selectionCriteria: ['bounded-plan-topology']
@@ -2616,7 +2676,7 @@ async function runTask() {
             });
           }
         });
-        councilResult = await council.run({
+        councilResult = await stageTimer.time('council', () => council.run({
           runId,
           taskClass,
           input: {
@@ -2625,7 +2685,7 @@ async function runTask() {
             steps: plannerPlan.steps.map(({ stepId, summary, actionKind, dependencies }) => ({ stepId, summary, actionKind, dependencies }))
           },
           evidence: [`workspace:${snapshot.snapshotDigest}`, `plan:${plannerPlan.planDigest}`]
-        });
+        }));
         const selectedProposalId = councilResult.verdict.selectedProposalIds?.[0];
         const orderedProposals = [...(Array.isArray(councilResult.proposals) ? councilResult.proposals : [])]
           .sort((left, right) => (left.proposalId === selectedProposalId ? -1 : right.proposalId === selectedProposalId ? 1 : 0));
@@ -3065,7 +3125,7 @@ async function runTask() {
       initialActions: resumedActions,
       initialContext: resumedActions.length ? createRecoveryContext({ status: priorVerification?.status ?? 'UNKNOWN', summary: 'Resume remaining work with prior actual tool observations; completed file writes were checked against current source digests' },
         { previousActions: resumedActions }) : undefined,
-      execute: async ({ attempt, recovery, previousActions = [] }) => {
+      execute: stageTimer.wrap('execution', async ({ attempt, recovery, previousActions = [] }) => {
         const verificationActions = [];
         const recoveryText = recovery
           ? [
@@ -3150,9 +3210,29 @@ async function runTask() {
             // Phase-1 only answers inert probes, but it is the Phase-2
             // side-effect bridge and must stay blocked in READ_ONLY.
             const toolReadOnly = call.toolPolicyFacts?.readOnly === true && call.name !== 'kernel.host_request';
-            const previousReadonlyObservation = decisionEngine.enabled
+            // Hard READ_ONLY BLOCK is evaluated first and always wins.
+            const hardModeBlock = mode === EXECUTION_MODES.READ_ONLY && !toolReadOnly
+              ? {
+                  decision: 'BLOCK', confidence: 1, source: 'rule', fallbackUsed: false,
+                  reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE', decisionType: 'ACTION_GATE'
+                }
+              : undefined;
+            // DDA_JEV_READONLY_FAST_PATH (default OFF): strict allowlist of
+            // in-workspace read-only inspection tools skips the Jev
+            // round-trip and Jev-only evidence collection. kernel.session_*,
+            // kernel.host_request, side effects and opaque paths keep the gate.
+            const fastPathDecision = hardModeBlock ? undefined : readonlyFastPathDecision({
+              enabled: decisionEngine.enabled && decisionConfig?.readonlyFastPathEnabled === true,
+              name: call.name,
+              registered: call.toolPolicyFacts?.registered === true,
+              toolReadOnly,
+              request: call.requestSummary,
+              proposedInputClaim: call.proposedInputClaim
+            });
+            const consultJev = decisionEngine.enabled && !fastPathDecision;
+            const previousReadonlyObservation = consultJev
               ? readonlyRegistryObservation([...resumedReadonlyEvents, ...await listDurableRunEvents()]) : undefined;
-            const workspaceEvidence = decisionEngine.enabled ? await toolWorkspaceDecisionEvidence({
+            const workspaceEvidence = consultJev ? await toolWorkspaceDecisionEvidence({
               workspace, snapshot, name: call.name, proposedInputClaim: call.proposedInputClaim
             }) : [];
             const processIntentClaim = requestedProcessDecisionClaim(call.proposedProcessIntent);
@@ -3193,13 +3273,10 @@ async function runTask() {
                 toolReadOnly,
                 action: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}), stepId: step.stepId, attempt }
               },
-              hardDecision: mode === EXECUTION_MODES.READ_ONLY && !toolReadOnly
-                ? {
-                    decision: 'BLOCK', confidence: 1, source: 'rule', fallbackUsed: false,
-                    reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE', decisionType: 'ACTION_GATE'
-                  }
-                : undefined
+              hardDecision: hardModeBlock ?? fastPathDecision
             });
+            const fastPathTaken = toolGate.reasonCode === READONLY_FAST_PATH_REASON && Boolean(fastPathDecision);
+            if (fastPathTaken) emitEvent('jev.action_gate_skipped', { id: call.id, name: call.name, reasonCode: READONLY_FAST_PATH_REASON });
             // Persist a genuine mid-task REQUIRE_APPROVAL (a real Jev opinion,
             // not the conservative rule fallback) keyed by tool-call id and
             // argument hash, so the lease provider and approval path can require
@@ -3218,7 +3295,9 @@ async function runTask() {
               actionKind: call.name,
               parentDecisionIds: activeActionParentDecisionIds,
               operationId: `operation-${step.stepId}-${attempt}-${call.id}`,
-              summary: `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+              summary: fastPathTaken
+                ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
+                : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -3243,7 +3322,7 @@ async function runTask() {
               ],
               selectedOptionId: toolGate.decision === 'ALLOW' ? `tool-${call.id}-selected` : `tool-${call.id}-no-tool`,
               reasonCodes: [toolGate.reasonCode ?? 'JEV_ACTION_GATE'],
-              selectionCriteria: ['evidence-backed-jev-action-gate']
+              selectionCriteria: [fastPathTaken ? 'readonly-fast-path-rule' : 'evidence-backed-jev-action-gate']
             });
             verificationActions.push({
               id: call.id,
@@ -3526,8 +3605,8 @@ async function runTask() {
             })
           : await root.taskRunner.run({ ...executorOptions, signal: taskAbortController.signal });
         return { ...result, actions: verificationActions };
-      },
-      verify: async ({ attempt, result, previousActions }) => {
+      }),
+      verify: stageTimer.wrap('verification', async ({ attempt, result, previousActions }) => {
         if (coordinator.terminal) {
           logger.warn('verifier skipped after terminal transition | runId=' + runId + ' | state=' + coordinator.state + ' | attempt=' + attempt);
           return {
@@ -3582,7 +3661,7 @@ async function runTask() {
             source: `model-answer-${attempt}`, confidence: 0.2 }
         ];
         const ruleVerificationStatus = verification.status;
-        const behaviorDecision = await decisionEngine.judgeVerification({
+        const behaviorDecision = await stageTimer.time('verifyBehavior', () => decisionEngine.judgeVerification({
           signal: taskAbortController.signal,
           ruleStatus: verification.status,
           state: {
@@ -3594,7 +3673,7 @@ async function runTask() {
             requirements: [{ id: `requirement-${step.stepId}`, description: step.summary, status: verification.status === 'PASS' ? 'supported' : 'unknown' }]
           },
           evidence: behaviorEvidence
-        });
+        }));
         const semanticStatus = behaviorDecision.decision;
         semanticVerifierTurn = {
           verdict: {
@@ -3668,7 +3747,7 @@ async function runTask() {
         };
         let decisionLayerResult;
         try {
-          decisionLayerResult = await decisionEngine.decide({ ...decisionState, signal: taskAbortController.signal });
+          decisionLayerResult = await stageTimer.time('decisionLayer', () => decisionEngine.decide({ ...decisionState, signal: taskAbortController.signal }));
         } catch (error) {
           logger.warn(`decision layer degraded | runId=${runId} | step=${step.stepId} | error=${error?.code ?? error?.message ?? error}`);
           decisionLayerResult = {
@@ -3849,8 +3928,8 @@ async function runTask() {
         });
         emitEvent('harness.progress', harnessProgress.snapshot());
         return verification;
-      },
-      diagnose: async ({ attempt, report, previousActions }) => {
+      }),
+      diagnose: stageTimer.wrap('recovery', async ({ attempt, report, previousActions }) => {
         await saveThreadCheckpoint('DIAGNOSING', {
           blockers: report.failureCodes ?? [],
           pendingActions: ['diagnose verifier result before recovery'],
@@ -4145,7 +4224,7 @@ async function runTask() {
           diagnosisDecisionId: diagnosisDecision.decisionId,
           recoveryDecisionId: recoveryDecision.decisionId
         };
-      },
+      }),
       onPhase: async ({ phase, attempt, report, recovery }) => {
         if (phase === 'VERIFYING_RETRY') {
           await coordinator.recordEventAndFlush('VerificationRetryStarted', { attempt, status: report.status, reason: 'TRANSIENT_VERIFICATION_PROVIDER_FAILURE', replayExecutor: false });
@@ -4494,7 +4573,12 @@ async function runTask() {
         enforce: decisionEngine?.enforce ?? false,
         configured: decisionExplicitlyConfigured && (decisionConfig?.enabled ?? false),
         evaluations: decisionLayerEvaluations,
-        last: decisionEngine?.summary?.()
+        last: decisionEngine?.summary?.(),
+        metrics: {
+          jev: decisionEngine?.metrics?.() ?? { byKind: {}, totals: {} },
+          stages: stageTimer.summary(),
+          ...(planTierSelection ? { planTier: planTierSelection } : {})
+        }
       },
       profiles: {
         store: profilePath ? 'PERSISTED' : 'MEMORY_ONLY',

@@ -95,7 +95,7 @@ const ROLE_BINDING_KEYS = new Set(['selector', 'modelId', 'allowList', 'required
 const CANDIDATE_BINDING_KEYS = new Set(['bindingId', 'modelId', 'expectedCost', 'expectedLatencyMs', 'expectedTokens']);
 const FANOUT_BUDGET_KEYS = new Set(['maxCandidates', 'maxConcurrency', 'maxCost', 'maxTokens']);
 const VERIFIER_KEYS = new Set(['criteria', 'repetitions', 'maxComparisons', 'pivots', 'seed', 'maxPromptChars', 'passThreshold', 'failThreshold']);
-const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'verificationTimeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']);
+const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'verificationTimeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled']);
 const MODEL_ENTRY_KEYS = new Set(['id', 'modelId', 'provider', 'protocol', 'model', 'baseURL', 'endpoint', 'apiKeyEnv', 'headers', 'sessionHeader', 'capabilities', 'roles', 'costPer1kTokens', 'latencyMs', 'state', 'version']);
 
 const clone = (value) => structuredClone(value);
@@ -288,7 +288,7 @@ const validateDecisionConfig = (input) => {
   for (const key of Object.keys(input)) {
     if (!DECISION_KEYS.has(key)) throw new Error(`MODEL_CONFIG_UNKNOWN_FIELD:decision.${key}`);
   }
-  for (const key of ['enabled', 'enforce', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled']) {
+  for (const key of ['enabled', 'enforce', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled']) {
     if (input[key] !== undefined && typeof input[key] !== 'boolean') {
       throw new Error(`MODEL_CONFIG_INVALID_FIELD:decision.${key}`);
     }
@@ -323,6 +323,8 @@ const validateDecisionConfig = (input) => {
     ...(input.diagnosisEnabled === undefined ? {} : { diagnosisEnabled: input.diagnosisEnabled })
     ,...(input.recoveryDirectionEnabled === undefined ? {} : { recoveryDirectionEnabled: input.recoveryDirectionEnabled })
     ,...(input.contextPackEnabled === undefined ? {} : { contextPackEnabled: input.contextPackEnabled })
+    ,...(input.readonlyFastPathEnabled === undefined ? {} : { readonlyFastPathEnabled: input.readonlyFastPathEnabled })
+    ,...(input.planTierEnabled === undefined ? {} : { planTierEnabled: input.planTierEnabled })
   };
 };
 
@@ -557,6 +559,9 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
     planReviewEnabled: featureFlag('DDA_JEV_PLAN_REVIEW_ENABLED', 'planReviewEnabled'),
     diagnosisEnabled: featureFlag('DDA_JEV_DIAGNOSIS_ENABLED', 'diagnosisEnabled'),
     recoveryDirectionEnabled: featureFlag('DDA_JEV_RECOVERY_DIRECTION_ENABLED', 'recoveryDirectionEnabled'),
-    contextPackEnabled: featureFlag('DDA_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled')
+    contextPackEnabled: featureFlag('DDA_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled'),
+    // Speed MVP (default OFF). See docs/JEV_SPEED_MVP.md.
+    readonlyFastPathEnabled: featureFlag('DDA_JEV_READONLY_FAST_PATH', 'readonlyFastPathEnabled'),
+    planTierEnabled: featureFlag('DDA_JEV_PLAN_TIER_ENABLED', 'planTierEnabled')
   });
 };

@@ -24,6 +24,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(HERE, '../..');
 export const LINUX_CLI_ROOT = resolve(HERE, '..');
 export const RUNTIME_ROOT = join(REPO_ROOT, 'runtime');
+export const PACKAGES_ROOT = join(REPO_ROOT, 'packages');
+// Extracted harness packages the bundled runtime depends on at runtime. They
+// are dependency-free (node built-ins only) and ship as plain source trees.
+export const HARNESS_PACKAGES = Object.freeze(['harness-model', 'harness-core']);
 
 const WRAPPER = `#!/bin/sh
 # dda launcher: run the bundled Node entry with the host Node (>=24 required).
@@ -60,6 +64,14 @@ export async function stageArtifact({ stageDir, linkNodeModules = false } = {}) 
 
   await copyTree(join(RUNTIME_ROOT, 'src'), join(stageDir, 'runtime', 'src'));
   await copyTree(join(RUNTIME_ROOT, 'package.json'), join(stageDir, 'runtime', 'package.json'));
+
+  // The runtime imports the extracted harness packages via `../../packages/...`,
+  // so they must ship alongside `runtime/` with the same relative layout or the
+  // bundled entry fails module resolution at startup.
+  for (const pkg of HARNESS_PACKAGES) {
+    await copyTree(join(PACKAGES_ROOT, pkg, 'src'), join(stageDir, 'packages', pkg, 'src'));
+    await copyTree(join(PACKAGES_ROOT, pkg, 'package.json'), join(stageDir, 'packages', pkg, 'package.json'));
+  }
 
   const runtimeModules = join(RUNTIME_ROOT, 'node_modules');
   try {

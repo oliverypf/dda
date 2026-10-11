@@ -155,6 +155,18 @@ They only select from bounded candidates;
 the router, recovery controller, safety checks, and state machine remain
 authoritative.
 
+The decision engine is resolved once, from the file-backed `decision` block and
+the `HMCODEX_JEV_*` overrides, before task classification, so `CLASSIFY_TASK`,
+`SELECT_ROUTE`, and `SELECT_TOPOLOGY` all consult the same opt-in engine. These
+three stages default to the deterministic rules and are marked `RULE_FALLBACK`
+in Decision Trace until opted in. The migration is still partial, not complete:
+`SELECT_ROUTE` only lets Jev tighten an already safety-checked route to
+`BLOCKED` (fail-closed) and never widens it; the rule classifier still emits
+only `inspect | modify | test | unknown`, so the `diagnose` task class never
+occurs and the `DIAGNOSE_PROBE_RECOVER` topology candidate is currently
+unreachable; and a rule-path topology choice is not yet written as a
+`SELECT_TOPOLOGY` decision.
+
 Provider prompt caching uses deterministic tool definitions, a stable hashed
 workspace/model/role routing key, and an append-only request prefix. It never
 reuses a prior model answer or execution result. OpenAI Responses and Chat

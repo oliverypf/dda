@@ -1,7 +1,7 @@
 # Linux CLI 命令与输出契约
 
 版本：v1.0
-状态：Linux 上已实现并有端到端测试（含 CONTROLLED 审批的 deny / jsonl / prompt）；Windows / 鸿蒙未做真机验证；安装包未做
+状态：Linux 上已实现并有端到端测试（含 CONTROLLED 审批的 deny / jsonl / prompt）；启动强制 Node.js >= 24，低版本以 `DEPENDENCY_ERROR`（退出码 10）干净失败；超时写入 `UNKNOWN` 恢复记录、无头 CLI 遇到无法处理的暂停/未知状态事件返回 `PROTOCOL_ERROR` / `PAUSED_UNSUPPORTED`；已交付自包含 tar.gz 打包起步件（见实施计划 L4），deb / AppImage / npm registry 包未做；Windows / 鸿蒙未做真机冒烟（on-device smoke）
 前提：Linux 终端程序、无图形界面、复用现有 runtime
 
 ## 1. 契约原则
@@ -261,6 +261,11 @@ CLI 退出码必须稳定，具体 shell 映射如下：
 - 不使用同一个 Lease 自动重试；
 - recovery 负责收敛孤立状态。
 
+实现：超时后 CLI 输出 `TASK_RESULT_UNKNOWN`（`state: UNKNOWN`），并在数据目录写入
+`cli-unknown-outcomes.json` 一条 `UNKNOWN` 记录；`dda recovery` 会把这些记录作为
+`cliUnknownOutcomes` 一并返回，便于对账。SIGINT/SIGTERM 中断后若 runtime 没来得及
+记录取消终态，CLI 会补写一条 `CANCELLED` 记录，保证取消状态不被跳过。
+
 ## 8. Approval 输入契约
 
 JSONL 审批输入格式：
@@ -306,4 +311,10 @@ JSONL 客户端必须：
 - 对不理解且影响状态的事件返回 `PROTOCOL_ERROR` 或进入 `PAUSED_UNSUPPORTED`；
 - 不假设事件顺序之外的隐含状态；
 - 不修改 runtime event 的字段名和 digest。
+
+实现：所有未识别 `kind` 的事件仍原样透传（JSONL）或以通用行显示（human），不丢弃。
+在此之上，保守判定“影响状态且无法处理”的事件：出现暂停/挂起信号（`kind` 或 payload
+state 命中 `paus|suspend|awaiting_input|needs_input`）时返回 `PAUSED_UNSUPPORTED`；
+出现从未见过的 `run.*` 生命周期 `kind` 时返回 `PROTOCOL_ERROR`。两者都归入退出码 8，
+fail-closed，不会被当成成功终态。
 

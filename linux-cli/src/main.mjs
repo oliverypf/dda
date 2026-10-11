@@ -11,6 +11,9 @@ import { describeApproval } from './approval.mjs';
 import { EXIT, errorResult, exitCodeForError, messageForCode } from './exit-codes.mjs';
 import { migrateDataDirectory } from './migrate.mjs';
 import { parseCli } from './parse-args.mjs';
+import { classifyStatefulEvent } from './event-classification.mjs';
+import { checkNodeVersion } from './node-check.mjs';
+import { ledgerPath, readOutcomeLedger, recordUnknownOutcome } from './outcome-ledger.mjs';
 import { humanEventLine, isRuntimeEvent } from './render.mjs';
 import { runRuntimeCommand } from './runtime-bridge.mjs';
 import { resolveWorkspace } from './workspace.mjs';
@@ -159,6 +162,18 @@ export async function main(argv, io = {}) {
   });
   const emitJson = (value) => writeJson(stdout, value);
 
+  // The runtime child loads node:sqlite, so an older Node fails deep inside
+  // the child with an opaque builtin-module error. Stop at startup with a
+  // DEPENDENCY_ERROR that names the real requirement.
+  const node = checkNodeVersion(io.nodeVersion ?? process.version);
+  if (!node.ok) {
+    const nodeFormat = argv?.includes?.('--format') && argv[argv.indexOf('--format') + 1] === 'jsonl' ? 'jsonl'
+      : (isTTY ? 'human' : 'jsonl');
+    if (nodeFormat === 'jsonl') emitJson(errorResult('DEPENDENCY_ERROR', { detected: node.detected, required: node.required }));
+    else stderr.write(`错误  DEPENDENCY_ERROR  ${messageForCode('DEPENDENCY_ERROR')}（当前 ${node.detected}，需要 ${node.required}）\n`);
+    return EXIT.DEPENDENCY_ERROR;
+  }
+
   let parsed;
   try {
     parsed = parseCli(argv);
@@ -203,6 +218,7 @@ export async function main(argv, io = {}) {
   };
   const paths = createPlatformPaths(pathEnv);
   if (!paths.dataDir() || !paths.configDir()) return reportError('STORAGE_ERROR');
+  const outcomeLedger = ledgerPath(paths.dataDir());
 
   // Directory setup creates dataDir/plugins. That must not happen before
   // migrate-data, or a fresh target is reported as TARGET_NONEMPTY.
@@ -317,6 +333,10 @@ export async function main(argv, io = {}) {
   // A CONTROLLED task that fails after a declined or expired approval exits
   // with the contract's approval code (5), not a generic runtime error.
   let approvalDeclined = false;
+  // Track whether the runtime recorded a cancelled terminal state, and whether
+  // it emitted an event this headless CLI cannot interpret (fail closed).
+  let observedCancelled = false;
+  let unsupportedEvent;
   const policy = executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY';
   try {
     const outcome = await runRuntimeCommand({
@@ -342,6 +362,13 @@ export async function main(argv, io = {}) {
           if (seen.has(key)) return;
           seen.add(key);
           if (event.kind === 'approval.resolved' && event.payload?.state && event.payload.state !== 'APPROVED') approvalDeclined = true;
+          if (event.kind === 'run.cancelled' || (event.kind === 'run.state_changed' && event.payload?.state === 'CANCELLED')) observedCancelled = true;
+          // Unknown kinds are still preserved and shown below; we only remember
+          // that a state-affecting one appeared so the run fails closed.
+          if (!unsupportedEvent) {
+            const classification = classifyStatefulEvent(event);
+            if (classification.unsupported) unsupportedEvent = classification;
+          }
           if (format === 'jsonl') emitJson(event);
           else if (!parsed.options.quiet && event.kind !== 'runtime.heartbeat') stderr.write(`${humanEventLine(event)}\n`);
           if (event.kind === 'approval.requested' && approvalMode === 'prompt') stderr.write(`${describeApproval(event)}\n`);
@@ -359,12 +386,34 @@ export async function main(argv, io = {}) {
       }
     });
     if (outcome.timedOut) {
+      // A CLI timeout does not mean the action was cancelled; the outcome is
+      // unknown. Leave a durable marker so a later `recovery` can see it.
+      await recordUnknownOutcome(outcomeLedger, {
+        state: 'UNKNOWN',
+        reason: 'CLI_TIMEOUT',
+        runId: outcome.runId,
+        command: parsed.command,
+        ...(parsed.options.timeoutMs ? { timeoutMs: Number(parsed.options.timeoutMs) } : {})
+      }).catch(() => undefined);
       const unknown = errorResult('TASK_RESULT_UNKNOWN', { runId: outcome.runId, state: 'UNKNOWN' });
       if (format === 'jsonl') emitJson(unknown);
       else stderr.write(`${unknown.error.message}\n`);
       return EXIT.RUNTIME_ERROR;
     }
-    if (cancelSignal) return cancelSignal === 'SIGINT' ? EXIT.SIGINT : EXIT.CANCELLED;
+    if (cancelSignal) {
+      // Keep the cancelled terminal state visible to recovery even when the
+      // runtime was interrupted before it could record its own.
+      if (!observedCancelled) {
+        await recordUnknownOutcome(outcomeLedger, {
+          state: 'CANCELLED',
+          reason: `${cancelSignal}_NO_TERMINAL`,
+          runId: active.runId,
+          command: parsed.command
+        }).catch(() => undefined);
+      }
+      return cancelSignal === 'SIGINT' ? EXIT.SIGINT : EXIT.CANCELLED;
+    }
+    if (unsupportedEvent) return reportError(unsupportedEvent.code, { runId: outcome.runId });
     if (outcome.protocolError) return reportError('PROTOCOL_ERROR', { runId: outcome.runId });
     const result = finalResult ?? outcome.objects.find((item) => !isRuntimeEvent(item));
     if (!result) {
@@ -383,6 +432,15 @@ export async function main(argv, io = {}) {
       const payload = supportInfo(result, paths, policy, host, await runtimePackageVersion());
       if (format === 'jsonl') emitJson(payload);
       else stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return EXIT.SUCCESS;
+    }
+    if (parsed.command === 'recovery') {
+      // Surface the CLI's own timeout/interruption markers alongside the
+      // runtime reconciliation so an uncertain run is not lost.
+      const cliUnknownOutcomes = await readOutcomeLedger(outcomeLedger).catch(() => []);
+      const merged = { ...result, cliUnknownOutcomes, cliUnknownOutcomeCount: cliUnknownOutcomes.length };
+      if (format === 'jsonl') emitJson(merged);
+      else stdout.write(`恢复完成  reconciled=${merged.reconciled ?? 0}  cliUnknownOutcomes=${cliUnknownOutcomes.length}\n`);
       return EXIT.SUCCESS;
     }
     if (format === 'human') {

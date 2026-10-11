@@ -28,6 +28,7 @@ const MESSAGES = Object.freeze({
   TASK_RESULT_UNKNOWN: '超时后无法确认动作是否已经执行',
   STORAGE_ERROR: '数据目录不可用',
   PROTOCOL_ERROR: 'runtime 输出不符合 JSONL 契约',
+  PAUSED_UNSUPPORTED: 'runtime 发出无头 CLI 无法处理的暂停或状态事件',
   DEPENDENCY_ERROR: 'Node、runtime 或 provider 依赖不可用。Linux CLI 需要 Node.js 24 或更新版本'
 });
 
@@ -39,7 +40,7 @@ export function exitCodeForError(code) {
   if (/APPROVAL_/u.test(text)) return EXIT.APPROVAL_DENIED;
   if (/SAFETY|LEASE_|POLICY_|FORBIDDEN|SHELL_INTERPRETED/u.test(text)) return EXIT.SAFETY_BLOCKED;
   if (/CANCEL/u.test(text)) return EXIT.CANCELLED;
-  if (/PROTOCOL|SCHEMA_VERSION/u.test(text)) return EXIT.PROTOCOL_ERROR;
+  if (/PROTOCOL|SCHEMA_VERSION|PAUSED_UNSUPPORTED|UNSUPPORTED_EVENT/u.test(text)) return EXIT.PROTOCOL_ERROR;
   if (/STORAGE|SQLITE|DATABASE|ENOSPC|EACCES|EPERM/u.test(text)) return EXIT.STORAGE_ERROR;
   if (/MODULE_NOT_FOUND|DEPENDENCY|ERR_MODULE/u.test(text)) return EXIT.DEPENDENCY_ERROR;
   return EXIT.RUNTIME_ERROR;

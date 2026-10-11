@@ -19,7 +19,7 @@ const RELEASE_CHANNEL_ALIASES = Object.freeze({
 
 const canonicalReleaseChannel = (value) => RELEASE_CHANNEL_ALIASES[value] ?? value;
 
-export function resolveReleaseChannel(value = process.env.HMCODEX_BAKED_RELEASE_CHANNEL ?? process.env.HMCODEX_RELEASE_CHANNEL) {
+export function resolveReleaseChannel(value = process.env.DDA_BAKED_RELEASE_CHANNEL ?? process.env.DDA_RELEASE_CHANNEL) {
   const requested = value ?? DEFAULT_RELEASE_CHANNEL;
   const channel = canonicalReleaseChannel(requested);
   if (!RELEASE_CHANNELS.includes(channel)) throw new Error('RELEASE_CHANNEL_INVALID');

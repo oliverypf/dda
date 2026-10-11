@@ -88,7 +88,7 @@
 | 范围 | 结果 |
 | --- | --- |
 | runtime 默认全量 | 416 tests / 415 pass / 1 skipped（>100k 规模用例按设计跳过）/ 0 fail |
-| runtime >100k 显式规模用例 | `HMCODEX_SCALE_TEST=1`，100,001 事件、101 页分页、verify、投影重建 checksum 一致，约 596s，通过 |
+| runtime >100k 显式规模用例 | `DDA_SCALE_TEST=1`，100,001 事件、101 页分页、verify、投影重建 checksum 一致，约 596s，通过 |
 | desktop vitest | 26/26 |
 | 前端 vite 生产构建 | 通过（构建内） |
 | Rust release 编译 | 通过（构建内） |
@@ -124,7 +124,7 @@
 | 范围 | 结果 |
 | --- | --- |
 | runtime 默认全量 | 418 tests / 417 pass / 1 skipped（>100k 规模用例按设计跳过）/ 0 fail |
-| runtime >100k 显式规模用例 | `HMCODEX_SCALE_TEST=1`，100,001 事件、101 页分页、verify、投影重建 checksum 一致，约 596s，通过 |
+| runtime >100k 显式规模用例 | `DDA_SCALE_TEST=1`，100,001 事件、101 页分页、verify、投影重建 checksum 一致，约 596s，通过 |
 | desktop vitest | 26/26 |
 | cargo fmt --check / desktop 路径测试 | 通过 / 2/2 |
 
@@ -160,7 +160,7 @@
 说明：
 
 - debug 首次构建需要编译 debug 依赖，约 4m33s；之后改前端/资源约 20s。
-- `build:windows:phase1:fast` 仍会烘焙 `WINDOWS_PHASE1_READ_ONLY`，UI 的只读门控与正式包一致；debug 二进制里可能同时看到 `WINDOWS_MVP_PRE_PHASE1` 这个未优化掉的 fallback 字符串，但实际渠道由 `HMCODEX_BAKED_RELEASE_CHANNEL` 决定。
+- `build:windows:phase1:fast` 仍会烘焙 `WINDOWS_PHASE1_READ_ONLY`，UI 的只读门控与正式包一致；debug 二进制里可能同时看到 `WINDOWS_MVP_PRE_PHASE1` 这个未优化掉的 fallback 字符串，但实际渠道由 `DDA_BAKED_RELEASE_CHANNEL` 决定。
 - 实测把 linker 换成 `rust-lld` 会触发全量重编（约 5m26s），不建议用于日常增量构建；默认 MSVC `link.exe` 已足够。
 
 ## 第五次构建（流式渲染 + 任务监督诊断日志）

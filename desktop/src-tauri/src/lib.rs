@@ -255,7 +255,7 @@ fn desktop_log_dir() -> Option<PathBuf> {
 }
 
 fn model_config_path() -> Result<PathBuf, String> {
-    if let Ok(path) = std::env::var("HMCODEX_MODEL_CONFIG") {
+    if let Ok(path) = std::env::var("DDA_MODEL_CONFIG") {
         let path = path.trim();
         if !path.is_empty() {
             return Ok(PathBuf::from(path));
@@ -1443,11 +1443,11 @@ async fn run_model_task(
 }
 
 fn desktop_release_channel() -> Result<String, String> {
-    if let Some(channel) = option_env!("HMCODEX_BAKED_RELEASE_CHANNEL") {
+    if let Some(channel) = option_env!("DDA_BAKED_RELEASE_CHANNEL") {
         validate_release_mode(channel, None)?;
         return Ok(channel.to_string());
     }
-    let channel = match std::env::var("HMCODEX_RELEASE_CHANNEL") {
+    let channel = match std::env::var("DDA_RELEASE_CHANNEL") {
         Ok(value) => value,
         Err(std::env::VarError::NotPresent) => "WINDOWS_MVP_PRE_PHASE1".to_string(),
         Err(_) => return Err("RELEASE_CHANNEL_INVALID".to_string()),
@@ -2026,12 +2026,12 @@ fn runtime_entrypoint(app: &AppHandle) -> Result<PathBuf, String> {
         append_desktop_log(&(String::from("runtime entrypoint=") + &resolved.display().to_string()));
         resolved
     };
-    if let Ok(path) = std::env::var("HMCODEX_RUNTIME_ENTRY") {
+    if let Ok(path) = std::env::var("DDA_RUNTIME_ENTRY") {
         let candidate = PathBuf::from(path);
         if candidate.is_file() {
             return Ok(resolve_entry(candidate));
         }
-        return Err("HMCODEX_RUNTIME_ENTRY 不是有效文件".to_string());
+        return Err("DDA_RUNTIME_ENTRY 不是有效文件".to_string());
     }
     let current = std::env::current_dir().map_err(|error| format!("无法读取当前目录: {error}"))?;
     // Directly launched debug binaries must use their enclosing checkout,
@@ -2075,7 +2075,7 @@ fn runtime_entrypoint(app: &AppHandle) -> Result<PathBuf, String> {
         .into_iter()
         .find(|candidate| candidate.is_file())
         .map(resolve_entry)
-        .ok_or_else(|| "找不到 runtime/src/index.mjs，请设置 HMCODEX_RUNTIME_ENTRY".to_string())
+        .ok_or_else(|| "找不到 runtime/src/index.mjs，请设置 DDA_RUNTIME_ENTRY".to_string())
 }
 
 fn normalize_existing_file(candidate: PathBuf) -> PathBuf {
@@ -2180,14 +2180,14 @@ fn unc_root_and_suffix(path: &Path) -> Option<(String, String)> {
 
 fn runtime_command(runtime: &Path) -> Command {
     let mut command =
-        Command::new(std::env::var_os("HMCODEX_NODE").unwrap_or_else(|| "node".into()));
+        Command::new(std::env::var_os("DDA_NODE").unwrap_or_else(|| "node".into()));
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    if let Some(channel) = option_env!("HMCODEX_BAKED_RELEASE_CHANNEL") {
-        command.env("HMCODEX_BAKED_RELEASE_CHANNEL", channel);
+    if let Some(channel) = option_env!("DDA_BAKED_RELEASE_CHANNEL") {
+        command.env("DDA_BAKED_RELEASE_CHANNEL", channel);
     }
     command.env(
-        "HMCODEX_RELEASE_CHANNEL",
+        "DDA_RELEASE_CHANNEL",
         desktop_release_channel().unwrap_or_else(|_| "INVALID_CHANNEL".to_string()),
     );
     if let Some(parent) = runtime.parent().and_then(Path::parent) {
@@ -2206,7 +2206,7 @@ fn workspace_root_label(root: &Path) -> String {
 }
 
 fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Ok(value) = std::env::var("HMCODEX_WORKSPACE_ROOT") {
+    if let Ok(value) = std::env::var("DDA_WORKSPACE_ROOT") {
         let candidate = PathBuf::from(value);
         if candidate.is_dir() {
             return normalize_existing_dir(candidate)
@@ -2250,7 +2250,7 @@ fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
     fallback.ok_or_else(|| {
-        "找不到默认工作区，请设置 HMCODEX_WORKSPACE_ROOT 或点击“打开项目”".to_string()
+        "找不到默认工作区，请设置 DDA_WORKSPACE_ROOT 或点击“打开项目”".to_string()
     })
 }
 

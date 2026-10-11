@@ -21,8 +21,8 @@ const restoreEnv = (name, value) => {
 
 test('official OpenAI requests use stable role-scoped cache keys and deterministic tools', async (t) => {
   const previousFetch = globalThis.fetch;
-  const previousKey = process.env.HMCODEX_TEST_PROMPT_CACHE_KEY;
-  const previousCache = process.env.HMCODEX_PROMPT_CACHE;
+  const previousKey = process.env.DDA_TEST_PROMPT_CACHE_KEY;
+  const previousCache = process.env.DDA_PROMPT_CACHE;
   const bodies = [];
   globalThis.fetch = async (_url, init) => {
     bodies.push(JSON.parse(init.body));
@@ -31,12 +31,12 @@ test('official OpenAI requests use stable role-scoped cache keys and determinist
       headers: { 'content-type': 'text/event-stream' }
     });
   };
-  process.env.HMCODEX_TEST_PROMPT_CACHE_KEY = 'test-key';
-  delete process.env.HMCODEX_PROMPT_CACHE;
+  process.env.DDA_TEST_PROMPT_CACHE_KEY = 'test-key';
+  delete process.env.DDA_PROMPT_CACHE;
   t.after(() => {
     globalThis.fetch = previousFetch;
-    restoreEnv('HMCODEX_TEST_PROMPT_CACHE_KEY', previousKey);
-    restoreEnv('HMCODEX_PROMPT_CACHE', previousCache);
+    restoreEnv('DDA_TEST_PROMPT_CACHE_KEY', previousKey);
+    restoreEnv('DDA_PROMPT_CACHE', previousCache);
   });
 
   const root = new Context();
@@ -44,7 +44,7 @@ test('official OpenAI requests use stable role-scoped cache keys and determinist
     protocol: 'responses',
     endpoint: 'https://api.openai.com/v1/responses',
     model: 'cache-model',
-    apiKeyEnv: 'HMCODEX_TEST_PROMPT_CACHE_KEY'
+    apiKeyEnv: 'DDA_TEST_PROMPT_CACHE_KEY'
   }));
   t.after(() => root.fiber.dispose());
 
@@ -59,7 +59,7 @@ test('official OpenAI requests use stable role-scoped cache keys and determinist
   assert.notEqual(bodies[2].prompt_cache_key, bodies[0].prompt_cache_key);
   assert.match(bodies[0].prompt_cache_key, /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u);
 
-  process.env.HMCODEX_PROMPT_CACHE = 'off';
+  process.env.DDA_PROMPT_CACHE = 'off';
   await drain(root.modelProvider, { ...base, cacheRole: 'executor', tools });
   assert.equal(Object.hasOwn(bodies[3], 'prompt_cache_key'), false);
   assert.deepEqual(bodies[3].tools.map((tool) => tool.name), ['z_tool', 'a_tool']);
@@ -67,19 +67,19 @@ test('official OpenAI requests use stable role-scoped cache keys and determinist
 
 test('Chat Completions usage streaming can be disabled for incompatible gateways', async (t) => {
   const previousFetch = globalThis.fetch;
-  const previousKey = process.env.HMCODEX_TEST_STREAM_USAGE_KEY;
-  const previousStreamUsage = process.env.HMCODEX_STREAM_USAGE;
+  const previousKey = process.env.DDA_TEST_STREAM_USAGE_KEY;
+  const previousStreamUsage = process.env.DDA_STREAM_USAGE;
   let body;
   globalThis.fetch = async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
   };
-  process.env.HMCODEX_TEST_STREAM_USAGE_KEY = 'test-key';
-  process.env.HMCODEX_STREAM_USAGE = 'off';
+  process.env.DDA_TEST_STREAM_USAGE_KEY = 'test-key';
+  process.env.DDA_STREAM_USAGE = 'off';
   t.after(() => {
     globalThis.fetch = previousFetch;
-    restoreEnv('HMCODEX_TEST_STREAM_USAGE_KEY', previousKey);
-    restoreEnv('HMCODEX_STREAM_USAGE', previousStreamUsage);
+    restoreEnv('DDA_TEST_STREAM_USAGE_KEY', previousKey);
+    restoreEnv('DDA_STREAM_USAGE', previousStreamUsage);
   });
 
   const root = new Context();
@@ -87,7 +87,7 @@ test('Chat Completions usage streaming can be disabled for incompatible gateways
     protocol: 'chat-completions',
     endpoint: 'https://compatible.example.test/v1/chat/completions',
     model: 'gateway-model',
-    apiKeyEnv: 'HMCODEX_TEST_STREAM_USAGE_KEY'
+    apiKeyEnv: 'DDA_TEST_STREAM_USAGE_KEY'
   }));
   t.after(() => root.fiber.dispose());
   await drain(root.modelProvider, { messages: [{ role: 'user', content: 'hello' }] });

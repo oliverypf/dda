@@ -55,11 +55,11 @@ async function fixture(t) {
     XDG_STATE_HOME: join(root, 'state'),
     XDG_CACHE_HOME: join(root, 'cache'),
     DDA_TEST_MODEL_KEY: 'controlled-fixture-key',
-    HMCODEX_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
-    HMCODEX_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
-    HMCODEX_JEV_ENABLED: '0',
-    HMCODEX_LEASE_CAPABILITIES: 'shell.execute',
-    HMCODEX_LEASE_COMMANDS: 'node'
+    DDA_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
+    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
+    DDA_JEV_ENABLED: '0',
+    DDA_LEASE_CAPABILITIES: 'shell.execute',
+    DDA_LEASE_COMMANDS: 'node'
   };
   await mkdir(env.HOME, { recursive: true });
   const args = (mode) => [

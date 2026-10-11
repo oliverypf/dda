@@ -6,8 +6,8 @@ import { createRequire } from 'node:module';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
-const root = resolve(process.env.HMCODEX_UI_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url)));
-const output = resolve(process.env.HMCODEX_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/settings-ui/', import.meta.url)));
+const root = resolve(process.env.DDA_UI_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url)));
+const output = resolve(process.env.DDA_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/settings-ui/', import.meta.url)));
 const server = createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -18,7 +18,7 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404).end(); }
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const browser = await chromium.launch({ headless: true, channel: process.env.HMCODEX_BROWSER_CHANNEL });
+const browser = await chromium.launch({ headless: true, channel: process.env.DDA_BROWSER_CHANNEL });
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.on('pageerror', (error) => errors.push(error.message));

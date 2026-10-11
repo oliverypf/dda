@@ -227,7 +227,7 @@ Rust 已有通用 `run_runtime_json`，runtime CLI 的 `support-bundle` 也已�
 
 
 ### 流式长任务定位与同帧滚动合并
-- ui-execution-test 新增可选 HMCODEX_UI_PROFILE=1：保存CPU profile与Chromium timeline trace；HMCODEX_UI_OUTPUT 支持独立证据目录。默认验收不启用采样，门槛未放宽。
+- ui-execution-test 新增可选 DDA_UI_PROFILE=1：保存CPU profile与Chromium timeline trace；DDA_UI_OUTPUT 支持独立证据目录。默认验收不启用采样，门槛未放宽。
 - 修改前追踪：Layout 56次/573.798ms累计/110.977ms最长；动画帧22次/1374.333ms累计。热点包含followLiveTranscript同步scrollHeight读取。
 - 修改：合并human/tools/shell的自动跟随请求为一次requestAnimationFrame回调，并在执行时重新检查用户是否仍跟随尾部。
 - 修改后追踪：Layout39次/657.296ms累计/112.004ms最长；动画帧29次/773.188ms累计。布局次数减少，但布局总时间未下降，不能宣布优化已解决性能问题。
@@ -328,7 +328,7 @@ Rust 已有通用 `run_runtime_json`，runtime CLI 的 `support-bundle` 也已�
 
 ### 真实 provider 流式续验（2026-09-18）
 - 原 `ui-streaming-test.mjs` 将首个 `STREAMING` 行等待固定为 30 秒；当前 runtime 启动阶段可超过该窗口，先前超时不能证明流式缺失。
-- 测试脚本新增 `--stream-start-timeout-ms` / `HMCODEX_STREAM_START_TIMEOUT_MS`，默认 120000ms；本次当前原生候选使用 120 秒窗口通过：`samples=297`、`maxStreamingLength=2897`、`markerKeptWhileGrowing=297`、终态“只读检查完成”。
+- 测试脚本新增 `--stream-start-timeout-ms` / `DDA_STREAM_START_TIMEOUT_MS`，默认 120000ms；本次当前原生候选使用 120 秒窗口通过：`samples=297`、`maxStreamingLength=2897`、`markerKeptWhileGrowing=297`、终态“只读检查完成”。
 - 这证明当前真实 provider 的增量行会保持同一个 `.app-shell`，流式期间没有重建根节点。仍不能据此宣称长期 p95/SLO、不同 provider、断线中途恢复和超大输出均通过。
 
 

@@ -16,7 +16,7 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404).end(); }
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const browser = await chromium.launch({ headless: true, channel: process.env.HMCODEX_BROWSER_CHANNEL });
+const browser = await chromium.launch({ headless: true, channel: process.env.DDA_BROWSER_CHANNEL });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));

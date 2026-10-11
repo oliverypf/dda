@@ -197,4 +197,4 @@ node desktop/scripts/goal-reconcile-report.mjs --report docs/artifacts/AGENT_GOA
 
 Jev 与模型升级的故障注入用本地服务验证状态链。默认同模型对照关闭 Jev，`--live-jev` 的客户端对照仅给 dda 启用真实 Jev；两种条件分开记录。当前真实同模型对照不能证明低价路由或强模型升级的经济收益，还需实际多模型配置与独立开/关对照。
 
-Jev 客户端现按官方 `/v1/systemone` 与 criteria/instructions schema 请求。除 SDK 连通探测外，真实语言模型加真实 Jev 的失败恢复工作流已完成 2/2 成功验证，20 次决策请求均成功，保留对应运行时源码快照。这个单方小样本证明该快照的实际集成可用，仍不能证明 Jev 比关闭时更快或更省钱。之后新增真实进程中断恢复的改动在当前源码单独验收，旧真实模型结果不自动成为新源码的结果。实际运行时需要显式 decision 配置或 `HMCODEX_JEV_ENABLED`。默认 1200 ms 超时低于首次 SDK 实测 1348 ms，正式启用时应验证任务适用的超时和降级。最新证据与剩余验收见 [进程中断恢复与当前验收](C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_PROCESS_INTERRUPTION_AUDIT_2026-10-07.md)。
+Jev 客户端现按官方 `/v1/systemone` 与 criteria/instructions schema 请求。除 SDK 连通探测外，真实语言模型加真实 Jev 的失败恢复工作流已完成 2/2 成功验证，20 次决策请求均成功，保留对应运行时源码快照。这个单方小样本证明该快照的实际集成可用，仍不能证明 Jev 比关闭时更快或更省钱。之后新增真实进程中断恢复的改动在当前源码单独验收，旧真实模型结果不自动成为新源码的结果。实际运行时需要显式 decision 配置或 `DDA_JEV_ENABLED`。默认 1200 ms 超时低于首次 SDK 实测 1348 ms，正式启用时应验证任务适用的超时和降级。最新证据与剩余验收见 [进程中断恢复与当前验收](C:/Users/User/hmCodex-local/docs/artifacts/AGENT_GOAL_PROCESS_INTERRUPTION_AUDIT_2026-10-07.md)。

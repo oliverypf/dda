@@ -111,7 +111,7 @@ export const startUiModelFixture = async ({ delayMs = 25, seedResumeThread = fal
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-ui-model-fixture-'));
   // Keep Chromium's locked profile files outside the authorized workspace.
   const webViewRoot = await mkdtemp(join(tmpdir(), 'hmcodex-ui-webview-'));
-  const apiKeyEnv = 'HMCODEX_UI_MODEL_FIXTURE_KEY';
+  const apiKeyEnv = 'DDA_UI_MODEL_FIXTURE_KEY';
   const dataRoot = await mkdtemp(join(tmpdir(), 'hmcodex-ui-runtime-data-'));
   const modelConfigPath = join(dataRoot, 'model-config.json');
   const storeRoot = join(dataRoot, 'hmCodex');
@@ -196,11 +196,11 @@ export const startUiModelFixture = async ({ delayMs = 25, seedResumeThread = fal
     workspaceRoot: root,
     statsUrl: `${endpoint.replace(/\/chat\/completions$/u, '')}/stats`,
     env: {
-      HMCODEX_MODEL_CONFIG: modelConfigPath,
-      HMCODEX_DATA_DIR: dataRoot,
-      HMCODEX_WORKSPACE_ROOT: root,
-      HMCODEX_TRAJECTORY_STORE: trajectoryPath,
-      HMCODEX_THREAD_STORE: threadPath,
+      DDA_MODEL_CONFIG: modelConfigPath,
+      DDA_DATA_DIR: dataRoot,
+      DDA_WORKSPACE_ROOT: root,
+      DDA_TRAJECTORY_STORE: trajectoryPath,
+      DDA_THREAD_STORE: threadPath,
       WEBVIEW2_USER_DATA_FOLDER: webViewRoot,
       [apiKeyEnv]: 'fixture-key',
       LOCALAPPDATA: join(dataRoot, 'local-app-data'),

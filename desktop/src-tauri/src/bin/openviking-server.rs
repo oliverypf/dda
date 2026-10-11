@@ -145,7 +145,7 @@ fn parse_args() -> Result<ServerConfig, &'static str> {
         max_memories = positive_usize(value.get("maxMemories"), max_memories, 65536)?;
     }
     let data_dir = data_dir
-        .or_else(|| std::env::var_os("HMCODEX_OPENVIKING_DATA_DIR").map(PathBuf::from))
+        .or_else(|| std::env::var_os("DDA_OPENVIKING_DATA_DIR").map(PathBuf::from))
         .map(Ok)
         .unwrap_or_else(default_data_dir)?;
     Ok(ServerConfig {
@@ -214,7 +214,7 @@ fn valid_peer(value: Option<&str>) -> Result<String, &'static str> {
 }
 
 fn bearer_token() -> Option<String> {
-    std::env::var("HMCODEX_OPENVIKING_API_KEY")
+    std::env::var("DDA_OPENVIKING_API_KEY")
         .or_else(|_| std::env::var("OPENVIKING_API_KEY"))
         .ok()
         .map(|value| value.trim().to_string())
@@ -807,13 +807,13 @@ mod tests {
 
     #[test]
     fn requires_a_non_empty_bearer_token() {
-        std::env::remove_var("HMCODEX_OPENVIKING_API_KEY");
+        std::env::remove_var("DDA_OPENVIKING_API_KEY");
         std::env::remove_var("OPENVIKING_API_KEY");
         assert_eq!(bearer_token(), None);
-        std::env::set_var("HMCODEX_OPENVIKING_API_KEY", "loopback-key");
+        std::env::set_var("DDA_OPENVIKING_API_KEY", "loopback-key");
         assert_eq!(bearer_token(), Some("loopback-key".to_string()));
-        std::env::set_var("HMCODEX_OPENVIKING_API_KEY", " ");
+        std::env::set_var("DDA_OPENVIKING_API_KEY", " ");
         assert_eq!(bearer_token(), None);
-        std::env::remove_var("HMCODEX_OPENVIKING_API_KEY");
+        std::env::remove_var("DDA_OPENVIKING_API_KEY");
     }
 }

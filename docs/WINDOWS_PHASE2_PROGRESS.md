@@ -12,7 +12,7 @@
 - 用户授权后完成**真实提权** NSIS per-machine 生命周期（`phase2-nsis-lifecycle-5-launcher.log` `elevatedExitCode=0`）：6 个步骤全部 `elevated=true`、`ok=true`。upgrade 在既有 build-3 per-machine 安装上就地升级，安装后二进制 `1a80ebd9…`（9,757,184 B）、已安装 runtime `86d3738d…`、installer setup `5f6c80fa…`，其中“已安装二进制不等于 release 产物”成立是因为 Tauri 按 bundle 类型就地打补丁；rollback 先装回上一版再恢复本候选，最终二进制与 upgrade 安装逐字节一致；uninstall 后安装目录与注册表项移除；fresh install 在干净状态下重装并与 upgrade 安装逐字节一致。migration 步骤用已安装 runtime 导入 2,543 条事件，receipts 2,543、tombstones 0、`PRAGMA user_version=1`、channel `WINDOWS_FULL_LOCAL`，`verify` 通过。
 - 证据固化到 [WINDOWS_PHASE2_INSTALL_LIFECYCLE_2026-09-11_R2](artifacts/WINDOWS_PHASE2_INSTALL_LIFECYCLE_2026-09-11_R2)：聚合 `nsis-lifecycle-result.json`（`aggregation.mode=REGENERATED_FROM_STEP_FILES`，逐步骤列出 sha256）加 6 个 step 文件与 6 个日志；`supersedes` 记录它取代 build-3 目录与 r1 阶段目录。
 - W10 证据重生成（`../phase2-w10-evidence-regen-3.log`，`--install-lifecycle=` 指向 R2 聚合）：`install.status=OBSERVED`（已安装二进制 `1a80ebd9…`、runtime `86d3738d…`、uninstaller 摘要）、`install.lifecycle.status=VERIFIED`（required steps install/upgrade/migration/rollback/uninstall 全部 VERIFIED、`elevated=true`、每一步 stepFile 摘要校验通过）；并发、recoverySLO、备份恢复、隐私删除、kill switch、容量演练均 PASS；长运行 `observedMinutes=151`（要求 1440，采样容忍 120 秒）；`releaseDecision` 仍为 `NOT_READY`，四项外部阻断未变。
-- 发布链产物刷新：以**已安装的 build-5 运行时**（`HMCODEX_BAKED_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`）对真实 store 执行 `release-check`，`passed=true`，releaseChannel/sideEffectRejection/eventStore/readModelChecksum/hasRuns/decisionMetrics/privacy/capacity 8 项全 true（`../phase2-release-check-b5.log`）；`release-manifest` 重新生成 manifest/SBOM/plugin lock/model lock/decision，manifest.artifacts 摘要指向 build-5 产物，SBOM 组件数 126、模型锁 15、插件锁 0，decision 仍 `NOT_READY` 且唯一阻断为 `w10Evidence_W10_NOT_READY`。build-4 轮次的同名产物先备份为 `docs/artifacts/backup-2026-09-11-pre-releasecheck-fix/*.build4.json`，未覆盖丢失。
+- 发布链产物刷新：以**已安装的 build-5 运行时**（`DDA_BAKED_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`）对真实 store 执行 `release-check`，`passed=true`，releaseChannel/sideEffectRejection/eventStore/readModelChecksum/hasRuns/decisionMetrics/privacy/capacity 8 项全 true（`../phase2-release-check-b5.log`）；`release-manifest` 重新生成 manifest/SBOM/plugin lock/model lock/decision，manifest.artifacts 摘要指向 build-5 产物，SBOM 组件数 126、模型锁 15、插件锁 0，decision 仍 `NOT_READY` 且唯一阻断为 `w10Evidence_W10_NOT_READY`。build-4 轮次的同名产物先备份为 `docs/artifacts/backup-2026-09-11-pre-releasecheck-fix/*.build4.json`，未覆盖丢失。
 - 本轮未声明全计划完成：24 小时长运行窗口、30 天 retention 日历观察、运维签署的发布决策报告和真实 Windows 工作区观察期仍未满足，G4 保持 `NOT_READY`。
 
 ## 2026-09-11 S2-13 长运行 store 物理身份、插件撤销列表与全量回归复核
@@ -21,7 +21,7 @@
 - 新增 `desktop/scripts/windows-store-identity.mjs`：`describeStorePath` 用 inode/dev 判定物理身份，识别 `redirection.kind=MSIX_PACKAGE_LOCAL_CACHE`，列出其他现存包副本和绕过重定向的 `unredactedProfileAlias`（`\\localhost\C$\...`）；`desktop/scripts/windows-store-identity.test.mjs` 4/4 通过。
 - 新增 `desktop/scripts/harness-store-snapshot.mjs`：一次快照同时给出物理身份、事件/收据/墓碑计数与 `additionalStores`。`longrun-sampler.mjs` 与 `w10-evidence-harness.mjs` 改为复用该快照；W10 harness 新增“evidence record names the physical store file it read”用例，harness 8/8、sampler 3/3、identity 4/4 共 15/15 通过。
 - 最新真实观测（2026-09-11，Task Scheduler `hmCodex Long Run Sampler`，Last Result 0）：真实 profile 文件 `C:\Users\User\AppData\Local\hmCodex\hmcodex.db` 13,221,888 字节、`eventCount=5119`；包本地影子 53,846,016 字节、`eventCount=16035`。W10 证据的 `execution.storeIdentity` 明确记录包内进程实际读取的是包影子（`redirection.kind=MSIX_PACKAGE_LOCAL_CACHE`、`unredactedProfileAlias` 指向真实 profile 文件），sampler 的 `lastSample.additionalStores` 明确记录两个物理副本及其各自计数，两处都不再混淆。
-- S2-10 撤销列表落地：新增 `runtime/src/plugin-revocations.mjs`，支持 `HMCODEX_PLUGIN_REVOCATIONS` 与 `HMCODEX_PLUGIN_REVOCATION_FILE`，条目接受 `sha256:<64hex>`、裸 64 位 hex 或 `<pluginId>@<version>`（JSON 数组或 `{entries:[...]}`）；非法条目抛 `PLUGIN_REVOCATION_LIST_INVALID`，配置文件不可读抛 `PLUGIN_REVOCATION_LIST_UNAVAILABLE`（fail-closed）。`plugin-loader.mjs` 在 `discover` 阶段即拒绝 `PLUGIN_PACKAGE_REVOKED` / `PLUGIN_VERSION_REVOKED`，在 `load` 命中时先 `governance.revoke(...)` 再抛错，活动插件转 `QUARANTINED`，每次操作重新解析列表因此支持运行中撤销。
+- S2-10 撤销列表落地：新增 `runtime/src/plugin-revocations.mjs`，支持 `DDA_PLUGIN_REVOCATIONS` 与 `DDA_PLUGIN_REVOCATION_FILE`，条目接受 `sha256:<64hex>`、裸 64 位 hex 或 `<pluginId>@<version>`（JSON 数组或 `{entries:[...]}`）；非法条目抛 `PLUGIN_REVOCATION_LIST_INVALID`，配置文件不可读抛 `PLUGIN_REVOCATION_LIST_UNAVAILABLE`（fail-closed）。`plugin-loader.mjs` 在 `discover` 阶段即拒绝 `PLUGIN_PACKAGE_REVOKED` / `PLUGIN_VERSION_REVOKED`，在 `load` 命中时先 `governance.revoke(...)` 再抛错，活动插件转 `QUARANTINED`，每次操作重新解析列表因此支持运行中撤销。
 - S2-10 验收复核：`cd runtime && node --test test/plugin-revocation.test.mjs test/dynamic-plugin-runtime.test.mjs test/plugin-context.test.mjs test/plugin-signature.test.mjs` 共 10/10 通过（撤销列表格式与 fail-closed、撤销命中拒绝与隔离、未签名开发插件在发布频道被拒、permission ceiling 交集）。UI 侧 `pluginVersionCopy`/`pluginGrantCopy`/`pluginQuarantineCopy` 展示活跃版本、历史版本与失败码、权限与上限、摘要、状态证据条数以及 quarantine 原因，数据源为持久化 lifecycle snapshot 与 read model。
 - S2-11 复核：`cd runtime && node --test test/continuous-verifier.test.mjs test/model-config.test.mjs test/agent-turns.test.mjs test/read-model-rebuilder.test.mjs` 共 49/49 通过；阈值可配置（`passThreshold` 默认 0.9、`failThreshold` 默认 0.5，非法配置 `VERIFIER_THRESHOLD_INVALID`），映射为 PASS / FAIL / ABSTAIN（`PROCESS_VERIFICATION_UNCERTAIN`），read model projection 暴露 `source` 供 UI 展示证据来源。
 - 改动后全量并行门 `../phase2-parallel-validation-6.log`：`[parallel] SUMMARY total=5 passed=5 failed=0`。runtime 543 项（542 过、0 失败、1 既有 skip）、desktop Vitest 5 文件 34/34、desktop-scripts 通过、TypeScript `tsc --noEmit` exit=0、tauri-rust 23/23 通过。该轮包含 plugin-revocation、harness-store-snapshot 等本轮全部改动，可作为最新全量证据。
@@ -39,7 +39,7 @@
 - 真实缺陷 1（`runtime/src/index.mjs`）：`release-check` 只把 `WINDOWS_PHASE1_READ_ONLY`/`WINDOWS_PHASE1_5_CONTROLLED` 当作发布频道，导致 `WINDOWS_FULL_LOCAL` 安装包对自己的 release-check 判 `releaseChannel:false`（失败现场：`docs/artifacts/WINDOWS_PHASE2_RELEASE_CHECK_FULL_LOCAL_PROBE_2026-09-11.json`）。现改为“除 `WINDOWS_MVP_PRE_PHASE1` 之外的已批准频道即为发布候选”，并在 `runtime/test/release-check.test.mjs` 增加 2 项用例（FULL_LOCAL 通过、pre-phase-1 仍失败）。
 - 真实缺陷 2（`runtime/src/release-manifest.mjs`）：发布供应链的 `controlledChannel` 检查硬编码 `WINDOWS_PHASE1_5_CONTROLLED`，使 FULL_LOCAL 候选在自己的目标频道上被阻断。现抽出 `CONTROLLED_RELEASE_CHANNELS`/`isControlledReleaseChannel` 接受 FULL_LOCAL，并在 `runtime/test/release-manifest.test.mjs` 增加频道门用例。
 - 真实安装生命周期（NSIS per-machine，提权执行，`evidenceClass=REAL_EXECUTION`，host=USER-SNTTJQ3HLT）：`install` exit=0、断言 5/5 通过；`upgrade` exit=0、断言 6/6 通过；`rollback` exit=0、断言 3/3 通过；`uninstall` exit=0、断言 3/3 通过；`migration` 演练把 legacy `trajectory.jsonl`（2,546,688 字节）导入已安装运行时 store，导入 2543 条、store 事件 2543 条、verify 2543 条，`PRAGMA user_version=1`，channel=`WINDOWS_FULL_LOCAL`。聚合证据 `docs/artifacts/WINDOWS_PHASE2_INSTALL_LIFECYCLE_2026-09-11/nsis-lifecycle-result.json`（六个步骤 JSON 与六份日志已从临时目录固化到仓库，只重写路径、内容字节不变）记录六个步骤文件的 sha256，W10 harness 判定 `install.status=OBSERVED`、`missing=[]`、`lifecycle.status=VERIFIED`（install/upgrade/migration/rollback/uninstall 全部 VERIFIED）。
-- 用**已安装**的 FULL_LOCAL 运行时对真实 harness store 执行 release-check（`HMCODEX_BAKED_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`、`--harness-event-store C:\Users\User\AppData\Local\hmCodex\hmcodex.db`）：`passed:true`，8 项检查全为 true；产物 `docs/artifacts/WINDOWS_PHASE2_RELEASE_CHECK_FULL_LOCAL_2026-09-11.json`。
+- 用**已安装**的 FULL_LOCAL 运行时对真实 harness store 执行 release-check（`DDA_BAKED_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`、`--harness-event-store C:\Users\User\AppData\Local\hmCodex\hmcodex.db`）：`passed:true`，8 项检查全为 true；产物 `docs/artifacts/WINDOWS_PHASE2_RELEASE_CHECK_FULL_LOCAL_2026-09-11.json`。
 - 发布供应链产物（同一已安装运行时生成）：`WINDOWS_PHASE2_SBOM.json`（126 个组件，覆盖 runtime 17 + desktop 109）、`WINDOWS_PHASE2_PLUGIN_LOCK.json`、`WINDOWS_PHASE2_MODEL_LOCK.json`（15 个模型）、`WINDOWS_PHASE2_RELEASE_MANIFEST.json`（channel `WINDOWS_FULL_LOCAL`，含 setup/MSI/EXE 三个产物的 sha256）、`WINDOWS_PHASE2_RELEASE_DECISION.json`：`decision=NOT_READY`，阻断项 ["w10Evidence_W10_NOT_READY"]。
 - W10 harness（`desktop/scripts/w10-evidence-harness.mjs`）现在消费真实安装生命周期证据：新增 `LIFECYCLE_REQUIRED_STEPS`、`readInstallLifecycle()`、`--install-lifecycle=` 以及 `INSTALL_LIFECYCLE_EVIDENCE_MISSING/_INCOMPLETE/_INVALID`、`INSTALL_LIFECYCLE_STEP_ASSERTION_FAILED` 阻断码，并校验每个步骤文件的 sha256 与 `elevated=true`。
 - 巡检脚本自身缺陷：v3 脚本在函数定义之前调用 `New-Hash`，使 `upgrade` 步骤的安装包摘要取到 `$null`（与输入包摘要 `1731e0b0…` 无关）；v4 修正求值顺序后 `upgrade` 断言通过。附带事实：Tauri 会按 bundle 类型给 `hmcodex-desktop.exe` 打补丁，已安装 EXE 与 `release/` 下 EXE 不字节相同，因此断言链改为“安装包摘要 + 已安装 runtime 与构建产物字节一致 + 重复安装的 EXE 身份一致”。
@@ -129,16 +129,16 @@
 
 ## 2026-09-10 S2-09 OpenViking 本地运行时降级证据
 
-- Tauri 宿主现在在托管 sidecar 启动前生成或绑定 64 hex loopback Bearer key，并通过 `HMCODEX_OPENVIKING_API_KEY_ENV=HMCODEX_OPENVIKING_API_KEY` 传给 runtime；sidecar API 对缺少/错误 Bearer 的请求返回 401，`/ready` 仍保留为无认证健康探针。已覆盖 loopback-only URL、有界请求/响应、和 401/403/503 边界。
+- Tauri 宿主现在在托管 sidecar 启动前生成或绑定 64 hex loopback Bearer key，并通过 `DDA_OPENVIKING_API_KEY_ENV=DDA_OPENVIKING_API_KEY` 传给 runtime；sidecar API 对缺少/错误 Bearer 的请求返回 401，`/ready` 仍保留为无认证健康探针。已覆盖 loopback-only URL、有界请求/响应、和 401/403/503 边界。
 - 索引损坏故障注入：`node scripts/openviking-corruption-e2e.mjs` 写入非法 JSON 后启动真实 sidecar，返回 `{"status":"ok","result":{"ready":true,"degraded":true}}`，并将原文件备份为 `openviking-store.corrupt-1789009300217.json`。
 - release sidecar 与 supervisor 端到端：`node scripts/openviking-server-e2e.mjs` 通过 health/recall/record/used/commit；`node scripts/openviking-supervisor-e2e.mjs` 通过故障后换 PID 重启和 supervisor 退出清理。
 - Rust sidecar/bin 回归：`cargo test --features sidecar` 23 项通过（lib 20、server bin 3）。
 
 ## 2026-09-10 S2-10/S2-13（原 S2-12）供应链与全本地构建门
 
-- 动态插件 discover 现在在 `WINDOWS_PHASE1_5_CONTROLLED` / `WINDOWS_FULL_LOCAL` 下要求 Ed25519 签名；签名必须绑定 manifest digest、公钥必须命中 `HMCODEX_PLUGIN_TRUST_KEY(S)`，否则分别返回 `PLUGIN_SIGNATURE_REQUIRED`、`PLUGIN_SIGNATURE_TRUST_UNAVAILABLE` 或 `PLUGIN_SIGNATURE_INVALID`。
+- 动态插件 discover 现在在 `WINDOWS_PHASE1_5_CONTROLLED` / `WINDOWS_FULL_LOCAL` 下要求 Ed25519 签名；签名必须绑定 manifest digest、公钥必须命中 `DDA_PLUGIN_TRUST_KEY(S)`，否则分别返回 `PLUGIN_SIGNATURE_REQUIRED`、`PLUGIN_SIGNATURE_TRUST_UNAVAILABLE` 或 `PLUGIN_SIGNATURE_INVALID`。
 - 新增 `governance.revoke()`，ACTIVE/ENABLED/DEGRADED 记录命中撤销会转成 `QUARANTINED` 并保留 reason/revocation 元数据，`assertLoadable` 因此 fail-closed。
-- 新增 `npm run build:windows:full-local`，和 controlled 构建一样删除可污染前端构建的 NAPI 覆盖变量，并在构建期固定 `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`。
+- 新增 `npm run build:windows:full-local`，和 controlled 构建一样删除可污染前端构建的 NAPI 覆盖变量，并在构建期固定 `DDA_BUILD_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL`。
 - 验证：`node --test test/plugin-signature.test.mjs` 2/2；`node --test test/plugin-signature.test.mjs test/dynamic-plugin-runtime.test.mjs test/plugin-cli.test.mjs` 9/9；`node --test scripts/build-controlled.test.mjs` 3/3。
 
 ## 2026-09-10 S2-11 Memory 删除与不可训练边界
@@ -155,7 +155,7 @@
 ## 2026-09-10 S2-08 受控链路与安装包发布验收
 
 - Runtime read-model projection 现在识别 `ActionRequested`，不再把等待审批的受控 run 误投影为 `PAUSED_UNSUPPORTED`；`PROJECTION_VERSION` 提升到 `6`，并新增“controlled `ActionRequested` 不暂停 run projection”回归测试。
-- `desktop/scripts/ui-security-test.mjs` 使用套件级 `HMCODEX_DATA_DIR` 隔离 threads、role contexts、recovery 和事件投影，避免历史全局数据造成跨场景审批状态串扰。S04 的语义 Verifier 证据等待和 S06 断线失败证据等待提高到 180 秒；S04 在任务已自然终态时不再强制点击取消按钮。
+- `desktop/scripts/ui-security-test.mjs` 使用套件级 `DDA_DATA_DIR` 隔离 threads、role contexts、recovery 和事件投影，避免历史全局数据造成跨场景审批状态串扰。S04 的语义 Verifier 证据等待和 S06 断线失败证据等待提高到 180 秒；S04 在任务已自然终态时不再强制点击取消按钮。
 - 完成 x64 受控发布构建，产物：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/hmcodex-desktop.exe`（SHA-256 `2F8C7D33CBF80CD255C44C9110BC711165D5A3F6FD1B7849061868D5250CB6F6`）、MSI（`7F2DED4CA9FE9AA90A13E711B024762BB311C00DA908A62E6326B9BB7E077F10`）、NSIS（`EBCDF1C2B476BE22FE0760EE80BE1D080B1FAC0640639F854101D6CA5EB6101F`）。
 - 受控 UI 安全套件 6/6 通过：调试 EXE、release EXE、已安装 MSI EXE 分别验证受控门控、非法网络 JSON、审批拒绝、审批批准、副作用超时和断线恢复。release 与已安装 MSI 场景中，S04 显示 `语义 Verifier 证据`、独立 `verifier-fixture` 身份和 PASS verdict，S04 文件内容保持 `controlled-ui-ok`。
 - 受控 release EXE 的 UI 功能回归 7 过、0 失败、6 按条件跳过；MSI 复装后的已安装 EXE 再次通过同一 UI 功能回归。
@@ -167,7 +167,7 @@
 
 - 新增 `RestrictedNetworkAdapter`（`runtime/src/restricted-network-adapter.mjs`）：显式 host/port/scheme/method/path 目标、默认仅 HTTPS、literal IP 与 DNS 解析结果的私网/metadata 地址拒绝、`redirect: manual` 且重定向一律 fail-closed（一次性 lease 无法授权下一跳）、响应字节/字符上限截断、超时与外部取消、输出脱敏并仅返回 `targetDigest`。
 - `RuntimeSafetyMonitor` 新增 `network_request` 动作与 `network.request` capability；lease 绑定显式 networkTargets，monitor 配置与 lease 双重 allowlist，任一不匹配返回 `SAFETY_NETWORK_NOT_ALLOWED`；新增 `SAFETY_NETWORK_*` 错误码与 `isPrivateNetworkAddress`。
-- `controlled-tools` 注册 `network.request` 模型工具（无 lease 拒绝、一次审批一个 lease）；`createExplicitLeaseProvider` 支持 networkTargets；runtime 受控任务通过 `--network-targets`/`HMCODEX_NETWORK_TARGETS` 显式配置，缺省关闭；审批 risk=HIGH，capability snapshot 记录 networkTargets。
+- `controlled-tools` 注册 `network.request` 模型工具（无 lease 拒绝、一次审批一个 lease）；`createExplicitLeaseProvider` 支持 networkTargets；runtime 受控任务通过 `--network-targets`/`DDA_NETWORK_TARGETS` 显式配置，缺省关闭；审批 risk=HIGH，capability snapshot 记录 networkTargets。
 - 契约同步：`contracts/v1/action-intent.schema.json` requestSummary 增加 host/port/scheme/method；`execution-state-store` requestSummary 记录网络目标字段，保持 intent/lease 事件链完整。
 - 测试：新增 `runtime/test/network-adapter.test.mjs`（无 lease 拒绝、一次性消费、scope/scheme/method/IP 拒绝、DNS 私网解析拒绝、重定向阻断、响应截断、超时、工具链 lease 闭环）。
 - 验证：`cd desktop && npm run test:all:parallel` 全部通过（runtime 437 项 436 过 1 skip 既有、desktop 26 项、typescript、tauri-rust）。
@@ -201,9 +201,9 @@
 
 ## 2026-09-09 S2-01 构建期 Channel 锁定
 
-- Runtime release channel 解析现在优先使用 `HMCODEX_BAKED_RELEASE_CHANNEL`；存在该构建期事实时，`HMCODEX_RELEASE_CHANNEL` 不能把受控安装包降级为只读或改成非法 channel。
-- Tauri runtime 子进程现在把编译期 `HMCODEX_BAKED_RELEASE_CHANNEL` 传递给 Node runtime；开发构建没有该事实时仍保持原行为。
-- 新增端到端拒绝用例：同时提供 `HMCODEX_BAKED_RELEASE_CHANNEL=WINDOWS_PHASE1_5_CONTROLLED` 和 `HMCODEX_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` 时，runtime health 仍报告 controlled channel。
+- Runtime release channel 解析现在优先使用 `DDA_BAKED_RELEASE_CHANNEL`；存在该构建期事实时，`DDA_RELEASE_CHANNEL` 不能把受控安装包降级为只读或改成非法 channel。
+- Tauri runtime 子进程现在把编译期 `DDA_BAKED_RELEASE_CHANNEL` 传递给 Node runtime；开发构建没有该事实时仍保持原行为。
+- 新增端到端拒绝用例：同时提供 `DDA_BAKED_RELEASE_CHANNEL=WINDOWS_PHASE1_5_CONTROLLED` 和 `DDA_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` 时，runtime health 仍报告 controlled channel。
 - 验证：`cd runtime && node --test test/release-channel.test.mjs` 6 项全部通过；`cd desktop/src-tauri && cargo test --lib` 19 项全部通过。
 
 ## 2026-09-09 S2-08 受控安装包与 UI 门控

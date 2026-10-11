@@ -82,9 +82,9 @@ test('recovery command closes records owned by a lost runtime process', async ()
   })}\n`, 'utf8');
 
   const result = await run(['recovery'], {
-    HMCODEX_EXECUTION_STATE_STORE: executionPath,
-    HMCODEX_ROLE_CONTEXT_STORE: rolePath,
-    HMCODEX_DREAM_STORE: dreamPath
+    DDA_EXECUTION_STATE_STORE: executionPath,
+    DDA_ROLE_CONTEXT_STORE: rolePath,
+    DDA_DREAM_STORE: dreamPath
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
@@ -121,7 +121,7 @@ test('execution-state CLI exposes digest-checked recovery actions for orphan rec
   await store.transition(approval.recordId, 'PRESENTED');
   await store.transition(intent.recordId, 'WAITING_APPROVAL');
   const pending = store.get(approval.recordId);
-  const cancelledResult = await run(['execution-state', '--operation', 'cancel-approval', '--record-id', approval.recordId, '--expected-digest', pending.recordDigest], { HMCODEX_EXECUTION_STATE_STORE: executionPath });
+  const cancelledResult = await run(['execution-state', '--operation', 'cancel-approval', '--record-id', approval.recordId, '--expected-digest', pending.recordDigest], { DDA_EXECUTION_STATE_STORE: executionPath });
   assert.equal(cancelledResult.code, 0, cancelledResult.stderr);
   assert.equal(JSON.parse(cancelledResult.stdout.trim()).record.state, 'CANCELLED');
 
@@ -151,7 +151,7 @@ test('execution-state CLI exposes digest-checked recovery actions for orphan rec
   });
   await store.transition(lease.recordId, 'ACTIVE');
   const activeLease = store.get(lease.recordId);
-  const revokedResult = await run(['execution-state', '--operation', 'revoke-lease', '--record-id', lease.recordId, '--expected-digest', activeLease.recordDigest], { HMCODEX_EXECUTION_STATE_STORE: executionPath });
+  const revokedResult = await run(['execution-state', '--operation', 'revoke-lease', '--record-id', lease.recordId, '--expected-digest', activeLease.recordDigest], { DDA_EXECUTION_STATE_STORE: executionPath });
   assert.equal(revokedResult.code, 0, revokedResult.stderr);
   assert.equal(JSON.parse(revokedResult.stdout.trim()).record.state, 'REVOKED');
 });

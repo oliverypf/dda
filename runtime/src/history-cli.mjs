@@ -21,13 +21,13 @@ export async function runHistoryCommand(command, args = process.argv.slice(3)) {
   }
   const releaseChannel = resolveReleaseChannel();
   const defaultPath = (name) => resolveStoreFile(name);
-  const trajectoryPath = value('--trajectory-store') ?? process.env.HMCODEX_TRAJECTORY_STORE ?? defaultPath('trajectory.jsonl');
-  const scopedTrajectory = value('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const harnessPath = assertReleaseHarnessStore(value('--harness-event-store') ?? process.env.HMCODEX_HARNESS_EVENT_STORE
+  const trajectoryPath = value('--trajectory-store') ?? process.env.DDA_TRAJECTORY_STORE ?? defaultPath('trajectory.jsonl');
+  const scopedTrajectory = value('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
+  const harnessPath = assertReleaseHarnessStore(value('--harness-event-store') ?? process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultPath('hmcodex.db')
       : isReadOnlyRelease(releaseChannel) && trajectoryPath ? `${trajectoryPath}.db` : undefined));
-  const explicitThreadStore = value('--thread-store') !== undefined || Boolean(process.env.HMCODEX_THREAD_STORE?.trim());
-  const threadPath = value('--thread-store') ?? process.env.HMCODEX_THREAD_STORE
+  const explicitThreadStore = value('--thread-store') !== undefined || Boolean(process.env.DDA_THREAD_STORE?.trim());
+  const threadPath = value('--thread-store') ?? process.env.DDA_THREAD_STORE
     ?? (command !== 'thread' && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultPath('threads.json'));
   const listOnly = command === 'dashboard' || (command === 'thread' && operation === 'list');
   const threadId = value('--thread-id');

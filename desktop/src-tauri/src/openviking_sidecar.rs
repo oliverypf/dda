@@ -54,7 +54,7 @@ fn unix_time_ms() -> u64 {
 }
 
 fn enabled() -> bool {
-    if let Ok(value) = std::env::var("HMCODEX_CONTEXT_PROVIDER") {
+    if let Ok(value) = std::env::var("DDA_CONTEXT_PROVIDER") {
         return value.trim().eq_ignore_ascii_case("openviking");
     }
     std::env::current_exe()
@@ -102,14 +102,14 @@ fn parse_endpoint(value: &str) -> Result<LocalEndpoint, &'static str> {
 
 fn configured_endpoint() -> Result<LocalEndpoint, &'static str> {
     parse_endpoint(
-        std::env::var("HMCODEX_OPENVIKING_URL")
+        std::env::var("DDA_OPENVIKING_URL")
             .as_deref()
             .unwrap_or(DEFAULT_URL),
     )
 }
 
 fn configured_start_timeout_ms() -> u64 {
-    std::env::var("HMCODEX_OPENVIKING_START_TIMEOUT_MS")
+    std::env::var("DDA_OPENVIKING_START_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| (1_000..=120_000).contains(value))
@@ -315,48 +315,48 @@ fn bundled_executable(runtime_entrypoint: &Path) -> Option<PathBuf> {
 }
 
 fn configure_bundled_environment(runtime_entrypoint: &Path) {
-    if std::env::var_os("HMCODEX_OPENVIKING_EXECUTABLE").is_none() {
+    if std::env::var_os("DDA_OPENVIKING_EXECUTABLE").is_none() {
         if let Some(executable) = bundled_executable(runtime_entrypoint) {
-            std::env::set_var("HMCODEX_OPENVIKING_EXECUTABLE", executable);
+            std::env::set_var("DDA_OPENVIKING_EXECUTABLE", executable);
         }
     }
-    if std::env::var_os("HMCODEX_OPENVIKING_CONFIG").is_none() {
+    if std::env::var_os("DDA_OPENVIKING_CONFIG").is_none() {
         if let Some(config) = default_config_candidates(runtime_entrypoint)
             .into_iter()
             .find(|candidate| candidate.is_file())
         {
-            std::env::set_var("HMCODEX_OPENVIKING_CONFIG", config);
+            std::env::set_var("DDA_OPENVIKING_CONFIG", config);
         }
     }
-    if std::env::var_os("HMCODEX_OPENVIKING_WORKING_DIR").is_none() {
-        if let Some(parent) = std::env::var_os("HMCODEX_OPENVIKING_EXECUTABLE")
+    if std::env::var_os("DDA_OPENVIKING_WORKING_DIR").is_none() {
+        if let Some(parent) = std::env::var_os("DDA_OPENVIKING_EXECUTABLE")
             .map(PathBuf::from)
             .as_ref()
             .and_then(|path| path.parent())
         {
-            std::env::set_var("HMCODEX_OPENVIKING_WORKING_DIR", parent);
+            std::env::set_var("DDA_OPENVIKING_WORKING_DIR", parent);
         }
     }
     if let Some(existing_key) = std::env::var_os("OPENVIKING_API_KEY") {
-        if std::env::var_os("HMCODEX_OPENVIKING_API_KEY").is_none() {
-            std::env::set_var("HMCODEX_OPENVIKING_API_KEY", existing_key);
+        if std::env::var_os("DDA_OPENVIKING_API_KEY").is_none() {
+            std::env::set_var("DDA_OPENVIKING_API_KEY", existing_key);
         }
     }
-    if std::env::var_os("HMCODEX_OPENVIKING_API_KEY").is_none() {
+    if std::env::var_os("DDA_OPENVIKING_API_KEY").is_none() {
         if let Ok(generated_key) = random_api_key() {
-            std::env::set_var("HMCODEX_OPENVIKING_API_KEY", generated_key);
+            std::env::set_var("DDA_OPENVIKING_API_KEY", generated_key);
         }
     }
-    if std::env::var_os("HMCODEX_OPENVIKING_API_KEY_ENV").is_none() {
+    if std::env::var_os("DDA_OPENVIKING_API_KEY_ENV").is_none() {
         std::env::set_var(
-            "HMCODEX_OPENVIKING_API_KEY_ENV",
-            "HMCODEX_OPENVIKING_API_KEY",
+            "DDA_OPENVIKING_API_KEY_ENV",
+            "DDA_OPENVIKING_API_KEY",
         );
     }
 }
 
 fn validate_executable() -> Result<PathBuf, &'static str> {
-    let path = std::env::var_os("HMCODEX_OPENVIKING_EXECUTABLE")
+    let path = std::env::var_os("DDA_OPENVIKING_EXECUTABLE")
         .map(PathBuf::from)
         .ok_or("OPENVIKING_SIDECAR_NOT_CONFIGURED")?;
     if !path.is_absolute()
@@ -383,10 +383,10 @@ pub fn ensure_sidecar(
     state: &OpenVikingSidecarState,
 ) -> OpenVikingSidecarStatus {
     configure_bundled_environment(runtime_entrypoint);
-    if std::env::var("HMCODEX_CONTEXT_PROVIDER").is_err()
+    if std::env::var("DDA_CONTEXT_PROVIDER").is_err()
         && bundled_executable(runtime_entrypoint).is_some()
     {
-        std::env::set_var("HMCODEX_CONTEXT_PROVIDER", "openviking");
+        std::env::set_var("DDA_CONTEXT_PROVIDER", "openviking");
     }
     let initial = sidecar_status(state);
     if !initial.enabled || initial.ready || initial.state == "MISCONFIGURED" {
@@ -403,7 +403,7 @@ pub fn ensure_sidecar(
             return sidecar_status(state);
         }
         let mut command =
-            Command::new(std::env::var_os("HMCODEX_NODE").unwrap_or_else(|| "node".into()));
+            Command::new(std::env::var_os("DDA_NODE").unwrap_or_else(|| "node".into()));
         #[cfg(windows)]
         command.creation_flags(CREATE_NO_WINDOW);
         command

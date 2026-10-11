@@ -27,12 +27,12 @@ const option = (name, fallback) => {
 };
 const flag = (name) => argv.includes(name);
 
-const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
-const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9333'));
-const runResumeFlow = flag('--resume-fixture') || process.env.HMCODEX_UI_RESUME_FIXTURE === '1';
+const exe = option('--exe', process.env.DDA_UI_EXE ?? DEFAULT_EXE);
+const port = Number(option('--port', process.env.DDA_UI_PORT ?? '9333'));
+const runResumeFlow = flag('--resume-fixture') || process.env.DDA_UI_RESUME_FIXTURE === '1';
 const runRetryFlow = flag('--retry-fixture');
 const runCrowdedFlow = flag('--crowded-fixture');
-const runTaskFlow = flag('--task') || runResumeFlow || runRetryFlow || runCrowdedFlow || process.env.HMCODEX_UI_TASK === '1';
+const runTaskFlow = flag('--task') || runResumeFlow || runRetryFlow || runCrowdedFlow || process.env.DDA_UI_TASK === '1';
 const inspectOnly = flag('--inspect');
 const closeWhenDone = flag('--close');
 const viewportWidth = option('--viewport-width', undefined);
@@ -41,7 +41,7 @@ for (const dimension of [viewportWidth, viewportHeight].filter(value => value !=
   if (!Number.isInteger(Number(dimension)) || Number(dimension) < 200 || Number(dimension) > 8192) throw Error('INVALID_UI_VIEWPORT');
 }
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
+const workspaceRoot = process.env.DDA_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 const results = [];
 let modelFixtureStatsUrl = '';
@@ -162,8 +162,8 @@ const launchApp = (extraEnv = {}) => {
       ...process.env,
       ...extraEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_WORKSPACE_ROOT: extraEnv.HMCODEX_WORKSPACE_ROOT ?? workspaceRoot
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_WORKSPACE_ROOT: extraEnv.DDA_WORKSPACE_ROOT ?? workspaceRoot
     }
   });
   child.unref();
@@ -742,9 +742,9 @@ const main = async () => {
   modelFixtureStatsUrl = fixture?.statsUrl ?? '';
   const pid = launchApp(fixture ? {
     ...fixture.env,
-    HMCODEX_MODEL_CONFIG: fixture.modelConfigPath,
-    HMCODEX_UI_MODEL_FIXTURE_KEY: 'fixture-key',
-    HMCODEX_WORKSPACE_ROOT: fixture.workspaceRoot
+    DDA_MODEL_CONFIG: fixture.modelConfigPath,
+    DDA_UI_MODEL_FIXTURE_KEY: 'fixture-key',
+    DDA_WORKSPACE_ROOT: fixture.workspaceRoot
   } : {});
   console.log(`dda UI functional tests · exe=${exe} · port=${port} · pid=${pid}`);
   let client;

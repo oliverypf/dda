@@ -50,11 +50,11 @@ test('resume enters recovery and blocks an interrupted side effect', async (t) =
 
   const result = await run([
     'task', '--agent-mode', 'multi', '--provider', 'openai', '--model', 'crash-recovery-model',
-    '--endpoint', 'http://127.0.0.1:1/responses', '--api-key-env', 'HMCODEX_CRASH_RECOVERY_KEY',
+    '--endpoint', 'http://127.0.0.1:1/responses', '--api-key-env', 'DDA_CRASH_RECOVERY_KEY',
     '--prompt', 'resume interrupted task', '--workspace', workspace,
     '--trajectory-store', trajectoryPath, '--thread-store', threadStorePath,
     '--resume', '--thread-id', thread.id
-  ], { HMCODEX_CRASH_RECOVERY_KEY: 'crash-recovery-key' });
+  ], { DDA_CRASH_RECOVERY_KEY: 'crash-recovery-key' });
   assert.equal(result.code, 1, `${result.stderr}\n${result.stdout}`);
   const events = (await readFile(trajectoryPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
   const created = events.find((event) => event.kind === 'TaskRunCreated');

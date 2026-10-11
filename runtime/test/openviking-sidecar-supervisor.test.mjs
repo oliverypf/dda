@@ -22,9 +22,9 @@ test('sidecar configuration requires a loopback URL and absolute Windows executa
     platform: 'win32',
     statImpl,
     env: {
-      HMCODEX_OPENVIKING_EXECUTABLE: 'C:\\Tools\\openviking-server.exe',
-      HMCODEX_OPENVIKING_URL: 'http://localhost:1933',
-      HMCODEX_OPENVIKING_WORKING_DIR: 'C:\\OpenViking'
+      DDA_OPENVIKING_EXECUTABLE: 'C:\\Tools\\openviking-server.exe',
+      DDA_OPENVIKING_URL: 'http://localhost:1933',
+      DDA_OPENVIKING_WORKING_DIR: 'C:\\OpenViking'
     }
   });
   assert.equal(config.endpoint.host, '127.0.0.1');
@@ -32,7 +32,7 @@ test('sidecar configuration requires a loopback URL and absolute Windows executa
   await assert.rejects(() => resolveOpenVikingSidecarConfig({
     platform: 'win32',
     statImpl,
-    env: { HMCODEX_OPENVIKING_EXECUTABLE: '.\\openviking-server.exe' }
+    env: { DDA_OPENVIKING_EXECUTABLE: '.\\openviking-server.exe' }
   }), /OPENVIKING_SIDECAR_EXECUTABLE_INVALID/u);
   assert.throws(() => parseOpenVikingSidecarURL('http://example.com:1933'), /OPENVIKING_SIDECAR_URL_INVALID/u);
   assert.throws(() => parseOpenVikingSidecarURL('https://127.0.0.1:1933'), /OPENVIKING_SIDECAR_URL_INVALID/u);

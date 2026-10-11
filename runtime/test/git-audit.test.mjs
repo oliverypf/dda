@@ -104,7 +104,7 @@ test('audit CLI creates and verifies a checkpoint with its default observer time
   const runCli = (args) => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [entrypoint, ...args], {
       cwd: root,
-      env: { ...process.env, HMCODEX_DATA_ROOT: directory },
+      env: { ...process.env, DDA_DATA_ROOT: directory },
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']

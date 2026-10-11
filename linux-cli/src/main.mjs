@@ -50,7 +50,7 @@ const HELP = `dda <command> [subcommand] [options]
 --approval-mode jsonl 或 deny。
 
 同一入口可在 Linux、Windows 和鸿蒙 PC 上运行。平台由当前系统决定，也可以用
-HMCODEX_PLATFORM=linux-cli|windows-cli|harmonyos-cli 显式指定。
+DDA_PLATFORM=linux-cli|windows-cli|harmonyos-cli 显式指定。
 `;
 
 async function runtimePackageVersion() {
@@ -68,7 +68,7 @@ async function runtimePackageVersion() {
 // inlined so the CLI process does not import the model-config module.
 const DEFAULT_PROVIDER_KEY_ENV = 'OPENCODE_GO_API_KEY';
 // Matches the runtime resolveDecisionConfig default key name. Jev itself is an
-// explicit per-deployment opt-in (a `decision` block or HMCODEX_JEV_*), but
+// explicit per-deployment opt-in (a `decision` block or DDA_JEV_*), but
 // the key is still forwarded while the decision route targets the default
 // TypeSafe host, so an opted-in deployment works without a config file.
 const DEFAULT_DECISION_KEY_ENV = 'JEV_API_KEY';
@@ -79,14 +79,14 @@ const DEFAULT_DECISION_KEY_ENV = 'JEV_API_KEY';
 const DEFAULT_MODEL_BASE_URL = 'https://opencode.ai/zen/go/v1';
 const DEFAULT_DECISION_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const KEY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-// HMCODEX_*_API_KEY_ENV variables hold the *name* of a credential variable,
+// DDA_*_API_KEY_ENV variables hold the *name* of a credential variable,
 // not a secret, so the value points the CLI at a secret to forward.
-const KEY_ENV_POINTER_PATTERN = /^HMCODEX_[A-Z0-9_]*_KEY_ENV$/u;
+const KEY_ENV_POINTER_PATTERN = /^DDA_[A-Z0-9_]*_KEY_ENV$/u;
 
 // Decide which credential variables the runtime child is allowed to see. The
 // explicitly named key for each plane is always forwarded; the shipped default
 // key is forwarded only while that plane still targets its default host, so an
-// overridden HMCODEX_MODEL_ENDPOINT / HMCODEX_JEV_ENDPOINT never receives the
+// overridden DDA_MODEL_ENDPOINT / DDA_JEV_ENDPOINT never receives the
 // default OpenCode/TypeSafe secret.
 export async function providerKeyNames(configPath, env = {}) {
   let fileConfig = {};
@@ -107,21 +107,21 @@ export async function providerKeyNames(configPath, env = {}) {
   const names = [];
 
   // Model plane. The runtime resolves the credential variable as
-  // config.apiKeyEnv -> HMCODEX_MODEL_API_KEY_ENV -> OPENCODE_GO_API_KEY.
-  const modelApiKeyEnv = fileString(fileConfig.apiKeyEnv) ?? envValue('HMCODEX_MODEL_API_KEY_ENV');
-  const modelBaseURL = fileString(fileConfig.baseURL) ?? envValue('HMCODEX_MODEL_BASE_URL') ?? DEFAULT_MODEL_BASE_URL;
-  const modelEndpoint = fileString(fileConfig.endpoint) ?? envValue('HMCODEX_MODEL_ENDPOINT');
+  // config.apiKeyEnv -> DDA_MODEL_API_KEY_ENV -> OPENCODE_GO_API_KEY.
+  const modelApiKeyEnv = fileString(fileConfig.apiKeyEnv) ?? envValue('DDA_MODEL_API_KEY_ENV');
+  const modelBaseURL = fileString(fileConfig.baseURL) ?? envValue('DDA_MODEL_BASE_URL') ?? DEFAULT_MODEL_BASE_URL;
+  const modelEndpoint = fileString(fileConfig.endpoint) ?? envValue('DDA_MODEL_ENDPOINT');
   const modelRouteIsDefault = modelBaseURL === DEFAULT_MODEL_BASE_URL && modelEndpoint === undefined;
   if (modelRouteIsDefault || modelApiKeyEnv === DEFAULT_PROVIDER_KEY_ENV) names.push(DEFAULT_PROVIDER_KEY_ENV);
   if (modelApiKeyEnv) names.push(modelApiKeyEnv);
 
   // Decision (Jev) plane. The runtime resolves the variable as
-  // decision.apiKeyEnv -> HMCODEX_JEV_API_KEY_ENV -> JEV_API_KEY.
+  // decision.apiKeyEnv -> DDA_JEV_API_KEY_ENV -> JEV_API_KEY.
   const decision = (fileConfig.decision && typeof fileConfig.decision === 'object' && !Array.isArray(fileConfig.decision))
     ? fileConfig.decision
     : {};
-  const decisionApiKeyEnv = fileString(decision.apiKeyEnv) ?? envValue('HMCODEX_JEV_API_KEY_ENV');
-  const decisionEndpoint = fileString(decision.endpoint) ?? envValue('HMCODEX_JEV_ENDPOINT') ?? DEFAULT_DECISION_ENDPOINT;
+  const decisionApiKeyEnv = fileString(decision.apiKeyEnv) ?? envValue('DDA_JEV_API_KEY_ENV');
+  const decisionEndpoint = fileString(decision.endpoint) ?? envValue('DDA_JEV_ENDPOINT') ?? DEFAULT_DECISION_ENDPOINT;
   const decisionRouteIsDefault = decisionEndpoint === DEFAULT_DECISION_ENDPOINT;
   if (decisionRouteIsDefault || decisionApiKeyEnv === DEFAULT_DECISION_KEY_ENV) names.push(DEFAULT_DECISION_KEY_ENV);
   if (decisionApiKeyEnv) names.push(decisionApiKeyEnv);
@@ -133,7 +133,7 @@ export async function providerKeyNames(configPath, env = {}) {
     }
   }
 
-  // Any HMCODEX_*_API_KEY_ENV points at a secret the runtime will read for a
+  // Any DDA_*_API_KEY_ENV points at a secret the runtime will read for a
   // provider (for example the OpenViking context plane), so forward the target.
   for (const [key, value] of Object.entries(env ?? {})) {
     if (KEY_ENV_POINTER_PATTERN.test(key) && typeof value === 'string' && value.trim()) names.push(value.trim());
@@ -212,9 +212,9 @@ export async function main(argv, io = {}) {
 
   const pathEnv = {
     ...env,
-    HMCODEX_PLATFORM: host,
-    ...(parsed.options.dataDir ? { HMCODEX_DATA_DIR: parsed.options.dataDir } : {}),
-    ...(parsed.options.config ? { HMCODEX_MODEL_CONFIG: parsed.options.config } : {})
+    DDA_PLATFORM: host,
+    ...(parsed.options.dataDir ? { DDA_DATA_DIR: parsed.options.dataDir } : {}),
+    ...(parsed.options.config ? { DDA_MODEL_CONFIG: parsed.options.config } : {})
   };
   const paths = createPlatformPaths(pathEnv);
   if (!paths.dataDir() || !paths.configDir()) return reportError('STORAGE_ERROR');
@@ -274,14 +274,14 @@ export async function main(argv, io = {}) {
     if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
   }
 
-  const configPath = parsed.options.config ?? (env.HMCODEX_MODEL_CONFIG?.trim() || undefined);
+  const configPath = parsed.options.config ?? (env.DDA_MODEL_CONFIG?.trim() || undefined);
   const keyNames = await providerKeyNames(configPath ?? paths.modelConfigPath(), env);
   const childEnv = buildRuntimeEnv(env, { extraKeys: keyNames });
-  childEnv.HMCODEX_PLATFORM = host;
-  childEnv.HMCODEX_RELEASE_CHANNEL = releaseChannelForPolicy(executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY');
-  childEnv.HMCODEX_DATA_DIR = paths.dataDir();
-  delete childEnv.HMCODEX_BAKED_RELEASE_CHANNEL;
-  if (configPath) childEnv.HMCODEX_MODEL_CONFIG = configPath;
+  childEnv.DDA_PLATFORM = host;
+  childEnv.DDA_RELEASE_CHANNEL = releaseChannelForPolicy(executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY');
+  childEnv.DDA_DATA_DIR = paths.dataDir();
+  delete childEnv.DDA_BAKED_RELEASE_CHANNEL;
+  if (configPath) childEnv.DDA_MODEL_CONFIG = configPath;
 
   const runtimeArgs = [];
   if (parsed.subcommand && parsed.command === 'thread') runtimeArgs.push(parsed.subcommand);
@@ -468,8 +468,8 @@ export async function main(argv, io = {}) {
 
 function supportInfo(runtimeResult, paths, policy, host, runtimeVersion) {
   const identity = resolvePlatformIdentity({
-    HMCODEX_PLATFORM: host,
-    HMCODEX_RELEASE_CHANNEL: releaseChannelForPolicy(policy)
+    DDA_PLATFORM: host,
+    DDA_RELEASE_CHANNEL: releaseChannelForPolicy(policy)
   });
   return {
     ok: true,

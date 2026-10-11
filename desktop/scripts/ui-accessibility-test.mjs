@@ -3,8 +3,8 @@ import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const exe = process.env.HMCODEX_UI_EXE ?? 'C:\\Program Files\\dda\\dda-desktop.exe';
-const port = Number(process.env.HMCODEX_UI_PORT ?? '9337');
+const exe = process.env.DDA_UI_EXE ?? 'C:\\Program Files\\dda\\dda-desktop.exe';
+const port = Number(process.env.DDA_UI_PORT ?? '9337');
 const fail = (message) => { throw new Error(message); };
 const isShortDuration = (value) => {
   if (value === '0s') return true;
@@ -22,7 +22,7 @@ const child = spawn(exe, [], {
   env: {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
   },
 });
 child.unref();

@@ -118,14 +118,14 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
   const taskEnv = {
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
-    HMCODEX_PLUGIN_GOVERNANCE_STORE: governancePath,
-    HMCODEX_PLUGIN_ROOT: pluginRoot,
-    HMCODEX_EVOLUTION_STORE: evolutionPath,
-    HMCODEX_EVALUATION_STORE: evaluationPath,
-    HMCODEX_TRAJECTORY_STORE: join(root, 'trajectory.jsonl'),
-    HMCODEX_DECISION_TRACE_STORE: join(root, 'decision-trace.json')
+    DDA_PLUGIN_GOVERNANCE_STORE: governancePath,
+    DDA_PLUGIN_ROOT: pluginRoot,
+    DDA_EVOLUTION_STORE: evolutionPath,
+    DDA_EVALUATION_STORE: evaluationPath,
+    DDA_TRAJECTORY_STORE: join(root, 'trajectory.jsonl'),
+    DDA_DECISION_TRACE_STORE: join(root, 'decision-trace.json')
   };
-  const phase1 = await run(taskArgs, { ...taskEnv, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' });
+  const phase1 = await run(taskArgs, { ...taskEnv, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' });
   assert.equal(phase1.code, 0, phase1.stdout);
   const phase1Payload = JSON.parse(phase1.stdout.trim());
   assert.ok(phase1Payload.dynamicPlugins.every((plugin) => plugin.state === 'DISABLED'));
@@ -133,7 +133,7 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
   const phase1Governance = JSON.parse(await readFile(governancePath, 'utf8'));
   assert.equal(phase1Governance.plugins.find((plugin) => plugin.pluginId === active.pluginId).state, 'ACTIVE');
   const directLoad = await run(['plugin', 'load', '--plugin-id', active.pluginId], {
-    ...taskEnv, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
+    ...taskEnv, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
   });
   assert.equal(directLoad.code, 1);
   assert.equal(JSON.parse(directLoad.stdout.trim()).error, 'RELEASE_CHANNEL_DYNAMIC_PLUGIN_DISABLED');

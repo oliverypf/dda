@@ -401,7 +401,7 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   };
   const pick = (...values) => values.find((value) => value !== undefined);
-  const provider = pick(overrides.provider, fileConfig.provider, envValue('HMCODEX_MODEL_PROVIDER'), DEFAULT_MODEL_CONFIG.provider);
+  const provider = pick(overrides.provider, fileConfig.provider, envValue('DDA_MODEL_PROVIDER'), DEFAULT_MODEL_CONFIG.provider);
   const isDeepSeek = provider === 'deepseek';
   // A provider switch is an explicit route change.  Do not silently carry
   // provider-specific model/endpoint/credential settings from a config file
@@ -417,7 +417,7 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     && overrides.provider !== fileConfig.provider;
   const fileProviderValue = (value) => providerChangedByOverride ? undefined : value;
   const fileProtocolValue = (value) => providerIdentityChangedByOverride ? undefined : value;
-  const requestedProtocol = pick(overrides.protocol, fileProtocolValue(fileConfig.protocol), envValue('HMCODEX_MODEL_PROTOCOL'));
+  const requestedProtocol = pick(overrides.protocol, fileProtocolValue(fileConfig.protocol), envValue('DDA_MODEL_PROTOCOL'));
   if (requestedProtocol !== undefined && !MODEL_PROTOCOLS.includes(requestedProtocol)) {
     throw new Error(`MODEL_CONFIG_UNKNOWN_PROTOCOL:${requestedProtocol}`);
   }
@@ -426,20 +426,20 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     : pick(
       overrides.protocol,
       fileProtocolValue(fileConfig.protocol),
-      envValue('HMCODEX_MODEL_PROTOCOL'),
+      envValue('DDA_MODEL_PROTOCOL'),
       defaultProtocolFor(provider)
     );
   const model = pick(
     overrides.model,
     fileProviderValue(fileConfig.model),
-    envValue('HMCODEX_MODEL'),
+    envValue('DDA_MODEL'),
     envValue(isDeepSeek ? 'DEEPSEEK_MODEL' : 'OPENAI_MODEL'),
     isDeepSeek ? 'deepseek-chat' : DEFAULT_MODEL_CONFIG.model
   );
   const baseURL = pick(
     overrides.baseURL,
     fileProviderValue(fileConfig.baseURL),
-    envValue('HMCODEX_MODEL_BASE_URL'),
+    envValue('DDA_MODEL_BASE_URL'),
     envValue(isDeepSeek ? 'DEEPSEEK_BASE_URL' : 'OPENAI_BASE_URL'),
     isDeepSeek ? undefined : DEFAULT_MODEL_CONFIG.baseURL
   );
@@ -452,12 +452,12 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
   const endpoint = pick(
     overrides.endpoint,
     endpointProtocolCompatible ? fileEndpoint : undefined,
-    envValue('HMCODEX_MODEL_ENDPOINT')
+    envValue('DDA_MODEL_ENDPOINT')
   );
   const apiKeyEnv = pick(
     overrides.apiKeyEnv,
     fileProviderValue(fileConfig.apiKeyEnv),
-    envValue('HMCODEX_MODEL_API_KEY_ENV'),
+    envValue('DDA_MODEL_API_KEY_ENV'),
     isDeepSeek ? 'DEEPSEEK_API_KEY' : DEFAULT_MODEL_CONFIG.apiKeyEnv
   );
   // Extra request headers are provider-specific.  Drop file-supplied headers
@@ -478,7 +478,7 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
   const sessionHeader = pick(
     overrides.sessionHeader,
     fileHeaderValue(fileConfig.sessionHeader),
-    envValue('HMCODEX_MODEL_SESSION_HEADER'),
+    envValue('DDA_MODEL_SESSION_HEADER'),
     usesDefaultRoute ? DEFAULT_MODEL_CONFIG.sessionHeader : undefined
   );
   const normalizedModel = normalizeLegacyModelAlias({ provider, model, baseURL, endpoint });
@@ -514,8 +514,8 @@ const parseBoolean = (value) => {
 /**
  * Jev is an explicit opt-in per deployment. The decision plane counts as
  * configured when the model config file has a `decision` block or the
- * environment sets any HMCODEX_JEV_* variable (for example
- * HMCODEX_JEV_ENABLED=1 or HMCODEX_JEV_ENDPOINT + HMCODEX_JEV_API_KEY_ENV).
+ * environment sets any DDA_JEV_* variable (for example
+ * DDA_JEV_ENABLED=1 or DDA_JEV_ENDPOINT + DDA_JEV_API_KEY_ENV).
  * A bare JEV_API_KEY in the environment is not a configuration: it does not
  * by itself turn Jev on. Jev then runs only when the resolved `enabled` is
  * true and the named credential variable is set; otherwise the engine records
@@ -524,7 +524,7 @@ const parseBoolean = (value) => {
 export const isDecisionPlaneConfigured = ({ fileConfig = {}, env = process.env } = {}) => {
   const decision = fileConfig?.decision;
   if (decision && typeof decision === 'object' && !Array.isArray(decision)) return true;
-  return Object.entries(env ?? {}).some(([name, value]) => name.startsWith('HMCODEX_JEV_')
+  return Object.entries(env ?? {}).some(([name, value]) => name.startsWith('DDA_JEV_')
     && typeof value === 'string' && value.trim() !== '');
 };
 
@@ -540,23 +540,23 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
   // explicit configuration and a credential before Jev is consulted. Without
   // them the engine fails closed to its bounded conservative fallbacks; it
   // never revives the removed LLM verifier path.
-  const enabled = parseBoolean(envValue('HMCODEX_JEV_ENABLED')) ?? configured.enabled ?? true;
-  const enforce = parseBoolean(envValue('HMCODEX_JEV_ENFORCE')) ?? configured.enforce ?? enabled;
-  const endpoint = configured.endpoint ?? envValue('HMCODEX_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/systemone';
-  const apiKeyEnv = configured.apiKeyEnv ?? envValue('HMCODEX_JEV_API_KEY_ENV') ?? 'JEV_API_KEY';
-  const model = configured.model ?? envValue('HMCODEX_JEV_MODEL') ?? 'jev-latest';
-  const timeoutMs = configured.timeoutMs ?? Number(envValue('HMCODEX_JEV_TIMEOUT_MS') ?? 1200);
-  const verificationTimeoutMs = configured.verificationTimeoutMs ?? Number(envValue('HMCODEX_JEV_VERIFICATION_TIMEOUT_MS') ?? 15000);
-  const maxStateChars = configured.maxStateChars ?? Number(envValue('HMCODEX_JEV_MAX_STATE_CHARS') ?? 16000);
+  const enabled = parseBoolean(envValue('DDA_JEV_ENABLED')) ?? configured.enabled ?? true;
+  const enforce = parseBoolean(envValue('DDA_JEV_ENFORCE')) ?? configured.enforce ?? enabled;
+  const endpoint = configured.endpoint ?? envValue('DDA_JEV_ENDPOINT') ?? 'https://api.typesafe.ai/v1/systemone';
+  const apiKeyEnv = configured.apiKeyEnv ?? envValue('DDA_JEV_API_KEY_ENV') ?? 'JEV_API_KEY';
+  const model = configured.model ?? envValue('DDA_JEV_MODEL') ?? 'jev-latest';
+  const timeoutMs = configured.timeoutMs ?? Number(envValue('DDA_JEV_TIMEOUT_MS') ?? 1200);
+  const verificationTimeoutMs = configured.verificationTimeoutMs ?? Number(envValue('DDA_JEV_VERIFICATION_TIMEOUT_MS') ?? 15000);
+  const maxStateChars = configured.maxStateChars ?? Number(envValue('DDA_JEV_MAX_STATE_CHARS') ?? 16000);
   const featureFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName];
   return validateDecisionConfig({
     enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, verificationTimeoutMs, maxStateChars,
-    classificationEnabled: featureFlag('HMCODEX_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
-    routeSelectionEnabled: featureFlag('HMCODEX_JEV_ROUTE_ENABLED', 'routeSelectionEnabled'),
-    topologyEnabled: featureFlag('HMCODEX_JEV_TOPOLOGY_ENABLED', 'topologyEnabled'),
-    planReviewEnabled: featureFlag('HMCODEX_JEV_PLAN_REVIEW_ENABLED', 'planReviewEnabled'),
-    diagnosisEnabled: featureFlag('HMCODEX_JEV_DIAGNOSIS_ENABLED', 'diagnosisEnabled'),
-    recoveryDirectionEnabled: featureFlag('HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED', 'recoveryDirectionEnabled'),
-    contextPackEnabled: featureFlag('HMCODEX_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled')
+    classificationEnabled: featureFlag('DDA_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
+    routeSelectionEnabled: featureFlag('DDA_JEV_ROUTE_ENABLED', 'routeSelectionEnabled'),
+    topologyEnabled: featureFlag('DDA_JEV_TOPOLOGY_ENABLED', 'topologyEnabled'),
+    planReviewEnabled: featureFlag('DDA_JEV_PLAN_REVIEW_ENABLED', 'planReviewEnabled'),
+    diagnosisEnabled: featureFlag('DDA_JEV_DIAGNOSIS_ENABLED', 'diagnosisEnabled'),
+    recoveryDirectionEnabled: featureFlag('DDA_JEV_RECOVERY_DIRECTION_ENABLED', 'recoveryDirectionEnabled'),
+    contextPackEnabled: featureFlag('DDA_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled')
   });
 };

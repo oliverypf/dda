@@ -24,7 +24,7 @@ test('both clients use the same text and developer instruction conversion', () =
 });
 
 test('live model records returned inference IDs for success and HTTP failure without inventing charges', async t => {
-  const name = 'HMCODEX_GOAL_CORRELATION_TEST_KEY';
+  const name = 'DDA_GOAL_CORRELATION_TEST_KEY';
   const previous = process.env[name]; process.env[name] = 'private-gateway-test-key';
   t.after(() => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; });
   let calls = 0;

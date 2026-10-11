@@ -32,7 +32,7 @@ test('listPage and iterate expose stable keyset pages', async () => {
   await assert.rejects(store.listPage({ limit: 0 }), { message: 'HARNESS_STORE_PAGE_LIMIT_INVALID' });
 });
 
-test('stores, pages and rebuilds more than 100,000 events', { skip: process.env.HMCODEX_SCALE_TEST !== '1' }, async () => {
+test('stores, pages and rebuilds more than 100,000 events', { skip: process.env.DDA_SCALE_TEST !== '1' }, async () => {
   const storagePath = await fixture();
   const store = createHarnessEventStore({ storagePath });
   const total = 100_001;

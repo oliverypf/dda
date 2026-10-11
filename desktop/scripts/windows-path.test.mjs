@@ -15,7 +15,7 @@ test('derives one coherent desktop, workspace, and runtime root', () => {
 test('honors an explicit desktop root before the caller directory', () => {
   const paths = projectPaths(import.meta.url, {
     cwd: pathsForTestRoot(),
-    env: { HMCODEX_DESKTOP_ROOT: projectPaths(import.meta.url).desktopRoot }
+    env: { DDA_DESKTOP_ROOT: projectPaths(import.meta.url).desktopRoot }
   });
 
   assert.equal(basename(normalize(paths.desktopRoot)), 'desktop');

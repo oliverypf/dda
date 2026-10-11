@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { startGoalLiveJev } from './goal-live-jev.mjs';
 
 test('live decision recording forwards real answers and never records credentials', async t => {
-  const name = 'HMCODEX_GOAL_JEV_PROXY_TEST_KEY';
+  const name = 'DDA_GOAL_JEV_PROXY_TEST_KEY';
   const previous = process.env[name];
   process.env[name] = 'private-upstream-test-key';
   t.after(() => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; });

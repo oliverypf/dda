@@ -20,7 +20,7 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const browser = await chromium.launch({ headless: true, channel: process.env.HMCODEX_BROWSER_CHANNEL });
+const browser = await chromium.launch({ headless: true, channel: process.env.DDA_BROWSER_CHANNEL });
 const errors = [];
 
 async function fixture({ deferRuntime = false, sidebar = false, duplicateRoots = false } = {}) {

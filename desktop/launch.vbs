@@ -16,6 +16,6 @@ End If
 
 shell.CurrentDirectory = projectDirectory
 Set processEnvironment = shell.Environment("PROCESS")
-processEnvironment("HMCODEX_RUNTIME_ENTRY") = fileSystem.BuildPath(projectDirectory, "runtime\src\index.mjs")
-processEnvironment("HMCODEX_WORKSPACE_ROOT") = projectDirectory
+processEnvironment("DDA_RUNTIME_ENTRY") = fileSystem.BuildPath(projectDirectory, "runtime\src\index.mjs")
+processEnvironment("DDA_WORKSPACE_ROOT") = projectDirectory
 shell.Run Chr(34) & executable & Chr(34), 1, False

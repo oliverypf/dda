@@ -40,7 +40,7 @@ test('stdout approval round-trip persists and consumes a one-shot lease', async 
   await listenOnFetchablePort(server);
   const address = server.address();
   assert.ok(address && typeof address === 'object');
-  const keyName = `HMCODEX_APPROVAL_KEY_${randomUUID().replaceAll('-', '')}`;
+  const keyName = `DDA_APPROVAL_KEY_${randomUUID().replaceAll('-', '')}`;
   const child = spawn(process.execPath, [
     'src/index.mjs', 'task',
     '--provider', 'openai-chat', '--protocol', 'chat-completions',

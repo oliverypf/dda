@@ -7,7 +7,7 @@ import { createHarnessEventStore } from './harness-event-store.mjs';
 export const TRAJECTORY_SCHEMA_VERSION = '1.0';
 export const TRAJECTORY_PROTOCOL_VERSION = '1.0';
 export const TRAJECTORY_STORAGE_SCHEMA_VERSION = 1;
-export const TRAJECTORY_APP_VERSION = process.env.HMCODEX_APP_VERSION?.trim() || '0.1.0';
+export const TRAJECTORY_APP_VERSION = process.env.DDA_APP_VERSION?.trim() || '0.1.0';
 export const TRAJECTORY_PRODUCER_VERSION = 'hmcodex-runtime@0.1.0';
 
 const MAX_EVENT_BYTES = 64 * 1024;

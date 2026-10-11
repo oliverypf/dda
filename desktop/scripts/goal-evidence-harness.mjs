@@ -117,12 +117,12 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
   const files = goalTaskFiles(task, marker);
   for (const [name, content] of Object.entries(files)) await writeFile(join(workspace, name), content);
   const initialDigest = digest(JSON.stringify(files));
-  const env = { EVIDENCE_FIXTURE_KEY: 'local-fixture-key', HMCODEX_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: mode, HMCODEX_CONTEXT_PROVIDER: 'journal',
-    HMCODEX_DATA_DIR: runRoot, HMCODEX_MODEL_CONFIG: join(runRoot, 'model-config.json'),
-    HMCODEX_TRAJECTORY_STORE: join(runRoot, 'trajectory.jsonl'), HMCODEX_THREAD_STORE: join(runRoot, 'threads.json'),
-    HMCODEX_HARNESS_EVENT_STORE: join(runRoot, 'harness-events.db'),
-    HMCODEX_JEV_ENABLED: '0', HMCODEX_JEV_ENFORCE: '0',
+  const env = { EVIDENCE_FIXTURE_KEY: 'local-fixture-key', DDA_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: mode, DDA_CONTEXT_PROVIDER: 'journal',
+    DDA_DATA_DIR: runRoot, DDA_MODEL_CONFIG: join(runRoot, 'model-config.json'),
+    DDA_TRAJECTORY_STORE: join(runRoot, 'trajectory.jsonl'), DDA_THREAD_STORE: join(runRoot, 'threads.json'),
+    DDA_HARNESS_EVENT_STORE: join(runRoot, 'harness-events.db'),
+    DDA_JEV_ENABLED: '0', DDA_JEV_ENFORCE: '0',
     CODEX_HOME: join(runRoot, 'codex-home') };
   const context = fixture.begin(task);
   const decisionContext = jev?.begin();
@@ -137,13 +137,13 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
     } else {
       command = process.execPath; cwd = RUNTIME;
       const decision = jev ? { enabled: true, enforce: true, endpoint: jev.endpoint,
-        apiKeyEnv: 'HMCODEX_GOAL_JEV_LOCAL_KEY', model: 'jev-latest', timeoutMs: 5000,
+        apiKeyEnv: 'DDA_GOAL_JEV_LOCAL_KEY', model: 'jev-latest', timeoutMs: 5000,
         diagnosisEnabled: true, recoveryDirectionEnabled: true } : { enabled: false, enforce: false };
-      await saveJson(env.HMCODEX_MODEL_CONFIG, { schemaVersion: '1.0', provider: 'openai', protocol: 'responses',
+      await saveJson(env.DDA_MODEL_CONFIG, { schemaVersion: '1.0', provider: 'openai', protocol: 'responses',
         model: fixture.model, endpoint: fixture.endpoint, apiKeyEnv: 'EVIDENCE_FIXTURE_KEY', decision });
-      if (jev) Object.assign(env, { HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1', HMCODEX_GOAL_JEV_LOCAL_KEY: 'goal-jev-local-key' });
-      args = ['src/index.mjs', 'task', '--config', env.HMCODEX_MODEL_CONFIG, '--prompt', `TASK ${task.taskId}: ${task.prompt}`,
-        '--workspace', workspace, '--trajectory-store', env.HMCODEX_TRAJECTORY_STORE, '--thread-store', env.HMCODEX_THREAD_STORE,
+      if (jev) Object.assign(env, { DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1', DDA_GOAL_JEV_LOCAL_KEY: 'goal-jev-local-key' });
+      args = ['src/index.mjs', 'task', '--config', env.DDA_MODEL_CONFIG, '--prompt', `TASK ${task.taskId}: ${task.prompt}`,
+        '--workspace', workspace, '--trajectory-store', env.DDA_TRAJECTORY_STORE, '--thread-store', env.DDA_THREAD_STORE,
         '--max-recovery-attempts', '2'];
       if (mode === 'CONTROLLED') args.push('--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node');
     }
@@ -167,9 +167,9 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
       agentOk = payload?.ok === true;
       finalText = payload?.text ?? '';
       const eventsResult = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'harness-events', 'list',
-        '--trajectory-store', env.HMCODEX_TRAJECTORY_STORE, '--run-id', payload?.runId ?? ''], { env, cwd: RUNTIME, timeoutMs: 30000 });
+        '--trajectory-store', env.DDA_TRAJECTORY_STORE, '--run-id', payload?.runId ?? ''], { env, cwd: RUNTIME, timeoutMs: 30000 });
       const retrieved = lastJson(eventsResult.stdout)?.events;
-      const events = retrieved?.length ? retrieved : jsonLines(await readOptional(env.HMCODEX_TRAJECTORY_STORE));
+      const events = retrieved?.length ? retrieved : jsonLines(await readOptional(env.DDA_TRAJECTORY_STORE));
       await saveJson(join(runRoot, 'native-events.json'), events);
       nativeResults = runtimeNativeOutcomes(events, context.requests);
     }

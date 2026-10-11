@@ -146,9 +146,9 @@ export async function run(spec, attempt, promptPath) {
     '--prompt', prompt, '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write', '--lease-commands', 'node',
     '--agent-mode', 'single', '--max-tool-rounds', String(spec.maxToolRounds ?? 48), '--max-recovery-attempts', String(runtimeAttempts), '--task-timeout-ms', String(timeoutMs),
     '--trajectory-store', join(dir, 'trajectory.jsonl'), '--thread-store', join(dir, 'threads.json'), '--events', 'stdout'];
-  const env = { ...process.env, HMCODEX_DATA_DIR: dir, HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_HARNESS_EVENT_STORE: join(dir, 'harness.db'),
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL', HMCODEX_EXECUTION_MODE: 'CONTROLLED', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1', HMCODEX_EVENTS: '' };
-  delete env.HMCODEX_BAKED_RELEASE_CHANNEL;
+  const env = { ...process.env, DDA_DATA_DIR: dir, DDA_CONTEXT_PROVIDER: 'journal', DDA_HARNESS_EVENT_STORE: join(dir, 'harness.db'),
+    DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL', DDA_EXECUTION_MODE: 'CONTROLLED', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1', DDA_EVENTS: '' };
+  delete env.DDA_BAKED_RELEASE_CHANNEL;
   delete env.NODE_TEST_CONTEXT;
   await save(join(dir, 'invocation.json'), { workspace: spec.workspace, runtime: args[0], model: config.model, configHash: digest(await readFile(spec.configPath)), promptChars: prompt.length, timeoutMs, runtimeAttempts, allowedFiles: spec.allowedFiles, jevEnabled: true, jevEnforce: true });
   const stdout = createWriteStream(join(dir, 'stdout.jsonl')), stderr = createWriteStream(join(dir, 'stderr.log'));

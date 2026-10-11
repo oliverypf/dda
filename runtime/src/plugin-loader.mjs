@@ -162,7 +162,7 @@ export const validatePluginDependencies = (manifest, { records = [], builtinIds 
 };
 
 const trustedPluginKeys = (env = process.env) => new Set(
-  [env.HMCODEX_PLUGIN_TRUST_KEY, ...(env.HMCODEX_PLUGIN_TRUST_KEYS ?? '').split(',')]
+  [env.DDA_PLUGIN_TRUST_KEY, ...(env.DDA_PLUGIN_TRUST_KEYS ?? '').split(',')]
     .flatMap((value) => (value ?? '').split(','))
     .map((value) => value.trim())
     .filter(Boolean)

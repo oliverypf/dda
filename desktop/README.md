@@ -1,6 +1,6 @@
 # dda Desktop
 
-桌面可执行文件为 `dda-desktop.exe`，安装包显示名称和发布者均为 `dda`。已有数据路径、环境变量及应用标识继续兼容旧名称。MSI 固定旧升级 GUID；NSIS 的 `installer-brand-compat.nsi` 基于 Tauri CLI 2.11.4 上游模板，仅固定两个旧注册表键。升级 Tauri CLI 时应同步模板并保留这两处兼容设置，模板许可见旁边的 `.LICENSE` 文件。
+桌面可执行文件为 `dda-desktop.exe`，安装包显示名称和发布者均为 `dda`。已有数据路径及应用标识继续兼容旧名称；环境变量已切换为 `DDA_*`（例如 `DDA_MODEL_CONFIG`、`DDA_RELEASE_CHANNEL`），旧的 `HMCODEX_*` 名称不再读取。MSI 固定旧升级 GUID；NSIS 的 `installer-brand-compat.nsi` 基于 Tauri CLI 2.11.4 上游模板，仅固定两个旧注册表键。升级 Tauri CLI 时应同步模板并保留这两处兼容设置，模板许可见旁边的 `.LICENSE` 文件。
 
 Windows 桌面客户端目录，目标运行时为 Tauri 2 + TypeScript 前端 + 本地运行时。Linux 使用独立的无界面 CLI，实施文档见 [Linux CLI 实施计划](../docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)。
 
@@ -32,7 +32,7 @@ Windows 桌面客户端目录，目标运行时为 Tauri 2 + TypeScript 前端 +
 
 历史列表可以跨工作区查看；若当前授权目录与历史会话目录不同，发送时会在当前目录创建新会话，不复用旧目录的 checkpoint。要续接原会话，请先打开其原目录，再从历史列表选择该会话。runtime 继续保留 `THREAD_WORKSPACE_MISMATCH` 校验，防止跨目录复用执行上下文。
 
-回归验证：先执行 `npm run build`，再执行 `node scripts/ui-workspace-test.mjs`。UI 测试使用 Playwright 和模拟 native bridge，不调用真实模型或访问真实项目目录；可通过 `NODE_PATH` 指定 Playwright 安装位置，通过 `HMCODEX_BROWSER_CHANNEL=msedge` 使用本机 Edge。
+回归验证：先执行 `npm run build`，再执行 `node scripts/ui-workspace-test.mjs`。UI 测试使用 Playwright 和模拟 native bridge，不调用真实模型或访问真实项目目录；可通过 `NODE_PATH` 指定 Playwright 安装位置，通过 `DDA_BROWSER_CHANNEL=msedge` 使用本机 Edge。
 
 Windows 原生任务由 `runtime/` 中的独立 Cordis 进程执行。
 桌面侧栏的“设置”可编辑默认模型的 Provider、协议、模型名称、Base URL、完整 Endpoint、API Key 环境变量名称与会话 Header。保存后下一次任务使用新配置；运行中的任务不变。已有的高级模型列表和角色绑定会保留，独立角色绑定仍优先于默认模型。Web 预览仅展示表单，不保存本地配置。
@@ -50,11 +50,11 @@ Node sidecar，去掉这一项系统前置条件。
 ```powershell
 $env:DENGJIUWANLE_API_KEY = '...'
 # 可选：不使用默认路径时指定配置文件
-$env:HMCODEX_MODEL_CONFIG = 'C:\path\model-config.json'
+$env:DDA_MODEL_CONFIG = 'C:\path\model-config.json'
 ```
 
 也可以在启动 runtime 时传入 `--config PATH`。命令行模型参数优先级最高，其次是
-JSON 配置文件，再其次是兼容旧版本的 `HMCODEX_MODEL_*` 环境变量，最后使用内置默认值。
+JSON 配置文件，再其次是兼容旧版本的 `DDA_MODEL_*` 环境变量，最后使用内置默认值。
 桌面端启动时会自动执行一次不联网的 runtime health 检查；它只验证 Node/runtime 入口和
 配置格式，不会读取或上传 API key。
 
@@ -106,12 +106,12 @@ Linux 不使用本目录的 Tauri 界面。实现 agent 应从以下文档开始
 本地 Windows 开发副本位于 `C:\Users\User\hmCodex-local`，请从本机目录进入项目后执行命令。
 不要把本地路径与原始映射盘或 UNC 路径混用。桌面端的
 Vite、Vitest、runtime 安装、静态预览和构建脚本都通过 `desktop/scripts/windows-path.mjs`
-解析项目根，会优先使用 `HMCODEX_DESKTOP_ROOT`、npm 的 `INIT_CWD` 和当前映射盘目录，
+解析项目根，会优先使用 `DDA_DESKTOP_ROOT`、npm 的 `INIT_CWD` 和当前映射盘目录，
 因此不会再分别推导出不一致的 `desktop`、`runtime` 或 `dist` 路径。需要从 IDE 或快捷方式
 启动时，可显式设置：
 
 ```powershell
-$env:HMCODEX_DESKTOP_ROOT = 'C:\Users\User\hmCodex-local\desktop'
+$env:DDA_DESKTOP_ROOT = 'C:\Users\User\hmCodex-local\desktop'
 ```
 
 若只能通过 UNC 路径访问，仍然可以运行；只需保持该终端内所有命令都使用 UNC 路径。

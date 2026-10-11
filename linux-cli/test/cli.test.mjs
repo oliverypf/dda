@@ -57,7 +57,7 @@ test('the same entry selects Windows and HarmonyOS hosts', async () => {
   const harmony = await run(['--version', '--format', 'jsonl'], env, { platform: 'linux', release: '5.10.97-ohos' });
   assert.equal(JSON.parse(harmony.stdout).platform, 'harmonyos-cli');
 
-  const explicit = await run(['--version', '--format', 'jsonl'], { ...env, HMCODEX_PLATFORM: 'linux-cli' }, {
+  const explicit = await run(['--version', '--format', 'jsonl'], { ...env, DDA_PLATFORM: 'linux-cli' }, {
     platform: 'win32',
     release: 'OpenHarmony 5.0'
   });
@@ -272,8 +272,8 @@ test('an overridden endpoint never receives the default OpenCode or Jev key', as
   // plane: the shipped defaults point at the OpenCode/TypeSafe hosts and must
   // not be forwarded to the overridden host.
   const overridden = await providerKeyNames(missing, {
-    HMCODEX_MODEL_ENDPOINT: 'https://proxy.example/v1/chat/completions',
-    HMCODEX_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone'
+    DDA_MODEL_ENDPOINT: 'https://proxy.example/v1/chat/completions',
+    DDA_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone'
   });
   assert.equal(overridden.includes('OPENCODE_GO_API_KEY'), false);
   assert.equal(overridden.includes('JEV_API_KEY'), false);
@@ -286,10 +286,10 @@ test('an overridden endpoint never receives the default OpenCode or Jev key', as
 
   // Naming the key for the overridden endpoint opts back in to forwarding it.
   const named = await providerKeyNames(missing, {
-    HMCODEX_MODEL_ENDPOINT: 'https://proxy.example/v1/chat/completions',
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone',
-    HMCODEX_JEV_API_KEY_ENV: 'OPENROUTER_API_KEY'
+    DDA_MODEL_ENDPOINT: 'https://proxy.example/v1/chat/completions',
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone',
+    DDA_JEV_API_KEY_ENV: 'OPENROUTER_API_KEY'
   });
   assert.ok(named.includes('OPENCODE_GO_API_KEY'));
   assert.ok(named.includes('OPENROUTER_API_KEY'));
@@ -297,12 +297,12 @@ test('an overridden endpoint never receives the default OpenCode or Jev key', as
 
   // An overridden model endpoint still forwards an unrelated default-host Jev
   // key, and vice versa; the planes are independent.
-  const modelOnly = await providerKeyNames(missing, { HMCODEX_MODEL_ENDPOINT: 'https://proxy.example/v1' });
+  const modelOnly = await providerKeyNames(missing, { DDA_MODEL_ENDPOINT: 'https://proxy.example/v1' });
   assert.equal(modelOnly.includes('OPENCODE_GO_API_KEY'), false);
   assert.ok(modelOnly.includes('JEV_API_KEY'));
 });
 
-test('HMCODEX_*_API_KEY_ENV pointers pass the filter and forward their target secret', async () => {
+test('DDA_*_API_KEY_ENV pointers pass the filter and forward their target secret', async () => {
   const { root } = await isolatedEnv();
   const missing = join(root, 'no-config.json');
 
@@ -310,21 +310,21 @@ test('HMCODEX_*_API_KEY_ENV pointers pass the filter and forward their target se
   // both the pointer (so the runtime knows which variable to read) and the
   // variable it points at.
   const env = {
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_OPENVIKING_API_KEY_ENV: 'OPENVIKING_TEST_KEY'
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_OPENVIKING_API_KEY_ENV: 'OPENVIKING_TEST_KEY'
   };
   const names = await providerKeyNames(missing, env);
   assert.ok(names.includes('OPENVIKING_TEST_KEY'));
 
   const child = buildRuntimeEnv({
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_JEV_API_KEY_ENV: 'JEV_API_KEY',
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_JEV_API_KEY_ENV: 'JEV_API_KEY',
     OPENVIKING_TEST_KEY: 'context-secret',
     AWS_SECRET_ACCESS_KEY: 'aws-secret'
   }, { extraKeys: names });
   // Pointer names are variable names, not secrets, so they pass the filter.
-  assert.equal(child.HMCODEX_MODEL_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
-  assert.equal(child.HMCODEX_JEV_API_KEY_ENV, 'JEV_API_KEY');
+  assert.equal(child.DDA_MODEL_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
+  assert.equal(child.DDA_JEV_API_KEY_ENV, 'JEV_API_KEY');
   assert.equal(child.OPENVIKING_TEST_KEY, 'context-secret');
   // Real secrets that are not named stay stripped.
   assert.equal(child.AWS_SECRET_ACCESS_KEY, undefined);
@@ -361,8 +361,8 @@ test('task forwards OPENCODE_GO_API_KEY to a named custom endpoint without a mod
     STRAY_API_TOKEN: stray,
     // Naming the credential opts the default key in for this overridden host;
     // without it the tightened filter would (correctly) withhold the key.
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`
   });
   const output = result.stdout + result.stderr;
   assert.equal(result.code, 0, output);

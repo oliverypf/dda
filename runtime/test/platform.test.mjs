@@ -13,16 +13,16 @@ import { createProcessSupervisor, reclaimRecordedProcesses } from '../src/platfo
 test('Windows store layout stays under hmCodex unless the Linux platform is selected', () => {
   const windows = createPlatformPaths({
     LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
-    HMCODEX_DATA_DIR: 'D:\\data'
+    DDA_DATA_DIR: 'D:\\data'
   });
   assert.equal(windows.platform, 'windows-desktop');
   assert.equal(windows.resolveStore('threads.json'), 'D:\\data\\hmCodex\\threads.json');
   assert.equal(windows.modelConfigPath(), 'C:\\Users\\tester\\AppData\\Local\\hmCodex\\model-config.json');
 
   const linux = createPlatformPaths({
-    HMCODEX_PLATFORM: 'linux-cli',
+    DDA_PLATFORM: 'linux-cli',
     HOME: '/home/tester',
-    HMCODEX_DATA_DIR: '/srv/dda'
+    DDA_DATA_DIR: '/srv/dda'
   });
   assert.equal(linux.dataDir(), '/srv/dda');
   assert.equal(linux.resolveStore('threads.json'), '/srv/dda/threads.json');
@@ -33,13 +33,13 @@ test('Windows store layout stays under hmCodex unless the Linux platform is sele
 
 test('explicit XDG and config paths outrank defaults', () => {
   const paths = createPlatformPaths({
-    HMCODEX_PLATFORM: 'linux-cli',
+    DDA_PLATFORM: 'linux-cli',
     HOME: '/home/tester',
     XDG_CONFIG_HOME: '/xdg/config',
     XDG_DATA_HOME: '/xdg/data',
     XDG_STATE_HOME: '/xdg/state',
     XDG_CACHE_HOME: '/xdg/cache',
-    HMCODEX_MODEL_CONFIG: '/explicit/model-config.json'
+    DDA_MODEL_CONFIG: '/explicit/model-config.json'
   });
   assert.equal(paths.configDir(), '/xdg/config/hmcodex');
   assert.equal(paths.dataDir(), '/xdg/data/hmcodex');
@@ -55,27 +55,27 @@ test('runtime environment keeps provider keys only when named and drops other se
     DISPLAY: ':0',
     AWS_SECRET_ACCESS_KEY: 'nope',
     OPENCODE_GO_API_KEY: 'secret-value',
-    HMCODEX_DATA_DIR: '/data',
-    HMCODEX_API_KEY: 'hidden',
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_JEV_API_KEY_ENV: 'JEV_API_KEY'
+    DDA_DATA_DIR: '/data',
+    DDA_API_KEY: 'hidden',
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_JEV_API_KEY_ENV: 'JEV_API_KEY'
   }, { extraKeys: ['OPENCODE_GO_API_KEY'] });
   assert.equal(env.PATH, '/usr/bin');
-  assert.equal(env.HMCODEX_DATA_DIR, '/data');
+  assert.equal(env.DDA_DATA_DIR, '/data');
   assert.equal(env.OPENCODE_GO_API_KEY, 'secret-value');
   assert.equal(env.DISPLAY, undefined);
   assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
-  assert.equal(env.HMCODEX_API_KEY, undefined);
+  assert.equal(env.DDA_API_KEY, undefined);
   // A _KEY_ENV pointer names a variable, not a secret, so it passes the filter.
-  assert.equal(env.HMCODEX_MODEL_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
-  assert.equal(env.HMCODEX_JEV_API_KEY_ENV, 'JEV_API_KEY');
+  assert.equal(env.DDA_MODEL_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
+  assert.equal(env.DDA_JEV_API_KEY_ENV, 'JEV_API_KEY');
   assert.throws(() => buildChildEnv({ API_TOKEN: 'x' }), /CHILD_ENV_INVALID/);
   assert.deepEqual(buildChildEnv({ LANG: 'C' }), { LANG: 'C' });
 });
 
 test('windows and HarmonyOS CLI hosts keep their own data roots', () => {
   const windows = createPlatformPaths({
-    HMCODEX_PLATFORM: 'windows-cli',
+    DDA_PLATFORM: 'windows-cli',
     USERPROFILE: 'C:\\Users\\tester'
   });
   assert.equal(windows.platform, 'windows-cli');
@@ -85,22 +85,22 @@ test('windows and HarmonyOS CLI hosts keep their own data roots', () => {
   assert.equal(windows.resolveStore('threads.json'), 'C:\\Users\\tester\\AppData\\Local\\hmCodex\\threads.json');
 
   const shared = createPlatformPaths({
-    HMCODEX_PLATFORM: 'windows-cli',
+    DDA_PLATFORM: 'windows-cli',
     LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local',
-    HMCODEX_DATA_DIR: 'D:\\data'
+    DDA_DATA_DIR: 'D:\\data'
   });
   assert.equal(shared.resolveStore('threads.json'), 'D:\\data\\hmCodex\\threads.json');
 
   const harmony = createPlatformPaths({
-    HMCODEX_PLATFORM: 'harmonyos-cli',
+    DDA_PLATFORM: 'harmonyos-cli',
     HOME: '/home/tester',
-    HMCODEX_DATA_DIR: '/srv/dda'
+    DDA_DATA_DIR: '/srv/dda'
   });
   assert.equal(harmony.platform, 'harmonyos-cli');
   assert.equal(harmony.dataDir(), '/srv/dda');
   assert.equal(harmony.modelConfigPath(), '/home/tester/.config/hmcodex/model-config.json');
-  assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'harmonyos-cli' }).executor, 'harmonyos-posix');
-  assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'windows-cli' }).executor, 'restricted-windows');
+  assert.equal(resolvePlatformIdentity({ DDA_PLATFORM: 'harmonyos-cli' }).executor, 'harmonyos-posix');
+  assert.equal(resolvePlatformIdentity({ DDA_PLATFORM: 'windows-cli' }).executor, 'restricted-windows');
 });
 
 test('CLI host detection follows Windows, Linux, and HarmonyOS markers', () => {
@@ -117,22 +117,22 @@ test('CLI host detection follows Windows, Linux, and HarmonyOS markers', () => {
     release: '6.8.0'
   }), 'harmonyos-cli');
   assert.equal(detectCliHost({
-    env: { HMCODEX_PLATFORM: 'linux-cli' },
+    env: { DDA_PLATFORM: 'linux-cli' },
     platform: 'win32',
     release: 'OpenHarmony 5.0'
   }), 'linux-cli');
-  assert.equal(detectCliHost({ env: { HMCODEX_PLATFORM: 'windows-desktop' }, platform: 'linux' }), 'windows-desktop');
+  assert.equal(detectCliHost({ env: { DDA_PLATFORM: 'windows-desktop' }, platform: 'linux' }), 'windows-desktop');
 });
 
 test('platform identity stays windows-desktop until linux-cli is requested', () => {
   assert.equal(resolvePlatformIdentity({}).platform, 'windows-desktop');
-  assert.equal(resolvePlatformIdentity({ HMCODEX_PLATFORM: 'linux-cli', HMCODEX_RELEASE_CHANNEL: 'LINUX_CLI_READ_ONLY' }).executor, 'linux-posix');
+  assert.equal(resolvePlatformIdentity({ DDA_PLATFORM: 'linux-cli', DDA_RELEASE_CHANNEL: 'LINUX_CLI_READ_ONLY' }).executor, 'linux-posix');
   assert.equal(executorDescriptor({}).pluginId, 'executor-windows');
-  assert.equal(executorDescriptor({ HMCODEX_PLATFORM: 'linux-cli' }).id, 'linux-posix@0.1.0');
-  assert.equal(executorDescriptor({ HMCODEX_PLATFORM: 'harmonyos-cli' }).pluginId, 'executor-harmonyos');
+  assert.equal(executorDescriptor({ DDA_PLATFORM: 'linux-cli' }).id, 'linux-posix@0.1.0');
+  assert.equal(executorDescriptor({ DDA_PLATFORM: 'harmonyos-cli' }).pluginId, 'executor-harmonyos');
   assert.equal(scenarioPlatform({}), 'WINDOWS');
-  assert.equal(scenarioPlatform({ HMCODEX_PLATFORM: 'linux-cli' }), 'LINUX');
-  assert.equal(scenarioPlatform({ HMCODEX_PLATFORM: 'harmonyos-cli' }), 'HARMONYOS');
+  assert.equal(scenarioPlatform({ DDA_PLATFORM: 'linux-cli' }), 'LINUX');
+  assert.equal(scenarioPlatform({ DDA_PLATFORM: 'harmonyos-cli' }), 'HARMONYOS');
   assert.equal(policyChannelForRelease('LINUX_CLI_CONTROLLED'), 'CONTROLLED');
   assert.equal(policyChannelForRelease('WINDOWS_PHASE1_READ_ONLY'), 'READ_ONLY');
 });

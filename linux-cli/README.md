@@ -10,7 +10,9 @@
 | Windows | `windows-cli` | `%LOCALAPPDATA%\hmCodex`，与桌面端共用 |
 | 鸿蒙 PC | `harmonyos-cli` | 有 XDG 或 `HOME` 时使用同一套家目录布局 |
 
-鸿蒙 PC 如果 Node 把 `process.platform` 报成 `linux`，只要系统描述、`OHOS_SDK_HOME` 或 `HARMONYOS_SDK_HOME` 能看出鸿蒙，仍会使用 `harmonyos-cli`。也可以显式设置 `HMCODEX_PLATFORM`。鸿蒙上的 ArkUI 应用仍是独立客户端；这个 CLI 只在该机器提供 Node.js 24 或更新版本时运行。
+鸿蒙 PC 如果 Node 把 `process.platform` 报成 `linux`，只要系统描述、`OHOS_SDK_HOME` 或 `HARMONYOS_SDK_HOME` 能看出鸿蒙，仍会使用 `harmonyos-cli`。也可以显式设置 `DDA_PLATFORM`。鸿蒙上的 ArkUI 应用仍是独立客户端；这个 CLI 只在该机器提供 Node.js 24 或更新版本时运行。
+
+CLI 和 runtime 只读取 `DDA_*` 环境变量。旧的 `HMCODEX_*` 名称不再作为别名生效。
 
 ## 要求
 
@@ -61,18 +63,18 @@ dda health
 | 缓存 | `${XDG_CACHE_HOME:-$HOME/.cache}/hmcodex/` |
 | 日志 | `${XDG_STATE_HOME:-$HOME/.local/state}/hmcodex/logs/` |
 
-`--data-dir` 和 `HMCODEX_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。密钥只在对应平面仍指向默认主机时才自动传递：模型平面默认传 `OPENCODE_GO_API_KEY`，Jev 平面默认传 `JEV_API_KEY`。一旦用配置或 `HMCODEX_MODEL_ENDPOINT` / `HMCODEX_JEV_ENDPOINT` 改写了端点，就必须用 `apiKeyEnv`（或 `HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`）为该主机显式命名密钥变量——默认密钥不会被发到被改写的主机。被命名的密钥变量会传给子进程，未声明的密钥环境变量会被去掉。API key 不会写入配置、事件或支持信息。
+`--data-dir` 和 `DDA_DATA_DIR` 会覆盖数据根目录，所有 store 都从这一次解析结果派生。新建目录使用 `0700`。密钥只在对应平面仍指向默认主机时才自动传递：模型平面默认传 `OPENCODE_GO_API_KEY`，Jev 平面默认传 `JEV_API_KEY`。一旦用配置或 `DDA_MODEL_ENDPOINT` / `DDA_JEV_ENDPOINT` 改写了端点，就必须用 `apiKeyEnv`（或 `DDA_MODEL_API_KEY_ENV` / `DDA_JEV_API_KEY_ENV`）为该主机显式命名密钥变量——默认密钥不会被发到被改写的主机。被命名的密钥变量会传给子进程，未声明的密钥环境变量会被去掉。API key 不会写入配置、事件或支持信息。
 
-Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `HMCODEX_PLATFORM` 的 runtime 仍保持原来的 Windows 目录规则，避免在 Linux 上跑 Windows 测试时改掉路径。
+Windows CLI 使用上面表格里的 `%LOCALAPPDATA%\hmCodex`。未设置 `DDA_PLATFORM` 的 runtime 仍保持原来的 Windows 目录规则，避免在 Linux 上跑 Windows 测试时改掉路径。
 
 ## Jev 决策
 
 Jev 需要每个部署显式开启，满足下面任一条件才算“已配置”：
 
 - 部署本地的 `model-config.json` 里有 `decision` 块；
-- 环境里设置了任意 `HMCODEX_JEV_*` 变量，例如 `HMCODEX_JEV_ENABLED=1`，或 `HMCODEX_JEV_ENDPOINT` + `HMCODEX_JEV_API_KEY_ENV`。
+- 环境里设置了任意 `DDA_JEV_*` 变量，例如 `DDA_JEV_ENABLED=1`，或 `DDA_JEV_ENDPOINT` + `DDA_JEV_API_KEY_ENV`。
 
-已配置后 `enabled` 默认为 true，再加上对应密钥变量有值，runtime 才会真正调用 Jev。只设置 `JEV_API_KEY` 不会开启 Jev。`HMCODEX_JEV_ENABLED=0` 或 `decision.enabled: false` 可以在已配置的部署里关掉它。没开启、缺密钥、超时或返回无效时，决策层记为规则兜底（`source: rule`），保持保守：只读工具可以继续，副作用仍走审批，行为判定为 `UNCERTAIN`。任务结果里的 `decisionLayer.enabled` / `configured` 反映实际状态。
+已配置后 `enabled` 默认为 true，再加上对应密钥变量有值，runtime 才会真正调用 Jev。只设置 `JEV_API_KEY` 不会开启 Jev。`DDA_JEV_ENABLED=0` 或 `decision.enabled: false` 可以在已配置的部署里关掉它。没开启、缺密钥、超时或返回无效时，决策层记为规则兜底（`source: rule`），保持保守：只读工具可以继续，副作用仍走审批，行为判定为 `UNCERTAIN`。任务结果里的 `decisionLayer.enabled` / `configured` 反映实际状态。
 
 未改写端点时，默认直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
 
@@ -80,7 +82,7 @@ Jev 需要每个部署显式开启，满足下面任一条件才算“已配置�
 
 - 路径是 `systemone`，写成 `system_one` 会 404。
 - `model` 用 `jev-latest` 或 `typesafe/jev-1.13`。`typesafe/jev-router` 是聊天路由模型，System One 接口会返回 400，不要用在这里。
-- 改写端点后，默认的 `JEV_API_KEY` 不会被发到新主机；用 `decision.apiKeyEnv` 或 `HMCODEX_JEV_API_KEY_ENV` 命名该主机要用的密钥变量。
+- 改写端点后，默认的 `JEV_API_KEY` 不会被发到新主机；用 `decision.apiKeyEnv` 或 `DDA_JEV_API_KEY_ENV` 命名该主机要用的密钥变量。
 
 ## 命令
 
@@ -103,7 +105,7 @@ dda task --workspace /path/to/project --prompt "运行测试" \
   --execution-mode CONTROLLED --approval-mode deny
 ```
 
-受控动作还需要部署环境授予租约范围，例如 `HMCODEX_LEASE_CAPABILITIES=shell.execute`、`HMCODEX_LEASE_COMMANDS=node`；没授予的能力直接返回 `SAFETY_LEASE_REQUIRED`，不会进入审批。
+受控动作还需要部署环境授予租约范围，例如 `DDA_LEASE_CAPABILITIES=shell.execute`、`DDA_LEASE_COMMANDS=node`；没授予的能力直接返回 `SAFETY_LEASE_REQUIRED`，不会进入审批。
 
 三种审批方式：
 

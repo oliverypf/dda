@@ -512,7 +512,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
     async *stream(request) {
       const apiKey = process.env[apiKeyEnv]?.trim();
       if (!apiKey) throw new Error(`MISSING_CREDENTIAL:${apiKeyEnv}`);
-      const cacheEnabled = process.env.HMCODEX_PROMPT_CACHE !== 'off';
+      const cacheEnabled = process.env.DDA_PROMPT_CACHE !== 'off';
       const scopedSession = cacheEnabled && request.cacheScope ? cacheSessionId({
         scope: request.cacheScope, endpoint, model, role: request.cacheRole ?? 'executor',
         system: request.system ?? '', tools: request.tools
@@ -541,7 +541,7 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
               stream: true
             };
           })();
-      if (protocol === 'chat-completions' && process.env.HMCODEX_STREAM_USAGE !== 'off') body.stream_options = { include_usage: true };
+      if (protocol === 'chat-completions' && process.env.DDA_STREAM_USAGE !== 'off') body.stream_options = { include_usage: true };
       // Only the official OpenAI host is assumed to support this routing field.
       // Compatible gateways still benefit from identical prefixes and their
       // configured session header, without being sent unsupported cache keys.

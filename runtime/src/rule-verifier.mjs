@@ -7,17 +7,17 @@ const CHECK_STATUSES = new Set(['PASS', 'FAIL', 'UNKNOWN', 'SKIPPED']);
 const VERIFIER_VERSION = 'rule-1.1';
 // 与 task-runner 的 MAX_TOOL_ROUNDS 保持同一上限来源，避免执行侧放开后
 // 验证侧仍然按 4 轮判定 FAIL。
-// 与 task-runner 的上限来源保持一致（HMCODEX_MAX_TOOL_ROUNDS）。
+// 与 task-runner 的上限来源保持一致（DDA_MAX_TOOL_ROUNDS）。
 // 未设置 / 0 => 不限制（Infinity）。惰性求值，便于测试在运行前覆盖。
 const defaultMaxToolRounds = () => {
-  const raw = process.env.HMCODEX_MAX_TOOL_ROUNDS;
+  const raw = process.env.DDA_MAX_TOOL_ROUNDS;
   if (raw === undefined || String(raw).trim() === '') return Infinity;
   const requested = Number(raw);
   if (!Number.isFinite(requested) || requested <= 0) return Infinity;
   return Math.max(1, Math.trunc(requested));
 };
 const defaultMaxToolCalls = () => {
-  const raw = process.env.HMCODEX_MAX_TOOL_CALLS;
+  const raw = process.env.DDA_MAX_TOOL_CALLS;
   if (raw === undefined || String(raw).trim() === '') return Infinity;
   const requested = Number(raw);
   if (!Number.isFinite(requested) || requested <= 0) return Infinity;

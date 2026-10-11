@@ -52,9 +52,9 @@ await writeFile(configPath, JSON.stringify({ schemaVersion: '1.0', provider: 'op
   models: [binding(flash), binding(pro)], roleBindings: { planner: { selector: 'PINNED', modelId: flash.model }, executor: { selector: 'PINNED', modelId: flash.model }, critic: { selector: 'PINNED', modelId: pro.model } },
   decision: { enabled: true, enforce: true, endpoint: jev.endpoint, apiKeyEnv: 'GOAL_CHECKPOINT_UPGRADE_JEV_KEY', model: 'jev-latest', timeoutMs: 5000, diagnosisEnabled: true, recoveryDirectionEnabled: true } }, null, 2));
 const prompt = 'This is a preset read-only recovery test. Success requires a real workspace.read of README.md and reporting its exact evidence marker. In the initial executor attempt, invoke only workspace.read of missing-evidence.txt as the first tool, receive its actual missing-file error, then end the attempt reporting the failure without reading README.md. If the host restores a checkpoint or starts verifier recovery with previously observed failure facts, continue the remaining goal by reading README.md and reporting its marker. Do not treat absent or merely proposed failures as observed. The workspace remains read-only in both attempts.';
-const env = { GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY: 'local-fixture-key', GOAL_CHECKPOINT_UPGRADE_JEV_KEY: 'goal-jev-local-key', HMCODEX_DATA_DIR: runRoot,
-  HMCODEX_HARNESS_EVENT_STORE: store, HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-  HMCODEX_EXECUTION_MODE: 'READ_ONLY', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' };
+const env = { GOAL_CHECKPOINT_UPGRADE_LOCAL_KEY: 'local-fixture-key', GOAL_CHECKPOINT_UPGRADE_JEV_KEY: 'goal-jev-local-key', DDA_DATA_DIR: runRoot,
+  DDA_HARNESS_EVENT_STORE: store, DDA_CONTEXT_PROVIDER: 'journal', DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+  DDA_EXECUTION_MODE: 'READ_ONLY', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
 const parse = text => text.split(/\r?\n/u).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
 const common = ['src/index.mjs', 'task', '--agent-mode', 'single', '--config', configPath, '--workspace', workspace, '--prompt', prompt,
   '--trajectory-store', trajectory, '--thread-store', threadStore, '--max-tool-rounds', '4'];

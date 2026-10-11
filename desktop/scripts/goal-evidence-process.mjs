@@ -2,13 +2,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const findCodexCli = async (explicit = process.env.HMCODEX_CODEX_CLI) => {
+export const findCodexCli = async (explicit = process.env.DDA_CODEX_CLI) => {
   const candidates = explicit ? [explicit] : (process.env.PATH ?? '').split(process.platform === 'win32' ? ';' : ':')
     .flatMap(path => [join(path, process.platform === 'win32' ? 'codex.exe' : 'codex'), join(path, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')]);
   for (const path of candidates) {
     try { await access(path); return path.endsWith('.js') ? { command: process.execPath, prefix: [path] } : { command: path, prefix: [] }; } catch { /* next location */ }
   }
-  throw Error('CODEX_CLI_NOT_FOUND: install the ordinary Codex CLI or set HMCODEX_CODEX_CLI');
+  throw Error('CODEX_CLI_NOT_FOUND: install the ordinary Codex CLI or set DDA_CODEX_CLI');
 };
 
 export const runEvidenceProcess = (command, args, { cwd, env = {}, dropEnv = [], inheritEnv = true, timeoutMs = 180000 } = {}) => new Promise((done, reject) => {

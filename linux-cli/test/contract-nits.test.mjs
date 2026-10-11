@@ -93,9 +93,9 @@ test('a CLI timeout records an UNKNOWN outcome that recovery surfaces', async (t
   const taskEnv = {
     ...env,
     OPENCODE_GO_API_KEY: 'timeout-key',
-    HMCODEX_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
-    HMCODEX_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
-    HMCODEX_JEV_ENABLED: '0'
+    DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
+    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
+    DDA_JEV_ENABLED: '0'
   };
   const timedOut = await run([
     'task', '--workspace', workspace, '--prompt', 'hang please', '--format', 'jsonl',

@@ -7,12 +7,12 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const installedRoot = process.env.HMCODEX_INSTALLED_ROOT
+const installedRoot = process.env.DDA_INSTALLED_ROOT
   ?? join(process.env.ProgramFiles ?? 'C:/Program Files', 'dda');
 const executable = join(installedRoot, 'dda-desktop.exe');
 const sidecar = join(installedRoot, 'sidecar', 'openviking-server.exe');
 const supervisor = join(installedRoot, 'runtime', 'src', 'openviking-sidecar-supervisor.mjs');
-const cdpPort = Number(process.env.HMCODEX_OPENVIKING_UI_PORT ?? 9488);
+const cdpPort = Number(process.env.DDA_OPENVIKING_UI_PORT ?? 9488);
 
 assert.ok(process.platform === 'win32', 'This installed-package E2E targets Windows');
 assert.ok(['executable', 'sidecar', 'supervisor'].every((name) => statSync({ executable, sidecar, supervisor }[name]).isFile()), 'INSTALLED_OPENVIKING_LAYOUT_MISSING');
@@ -103,16 +103,16 @@ const runScenario = async ({ name, expected, environment }) => {
     env: {
       ...process.env,
       ...environment,
-      HMCODEX_OPENVIKING_URL: url,
-      HMCODEX_OPENVIKING_API_KEY: 'installed-ui-e2e-key',
-      HMCODEX_OPENVIKING_DATA_DIR: dataDir,
-      HMCODEX_OPENVIKING_START_TIMEOUT_MS: '10000',
+      DDA_OPENVIKING_URL: url,
+      DDA_OPENVIKING_API_KEY: 'installed-ui-e2e-key',
+      DDA_OPENVIKING_DATA_DIR: dataDir,
+      DDA_OPENVIKING_START_TIMEOUT_MS: '10000',
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort}`
     }
   });
   let client;
   try {
-    if (environment.HMCODEX_OPENVIKING_EXECUTABLE === sidecar) {
+    if (environment.DDA_OPENVIKING_EXECUTABLE === sidecar) {
       assert.ok(await waitUntil(() => sidecarReady(url), 20000, 'installed sidecar ready'), 'sidecar did not start');
     }
     client = await connectCdp();
@@ -131,12 +131,12 @@ const runScenario = async ({ name, expected, environment }) => {
 const ready = await runScenario({
   name: 'ready',
   expected: '记忆已就绪（托管）',
-  environment: { HMCODEX_OPENVIKING_EXECUTABLE: sidecar }
+  environment: { DDA_OPENVIKING_EXECUTABLE: sidecar }
 });
 const unavailable = await runScenario({
   name: 'unavailable',
   expected: '记忆不可用（已降级）',
-  environment: { HMCODEX_OPENVIKING_EXECUTABLE: 'C:\\hmcodex-openviking-missing.exe' }
+  environment: { DDA_OPENVIKING_EXECUTABLE: 'C:\\hmcodex-openviking-missing.exe' }
 });
 
 console.log(JSON.stringify({ status: 'passed', ready, unavailable }));

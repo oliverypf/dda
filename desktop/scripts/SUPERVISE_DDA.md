@@ -88,7 +88,7 @@ node desktop/scripts/supervise-dda-task.mjs run task.json attempt-3 prompt-3.txt
 
 ## 验收与采用
 
-在隔离目录编译并运行适合任务的独立检查。归档迁移使用 `ui-archive-settings-test.mjs`，并继续运行项目归档和设置回归。界面脚本允许通过 `HMCODEX_UI_DIST` 指向候选构建；使用模拟 native bridge，不访问用户的真实数据。
+在隔离目录编译并运行适合任务的独立检查。归档迁移使用 `ui-archive-settings-test.mjs`，并继续运行项目归档和设置回归。界面脚本允许通过 `DDA_UI_DIST` 指向候选构建；使用模拟 native bridge，不访问用户的真实数据。
 
 检查实际通过后才生成验收 JSON：
 

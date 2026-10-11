@@ -1,6 +1,6 @@
 fn main() {
-    println!("cargo:rerun-if-env-changed=HMCODEX_BUILD_RELEASE_CHANNEL");
-    if let Ok(channel) = std::env::var("HMCODEX_BUILD_RELEASE_CHANNEL") {
+    println!("cargo:rerun-if-env-changed=DDA_BUILD_RELEASE_CHANNEL");
+    if let Ok(channel) = std::env::var("DDA_BUILD_RELEASE_CHANNEL") {
         assert!(
             matches!(
                 channel.as_str(),
@@ -11,7 +11,7 @@ fn main() {
             ),
             "invalid build release channel"
         );
-        println!("cargo:rustc-env=HMCODEX_BAKED_RELEASE_CHANNEL={channel}");
+        println!("cargo:rustc-env=DDA_BAKED_RELEASE_CHANNEL={channel}");
     }
     tauri_build::build()
 }

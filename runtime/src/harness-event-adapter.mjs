@@ -5,7 +5,7 @@
 export const HARNESS_EVENT_SCHEMA_VERSION = '1.0';
 export const HARNESS_PROTOCOL_VERSION = '1.0';
 export const HARNESS_STORAGE_SCHEMA_VERSION = 1;
-export const HARNESS_APP_VERSION = process.env.HMCODEX_APP_VERSION?.trim() || '0.1.0';
+export const HARNESS_APP_VERSION = process.env.DDA_APP_VERSION?.trim() || '0.1.0';
 export const HARNESS_PRODUCER_VERSION = 'hmcodex-runtime@0.1.0';
 
 const ACTOR_TYPES = new Set(['USER', 'CORE', 'MODEL', 'ADAPTER', 'PLUGIN', 'SYSTEM']);

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const executable = process.env.HMCODEX_OPENVIKING_SERVER
+const executable = process.env.DDA_OPENVIKING_SERVER
   ?? fileURLToPath(new URL('../src-tauri/binaries/openviking-server.exe', import.meta.url));
 const port = await new Promise((resolvePort, rejectPort) => {
   const server = createServer();
@@ -23,8 +23,8 @@ await writeFile(join(dataDir, 'openviking-store.json'), '{corrupted', 'utf8');
 const child = spawn(executable, ['--host', '127.0.0.1', '--port', String(port)], {
   env: {
     ...process.env,
-    HMCODEX_OPENVIKING_DATA_DIR: dataDir,
-    HMCODEX_OPENVIKING_API_KEY: 'corruption-e2e-key'
+    DDA_OPENVIKING_DATA_DIR: dataDir,
+    DDA_OPENVIKING_API_KEY: 'corruption-e2e-key'
   },
   stdio: 'ignore',
   windowsHide: true

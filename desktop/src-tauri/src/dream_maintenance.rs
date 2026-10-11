@@ -211,10 +211,10 @@ pub fn start(
     }
     write_active_runs(&active_runs_file, &active_runs);
     let mut command =
-        Command::new(std::env::var_os("HMCODEX_NODE").unwrap_or_else(|| "node".into()));
+        Command::new(std::env::var_os("DDA_NODE").unwrap_or_else(|| "node".into()));
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    command.env("HMCODEX_RELEASE_CHANNEL", crate::desktop_release_channel()?);
+    command.env("DDA_RELEASE_CHANNEL", crate::desktop_release_channel()?);
     if let Some(parent) = runtime.parent().and_then(Path::parent) {
         command.current_dir(parent);
     }

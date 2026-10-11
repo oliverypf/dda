@@ -105,7 +105,7 @@ test('Jev gates receive the observed failure before the next tool and before rec
   const result = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'task', '--config', config, '--workspace', workspace,
     '--prompt', 'First read missing.txt and receive its error, then read README.md and report its marker.',
     '--trajectory-store', join(root, 'trajectory.jsonl'), '--max-recovery-attempts', '2', '--max-tool-rounds', '4'], {
-    cwd: new URL('..', import.meta.url), env: { GOAL_TOOL_FACTS_KEY: 'local-key', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' }, timeoutMs: 30000
+    cwd: new URL('..', import.meta.url), env: { GOAL_TOOL_FACTS_KEY: 'local-key', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' }, timeoutMs: 30000
   });
   assert.equal(result.code, 0, result.stderr + result.stdout.slice(-1000));
   assert.equal(sawFailure, true, 'a following tool sees the prior failed tool without a new role turn');
@@ -186,8 +186,8 @@ test('a controlled failing test can be repaired only after the Jev wire carries 
     '--prompt', 'Run the tests, repair broken.mjs after the observed failure, then run the same tests successfully.',
     '--trajectory-store', join(root, 'trajectory.jsonl'), '--thread-store', join(root, 'threads.json'),
     '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node'], {
-    cwd: new URL('..', import.meta.url), env: { GOAL_PROCESS_INTENT_KEY: 'local-key', HMCODEX_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
-      HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' }, timeoutMs: 30000
+    cwd: new URL('..', import.meta.url), env: { GOAL_PROCESS_INTENT_KEY: 'local-key', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+      DDA_CONTEXT_PROVIDER: 'journal', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' }, timeoutMs: 30000
   });
   assert.equal(result.timedOut, false, `Local fixture exceeded its process deadline after ${result.wallMs}ms`);
   assert.equal(result.code, 0, result.stderr + result.stdout.slice(-1000));
@@ -289,8 +289,8 @@ for (const diagnosticRetry of [false, true]) test(diagnosticRetry
     '--prompt', 'First run the tests and observe failure, repair only broken.mjs, verify the tests were preserved and run the same tests successfully.',
     '--trajectory-store', join(root, 'trajectory.jsonl'), '--thread-store', join(root, 'threads.json'),
     '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node'], {
-    cwd: new URL('..', import.meta.url), env: { GOAL_CURRENT_CONTEXT_KEY: 'local-key', HMCODEX_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
-      HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' }, timeoutMs: diagnosticRetry ? 60000 : 30000
+    cwd: new URL('..', import.meta.url), env: { GOAL_CURRENT_CONTEXT_KEY: 'local-key', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+      DDA_CONTEXT_PROVIDER: 'journal', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' }, timeoutMs: diagnosticRetry ? 60000 : 30000
   });
   assert.equal(result.timedOut, false, `Local fixture exceeded its process deadline after ${result.wallMs}ms`);
   assert.equal(result.code, 0, result.stderr + result.stdout.slice(-1000));

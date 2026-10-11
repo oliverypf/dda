@@ -16,7 +16,7 @@ const run = (args, env) => new Promise((resolve, reject) => {
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HMCODEX_TRAJECTORY_STORE: trajectoryStore, ...env },
+    env: { ...process.env, DDA_TRAJECTORY_STORE: trajectoryStore, ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stdout = '';
@@ -180,8 +180,8 @@ test('loads the OpenAI Responses route from a JSON config file', async (t) => {
     'task', '--config', configPath, '--prompt', '使用文件配置', '--workspace', workspace
   ], {
     TEST_CONFIG_KEY: 'config-key',
-    HMCODEX_MODEL: 'environment-model',
-    HMCODEX_MODEL_PROVIDER: 'compatible'
+    DDA_MODEL: 'environment-model',
+    DDA_MODEL_PROVIDER: 'compatible'
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
@@ -235,12 +235,12 @@ test('records a redacted failure event when model credentials are missing', asyn
   const trajectoryPath = join(workspace, 'failure-trajectory.jsonl');
   const result = await run([
     'task', '--provider', 'openai', '--model', 'missing-key-model',
-    '--endpoint', 'http://127.0.0.1:1/responses', '--api-key-env', 'HMCODEX_TEST_KEY_UNSET',
+    '--endpoint', 'http://127.0.0.1:1/responses', '--api-key-env', 'DDA_TEST_KEY_UNSET',
     '--prompt', 'failure prompt must not be stored', '--workspace', workspace,
     '--trajectory-store', trajectoryPath
   ]);
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /MISSING_CREDENTIAL:HMCODEX_TEST_KEY_UNSET/);
+  assert.match(result.stdout, /MISSING_CREDENTIAL:DDA_TEST_KEY_UNSET/);
   const events = (await readFile(trajectoryPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
   const failedEvent = events.find((event) => event.kind === 'TaskRunFailed');
   assert.ok(failedEvent);

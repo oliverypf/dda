@@ -72,10 +72,10 @@ test('release-check reports channel, versions, side-effect rejection, read model
   ], {
     env: {
       ...process.env,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });
@@ -148,10 +148,10 @@ test('release-check excludes incomplete runs from learning instead of failing th
   ], {
     env: {
       ...process.env,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });
@@ -186,10 +186,10 @@ test('release-check accepts a controlled channel and does not claim side-effect 
   ], {
     env: {
       ...process.env,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });
@@ -220,10 +220,10 @@ test('release-check accepts the phase-2 WINDOWS_FULL_LOCAL channel instead of fa
   ], {
     env: {
       ...process.env,
-      HMCODEX_BAKED_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_BAKED_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });
@@ -253,10 +253,10 @@ test('release-check still rejects an unapproved pre-phase-1 build', async (t) =>
   ], {
     env: {
       ...process.env,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_MVP_PRE_PHASE1',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_RELEASE_CHANNEL: 'WINDOWS_MVP_PRE_PHASE1',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });

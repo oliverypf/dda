@@ -29,7 +29,7 @@ const writeEvidence = async (root, name, payload) => {
 
 test('plugin versions fail closed without evidence and persist activation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-plugin-version-cli-'));
-  const env = { HMCODEX_PLUGIN_GOVERNANCE_STORE: join(root, 'plugin-governance.json') };
+  const env = { DDA_PLUGIN_GOVERNANCE_STORE: join(root, 'plugin-governance.json') };
   const pluginId = 'com.example.version-cli';
   const activateArgs = (version, evidence) => [
     'plugin', 'activate-version', '--plugin-id', pluginId, '--version', version,

@@ -35,9 +35,9 @@ test('export-data redacts forbidden fields for run, thread, and all-local scopes
   await threads.appendTurn(thread.id, { runId: 'run-export', summary: 'fixture', state: 'SUCCEEDED' });
   const env = {
     ...process.env,
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness,
-    HMCODEX_THREAD_STORE: threadPath
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness,
+    DDA_THREAD_STORE: threadPath
   };
 
   const runOutput = join(directory, 'run-export.json');

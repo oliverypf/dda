@@ -38,7 +38,7 @@ test('Phase 1 requires a durable SQLite task store', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-storage-gate-'));
   const result = spawnSync(process.execPath, ['src/index.mjs', 'task', '--prompt', 'test', '--harness-event-store', join(directory, 'events.json')], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HMCODEX_RELEASE_CHANNEL: channel, HMCODEX_EXECUTION_MODE: 'READ_ONLY', HMCODEX_DATA_DIR: directory },
+    env: { ...process.env, DDA_RELEASE_CHANNEL: channel, DDA_EXECUTION_MODE: 'READ_ONLY', DDA_DATA_DIR: directory },
     encoding: 'utf8', windowsHide: true, timeout: 30000
   });
   assert.equal(result.status, 1, result.stderr);
@@ -51,9 +51,9 @@ test('Phase 1 recovery uses the same scoped SQLite authority as task execution',
   const trajectory = join(directory, 'trajectory.jsonl');
   const storagePath = `${trajectory}.db`;
   await createHarnessEventStore({ storagePath }).append({ runId: 'existing', kind: 'TaskRunCreated' });
-  const recoveryEnv = { ...process.env, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_TRAJECTORY_STORE: trajectory, HMCODEX_DATA_DIR: directory };
-  delete recoveryEnv.HMCODEX_HARNESS_EVENT_STORE;
+  const recoveryEnv = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
+  delete recoveryEnv.DDA_HARNESS_EVENT_STORE;
   const result = spawnSync(process.execPath, ['src/index.mjs', 'recovery'], {
     cwd: new URL('..', import.meta.url),
     env: recoveryEnv,
@@ -68,14 +68,14 @@ test('Phase 1 recovery uses the same scoped SQLite authority as task execution',
 
 test('Phase 1 CLI denies all controlled entry forms before creating task stores', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-gate-'));
-  const env = { ...process.env, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_TRAJECTORY_STORE: join(directory, 'trajectory.jsonl'), HMCODEX_DATA_DIR: directory };
+  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_TRAJECTORY_STORE: join(directory, 'trajectory.jsonl'), DDA_DATA_DIR: directory };
   for (const args of [
     ['--execution-mode', 'CONTROLLED'], ['--execution-mode=CONTROLLED'],
     ['--mode', 'CONTROLLED_WRITE'], []
   ]) {
     const result = spawnSync(process.execPath, ['src/index.mjs', 'task', '--prompt', 'test', ...args], {
-      cwd: new URL('..', import.meta.url), env: { ...env, HMCODEX_EXECUTION_MODE: 'CONTROLLED' },
+      cwd: new URL('..', import.meta.url), env: { ...env, DDA_EXECUTION_MODE: 'CONTROLLED' },
       encoding: 'utf8', windowsHide: true, timeout: 30000
     });
     assert.equal(result.error, undefined);
@@ -89,7 +89,7 @@ test('health exposes Phase 1 channel and rejects misspelled channels', () => {
   for (const channel of ['WINDOWS_PHASE1_READ_ONLY', 'INVALID_CHANNEL']) {
     const result = spawnSync(process.execPath, ['src/index.mjs', 'health'], {
       cwd: new URL('..', import.meta.url), encoding: 'utf8', windowsHide: true, timeout: 30000,
-      env: { ...process.env, HMCODEX_RELEASE_CHANNEL: channel }
+      env: { ...process.env, DDA_RELEASE_CHANNEL: channel }
     });
     assert.equal(result.error, undefined);
     const payload = JSON.parse(result.stdout.trim());
@@ -111,8 +111,8 @@ test('a baked release channel cannot be downgraded by the runtime environment', 
     timeout: 30000,
     env: {
       ...process.env,
-      HMCODEX_BAKED_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
+      DDA_BAKED_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
     }
   });
   assert.equal(result.error, undefined);

@@ -6,18 +6,18 @@
 
 | 阶段 | 构建入口 | 构建期变量 | 熔断到制品内的 channel |
 | --- | --- | --- | --- |
-| Phase 1 只读 | `npm run build:windows:phase1`（`desktop/scripts/build-phase1.mjs`） | `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` | `WINDOWS_PHASE1_READ_ONLY` |
-| Phase 1.5 受控 | `npm run build:windows:phase15`（`desktop/scripts/build-controlled.mjs`） | `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_5_CONTROLLED` | `WINDOWS_PHASE1_5_CONTROLLED` |
-| Phase 2 全本地 | `npm run build:windows:full-local`（`desktop/scripts/build-full-local.mjs`） | `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL` | `WINDOWS_FULL_LOCAL` |
+| Phase 1 只读 | `npm run build:windows:phase1`（`desktop/scripts/build-phase1.mjs`） | `DDA_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` | `WINDOWS_PHASE1_READ_ONLY` |
+| Phase 1.5 受控 | `npm run build:windows:phase15`（`desktop/scripts/build-controlled.mjs`） | `DDA_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_5_CONTROLLED` | `WINDOWS_PHASE1_5_CONTROLLED` |
+| Phase 2 全本地 | `npm run build:windows:full-local`（`desktop/scripts/build-full-local.mjs`） | `DDA_BUILD_RELEASE_CHANNEL=WINDOWS_FULL_LOCAL` | `WINDOWS_FULL_LOCAL` |
 | 开发构建 | `npm run dev` / `tauri dev`（不经过上述脚本） | 不设置该变量 | 无熔断 channel |
 
-`desktop/src-tauri/build.rs` 只接受四个合法值并在编译期写入 `HMCODEX_BAKED_RELEASE_CHANNEL`；制品内 bake 的 channel 是发布模式的唯一权威。三个发布构建脚本在构建前删除 `NAPI_RS_NATIVE_LIBRARY_PATH` 与 `NAPI_RS_FORCE_WASI`，避免污染前端/原生构建。
+`desktop/src-tauri/build.rs` 只接受四个合法值并在编译期写入 `DDA_BAKED_RELEASE_CHANNEL`；制品内 bake 的 channel 是发布模式的唯一权威。三个发布构建脚本在构建前删除 `NAPI_RS_NATIVE_LIBRARY_PATH` 与 `NAPI_RS_FORCE_WASI`，避免污染前端/原生构建。
 
 ## 2. 四态矩阵
 
 | 维度 | 默认关闭（默认值） | 显式启用（受控/全本地） | 开发模式 | 发布模式（只读/受控/全本地） |
 | --- | --- | --- | --- | --- |
-| channel 来源 | `HMCODEX_BAKED_RELEASE_CHANNEL` 与 `HMCODEX_RELEASE_CHANNEL` 都缺失时取 `WINDOWS_MVP_PRE_PHASE1` | 由构建脚本 bake 到制品 | 无 bake，可显式设置 `HMCODEX_RELEASE_CHANNEL` 做本地验证 | bake 固定；运行期环境变量不能覆盖或降级 |
+| channel 来源 | `DDA_BAKED_RELEASE_CHANNEL` 与 `DDA_RELEASE_CHANNEL` 都缺失时取 `WINDOWS_MVP_PRE_PHASE1` | 由构建脚本 bake 到制品 | 无 bake，可显式设置 `DDA_RELEASE_CHANNEL` 做本地验证 | bake 固定；运行期环境变量不能覆盖或降级 |
 | 非法 channel | `RELEASE_CHANNEL_INVALID` | 同左 | 同左 | 同左 |
 | 执行 mode | 默认拒绝副作用；只读动作可用 | 需要 workspace grant + capability + 模型 binding，动作再走 intent/approval/lease | 与显式启用相同，但只用于开发验证 | 只读 channel 强制 `mode=READ_ONLY`，其它 mode 抛 `RELEASE_CHANNEL_READ_ONLY` |
 | 缺配置 | 默认拒绝，不创建副作用 operation | `capability`、workspace grant、Policy 或模型 binding 任一缺失即拒绝 | 同上 | 同上 |
@@ -28,8 +28,8 @@
 
 ## 3. 解析顺序与拒绝语义
 
-1. `resolveReleaseChannel()` 读取 `HMCODEX_BAKED_RELEASE_CHANNEL`，缺失时回退 `HMCODEX_RELEASE_CHANNEL`，仍缺失则回退 `WINDOWS_MVP_PRE_PHASE1`；不在合法集合内抛 `RELEASE_CHANNEL_INVALID`。
-2. 存在构建期 bake 时，运行期 `HMCODEX_RELEASE_CHANNEL` 不能改变实际 channel（`release-channel.test.mjs` 的“a baked release channel cannot be downgraded by the runtime environment”）。
+1. `resolveReleaseChannel()` 读取 `DDA_BAKED_RELEASE_CHANNEL`，缺失时回退 `DDA_RELEASE_CHANNEL`，仍缺失则回退 `WINDOWS_MVP_PRE_PHASE1`；不在合法集合内抛 `RELEASE_CHANNEL_INVALID`。
+2. 存在构建期 bake 时，运行期 `DDA_RELEASE_CHANNEL` 不能改变实际 channel（`release-channel.test.mjs` 的“a baked release channel cannot be downgraded by the runtime environment”）。
 3. 只读 channel 的 mode 与 store 约束在创建副作用 operation 之前生效。
 4. 受控/全本地 channel 的插件加载在签名校验失败时于 governance 记录创建前拒绝。
 5. Runtime Safety Monitor 默认 `READ_ONLY`，任何副作用在 spawn 之前拒绝。

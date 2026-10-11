@@ -53,23 +53,6 @@ const candidateFanoutRisk = (taskClass, mode) => taskClass === 'inspect'
   ? (mode === 'CONTROLLED' ? 'MEDIUM' : 'LOW')
   : (mode === 'CONTROLLED' ? 'HIGH' : 'MEDIUM');
 
-// Decision Trace caps every assumption statement at 500 characters and rejects
-// (DECISION_INVALID_ASSUMPTIONS) rather than truncates an oversized value. The
-// council producer allows a longer rationale (1000) and probe (600), so an
-// over-limit verdict would abort the whole decision write. Normalize producer
-// side with one explainable rule: values at or under the limit pass through
-// unchanged, longer values are compacted and cut to fit the downstream limit
-// exactly, keeping an explicit truncation marker so the shortening is visible.
-const ASSUMPTION_STATEMENT_MAX = 500;
-const ASSUMPTION_TRUNCATION_MARKER = ' [TRUNCATED]';
-const councilAssumptionStatement = (value) => {
-  if (typeof value !== 'string') return undefined;
-  const compact = value.replace(/\s+/gu, ' ').trim();
-  if (!compact) return undefined;
-  if (compact.length <= ASSUMPTION_STATEMENT_MAX) return compact;
-  const budget = ASSUMPTION_STATEMENT_MAX - ASSUMPTION_TRUNCATION_MARKER.length;
-  return `${compact.slice(0, budget).trimEnd()}${ASSUMPTION_TRUNCATION_MARKER}`;
-};
 import { assembleCheckpointContext, assembleMemoryContext, assembleTrajectoryContext } from './context-assembler.mjs';
 import { createMemoryJournal } from './memory-journal.mjs';
 import { createJournalContextPort } from './journal-context-port.mjs';
@@ -1276,26 +1259,15 @@ async function runTask() {
   let strongModelProvider;
   let decisionEngine;
   let decisionConfig;
-  // Classification can run before model-role resolution. Build a bounded
-  // Jev client from environment defaults here; the full file-backed config is
-  // resolved later before provider allocation and replaces this instance.
-  {
-    const earlyDecisionConfig = resolveDecisionConfig({ env: process.env });
-    const earlyJevApiKey = process.env[earlyDecisionConfig.apiKeyEnv]?.trim();
-    const earlyJevClient = earlyJevApiKey ? createJevClient({
-      endpoint: earlyDecisionConfig.endpoint,
-      apiKey: earlyJevApiKey,
-      model: earlyDecisionConfig.model,
-      timeoutMs: earlyDecisionConfig.timeoutMs,
-      verificationTimeoutMs: earlyDecisionConfig.verificationTimeoutMs
-    }) : undefined;
-    decisionEngine = createDecisionEngine({
-      client: earlyJevClient,
-      enabled: earlyDecisionConfig.classificationEnabled && earlyDecisionConfig.enabled && Boolean(earlyJevApiKey),
-      enforce: earlyDecisionConfig.enforce,
-      config: earlyDecisionConfig
-    });
-  }
+  // The Jev decision plane is resolved once, from the file-backed `decision`
+  // block and the HMCODEX_JEV_* environment overrides, before task
+  // classification so CLASSIFY_TASK, SELECT_ROUTE and SELECT_TOPOLOGY consult
+  // the same opt-in engine instead of a separate env-only instance. Each
+  // decision point is additionally gated by its own feature flag and fails
+  // closed to the deterministic rules whenever Jev is disabled, unavailable or
+  // returns an illegal choice.
+  let fileConfig = {};
+  let decisionExplicitlyConfigured = false;
   let pendingDecisionLayer;
   const decisionLayerEvaluations = [];
   let streamedResponseText = "";
@@ -1519,10 +1491,40 @@ async function runTask() {
     ...(restoredResumePlan ? {} : { plan: [{ id: 'classify', status: 'RUNNING', actionDigest: sha256Digest(prompt.slice(0, 240)) }] }),
     pendingActions: ['classify task']
   });
+  const configArgument = argValue('--config');
+  const environmentConfigPath = process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined;
+  const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
+  fileConfig = await loadModelConfig(configuredPath, {
+    required: configArgument !== undefined || environmentConfigPath !== undefined
+  });
+  decisionExplicitlyConfigured = Boolean(fileConfig?.decision)
+    || process.env.HMCODEX_JEV_ENABLED !== undefined;
+  decisionConfig = resolveDecisionConfig({ fileConfig, env: process.env });
+  {
+    const jevApiKey = process.env[decisionConfig.apiKeyEnv]?.trim();
+    const jevClient = jevApiKey
+      ? createJevClient({
+          endpoint: decisionConfig.endpoint,
+          apiKey: jevApiKey,
+          model: decisionConfig.model,
+          timeoutMs: decisionConfig.timeoutMs,
+          verificationTimeoutMs: decisionConfig.verificationTimeoutMs
+        })
+      : undefined;
+    decisionEngine = createDecisionEngine({
+      client: jevClient,
+      enabled: decisionExplicitlyConfigured && decisionConfig.enabled && Boolean(jevApiKey),
+      enforce: decisionConfig.enforce,
+      config: decisionConfig
+    });
+  }
   const ruleTaskClass = classifyTask(prompt);
   let taskClass = ruleTaskClass;
   let classificationSource = 'rule';
-  if (decisionEngine?.enabled) {
+  // CLASSIFY_TASK consults Jev only when the operator opts in with
+  // HMCODEX_JEV_CLASSIFY_ENABLED or decision.classificationEnabled; otherwise
+  // the deterministic rule classifier remains authoritative.
+  if (decisionEngine?.enabled && decisionConfig?.classificationEnabled === true) {
     const classificationCandidates = ['inspect', 'modify', 'test', 'unknown'].map((candidateId) => ({
       candidateId,
       modelId: candidateId,
@@ -1565,7 +1567,7 @@ async function runTask() {
       rejectionReasonCodes: candidate === taskClass ? [] : ['RULE_PATTERN_MISMATCH']
     })),
     selectedOptionId: `classify-${taskClass}`,
-    reasonCodes: [classificationSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(taskClass !== ruleTaskClass ? ['JEV_OVERRULED_RULE_CLASS'] : []), 'NO_EVIDENCE_REQUIRED'],
+    reasonCodes: [classificationSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(classificationSource === 'jev' ? [] : ['RULE_FALLBACK']), ...(taskClass !== ruleTaskClass ? ['JEV_OVERRULED_RULE_CLASS'] : []), 'NO_EVIDENCE_REQUIRED'],
     selectionCriteria: [classificationSource === 'jev' ? 'jev-bounded-semantic-classification' : 'task-classification-rule']
   });
   setDecisionSnapshot('feature', { promptDigest: sha256Digest(prompt), mode, agentMode, taskClass });
@@ -1646,7 +1648,7 @@ async function runTask() {
       }
     ],
     selectedOptionId: routeSelected ? 'route-selected' : 'route-blocked',
-    reasonCodes: [routeSelectionSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', 'NO_EVIDENCE_REQUIRED'],
+    reasonCodes: [routeSelectionSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(routeSelectionSource === 'jev' ? [] : ['RULE_FALLBACK']), 'NO_EVIDENCE_REQUIRED'],
     selectionCriteria: [routeSelectionSource === 'jev' ? 'jev-route-safety-choice' : 'read-only-route-rule']
   });
   emitEvent('route.selected', routeDecision);
@@ -1663,34 +1665,12 @@ async function runTask() {
   if (routeDecision.status === 'BLOCKED') throw new Error(`ROUTE_BLOCKED:${routeDecision.reason}`);
   await coordinator.transitionAndFlush('ALLOCATING_CONTEXTS');
   setRuntimePhase('ROLE_BINDING_RESOLUTION');
-  const configArgument = argValue('--config');
-  const environmentConfigPath = process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined;
-  const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
-  const fileConfig = await loadModelConfig(configuredPath, {
-    required: configArgument !== undefined || environmentConfigPath !== undefined
-  });
-  const decisionExplicitlyConfigured = Boolean(fileConfig?.decision)
-    || process.env.HMCODEX_JEV_ENABLED !== undefined;
+  // The Jev decision engine and decision config were already resolved before
+  // classification. Reuse the same file-backed config here only to resolve the
+  // model route, so the decision plane is never rebuilt mid-run.
   const modelConfig = resolveModelConfig({
     fileConfig,
     overrides: modelOverridesFromArgs()
-  });
-  decisionConfig = resolveDecisionConfig({ fileConfig, env: process.env });
-  const jevApiKey = process.env[decisionConfig.apiKeyEnv]?.trim();
-  const jevClient = jevApiKey
-    ? createJevClient({
-        endpoint: decisionConfig.endpoint,
-        apiKey: jevApiKey,
-        model: decisionConfig.model,
-        timeoutMs: decisionConfig.timeoutMs,
-        verificationTimeoutMs: decisionConfig.verificationTimeoutMs
-      })
-    : undefined;
-  decisionEngine = createDecisionEngine({
-    client: jevClient,
-    enabled: decisionExplicitlyConfigured && decisionConfig.enabled && Boolean(jevApiKey),
-    enforce: decisionConfig.enforce,
-    config: decisionConfig
   });
   if (decisionEngine.enabled && decisionConfig.contextPackEnabled === true) {
     const contextSections = [

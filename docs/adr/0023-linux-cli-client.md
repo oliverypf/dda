@@ -84,7 +84,7 @@ Linux terminal
 
 1. 无 DISPLAY/Wayland 环境下执行 `health`；
 2. 只读 `task` 的 JSONL 事件和最终结果可以逐行解析；
-3. XDG 和显式 `HMCODEX_DATA_DIR` 路径一致；
+3. XDG 和显式 `DDA_DATA_DIR` 路径一致；
 4. Ctrl+C、SIGTERM、超时不会留下 runtime 子进程；
 5. Approval digest 不一致、过期、拒绝和无 TTY 场景均 fail-closed；
 6. Windows 现有 Tauri/runtime 回归不受 Linux 适配影响；

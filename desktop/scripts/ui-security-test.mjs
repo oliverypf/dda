@@ -18,8 +18,8 @@ const option = (name, fallback) => {
   const index = argv.indexOf(name);
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
 };
-const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
-const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9335'));
+const exe = option('--exe', process.env.DDA_UI_EXE ?? DEFAULT_EXE);
+const port = Number(option('--port', process.env.DDA_UI_PORT ?? '9335'));
 const closeWhenDone = !argv.includes('--keep-open');
 const output = option('--output', undefined);
 const results = [];
@@ -193,7 +193,7 @@ const startMockProvider = () => {
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const model = payload.model;
       const messages = Array.isArray(payload.messages) ? payload.messages : [];
-      if (process.env.HMCODEX_UI_SECURITY_DEBUG === '1') {
+      if (process.env.DDA_UI_SECURITY_DEBUG === '1') {
         console.log(`DEBUG model=${model} tools=${Array.isArray(payload.tools) ? payload.tools.length : 0} messages=${messages.length}`);
       }
       if (['planner-fixture', 'executor-fixture'].includes(model) && Array.isArray(payload.tools) && payload.tools.length > 0 && !messages.some((message) => message.role === 'tool')) {
@@ -249,10 +249,10 @@ const makeModelConfig = (server, endpointOverride) => {
     protocol: 'chat-completions',
     model: 'planner-fixture',
     endpoint,
-    apiKeyEnv: 'HMCODEX_SECURITY_UI_API_KEY',
+    apiKeyEnv: 'DDA_SECURITY_UI_API_KEY',
     models: [
-      { modelId: 'executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'executor-fixture', endpoint, apiKeyEnv: 'HMCODEX_SECURITY_UI_API_KEY', roles: ['executor'], capabilities: ['model.invoke.stream', 'tool.calls'] },
-      { modelId: 'verifier-fixture', provider: 'openai-chat', protocol: 'chat-completions', model: 'verifier-fixture', endpoint, apiKeyEnv: 'HMCODEX_SECURITY_UI_API_KEY', roles: ['semanticVerifier'], capabilities: ['model.invoke.stream'] }
+      { modelId: 'executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'executor-fixture', endpoint, apiKeyEnv: 'DDA_SECURITY_UI_API_KEY', roles: ['executor'], capabilities: ['model.invoke.stream', 'tool.calls'] },
+      { modelId: 'verifier-fixture', provider: 'openai-chat', protocol: 'chat-completions', model: 'verifier-fixture', endpoint, apiKeyEnv: 'DDA_SECURITY_UI_API_KEY', roles: ['semanticVerifier'], capabilities: ['model.invoke.stream'] }
     ],
     roleBindings: { semanticVerifier: 'verifier-fixture' },
     // Keep this controlled UI suite self-contained. JEV decision branches are
@@ -284,15 +284,15 @@ const launch = (modelConfigPath, modelRegistryPath, dataDir) => {
     env: {
       ...process.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_MODEL_CONFIG: modelConfigPath,
-      HMCODEX_MODEL_REGISTRY: modelRegistryPath,
-      HMCODEX_DATA_DIR: dataDir,
-      HMCODEX_WORKSPACE_ROOT: dataDir,
+      DDA_MODEL_CONFIG: modelConfigPath,
+      DDA_MODEL_REGISTRY: modelRegistryPath,
+      DDA_DATA_DIR: dataDir,
+      DDA_WORKSPACE_ROOT: dataDir,
       WEBVIEW2_USER_DATA_FOLDER: webViewRoot,
       LOCALAPPDATA: join(dataDir, 'local-app-data'),
       APPDATA: join(dataDir, 'roaming-app-data'),
-      HMCODEX_SECURITY_UI_API_KEY: 'fixture-key',
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED'
+      DDA_SECURITY_UI_API_KEY: 'fixture-key',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED'
     }
   });
   launchedPid = child.pid;
@@ -300,7 +300,7 @@ const launch = (modelConfigPath, modelRegistryPath, dataDir) => {
   return child.pid;
 };
 
-const debug = (message) => { if (process.env.HMCODEX_UI_SECURITY_DEBUG === '1') console.log(`DEBUG ${message}`); };
+const debug = (message) => { if (process.env.DDA_UI_SECURITY_DEBUG === '1') console.log(`DEBUG ${message}`); };
 
 const ready = async (client) => {
   await waitFor(client, `document.querySelector('.connection-status')?.classList.contains('status-ready')`, { timeout: 45000, label: 'runtime ready' });

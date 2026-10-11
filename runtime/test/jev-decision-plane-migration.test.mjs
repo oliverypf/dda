@@ -64,8 +64,8 @@ const runScenario = async (t, { optIn, routeChoice = 'route-selected' }) => {
     provider: 'openai', protocol: 'responses', model: 'fixture', endpoint: `http://127.0.0.1:${port}/model`, apiKeyEnv: 'JEV_PLANE_KEY',
     decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'JEV_PLANE_KEY', timeoutMs: 5000 }
   }));
-  const env = { JEV_PLANE_KEY: 'local-key', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' };
-  if (optIn) { env.HMCODEX_JEV_CLASSIFY_ENABLED = '1'; env.HMCODEX_JEV_ROUTE_ENABLED = '1'; }
+  const env = { JEV_PLANE_KEY: 'local-key', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
+  if (optIn) { env.DDA_JEV_CLASSIFY_ENABLED = '1'; env.DDA_JEV_ROUTE_ENABLED = '1'; }
   const result = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'task', '--config', config, '--workspace', workspace,
     '--prompt', 'Read README.md and report its marker.', '--trajectory-store', join(root, 'trajectory.jsonl')], {
     cwd: new URL('..', import.meta.url), env, timeoutMs: 30000

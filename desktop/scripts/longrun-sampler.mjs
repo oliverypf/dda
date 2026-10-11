@@ -38,8 +38,8 @@ const argumentOf = (prefix) => process.argv.find((arg) => arg.startsWith(prefix)
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { workspaceRoot } = projectPaths(import.meta.url);
   const defaultStore = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'hmCodex', 'hmcodex.db') : undefined;
-  const statePath = argumentOf('--state=') ?? process.env.HMCODEX_LONGRUN_STATE ?? defaultLongRunStatePath(workspaceRoot);
-  const storePath = argumentOf('--store=') ?? process.env.HMCODEX_LONGRUN_STORE ?? defaultStore;
+  const statePath = argumentOf('--state=') ?? process.env.DDA_LONGRUN_STATE ?? defaultLongRunStatePath(workspaceRoot);
+  const storePath = argumentOf('--store=') ?? process.env.DDA_LONGRUN_STORE ?? defaultStore;
   const result = await sampleLongRun({ statePath, storePath });
   console.log(JSON.stringify({ statePath, storePath: storePath ?? null, ...result }));
 }

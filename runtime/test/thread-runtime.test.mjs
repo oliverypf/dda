@@ -44,8 +44,8 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const env = {
-    HMCODEX_THREAD_STORE: threadStore,
-    HMCODEX_TRAJECTORY_STORE: trajectoryStore,
+    DDA_THREAD_STORE: threadStore,
+    DDA_TRAJECTORY_STORE: trajectoryStore,
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   };
@@ -113,8 +113,8 @@ test('rejects a thread from another workspace without mutating its binding or ch
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-workspace-binding-'));
   const otherWorkspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-other-workspace-'));
   const env = {
-    HMCODEX_THREAD_STORE: join(workspace, 'threads.json'),
-    HMCODEX_TRAJECTORY_STORE: join(workspace, 'trajectory.jsonl')
+    DDA_THREAD_STORE: join(workspace, 'threads.json'),
+    DDA_TRAJECTORY_STORE: join(workspace, 'trajectory.jsonl')
   };
   const created = await run(['thread', '--operation', 'create', '--workspace', workspace, '--title', 'Workspace A'], env);
   assert.equal(created.code, 0, `${created.stderr}\n${created.stdout}`);
@@ -135,9 +135,9 @@ test('default Harness thread commands read the same durable authority as the das
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-authority-runtime-'));
   const harnessStore = join(workspace, 'events.db');
   const env = {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
-    HMCODEX_HARNESS_EVENT_STORE: harnessStore,
-    HMCODEX_DATA_DIR: workspace
+    DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
+    DDA_HARNESS_EVENT_STORE: harnessStore,
+    DDA_DATA_DIR: workspace
   };
 
   const created = await run([

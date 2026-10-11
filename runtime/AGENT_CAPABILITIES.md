@@ -22,7 +22,7 @@ blocks redirects, bounds response size and timeout, and limits concurrency.
 ## MCP search/docs/Git tools
 
 The runtime uses `@modelcontextprotocol/client` 2.x. Point `--mcp-config` (or
-`HMCODEX_MCP_CONFIG`) at a static configuration file:
+`DDA_MCP_CONFIG`) at a static configuration file:
 
 ```json
 {

@@ -1,6 +1,6 @@
 # Phase 1 Windows 构建记录（2026-09-07）
 
-设置 `HMCODEX_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` 后，在 `desktop` 执行 `npm run build:windows`。构建 session 22321 已以 exit code 0 结束，MSI 与 NSIS 均成功生成。此前构建因运行中的 EXE 占用失败；用户关闭应用后本次重新构建成功。
+设置 `DDA_BUILD_RELEASE_CHANNEL=WINDOWS_PHASE1_READ_ONLY` 后，在 `desktop` 执行 `npm run build:windows`。构建 session 22321 已以 exit code 0 结束，MSI 与 NSIS 均成功生成。此前构建因运行中的 EXE 占用失败；用户关闭应用后本次重新构建成功。
 
 产物位于 `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/`。以下为本次构建完成后读取的 SHA-512，不适用于其他构建。
 

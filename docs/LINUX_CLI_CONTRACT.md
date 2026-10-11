@@ -212,7 +212,7 @@ CLI 退出码必须稳定，具体 shell 映射如下：
 从高到低：
 
 1. 命令行参数；
-2. `HMCODEX_*` 显式环境变量；
+2. `DDA_*` 显式环境变量；
 3. 配置文件；
 4. Linux XDG 默认路径；
 5. 内置安全默认值。
@@ -228,7 +228,7 @@ CLI 退出码必须稳定，具体 shell 映射如下：
 | 日志 | `${XDG_STATE_HOME:-$HOME/.local/state}/hmcodex/logs/` |
 | 插件 | `${XDG_DATA_HOME:-$HOME/.local/share}/hmcodex/plugins/` |
 
-`HMCODEX_DATA_DIR` 指定数据根目录时，所有 runtime store 必须从同一个解析结果派生，不能一部分落到 XDG、一部分落到当前目录。
+`DDA_DATA_DIR` 指定数据根目录时，所有 runtime store 必须从同一个解析结果派生，不能一部分落到 XDG、一部分落到当前目录。
 
 ### 6.3 权限
 

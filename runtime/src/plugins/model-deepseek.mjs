@@ -9,7 +9,7 @@ const provider = 'deepseek-official';
 
 export const deepSeekToolDefinitions = (tools) => {
   if (!Array.isArray(tools)) return undefined;
-  const ordered = process.env.HMCODEX_PROMPT_CACHE === 'off' ? tools : stableToolDefinitions(tools);
+  const ordered = process.env.DDA_PROMPT_CACHE === 'off' ? tools : stableToolDefinitions(tools);
   return ordered.map((tool) => ({
     name: encodeToolName(tool.name ?? tool.id),
     description: typeof tool.description === 'string' ? tool.description : '',

@@ -138,7 +138,7 @@
 - 基础 UI：18/18；真实任务：20/20；工作区：7/7；执行/证据：修复后通过，事件回放与 1024 条混合 delta 的 `longTasks=[]`。
 - 历史、Memory、设置、无障碍、安全均通过；断线恢复 T14/T15 2/2；真实流式回放 186 samples，最大正文 78 字符，根节点保持不变；诊断恢复/导出通过。
 - 修复一项性能回归：隐藏 Context drawer 时不再在每个流式 delta 重建治理面板；LiveTimeline 每帧批量从 16 调小到 8，并缩短单帧预算，执行专项恢复到无长任务。
-- 为断线和流式脚本增加 `HMCODEX_UI_WORKSPACE_ROOT`（默认当前工作区），避免默认落到 `C:\Windows` 导致 `WORKSPACE_SNAPSHOT_FAILED` 的假失败。
+- 为断线和流式脚本增加 `DDA_UI_WORKSPACE_ROOT`（默认当前工作区），避免默认落到 `C:\Windows` 导致 `WORKSPACE_SNAPSHOT_FAILED` 的假失败。
 - 规格审计仍为 `PARTIAL`：恢复逐项操作/远端状态、Memory 治理编辑、真实 Council 四阶段样本与 Probe 操作、长期性能/重启/实机辅助技术证据未全部覆盖。
 ## 2026-09-18 规格审计器收紧
 
@@ -157,7 +157,7 @@
 
 ## 2026-09-18 本轮修复后的验收证据
 
-- 原生 UI 测试脚本在 UNC/npm 场景下改为从脚本位置推导工作区根目录；功能、断连、流式脚本均不再依赖手工设置 `HMCODEX_UI_WORKSPACE_ROOT`。
+- 原生 UI 测试脚本在 UNC/npm 场景下改为从脚本位置推导工作区根目录；功能、断连、流式脚本均不再依赖手工设置 `DDA_UI_WORKSPACE_ROOT`。
 - 当前 debug exe 真实任务回归 `20 passed, 0 failed, 0 skipped`；包含线程历史、工作区目录/文件预览、取消流程和真实模型任务，任务终态为“只读检查完成”。
 - 原生流式回归通过：123 次采样，最大流式正文 842 字符，应用根节点在全部增长样本中保持不变，终态为“只读检查完成”。
 - 断连恢复回归通过：T14/T15 `2 passed, 0 failed`；断连断言限定为 transport/model 错误，避免把 workspace snapshot 错误当作模型断线。

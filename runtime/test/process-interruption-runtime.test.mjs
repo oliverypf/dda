@@ -90,10 +90,10 @@ const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_
   const config = join(root, 'model.json');
   await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses',
     model: 'process-interruption-fixture', endpoint: `http://127.0.0.1:${port}/model`,
-    apiKeyEnv: 'HMCODEX_PROCESS_TEST_KEY', decision: { enabled: false, enforce: false } }));
-  const env = { HMCODEX_PROCESS_TEST_KEY: 'local-fixture', HMCODEX_JEV_ENABLED: '0',
-    HMCODEX_JEV_ENFORCE: '0', HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_DATA_DIR: root,
-    HMCODEX_RELEASE_CHANNEL: releaseChannel, HMCODEX_EXECUTION_MODE: 'READ_ONLY' };
+    apiKeyEnv: 'DDA_PROCESS_TEST_KEY', decision: { enabled: false, enforce: false } }));
+  const env = { DDA_PROCESS_TEST_KEY: 'local-fixture', DDA_JEV_ENABLED: '0',
+    DDA_JEV_ENFORCE: '0', DDA_CONTEXT_PROVIDER: 'journal', DDA_DATA_DIR: root,
+    DDA_RELEASE_CHANNEL: releaseChannel, DDA_EXECUTION_MODE: 'READ_ONLY' };
   const common = ['task', '--agent-mode', 'multi', '--config', config, '--workspace', workspace,
     '--trajectory-store', trajectory, '--thread-store', threads, '--max-recovery-attempts', '1'];
   const first = startRuntime([...common, '--prompt', sideEffect ? 'Inspect first.txt then write result.txt.' : 'Read both files in order.',

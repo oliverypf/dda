@@ -87,10 +87,10 @@ test('verifier recovery continues past the already observed initial failure inst
   const port = await listenOnFetchablePort(server);
   const config = join(root, 'model-config.json');
   await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'continuation-model',
-    endpoint: `http://127.0.0.1:${port}`, apiKeyEnv: 'HMCODEX_CONTINUATION_KEY' }));
+    endpoint: `http://127.0.0.1:${port}`, apiKeyEnv: 'DDA_CONTINUATION_KEY' }));
   const result = await run(['task', '--config', config, '--workspace', workspace,
     '--prompt', 'First read missing-evidence.txt and receive its error. Only afterwards read README.md and report its marker.',
-    '--trajectory-store', trajectory, '--max-recovery-attempts', '2'], { HMCODEX_CONTINUATION_KEY: 'local-key' });
+    '--trajectory-store', trajectory, '--max-recovery-attempts', '2'], { DDA_CONTINUATION_KEY: 'local-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
   assert.equal(missingReads, 1, 'recovery does not repeat the original deliberately failing first step');
@@ -108,7 +108,7 @@ test('definite failure retries through Jev and upgrades to the bound strong mode
   await writeFile(join(workspace, 'README.md'), 'Bounded workspace evidence for the upgraded executor.\n', 'utf8');
   const trajectory = join(workspace, 'trajectory.jsonl');
   const configPath = join(workspace, 'model-config.json');
-  const keyName = 'HMCODEX_GOAL_UPGRADE_KEY';
+  const keyName = 'DDA_GOAL_UPGRADE_KEY';
   const requests = [];
   const server = createServer(async (request, response) => {
     const chunks = [];

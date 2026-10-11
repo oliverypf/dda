@@ -57,9 +57,9 @@ npm run start -- dream --operation daemon --project-id 'my-project' --active-run
 ```
 
 维护循环默认每 15 分钟执行一次，可用 `--interval-ms` 或
-`HMCODEX_DREAM_DAEMON_INTERVAL_MS` 调整（30 秒到 24 小时）；连续失败达到
-`--failure-limit` 或 `HMCODEX_DREAM_DAEMON_FAILURE_LIMIT` 后会 fail-closed 退出。
-若提供 `--active-runs-file` 或 `HMCODEX_DREAM_ACTIVE_RUNS_FILE`，每轮会读取一个
+`DDA_DREAM_DAEMON_INTERVAL_MS` 调整（30 秒到 24 小时）；连续失败达到
+`--failure-limit` 或 `DDA_DREAM_DAEMON_FAILURE_LIMIT` 后会 fail-closed 退出。
+若提供 `--active-runs-file` 或 `DDA_DREAM_ACTIVE_RUNS_FILE`，每轮会读取一个
 `0` 到 `1024` 的活动任务数；文件缺失、不可读或越界时按 `1` 处理并阻断本轮 Dream。
 收到 Ctrl+C 或终止信号时会停止当前循环，不会激活记忆或自动晋级演化提案。
 
@@ -81,9 +81,9 @@ never written to the configuration file or task payload.
 
 Configuration precedence is command-line option (`--provider`, `--protocol`,
 `--model`, `--base-url`, `--endpoint`, `--api-key-env`) over the JSON file,
-then legacy environment variables (`HMCODEX_MODEL_*` and provider-specific
+then legacy environment variables (`DDA_MODEL_*` and provider-specific
 model/base URL variables), then built-in defaults. Use `--config PATH` or
-`HMCODEX_MODEL_CONFIG` to select another file. An explicitly selected file must
+`DDA_MODEL_CONFIG` to select another file. An explicitly selected file must
 exist; the default file is optional.
 
 The Agent Loop uses Jev as the Decision Plane. Jev receives bounded evidence
@@ -111,21 +111,21 @@ models, and the System One endpoint rejects it with HTTP 400.
 
 Jev is an explicit per-deployment opt-in. The decision plane counts as
 configured when the local `model-config.json` has a `decision` block or the
-environment sets any `HMCODEX_JEV_*` variable (for example
-`HMCODEX_JEV_ENABLED=1`, or `HMCODEX_JEV_ENDPOINT` plus
-`HMCODEX_JEV_API_KEY_ENV`). Once configured, `enabled` defaults to true and Jev
+environment sets any `DDA_JEV_*` variable (for example
+`DDA_JEV_ENABLED=1`, or `DDA_JEV_ENDPOINT` plus
+`DDA_JEV_API_KEY_ENV`). Once configured, `enabled` defaults to true and Jev
 runs when the named credential variable is set. A bare `JEV_API_KEY` alone does
-not enable Jev, and `HMCODEX_JEV_ENABLED=0` / `decision.enabled: false` turns a
+not enable Jev, and `DDA_JEV_ENABLED=0` / `decision.enabled: false` turns a
 configured deployment off. The task result reports the effective state in
 `decisionLayer.enabled` and `decisionLayer.configured`.
 
 Without an endpoint override the runtime targets TypeSafe direct with
 `JEV_API_KEY`. The `dda` CLI forwards the credential variable each plane
 actually uses: the one named by the config (`apiKeyEnv`) or by
-`HMCODEX_MODEL_API_KEY_ENV` / `HMCODEX_JEV_API_KEY_ENV`, plus the
+`DDA_MODEL_API_KEY_ENV` / `DDA_JEV_API_KEY_ENV`, plus the
 `OPENCODE_GO_API_KEY` / `JEV_API_KEY` defaults, but only while that plane still
 targets its default host. A default key is never forwarded to an overridden
-`HMCODEX_MODEL_ENDPOINT` / `HMCODEX_JEV_ENDPOINT`, so a custom host must name
+`DDA_MODEL_ENDPOINT` / `DDA_JEV_ENDPOINT`, so a custom host must name
 its own key variable.
 
 `enforce` applies the bounded Jev result to recovery and tool execution. A
@@ -148,19 +148,19 @@ When escalation is requested, `SELECT_SAFE_MODEL_FALLBACK` may choose only
 between the already-bound active and strong providers; Jev cannot register or
 bind a new model.
 The corresponding
-environment overrides are `HMCODEX_JEV_ENABLED`, `HMCODEX_JEV_ENFORCE`,
-`HMCODEX_JEV_ENDPOINT`, `HMCODEX_JEV_API_KEY_ENV`, `HMCODEX_JEV_MODEL`,
-`HMCODEX_JEV_TIMEOUT_MS`, and `HMCODEX_JEV_MAX_STATE_CHARS`.
+environment overrides are `DDA_JEV_ENABLED`, `DDA_JEV_ENFORCE`,
+`DDA_JEV_ENDPOINT`, `DDA_JEV_API_KEY_ENV`, `DDA_JEV_MODEL`,
+`DDA_JEV_TIMEOUT_MS`, and `DDA_JEV_MAX_STATE_CHARS`.
 The extended semantic stages are opt-in through `classificationEnabled`,
 `routeSelectionEnabled`,
 `topologyEnabled`,
 `planReviewEnabled`, `diagnosisEnabled`, `recoveryDirectionEnabled`, and
 `contextPackEnabled`, or the matching environment
-variables `HMCODEX_JEV_CLASSIFY_ENABLED`, `HMCODEX_JEV_ROUTE_ENABLED`,
-`HMCODEX_JEV_TOPOLOGY_ENABLED`,
-`HMCODEX_JEV_PLAN_REVIEW_ENABLED`,
-`HMCODEX_JEV_DIAGNOSIS_ENABLED`, `HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED`, and
-`HMCODEX_JEV_CONTEXT_PACK_ENABLED`.
+variables `DDA_JEV_CLASSIFY_ENABLED`, `DDA_JEV_ROUTE_ENABLED`,
+`DDA_JEV_TOPOLOGY_ENABLED`,
+`DDA_JEV_PLAN_REVIEW_ENABLED`,
+`DDA_JEV_DIAGNOSIS_ENABLED`, `DDA_JEV_RECOVERY_DIRECTION_ENABLED`, and
+`DDA_JEV_CONTEXT_PACK_ENABLED`.
 Context Pack selection uses the bounded `minimal`, `execution`, and `full`
 combinations; Jev cannot request arbitrary context or bypass redaction and
 length limits.
@@ -169,7 +169,7 @@ the router, recovery controller, safety checks, and state machine remain
 authoritative.
 
 The decision engine is resolved once, from the file-backed `decision` block and
-the `HMCODEX_JEV_*` overrides, before task classification, so `CLASSIFY_TASK`,
+the `DDA_JEV_*` overrides, before task classification, so `CLASSIFY_TASK`,
 `SELECT_ROUTE`, and `SELECT_TOPOLOGY` all consult the same opt-in engine. These
 three stages default to the deterministic rules and are marked `RULE_FALLBACK`
 in Decision Trace until opted in. The migration is still partial, not complete:
@@ -189,14 +189,14 @@ coverage, input tokens, cached input tokens, and uncached input tokens. Calls
 made before this instrumentation remain `UNKNOWN` rather than being counted as
 cache misses.
 
-Set `HMCODEX_PROMPT_CACHE=off` to restore the previous request layout. Set
-`HMCODEX_STREAM_USAGE=off` only for a Chat Completions gateway that rejects
+Set `DDA_PROMPT_CACHE=off` to restore the previous request layout. Set
+`DDA_STREAM_USAGE=off` only for a Chat Completions gateway that rejects
 `stream_options.include_usage`; its cache rate will remain unknown unless it
 reports usage through another supported field.
 
 The registry is stored under `%LOCALAPPDATA%\hmCodex\evolution-proposals.json`
 on Windows (or `%APPDATA%` when `%LOCALAPPDATA%` is unavailable). Set
-`HMCODEX_EVOLUTION_STORE` or pass `--evolution-store` to use another location.
+`DDA_EVOLUTION_STORE` or pass `--evolution-store` to use another location.
 The file is written through a temporary file and contains only immutable
 proposal records and their lifecycle metadata.
 
@@ -204,7 +204,7 @@ The default runtime mode is `READ_ONLY`. In that mode shell, file-write and
 test tools are registered behind the safety boundary but every invocation is
 rejected before a process is spawned or a file is changed. Each task also appends redacted lifecycle events to
 `%LOCALAPPDATA%\hmCodex\trajectory.jsonl` (override with
-`HMCODEX_TRAJECTORY_STORE` or `--trajectory-store`). The next task reads at
+`DDA_TRAJECTORY_STORE` or `--trajectory-store`). The next task reads at
 most the three newest run summaries and injects a 6,000-character bounded
 context. It contains digests, route metadata, workspace snapshot metadata and
 terminal status, never the original prompt, model output, reasoning tokens or
@@ -220,7 +220,7 @@ npm run start -- task --auto-evolution-proposal --prompt '检查项目结构' --
 ```
 
 For a supervised local runner, the same switch can be set with
-`HMCODEX_AUTO_EVOLUTION_PROPOSAL=true`.
+`DDA_AUTO_EVOLUTION_PROPOSAL=true`.
 
 The same operation is available after a persisted run through the evaluator
 CLI. It creates only a `PROPOSED` record; use `shadow`, `canary`, and `promote`
@@ -254,7 +254,7 @@ For unattended maintenance, use the explicit retention worker. It persists opera
 npm run start -- harness-events retention-worker --retention-ms 2592000000 --batch-size 10 --interval-ms 900000 --harness-event-store 'C:\data\harness-events.db' --progress-store 'C:\data\retention-progress.json'
 ```
 
-The worker is opt-in, and Ctrl+C or a termination signal stops between purge operations. A failed purge remains retryable and is never marked completed. Use `--failure-limit` or `HMCODEX_RETENTION_WORKER_FAILURE_LIMIT` to stop after repeated failed cycles (default: 3; maximum: 20) so a persistent storage fault fails closed instead of causing an unbounded loop.
+The worker is opt-in, and Ctrl+C or a termination signal stops between purge operations. A failed purge remains retryable and is never marked completed. Use `--failure-limit` or `DDA_RETENTION_WORKER_FAILURE_LIMIT` to stop after repeated failed cycles (default: 3; maximum: 20) so a persistent storage fault fails closed instead of causing an unbounded loop.
 
 动态 Cordis contribution 只能读取 manifest 权限映射出来的服务，并且只能发布
 自己的 contribution ID 或插件命名空间。访问 root registry、事件总线、fiber、未授权

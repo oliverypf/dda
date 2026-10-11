@@ -9,16 +9,16 @@ import { isDecisionPlaneConfigured } from '../../runtime/src/model-config.mjs';
 import { main } from '../src/main.mjs';
 
 // Jev is an explicit per-deployment opt-in: a `decision` block in the model
-// config or any HMCODEX_JEV_* variable. A bare key does not turn it on.
+// config or any DDA_JEV_* variable. A bare key does not turn it on.
 
 test('decision plane configuration rule', () => {
   assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: {} }), false);
   assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { JEV_API_KEY: 'k' } }), false);
-  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { HMCODEX_JEV_ENABLED: ' ' } }), false);
+  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { DDA_JEV_ENABLED: ' ' } }), false);
   assert.equal(isDecisionPlaneConfigured({ fileConfig: { decision: {} }, env: {} }), true);
   assert.equal(isDecisionPlaneConfigured({ fileConfig: { decision: [] }, env: {} }), false);
-  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { HMCODEX_JEV_ENABLED: '1' } }), true);
-  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { HMCODEX_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone' } }), true);
+  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { DDA_JEV_ENABLED: '1' } }), true);
+  assert.equal(isDecisionPlaneConfigured({ fileConfig: {}, env: { DDA_JEV_ENDPOINT: 'https://openrouter.ai/api/v1/systemone' } }), true);
 });
 
 const sse = (chunks) => [...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`), 'data: [DONE]'].join('\n\n') + '\n\n';
@@ -62,8 +62,8 @@ async function fixture(t) {
     XDG_STATE_HOME: join(root, 'state'),
     XDG_CACHE_HOME: join(root, 'cache'),
     DDA_TEST_MODEL_KEY: 'model-fixture-key',
-    HMCODEX_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
-    HMCODEX_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/chat/completions`
+    DDA_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
+    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/chat/completions`
   };
   await mkdir(env.HOME, { recursive: true });
   const jevEndpoint = `http://127.0.0.1:${jevPort}/v1/systemone`;
@@ -90,11 +90,11 @@ test('a bare JEV_API_KEY does not enable Jev', async (t) => {
   assert.equal(outcome.stdout.includes('bare-jev-key'), false);
 });
 
-test('HMCODEX_JEV_* deployment variables opt in and reach the configured System One host', async (t) => {
+test('DDA_JEV_* deployment variables opt in and reach the configured System One host', async (t) => {
   const f = await fixture(t);
   const outcome = await f.run({
-    HMCODEX_JEV_ENDPOINT: f.jevEndpoint,
-    HMCODEX_JEV_API_KEY_ENV: 'DDA_TEST_JEV_KEY',
+    DDA_JEV_ENDPOINT: f.jevEndpoint,
+    DDA_JEV_API_KEY_ENV: 'DDA_TEST_JEV_KEY',
     DDA_TEST_JEV_KEY: 'jev-fixture-key',
     // The default key must never follow an overridden endpoint.
     JEV_API_KEY: 'default-jev-key'
@@ -108,12 +108,12 @@ test('HMCODEX_JEV_* deployment variables opt in and reach the configured System 
   assert.equal(output.includes('default-jev-key'), false);
 });
 
-test('HMCODEX_JEV_ENABLED=0 keeps a configured deployment off', async (t) => {
+test('DDA_JEV_ENABLED=0 keeps a configured deployment off', async (t) => {
   const f = await fixture(t);
   const outcome = await f.run({
-    HMCODEX_JEV_ENABLED: '0',
-    HMCODEX_JEV_ENDPOINT: f.jevEndpoint,
-    HMCODEX_JEV_API_KEY_ENV: 'DDA_TEST_JEV_KEY',
+    DDA_JEV_ENABLED: '0',
+    DDA_JEV_ENDPOINT: f.jevEndpoint,
+    DDA_JEV_API_KEY_ENV: 'DDA_TEST_JEV_KEY',
     DDA_TEST_JEV_KEY: 'jev-fixture-key'
   });
   assert.equal(outcome.code, 0, outcome.stdout + outcome.stderr);
@@ -128,7 +128,7 @@ test('a decision block in the model config opts in', async (t) => {
   await writeFile(configPath, JSON.stringify({
     decision: { endpoint: f.jevEndpoint, apiKeyEnv: 'DDA_TEST_JEV_KEY', model: 'jev-latest' }
   }));
-  const outcome = await f.run({ HMCODEX_MODEL_CONFIG: configPath, DDA_TEST_JEV_KEY: 'jev-fixture-key' });
+  const outcome = await f.run({ DDA_MODEL_CONFIG: configPath, DDA_TEST_JEV_KEY: 'jev-fixture-key' });
   assert.equal(outcome.result?.decisionLayer?.enabled, true, outcome.stdout + outcome.stderr);
   assert.ok(f.jevRequests.length >= 1);
 });

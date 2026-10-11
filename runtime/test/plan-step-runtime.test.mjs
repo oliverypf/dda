@@ -86,9 +86,9 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   assert.ok(address && typeof address === 'object');
   const result = await run([
     'task', '--agent-mode', 'multi', '--provider', 'openai', '--model', 'plan-integration-model',
-    '--endpoint', `http://127.0.0.1:${address.port}/responses`, '--api-key-env', 'HMCODEX_PLAN_TEST_KEY',
+    '--endpoint', `http://127.0.0.1:${address.port}/responses`, '--api-key-env', 'DDA_PLAN_TEST_KEY',
     '--prompt', '执行多步骤检查', '--workspace', workspace, '--trajectory-store', trajectory
-  ], { HMCODEX_PLAN_TEST_KEY: 'plan-test-key' });
+  ], { DDA_PLAN_TEST_KEY: 'plan-test-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
@@ -177,7 +177,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
     protocol: 'responses',
     model: 'council-integration-model',
     endpoint: `http://127.0.0.1:${address.port}/responses`,
-    apiKeyEnv: 'HMCODEX_COUNCIL_KEY',
+    apiKeyEnv: 'DDA_COUNCIL_KEY',
     models: [
       {
         id: 'openai/council-executor',
@@ -185,7 +185,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
         protocol: 'responses',
         model: 'council-executor-model',
         endpoint: `http://127.0.0.1:${address.port}/responses`,
-        apiKeyEnv: 'HMCODEX_COUNCIL_KEY'
+        apiKeyEnv: 'DDA_COUNCIL_KEY'
       },
       {
         id: 'openai/council-verifier',
@@ -193,7 +193,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
         protocol: 'responses',
         model: 'council-verifier-model',
         endpoint: `http://127.0.0.1:${address.port}/responses`,
-        apiKeyEnv: 'HMCODEX_COUNCIL_KEY'
+        apiKeyEnv: 'DDA_COUNCIL_KEY'
       }
     ],
     roleBindings: { semanticVerifier: { selector: 'PINNED', modelId: 'openai/council-verifier' } }
@@ -202,7 +202,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
     'task', '--agent-mode', 'multi', '--config', configPath,
     '--prompt', '构建并测试三步检查', '--workspace', workspace,
     '--trajectory-store', trajectory
-  ], { HMCODEX_COUNCIL_KEY: 'council-key' });
+  ], { DDA_COUNCIL_KEY: 'council-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
@@ -211,7 +211,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
   assert.equal(requests.filter((item) => /Council member/iu.test(inputTextOf(item))).length, 2);
   assert.equal(requests.filter((item) => /Council Judge/iu.test(inputTextOf(item))).length, 1);
   const evaluated = await run(['evaluate', '--run-id', payload.runId], {
-    HMCODEX_TRAJECTORY_STORE: trajectory
+    DDA_TRAJECTORY_STORE: trajectory
   });
   assert.equal(evaluated.code, 0, `${evaluated.stderr}\n${evaluated.stdout}`);
   const evaluation = JSON.parse(evaluated.stdout.trim()).evaluation;
@@ -273,11 +273,11 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.ok(address && typeof address === 'object');
   const common = [
     'task', '--agent-mode', 'multi', '--provider', 'openai', '--model', 'resume-model',
-    '--endpoint', `http://127.0.0.1:${address.port}/responses`, '--api-key-env', 'HMCODEX_RESUME_KEY',
+    '--endpoint', `http://127.0.0.1:${address.port}/responses`, '--api-key-env', 'DDA_RESUME_KEY',
     '--workspace', workspace, '--trajectory-store', trajectory, '--thread-store', threadStore,
     '--max-recovery-attempts', '2'
   ];
-  const first = await run([...common, '--prompt', 'initial attempt'], { HMCODEX_RESUME_KEY: 'resume-key' });
+  const first = await run([...common, '--prompt', 'initial attempt'], { DDA_RESUME_KEY: 'resume-key' });
   assert.equal(first.code, 1, `${first.stderr}\n${first.stdout}`);
   const persisted = JSON.parse(await readFile(threadStore, 'utf8'));
   const thread = persisted.threads[0];
@@ -285,7 +285,7 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.equal(thread.checkpoint.plan.steps.find((step) => step.stepId === 'completed').status, 'SUCCEEDED');
   assert.equal(thread.checkpoint.plan.steps.find((step) => step.stepId === 'resume').status, 'FAILED');
   const evaluated = await run(['evaluate', '--run-id', thread.checkpoint.runId], {
-    HMCODEX_TRAJECTORY_STORE: trajectory
+    DDA_TRAJECTORY_STORE: trajectory
   });
   assert.equal(evaluated.code, 0, `${evaluated.stderr}\n${evaluated.stdout}`);
   const evaluation = JSON.parse(evaluated.stdout.trim()).evaluation;
@@ -296,7 +296,7 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   const failureEvents = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
   assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && event.payload?.code === 'EMPTY_MODEL_RESPONSE'));
   const beforeResumeRequests = requests.length;
-  const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], { HMCODEX_RESUME_KEY: 'resume-key' });
+  const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], { DDA_RESUME_KEY: 'resume-key' });
   assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
   const payload = JSON.parse(second.stdout.trim());
   assert.equal(payload.ok, true);
@@ -338,10 +338,10 @@ test('recovers from a binary workspace read and verifies a colored build log thr
   const port = await listenOnFetchablePort(server);
   const result = await run([
     'task', '--agent-mode', 'single', '--provider', 'openai', '--model', 'log-recovery-fixture',
-    '--endpoint', `http://127.0.0.1:${port}/responses`, '--api-key-env', 'HMCODEX_LOG_RECOVERY_KEY',
+    '--endpoint', `http://127.0.0.1:${port}/responses`, '--api-key-env', 'DDA_LOG_RECOVERY_KEY',
     '--prompt', 'Inspect the build status using readable evidence.', '--workspace', workspace,
     '--trajectory-store', trajectory, '--max-recovery-attempts', '2'
-  ], { HMCODEX_LOG_RECOVERY_KEY: 'fixture-key' });
+  ], { DDA_LOG_RECOVERY_KEY: 'fixture-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
   assert.equal(requests.length, 4);

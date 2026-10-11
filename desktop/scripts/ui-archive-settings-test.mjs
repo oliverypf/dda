@@ -5,8 +5,8 @@ import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-const root = resolve(process.env.HMCODEX_UI_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url)));
-const output = resolve(process.env.HMCODEX_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/archive-settings-ui/', import.meta.url)));
+const root = resolve(process.env.DDA_UI_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url)));
+const output = resolve(process.env.DDA_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/archive-settings-ui/', import.meta.url)));
 await mkdir(output, { recursive: true });
 const server = createServer(async (req, res) => {
   try {
@@ -19,7 +19,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(done => server.listen(0, '127.0.0.1', done));
 const url = 'http://127.0.0.1:' + server.address().port;
-const browser = await chromium.launch({ channel: process.env.HMCODEX_BROWSER_CHANNEL ?? 'msedge', headless: true });
+const browser = await chromium.launch({ channel: process.env.DDA_BROWSER_CHANNEL ?? 'msedge', headless: true });
 const results = [];
 const check = (name, pass, detail) => { results.push({ name, pass, ...(detail === undefined ? {} : { detail }) }); assert.ok(pass, name + (detail === undefined ? '' : ': ' + JSON.stringify(detail))); };
 async function fixture(options = {}) {

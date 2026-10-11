@@ -12,7 +12,7 @@ const MAX_ENTRIES = 180;
 // metadata even when the same tree is fast from a local drive. Keep the
 // operator override, but give the default snapshot enough time to finish
 // without collapsing the useful I/O error into WORKSPACE_SNAPSHOT_FAILED.
-const LIST_TIMEOUT_MS = (() => { const raw = Number(process.env.HMCODEX_WORKSPACE_TIMEOUT_MS); return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 60000; })();
+const LIST_TIMEOUT_MS = (() => { const raw = Number(process.env.DDA_WORKSPACE_TIMEOUT_MS); return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 60000; })();
 const withTimeout = (promise, label) => withWorkspaceIoTimeout(promise, label, LIST_TIMEOUT_MS);
 const MAX_FILE_BYTES = 32 * 1024;
 const MAX_READ_CHARS = MAX_FILE_BYTES;

@@ -55,16 +55,16 @@ const requireFile = async (value, code, statImpl) => {
 };
 
 export const resolveOpenVikingSidecarConfig = async ({ env = process.env, statImpl = stat, platform = process.platform } = {}) => {
-  const executable = await requireFile(env.HMCODEX_OPENVIKING_EXECUTABLE, 'OPENVIKING_SIDECAR_EXECUTABLE_INVALID', statImpl);
+  const executable = await requireFile(env.DDA_OPENVIKING_EXECUTABLE, 'OPENVIKING_SIDECAR_EXECUTABLE_INVALID', statImpl);
   if (platform === 'win32' && extname(executable).toLowerCase() !== '.exe') {
     throw new Error('OPENVIKING_SIDECAR_EXECUTABLE_INVALID');
   }
-  const endpoint = parseOpenVikingSidecarURL(env.HMCODEX_OPENVIKING_URL);
-  const configPath = env.HMCODEX_OPENVIKING_CONFIG
-    ? await requireFile(env.HMCODEX_OPENVIKING_CONFIG, 'OPENVIKING_SIDECAR_CONFIG_INVALID', statImpl)
+  const endpoint = parseOpenVikingSidecarURL(env.DDA_OPENVIKING_URL);
+  const configPath = env.DDA_OPENVIKING_CONFIG
+    ? await requireFile(env.DDA_OPENVIKING_CONFIG, 'OPENVIKING_SIDECAR_CONFIG_INVALID', statImpl)
     : undefined;
-  const workingDirectory = env.HMCODEX_OPENVIKING_WORKING_DIR
-    ? String(env.HMCODEX_OPENVIKING_WORKING_DIR).trim()
+  const workingDirectory = env.DDA_OPENVIKING_WORKING_DIR
+    ? String(env.DDA_OPENVIKING_WORKING_DIR).trim()
     : dirname(executable);
   if (!isAbsolute(workingDirectory)) throw new Error('OPENVIKING_SIDECAR_WORKDIR_INVALID');
   let workingMetadata;
@@ -79,10 +79,10 @@ export const resolveOpenVikingSidecarConfig = async ({ env = process.env, statIm
     endpoint,
     configPath,
     workingDirectory,
-    startupTimeoutMs: integer(env.HMCODEX_OPENVIKING_START_TIMEOUT_MS, 30000, 1000, 120000, 'OPENVIKING_SIDECAR_START_TIMEOUT_INVALID'),
-    healthIntervalMs: integer(env.HMCODEX_OPENVIKING_HEALTH_INTERVAL_MS, 2000, 250, 30000, 'OPENVIKING_SIDECAR_HEALTH_INTERVAL_INVALID'),
-    healthFailureThreshold: integer(env.HMCODEX_OPENVIKING_HEALTH_FAILURE_THRESHOLD, 3, 1, 20, 'OPENVIKING_SIDECAR_HEALTH_THRESHOLD_INVALID'),
-    maxRestarts: integer(env.HMCODEX_OPENVIKING_MAX_RESTARTS, 3, 0, 20, 'OPENVIKING_SIDECAR_MAX_RESTARTS_INVALID')
+    startupTimeoutMs: integer(env.DDA_OPENVIKING_START_TIMEOUT_MS, 30000, 1000, 120000, 'OPENVIKING_SIDECAR_START_TIMEOUT_INVALID'),
+    healthIntervalMs: integer(env.DDA_OPENVIKING_HEALTH_INTERVAL_MS, 2000, 250, 30000, 'OPENVIKING_SIDECAR_HEALTH_INTERVAL_INVALID'),
+    healthFailureThreshold: integer(env.DDA_OPENVIKING_HEALTH_FAILURE_THRESHOLD, 3, 1, 20, 'OPENVIKING_SIDECAR_HEALTH_THRESHOLD_INVALID'),
+    maxRestarts: integer(env.DDA_OPENVIKING_MAX_RESTARTS, 3, 0, 20, 'OPENVIKING_SIDECAR_MAX_RESTARTS_INVALID')
   };
 };
 

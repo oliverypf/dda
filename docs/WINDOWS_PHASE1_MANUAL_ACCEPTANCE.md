@@ -24,7 +24,7 @@
 ### 2.2 升级
 
 1. 在已安装 0.1.0 的基础上再次安装同一 MSI（或更高版本 MSI）。
-2. 期望：升级成功，无重复卸载项；用户数据目录（`%LOCALAPPDATA%\hmCodex` 或 `HMCODEX_DATA_DIR`）保留。
+2. 期望：升级成功，无重复卸载项；用户数据目录（`%LOCALAPPDATA%\hmCodex` 或 `DDA_DATA_DIR`）保留。
 3. 期望：升级后首个任务能读取升级前线程/事件；`dashboard` 仍返回 `ok:true`。
 4. 记录：升级前后版本、数据目录文件数量、线程可见性。
 

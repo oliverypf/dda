@@ -1,6 +1,6 @@
 # dda
 
-产品名称统一为 `dda`，桌面程序为 `dda-desktop.exe`。为沿用已有配置和历史记录，数据目录 `%LOCALAPPDATA%\hmCodex`、数据库 `hmcodex.db`、`HMCODEX_*` 环境变量、应用标识和浏览器存储键保留兼容名称。MSI 的升级 GUID 固定为原值，发布者显示为 `dda`。仓库实际目录与归档证据中的旧路径不变。
+产品名称统一为 `dda`，桌面程序为 `dda-desktop.exe`。为沿用已有配置和历史记录，数据目录 `%LOCALAPPDATA%\hmCodex`、数据库 `hmcodex.db`、应用标识和浏览器存储键保留兼容名称。运行时、linux-cli 与桌面默认读取的环境变量统一为 `DDA_*`（例如 `DDA_PLATFORM`、`DDA_MODEL_CONFIG`）；旧的 `HMCODEX_*` 名称不再读取。MSI 的升级 GUID 固定为原值，发布者显示为 `dda`。仓库实际目录与归档证据中的旧路径不变。
 
 Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmCodex\trajectory.jsonl`，下一次任务最多恢复最近三个 run 的结构化摘要作为有界 context；原始 prompt、模型全文、隐藏思维链和凭据不会写入或恢复。
 
@@ -17,7 +17,7 @@ Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmC
 - 流式消息、命令输出、审批卡片和错误状态
 - 项目/文件工作区上下文
 
-Windows 客户端启动并管理自研本地运行时，负责模型 provider、受控 Executor、工作区和本地 Memory Journal，不依赖 App Server。演示模式用于验证客户端交互。HarmonyOS 既有直连模式属于迁移期历史实现，不作为当前 Windows 开发路线。Windows MVP 的 Cordis runtime 默认走 OpenAI Responses，可显式切换 OpenAI Chat Completions、兼容网关或 DeepSeek Harness；模型路由配置位于 `%LOCALAPPDATA%\hmCodex\model-config.json`，也可通过 `--config` 或 `HMCODEX_MODEL_CONFIG` 指定，API key 只从配置中声明的环境变量读取；同时支持持久化演化提案和受控状态迁移，桌面端取消任务会终止对应的本地 runtime 进程树。在线任务会以脱敏 outcome 进入 evaluator；可通过 `evolution cohort` 按模型、协议和任务类别形成 baseline cohort，再用于离线 replay。Memory proposal 必须保留来源事件；无来源候选不会被 accepted 或激活为 active memory。
+Windows 客户端启动并管理自研本地运行时，负责模型 provider、受控 Executor、工作区和本地 Memory Journal，不依赖 App Server。演示模式用于验证客户端交互。HarmonyOS 既有直连模式属于迁移期历史实现，不作为当前 Windows 开发路线。Windows MVP 的 Cordis runtime 默认走 OpenAI Responses，可显式切换 OpenAI Chat Completions、兼容网关或 DeepSeek Harness；模型路由配置位于 `%LOCALAPPDATA%\hmCodex\model-config.json`，也可通过 `--config` 或 `DDA_MODEL_CONFIG` 指定，API key 只从配置中声明的环境变量读取；同时支持持久化演化提案和受控状态迁移，桌面端取消任务会终止对应的本地 runtime 进程树。在线任务会以脱敏 outcome 进入 evaluator；可通过 `evolution cohort` 按模型、协议和任务类别形成 baseline cohort，再用于离线 replay。Memory proposal 必须保留来源事件；无来源候选不会被 accepted 或激活为 active memory。
 
 Agent Harness 总体设计见 [docs/AGENT_HARNESS_DESIGN.md](docs/AGENT_HARNESS_DESIGN.md)，当前 Jev Decision Plane 迁移方案见 [docs/JEV_DECISION_PLANE_DESIGN.md](docs/JEV_DECISION_PLANE_DESIGN.md)；实现级协议、状态机、数据、Agent Decision Trace、安全、插件、部署、HarmonyOS 平台、评价、运维隐私和 UI 规范从 [docs/LONG_TERM_DESIGN_INDEX.md](docs/LONG_TERM_DESIGN_INDEX.md) 进入。v0.6 采用渐进迁移，目标架构与各端当前实现需要区分：
 

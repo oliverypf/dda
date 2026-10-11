@@ -21,7 +21,7 @@ Provider prompt caches reuse an identical request prefix. They do not cache mode
 - Show input, cached input, uncached input, hit rate, and coverage together. A high hit rate must not be optimized by sending unnecessary context.
 - Keep canonical event history separate from provider-visible context. Add cache-aware compaction only after real usage measurements show a need near the context limit.
 
-`HMCODEX_PROMPT_CACHE=off` restores the prior request layout and random session routing. `HMCODEX_STREAM_USAGE=off` disables Chat Completions `stream_options.include_usage` for an incompatible gateway.
+`DDA_PROMPT_CACHE=off` restores the prior request layout and random session routing. `DDA_STREAM_USAGE=off` disables Chat Completions `stream_options.include_usage` for an incompatible gateway.
 
 ## Consequences
 

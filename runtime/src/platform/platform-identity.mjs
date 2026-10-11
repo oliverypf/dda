@@ -21,12 +21,12 @@ export function policyChannelForRelease(channel) {
 
 /**
  * Platform identity is explicit. A Linux host running the Windows runtime
- * stays `windows-desktop` until `HMCODEX_PLATFORM=linux-cli` is set.
+ * stays `windows-desktop` until `DDA_PLATFORM=linux-cli` is set.
  */
 export function resolvePlatformIdentity(env = process.env) {
-  const requested = typeof env.HMCODEX_PLATFORM === 'string' ? env.HMCODEX_PLATFORM.trim() : '';
+  const requested = typeof env.DDA_PLATFORM === 'string' ? env.DDA_PLATFORM.trim() : '';
   const platform = PLATFORM_IDENTITIES.includes(requested) ? requested : 'windows-desktop';
-  const requestedChannel = env.HMCODEX_BAKED_RELEASE_CHANNEL ?? env.HMCODEX_RELEASE_CHANNEL ?? DEFAULT_RELEASE_CHANNEL;
+  const requestedChannel = env.DDA_BAKED_RELEASE_CHANNEL ?? env.DDA_RELEASE_CHANNEL ?? DEFAULT_RELEASE_CHANNEL;
   return {
     platform,
     architecture: architectureLabel(),
@@ -47,7 +47,7 @@ export function resolvePlatformIdentity(env = process.env) {
  * the HarmonyOS profile.
  */
 export function detectCliHost({ env = process.env, platform = process.platform, release = '' } = {}) {
-  const requested = typeof env.HMCODEX_PLATFORM === 'string' ? env.HMCODEX_PLATFORM.trim() : '';
+  const requested = typeof env.DDA_PLATFORM === 'string' ? env.DDA_PLATFORM.trim() : '';
   if (CLI_HOSTS.has(requested) || PLATFORM_IDENTITIES.includes(requested)) return requested;
   const evidence = [platform, release, env.OHOS_SDK_HOME, env.HARMONYOS_SDK_HOME, env.HM_SDK_HOME]
     .filter((value) => typeof value === 'string' && value.trim())

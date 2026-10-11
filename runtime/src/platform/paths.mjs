@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
  * Path authority for dda stores.
  *
  * Windows keeps the historical `%LOCALAPPDATA%\hmCodex` layout, including when
- * `HMCODEX_DATA_DIR` is set. Portable CLI hosts (`linux-cli`, `harmonyos-cli`,
+ * `DDA_DATA_DIR` is set. Portable CLI hosts (`linux-cli`, `harmonyos-cli`,
  * and the explicit `harmonyos` identity) use one XDG root for every store.
  * Host OS alone must not flip the layout: the Windows runtime test suite runs
  * on Linux.
@@ -15,7 +15,7 @@ import { join, resolve } from 'node:path';
 export const LINUX_CLI_PLATFORM = 'linux-cli';
 const PORTABLE_CLI_PLATFORMS = new Set(['linux-cli', 'harmonyos-cli', 'harmonyos']);
 
-export const isLinuxCliPlatform = (env = process.env) => PORTABLE_CLI_PLATFORMS.has(env.HMCODEX_PLATFORM);
+export const isLinuxCliPlatform = (env = process.env) => PORTABLE_CLI_PLATFORMS.has(env.DDA_PLATFORM);
 export const isPortableCliPlatform = isLinuxCliPlatform;
 
 const joinPlatform = (root, ...parts) => {
@@ -55,15 +55,15 @@ const windowsDataRoot = (env, dataOverride, windowsCli) => {
 };
 
 export function createPlatformPaths(env = process.env, options = {}) {
-  const requested = options.platform ?? env.HMCODEX_PLATFORM;
+  const requested = options.platform ?? env.DDA_PLATFORM;
   const portable = requested ? PORTABLE_CLI_PLATFORMS.has(requested) : isLinuxCliPlatform(env);
   const windowsCli = requested === 'windows-cli';
   const dataOverride = typeof options.dataDir === 'string' && options.dataDir.trim()
     ? options.dataDir.trim()
-    : (typeof env.HMCODEX_DATA_DIR === 'string' ? env.HMCODEX_DATA_DIR.trim() : '');
+    : (typeof env.DDA_DATA_DIR === 'string' ? env.DDA_DATA_DIR.trim() : '');
   const configOverride = typeof options.configPath === 'string' && options.configPath.trim()
     ? options.configPath.trim()
-    : (typeof env.HMCODEX_MODEL_CONFIG === 'string' ? env.HMCODEX_MODEL_CONFIG.trim() : '');
+    : (typeof env.DDA_MODEL_CONFIG === 'string' ? env.DDA_MODEL_CONFIG.trim() : '');
 
   const configDir = () => {
     if (!portable) {

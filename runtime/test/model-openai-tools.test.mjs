@@ -48,16 +48,16 @@ test('passes Responses function definitions and assembles argument deltas', asyn
   await root.plugin(createOpenAICompatiblePlugin({
     protocol: 'responses',
     endpoint: `http://127.0.0.1:${address.port}/responses`,
-    apiKeyEnv: 'HMCODEX_TEST_OPENAI_TOOL_KEY'
+    apiKeyEnv: 'DDA_TEST_OPENAI_TOOL_KEY'
   }));
   t.after(() => root.fiber.dispose());
-  process.env.HMCODEX_TEST_OPENAI_TOOL_KEY = 'key';
+  process.env.DDA_TEST_OPENAI_TOOL_KEY = 'key';
   const chunks = await readChunks(root.modelProvider, {
     system: 'Use tools.',
     messages: [{ role: 'user', content: 'read README' }],
     tools: [tool]
   });
-  delete process.env.HMCODEX_TEST_OPENAI_TOOL_KEY;
+  delete process.env.DDA_TEST_OPENAI_TOOL_KEY;
   assert.deepEqual(chunks, [
     { type: 'tool-call', id: 'call_1', name: 'workspace.read', arguments: '{"path":"README.md"}' },
     { type: 'finish', reason: { kind: 'tool-calls' } }
@@ -89,15 +89,15 @@ test('passes Chat Completions function definitions and assembles tool-call delta
   await root.plugin(createOpenAICompatiblePlugin({
     protocol: 'chat-completions',
     endpoint: `http://127.0.0.1:${address.port}/chat/completions`,
-    apiKeyEnv: 'HMCODEX_TEST_OPENAI_CHAT_TOOL_KEY'
+    apiKeyEnv: 'DDA_TEST_OPENAI_CHAT_TOOL_KEY'
   }));
   t.after(() => root.fiber.dispose());
-  process.env.HMCODEX_TEST_OPENAI_CHAT_TOOL_KEY = 'key';
+  process.env.DDA_TEST_OPENAI_CHAT_TOOL_KEY = 'key';
   const chunks = await readChunks(root.modelProvider, {
     messages: [{ role: 'user', content: 'read README' }],
     tools: [tool]
   });
-  delete process.env.HMCODEX_TEST_OPENAI_CHAT_TOOL_KEY;
+  delete process.env.DDA_TEST_OPENAI_CHAT_TOOL_KEY;
   assert.deepEqual(chunks, [
     { type: 'tool-call', id: 'call_2', name: 'workspace.read', arguments: '{"path":"README.md"}' },
     { type: 'finish', reason: { kind: 'tool-calls' } }
@@ -121,15 +121,15 @@ test('keeps a valid tool-call id and name when later deltas send null fields', a
   await root.plugin(createOpenAICompatiblePlugin({
     protocol: 'chat-completions',
     endpoint: `http://127.0.0.1:${address.port}/chat/completions`,
-    apiKeyEnv: 'HMCODEX_TEST_OPENCODE_NULL_KEY'
+    apiKeyEnv: 'DDA_TEST_OPENCODE_NULL_KEY'
   }));
   t.after(() => root.fiber.dispose());
-  process.env.HMCODEX_TEST_OPENCODE_NULL_KEY = 'key';
+  process.env.DDA_TEST_OPENCODE_NULL_KEY = 'key';
   const chunks = await readChunks(root.modelProvider, {
     messages: [{ role: 'user', content: 'read README' }],
     tools: [tool]
   });
-  delete process.env.HMCODEX_TEST_OPENCODE_NULL_KEY;
+  delete process.env.DDA_TEST_OPENCODE_NULL_KEY;
   assert.deepEqual(chunks, [
     { type: 'tool-call', id: 'call_null', name: 'workspace.read', arguments: '{"path":"README.md"}' },
     { type: 'finish', reason: { kind: 'tool-calls' } }
@@ -156,10 +156,10 @@ test('serializes Responses assistant tool calls and function outputs for a follo
   await root.plugin(createOpenAICompatiblePlugin({
     protocol: 'responses',
     endpoint: `http://127.0.0.1:${address.port}/responses`,
-    apiKeyEnv: 'HMCODEX_TEST_OPENAI_HISTORY_KEY'
+    apiKeyEnv: 'DDA_TEST_OPENAI_HISTORY_KEY'
   }));
   t.after(() => root.fiber.dispose());
-  process.env.HMCODEX_TEST_OPENAI_HISTORY_KEY = 'key';
+  process.env.DDA_TEST_OPENAI_HISTORY_KEY = 'key';
   const chunks = await readChunks(root.modelProvider, {
     messages: [
       { role: 'user', content: 'read README' },
@@ -167,7 +167,7 @@ test('serializes Responses assistant tool calls and function outputs for a follo
       { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_3', content: [{ type: 'text', text: '{"path":"README.md","content":"ok"}' }] }] }
     ]
   });
-  delete process.env.HMCODEX_TEST_OPENAI_HISTORY_KEY;
+  delete process.env.DDA_TEST_OPENAI_HISTORY_KEY;
   assert.deepEqual(chunks, [
     { type: 'text-delta', text: 'done' },
     { type: 'finish', reason: { kind: 'stop' } }
@@ -196,10 +196,10 @@ test('serializes Chat Completions assistant tool calls and tool messages for a f
   await root.plugin(createOpenAICompatiblePlugin({
     protocol: 'chat-completions',
     endpoint: `http://127.0.0.1:${address.port}/chat/completions`,
-    apiKeyEnv: 'HMCODEX_TEST_OPENAI_HISTORY_CHAT_KEY'
+    apiKeyEnv: 'DDA_TEST_OPENAI_HISTORY_CHAT_KEY'
   }));
   t.after(() => root.fiber.dispose());
-  process.env.HMCODEX_TEST_OPENAI_HISTORY_CHAT_KEY = 'key';
+  process.env.DDA_TEST_OPENAI_HISTORY_CHAT_KEY = 'key';
   const chunks = await readChunks(root.modelProvider, {
     messages: [
       { role: 'user', content: 'read README' },
@@ -207,7 +207,7 @@ test('serializes Chat Completions assistant tool calls and tool messages for a f
       { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_4', content: [{ type: 'text', text: '{"path":"README.md","content":"ok"}' }] }] }
     ]
   });
-  delete process.env.HMCODEX_TEST_OPENAI_HISTORY_CHAT_KEY;
+  delete process.env.DDA_TEST_OPENAI_HISTORY_CHAT_KEY;
   assert.deepEqual(chunks, [
     { type: 'text-delta', text: 'done' },
     { type: 'finish', reason: { kind: 'stop' } }

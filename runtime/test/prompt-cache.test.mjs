@@ -32,14 +32,14 @@ test('prefix diagnostics expose digest names only', () => {
 
 
 test('DeepSeek uses stable tool order and honors the prompt-cache rollback switch', () => {
-  const previous = process.env.HMCODEX_PROMPT_CACHE;
+  const previous = process.env.DDA_PROMPT_CACHE;
   try {
-    delete process.env.HMCODEX_PROMPT_CACHE;
+    delete process.env.DDA_PROMPT_CACHE;
     assert.deepEqual(deepSeekToolDefinitions(tools).map((tool) => tool.name), ['a', 'z']);
-    process.env.HMCODEX_PROMPT_CACHE = 'off';
+    process.env.DDA_PROMPT_CACHE = 'off';
     assert.deepEqual(deepSeekToolDefinitions(tools).map((tool) => tool.name), ['z', 'a']);
   } finally {
-    if (previous === undefined) delete process.env.HMCODEX_PROMPT_CACHE;
-    else process.env.HMCODEX_PROMPT_CACHE = previous;
+    if (previous === undefined) delete process.env.DDA_PROMPT_CACHE;
+    else process.env.DDA_PROMPT_CACHE = previous;
   }
 });

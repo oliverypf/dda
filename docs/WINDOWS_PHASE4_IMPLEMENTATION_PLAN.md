@@ -270,7 +270,7 @@
 
 负载与阈值：沿用已有万条回放与显式超过 100,000 事件规模用例；记录目标设备、事件速率、单事件/文件大小、并发、时长和样本数，负载基线在测量前固定。按[运维 SLO](OPERATIONS_AND_PRIVACY.md#9-健康指标与-slo)验证 receipt p95 < 100 ms（不含外部调用）、事件到 ReadModel p95 < 250 ms、非终态扫描 p95 < 2 s、完整恢复索引 p95 < 5 s、无持续主线程阻塞 > 50 ms。单次演练耗时不能冒充 p95，W10 脚本宽松预算不替代规范 SLO。
 
-Prompt Cache 与 Token 基线：在相同 provider/model、相同工作区快照和相同角色前缀下执行冷启动与暖缓存对照，记录总调用、usage 上报调用、cache usage 上报调用、input/cached/uncached/output tokens、prefix 变化原因和任务结果。命中率只按 `cachedInputTokens / cacheEligibleInputTokens` 计算，同时报告 `cacheCoverage`；未上报缓存字段保持 UNKNOWN。先取得真实基线再设优化阈值，不以 99% 宣传数字作发布门，也不得通过发送无用大上下文提高命中率。比较开启/关闭 `HMCODEX_PROMPT_CACHE` 的 uncached input tokens，并验证输出质量、安全门、工具行为和延迟无回归。
+Prompt Cache 与 Token 基线：在相同 provider/model、相同工作区快照和相同角色前缀下执行冷启动与暖缓存对照，记录总调用、usage 上报调用、cache usage 上报调用、input/cached/uncached/output tokens、prefix 变化原因和任务结果。命中率只按 `cachedInputTokens / cacheEligibleInputTokens` 计算，同时报告 `cacheCoverage`；未上报缓存字段保持 UNKNOWN。先取得真实基线再设优化阈值，不以 99% 宣传数字作发布门，也不得通过发送无用大上下文提高命中率。比较开启/关闭 `DDA_PROMPT_CACHE` 的 uncached input tokens，并验证输出质量、安全门、工具行为和延迟无回归。
 
 验收：发布支持的输入/显示方式均能完成关键操作，无关键事件丢失或错误跳转；保留原始测量和不达标项；规模测试默认 skip 时必须显式运行并记录；不能只凭 CSS、源码标记或 mock DOM 通过宣告实机/性能通过。
 

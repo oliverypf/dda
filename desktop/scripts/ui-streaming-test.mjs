@@ -18,13 +18,13 @@ const option = (name, fallback) => {
   const index = argv.indexOf(name);
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
 };
-const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
-const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9335'));
+const exe = option('--exe', process.env.DDA_UI_EXE ?? DEFAULT_EXE);
+const port = Number(option('--port', process.env.DDA_UI_PORT ?? '9335'));
 const prompt = option('--prompt', 'hello');
 const timeoutMs = Number(option('--timeout-ms', '180000'));
-const streamStartTimeoutMs = Number(option('--stream-start-timeout-ms', process.env.HMCODEX_STREAM_START_TIMEOUT_MS ?? '120000'));
+const streamStartTimeoutMs = Number(option('--stream-start-timeout-ms', process.env.DDA_STREAM_START_TIMEOUT_MS ?? '120000'));
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
+const workspaceRoot = process.env.DDA_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 class CdpClient {
   constructor(ws) {
@@ -118,8 +118,8 @@ const main = async () => {
       ...process.env,
       ...fixture.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_WORKSPACE_ROOT: fixture.workspaceRoot
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_WORKSPACE_ROOT: fixture.workspaceRoot
     }
   });
   child.unref();

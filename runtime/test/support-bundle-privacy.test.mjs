@@ -50,7 +50,7 @@ test('support-bundle CLI writes a bundle only after a clean privacy scan', async
     '--output',
     outputPath
   ], {
-    env: { ...process.env, HMCODEX_TRAJECTORY_STORE: trajectory },
+    env: { ...process.env, DDA_TRAJECTORY_STORE: trajectory },
     windowsHide: true
   });
   const payload = JSON.parse(result.stdout);
@@ -104,7 +104,7 @@ test('support bundle carries per-candidate egress and cost without leaking promp
     '--output', outputPath,
     '--harness-event-store', harnessPath
   ], {
-    env: { ...process.env, HMCODEX_TRAJECTORY_STORE: join(directory, 'trajectory.jsonl') },
+    env: { ...process.env, DDA_TRAJECTORY_STORE: join(directory, 'trajectory.jsonl') },
     windowsHide: true
   });
   assert.equal(JSON.parse(result.stdout).ok, true);

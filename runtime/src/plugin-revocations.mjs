@@ -6,16 +6,16 @@ import { readFile as readFileDefault } from 'node:fs/promises';
  * A revoked artifact must never be discovered or imported again, even when it
  * is re-presented as a side-by-side install after the fact. The list is an
  * operator input, not plugin input: it comes from the environment
- * (`HMCODEX_PLUGIN_REVOCATIONS`) or from a file
- * (`HMCODEX_PLUGIN_REVOCATION_FILE`) and every malformed entry fails closed.
+ * (`DDA_PLUGIN_REVOCATIONS`) or from a file
+ * (`DDA_PLUGIN_REVOCATION_FILE`) and every malformed entry fails closed.
  *
  * Supported entries:
  *   sha256:<64 hex> | <64 hex>   revoked code artifact or manifest digest
  *   <pluginId>@<version>         revoked plugin version
  */
 
-export const PLUGIN_REVOCATIONS_ENV = 'HMCODEX_PLUGIN_REVOCATIONS';
-export const PLUGIN_REVOCATION_FILE_ENV = 'HMCODEX_PLUGIN_REVOCATION_FILE';
+export const PLUGIN_REVOCATIONS_ENV = 'DDA_PLUGIN_REVOCATIONS';
+export const PLUGIN_REVOCATION_FILE_ENV = 'DDA_PLUGIN_REVOCATION_FILE';
 
 const DIGEST_PATTERN = /^(?:sha256:)?([0-9a-f]{64})$/iu;
 const VERSION_ENTRY_PATTERN = /^([a-z][a-z0-9._-]{1,127})@(\d+\.\d+(?:\.\d+)?)$/u;

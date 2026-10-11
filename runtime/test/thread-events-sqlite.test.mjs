@@ -23,9 +23,9 @@ test('thread history pages the scoped SQLite database without losing events afte
   const threads = createThreadStore({ storagePath: `${trajectory}.threads.json`, eventStore: events });
   const thread = await threads.create({ cwd: directory });
   await threads.appendTurn(thread.id, { runId: 'r1', summary: 'fixture' });
-  const env = { ...process.env, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY', HMCODEX_TRAJECTORY_STORE: trajectory, HMCODEX_DATA_DIR: directory };
-  delete env.HMCODEX_HARNESS_EVENT_STORE;
-  delete env.HMCODEX_THREAD_STORE;
+  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY', DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
+  delete env.DDA_HARNESS_EVENT_STORE;
+  delete env.DDA_THREAD_STORE;
   const result = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('../src/index.mjs', import.meta.url)), 'thread-events', '--thread-id', thread.id], { env, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.events.length, 100);

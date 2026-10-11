@@ -60,14 +60,14 @@ const dataDir = await mkdtemp(join(scriptPathDataRoot(), 'hmcodex-openviking-sup
 const supervisor = spawn(process.execPath, [join(runtimeRoot, 'src', 'openviking-sidecar-supervisor.mjs')], {
   env: {
     ...process.env,
-    HMCODEX_OPENVIKING_EXECUTABLE: executable,
-    HMCODEX_OPENVIKING_URL: url,
-    HMCODEX_OPENVIKING_DATA_DIR: dataDir,
-    HMCODEX_OPENVIKING_API_KEY: 'supervisor-e2e-key',
-    HMCODEX_OPENVIKING_START_TIMEOUT_MS: '10000',
-    HMCODEX_OPENVIKING_HEALTH_INTERVAL_MS: '250',
-    HMCODEX_OPENVIKING_HEALTH_FAILURE_THRESHOLD: '1',
-    HMCODEX_OPENVIKING_MAX_RESTARTS: '2'
+    DDA_OPENVIKING_EXECUTABLE: executable,
+    DDA_OPENVIKING_URL: url,
+    DDA_OPENVIKING_DATA_DIR: dataDir,
+    DDA_OPENVIKING_API_KEY: 'supervisor-e2e-key',
+    DDA_OPENVIKING_START_TIMEOUT_MS: '10000',
+    DDA_OPENVIKING_HEALTH_INTERVAL_MS: '250',
+    DDA_OPENVIKING_HEALTH_FAILURE_THRESHOLD: '1',
+    DDA_OPENVIKING_MAX_RESTARTS: '2'
   },
   stdio: 'ignore',
   windowsHide: true

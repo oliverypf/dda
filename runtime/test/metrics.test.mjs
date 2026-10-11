@@ -81,9 +81,9 @@ test('metrics reports event, projection, replay, storage, and decision counters'
   ], {
     env: {
       ...process.env,
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness,
-      HMCODEX_DECISION_TRACE_STORE: decisionTracePath
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness,
+      DDA_DECISION_TRACE_STORE: decisionTracePath
     },
     windowsHide: true
   });

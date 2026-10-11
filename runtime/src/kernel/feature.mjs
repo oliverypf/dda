@@ -4,15 +4,15 @@ import { isLinuxCliPlatform } from '../platform/paths.mjs';
  * Feature gating for the Phase-1 resident kernel.
  *
  * Frozen MVP decisions encoded here:
- *  - default OFF: the kernel only runs when HMCODEX_RESIDENT_KERNEL is truthy;
+ *  - default OFF: the kernel only runs when DDA_RESIDENT_KERNEL is truthy;
  *  - Linux-only: the subprocess sandbox boundary is only offered on Linux;
  *  - Node >=24: the resident kernel must run on a modern runtime;
  *  - if the sandbox is unavailable, callers fall back to the discrete
  *    read-only workspace tools instead of failing.
  */
 
-export const RESIDENT_KERNEL_FLAG = 'HMCODEX_RESIDENT_KERNEL';
-const SANDBOX_OVERRIDE_FLAG = 'HMCODEX_RESIDENT_KERNEL_SANDBOX';
+export const RESIDENT_KERNEL_FLAG = 'DDA_RESIDENT_KERNEL';
+const SANDBOX_OVERRIDE_FLAG = 'DDA_RESIDENT_KERNEL_SANDBOX';
 const MIN_NODE_MAJOR = 24;
 
 const isTruthyFlag = (value) => typeof value === 'string' && ['1', 'true', 'on', 'yes', 'enabled'].includes(value.trim().toLowerCase());

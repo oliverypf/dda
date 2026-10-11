@@ -164,13 +164,13 @@ const runDda = async (fixture, workspace, task, index) => {
   const threadStore = join(runRoot, 'threads.json');
   const startedAt = Date.now();
   const env = {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
-    HMCODEX_CONTEXT_PROVIDER: 'journal',
-    HMCODEX_EVIDENCE_TASK_ID: task.taskId,
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_CONTEXT_PROVIDER: 'journal',
+    DDA_EVIDENCE_TASK_ID: task.taskId,
     EVIDENCE_FIXTURE_KEY: 'fixture-key',
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_THREAD_STORE: threadStore
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_THREAD_STORE: threadStore
   };
   const result = await runProcess([
     'task', '--provider', 'openai-chat', '--protocol', 'chat-completions', '--model', 'evidence-fixture',

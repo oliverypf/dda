@@ -10,7 +10,7 @@ const setup = async (t, handler, options = {}) => {
   t.after(() => { server.closeAllConnections(); server.close(); });
   await listenOnFetchablePort(server);
   const root = new Context();
-  const apiKeyEnv = 'HMCODEX_TEST_RETRY_KEY';
+  const apiKeyEnv = 'DDA_TEST_RETRY_KEY';
   const previous = process.env[apiKeyEnv];
   process.env[apiKeyEnv] = 'local-test-key';
   t.after(async () => { await root.fiber.dispose(); if (previous === undefined) delete process.env[apiKeyEnv]; else process.env[apiKeyEnv] = previous; });

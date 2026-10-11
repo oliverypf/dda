@@ -9,10 +9,10 @@ import { randomUUID } from 'node:crypto';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const KERNEL_ENV = {
-  HMCODEX_RESIDENT_KERNEL: '1',
-  HMCODEX_PLATFORM: 'linux-cli',
-  HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-  HMCODEX_EXECUTION_MODE: 'READ_ONLY'
+  DDA_RESIDENT_KERNEL: '1',
+  DDA_PLATFORM: 'linux-cli',
+  DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+  DDA_EXECUTION_MODE: 'READ_ONLY'
 };
 
 const run = (args, env) => new Promise((resolve, reject) => {
@@ -67,7 +67,7 @@ const scriptedTask = async (t, { onRequest, prompt }) => {
   t.after(() => server.close());
   await listenOnFetchablePort(server);
   const address = server.address();
-  const keyName = `HMCODEX_TEST_KERNEL_GATE_${randomUUID().replaceAll('-', '')}`;
+  const keyName = `DDA_TEST_KERNEL_GATE_${randomUUID().replaceAll('-', '')}`;
   const result = await run([
     'task',
     '--provider', 'openai-chat',

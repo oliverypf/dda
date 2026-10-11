@@ -24,7 +24,7 @@ const uncParts = (value) => {
 
 const detectMappings = () => {
   if (detectedMappings) return detectedMappings;
-  const configured = process.env.HMCODEX_MAPPED_DRIVES;
+  const configured = process.env.DDA_MAPPED_DRIVES;
   const output = configured
     ? configured
     : spawnSync('net.exe', ['use'], { encoding: 'utf8', windowsHide: true, timeout: 2000 }).stdout ?? '';

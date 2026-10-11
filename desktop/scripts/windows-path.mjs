@@ -13,8 +13,8 @@ export function projectPaths(moduleUrl = import.meta.url, options = {}) {
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
   const candidates = [
-    env.HMCODEX_DESKTOP_ROOT,
-    env.HMCODEX_WORKSPACE_ROOT,
+    env.DDA_DESKTOP_ROOT,
+    env.DDA_WORKSPACE_ROOT,
     env.INIT_CWD,
     env.npm_config_local_prefix,
     cwd,

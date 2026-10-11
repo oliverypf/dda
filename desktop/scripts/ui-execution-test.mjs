@@ -7,7 +7,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const output = process.env.HMCODEX_UI_OUTPUT ?? fileURLToPath(new URL('../../.codex-tmp/execution-ui/', import.meta.url));
+const output = process.env.DDA_UI_OUTPUT ?? fileURLToPath(new URL('../../.codex-tmp/execution-ui/', import.meta.url));
 const server = createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -18,7 +18,7 @@ const server = createServer(async (req, res) => {
   } catch { res.writeHead(404).end(); }
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const browser = await chromium.launch({ headless: true, channel: process.env.HMCODEX_BROWSER_CHANNEL });
+const browser = await chromium.launch({ headless: true, channel: process.env.DDA_BROWSER_CHANNEL });
 const errors = [];
 const results = [];
 async function fixture(viewport = { width: 1440, height: 960 }, { controlled = false } = {}) {
@@ -131,7 +131,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-model-cache="composer"]')?.textContent.includes('服务商未返回缓存统计'));
   assert.ok(!(await page.locator('[data-model-cache="composer"]').innerText()).includes('0.0%'));
   await submit(page);
-  const profiler = process.env.HMCODEX_UI_PROFILE === '1' ? await page.context().newCDPSession(page) : undefined;
+  const profiler = process.env.DDA_UI_PROFILE === '1' ? await page.context().newCDPSession(page) : undefined;
   if (profiler) {
     await profiler.send('Profiler.enable');
     await profiler.send('Profiler.start');

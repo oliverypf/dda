@@ -35,7 +35,7 @@ test('release channel requires a trusted Ed25519 plugin signature', async () => 
     governance,
     registry: { register() {} }
   });
-  process.env.HMCODEX_BAKED_RELEASE_CHANNEL = 'WINDOWS_PHASE1_5_CONTROLLED';
+  process.env.DDA_BAKED_RELEASE_CHANNEL = 'WINDOWS_PHASE1_5_CONTROLLED';
   await assert.rejects(
     () => loader.discover({ manifest, entryPath: 'fixture.mjs' }),
     /PLUGIN_SIGNATURE_REQUIRED/u
@@ -46,13 +46,13 @@ test('release channel requires a trusted Ed25519 plugin signature', async () => 
     } }),
     /PLUGIN_SIGNATURE_TRUST_UNAVAILABLE/u
   );
-  process.env.HMCODEX_PLUGIN_TRUST_KEY = publicKeyPem;
+  process.env.DDA_PLUGIN_TRUST_KEY = publicKeyPem;
   const discovered = await loader.discover({ manifest, entryPath: 'fixture.mjs', signature: {
     algorithm: 'ed25519', manifestDigest, publicKey: publicKeyPem, signature
   } });
   assert.equal(discovered.signature.manifestDigest, manifestDigest);
-  delete process.env.HMCODEX_PLUGIN_TRUST_KEY;
-  delete process.env.HMCODEX_BAKED_RELEASE_CHANNEL;
+  delete process.env.DDA_PLUGIN_TRUST_KEY;
+  delete process.env.DDA_BAKED_RELEASE_CHANNEL;
 });
 
 test('revocation quarantines an active plugin and records the reason', async () => {

@@ -10,7 +10,7 @@ export const phase1BuildEnvironment = (environment) => {
   // can make rolldown load an incompatible binding.
   delete next.NAPI_RS_NATIVE_LIBRARY_PATH;
   delete next.NAPI_RS_FORCE_WASI;
-  next.HMCODEX_BUILD_RELEASE_CHANNEL = 'WINDOWS_PHASE1_READ_ONLY';
+  next.DDA_BUILD_RELEASE_CHANNEL = 'WINDOWS_PHASE1_READ_ONLY';
   return next;
 };
 

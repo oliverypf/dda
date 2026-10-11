@@ -7,7 +7,7 @@ export const fullLocalBuildEnvironment = (environment) => {
   const next = { ...environment };
   delete next.NAPI_RS_NATIVE_LIBRARY_PATH;
   delete next.NAPI_RS_FORCE_WASI;
-  next.HMCODEX_BUILD_RELEASE_CHANNEL = 'WINDOWS_FULL_LOCAL';
+  next.DDA_BUILD_RELEASE_CHANNEL = 'WINDOWS_FULL_LOCAL';
   return next;
 };
 

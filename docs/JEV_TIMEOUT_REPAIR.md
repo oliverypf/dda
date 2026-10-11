@@ -9,7 +9,7 @@
 
 ## 已修复的机制
 
-语义验证现在有独立的 `decision.verificationTimeoutMs`：默认 **15,000 ms**，允许 **100–60,000 ms**。配置文件优先于环境变量 `HMCODEX_JEV_VERIFICATION_TIMEOUT_MS`。未设置该字段时自动使用新默认值，不需要修改用户的模型配置。
+语义验证现在有独立的 `decision.verificationTimeoutMs`：默认 **15,000 ms**，允许 **100–60,000 ms**。配置文件优先于环境变量 `DDA_JEV_VERIFICATION_TIMEOUT_MS`。未设置该字段时自动使用新默认值，不需要修改用户的模型配置。
 
 快速决策继续使用原有 `decision.timeoutMs`。调用者取消明确记录为 `JEV_CANCELLED`，自身期限耗尽记录为 `JEV_TIMEOUT`；错误和语义验证事件保存实际耗时与所用期限。超时仍是 `UNCERTAIN`，真实否定仍是失败。既有的运输故障恢复只重试验证，复用同次实际执行证据，不因此重复写文件或执行测试命令。
 

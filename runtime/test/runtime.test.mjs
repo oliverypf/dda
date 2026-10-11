@@ -15,7 +15,7 @@ const run = (args, env) => new Promise((resolve, reject) => {
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_TRAJECTORY_STORE: trajectoryStore, ...env },
+    env: { ...process.env, DDA_CONTEXT_PROVIDER: 'journal', DDA_TRAJECTORY_STORE: trajectoryStore, ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stdout = '';
@@ -43,8 +43,8 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
     'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace,
     '--evolution-store', join(workspace, 'evolution.json')
   ], {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   });
@@ -68,8 +68,8 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
   const scopedThreads = JSON.parse(await readFile(`${result.trajectoryStore}.threads.json`, 'utf8'));
   assert.ok(scopedThreads.threads.some((thread) => thread.title === '检查 README'));
   const evaluated = await run(['evaluate', '--run-id', payload.runId], {
-    HMCODEX_TRAJECTORY_STORE: result.trajectoryStore,
-    HMCODEX_HARNESS_EVENT_STORE: `${result.trajectoryStore}.db`
+    DDA_TRAJECTORY_STORE: result.trajectoryStore,
+    DDA_HARNESS_EVENT_STORE: `${result.trajectoryStore}.db`
   });
   assert.equal(evaluated.code, 0, `${evaluated.stderr}\n${evaluated.stdout}`);
   const evaluation = JSON.parse(evaluated.stdout.trim()).evaluation;
@@ -79,8 +79,8 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
   assert.equal(evaluation.decisionOutcomeLinkRate.percent, 100);
   assert.equal(evaluation.eligibleForLearning, true);
   const learning = await run(['export-learning', '--run-id', payload.runId], {
-    HMCODEX_TRAJECTORY_STORE: result.trajectoryStore,
-    HMCODEX_HARNESS_EVENT_STORE: `${result.trajectoryStore}.db`
+    DDA_TRAJECTORY_STORE: result.trajectoryStore,
+    DDA_HARNESS_EVENT_STORE: `${result.trajectoryStore}.db`
   });
   assert.equal(learning.code, 0, `${learning.stderr}\n${learning.stdout}`);
   const sample = JSON.parse(learning.stdout.trim()).sample;
@@ -131,9 +131,9 @@ test('Phase 1 records memory conflict and supersession suggestions from recalled
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace, '--cancel-poll-ms', '100'
   ], {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
-    HMCODEX_TRAJECTORY_STORE: trajectory,
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_TRAJECTORY_STORE: trajectory,
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   });
@@ -151,8 +151,8 @@ test('records a failed run when the model provider is unreachable', async () => 
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', 'provider down prompt', '--workspace', workspace
   ], {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: 'http://127.0.0.1:1'
   });
@@ -182,8 +182,8 @@ test('task timeout aborts the model request and records a failed run', async (t)
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', 'timeout prompt', '--workspace', workspace, '--task-timeout-ms', '500'
   ], {
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   });
@@ -219,10 +219,10 @@ test('task cancel request aborts a running task and records a cancelled run', as
     cwd: new URL('..', import.meta.url),
     env: {
       ...process.env,
-      HMCODEX_CONTEXT_PROVIDER: 'journal',
-      HMCODEX_TRAJECTORY_STORE: trajectoryStore,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_EXECUTION_MODE: 'READ_ONLY',
+      DDA_CONTEXT_PROVIDER: 'journal',
+      DDA_TRAJECTORY_STORE: trajectoryStore,
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_EXECUTION_MODE: 'READ_ONLY',
       DEEPSEEK_API_KEY: 'test-key',
       DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
     },
@@ -252,7 +252,7 @@ test('task cancel request aborts a running task and records a cancelled run', as
   const deadline = Date.now() + 15_000;
   while (!runId && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
   assert.ok(runId, `task did not emit a run frame\n${stderr}\n${stdout}`);
-  const cancellation = await run(['cancel', '--run-id', runId], { HMCODEX_TRAJECTORY_STORE: trajectoryStore });
+  const cancellation = await run(['cancel', '--run-id', runId], { DDA_TRAJECTORY_STORE: trajectoryStore });
   assert.equal(cancellation.code, 0, `${cancellation.stderr}\n${cancellation.stdout}`);
   const cancellationPayload = JSON.parse(cancellation.stdout.trim());
   assert.equal(cancellationPayload.ok, true);
@@ -278,9 +278,9 @@ test('storage hard limit blocks a new run while recovery and export remain avail
   const trajectoryStore = join(tmpdir(), `hmcodex-test-trajectory-${randomUUID()}.jsonl`);
   await writeFile(trajectoryStore, 'x'.repeat(4096));
   const env = {
-    HMCODEX_TRAJECTORY_STORE: trajectoryStore,
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    HMCODEX_EXECUTION_MODE: 'READ_ONLY',
+    DDA_TRAJECTORY_STORE: trajectoryStore,
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+    DDA_EXECUTION_MODE: 'READ_ONLY',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: 'http://127.0.0.1:1'
   };
@@ -402,9 +402,9 @@ test('runs a verified task through the local Memory Journal context port', async
   ], {
     DEEPSEEK_API_KEY: 'model-test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${modelAddress.port}`,
-    HMCODEX_CONTEXT_PROVIDER: 'openviking',
-    HMCODEX_OPENVIKING_URL: `http://127.0.0.1:${contextAddress.port}`,
-    HMCODEX_OPENVIKING_API_KEY_ENV: 'OPENVIKING_TEST_KEY',
+    DDA_CONTEXT_PROVIDER: 'openviking',
+    DDA_OPENVIKING_URL: `http://127.0.0.1:${contextAddress.port}`,
+    DDA_OPENVIKING_API_KEY_ENV: 'OPENVIKING_TEST_KEY',
     OPENVIKING_TEST_KEY: 'context-test-key'
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
@@ -447,8 +447,8 @@ test('keeps the local context path independent of an unavailable external server
   ], {
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${modelAddress.port}`,
-    HMCODEX_CONTEXT_PROVIDER: 'openviking',
-    HMCODEX_OPENVIKING_URL: `http://127.0.0.1:${contextAddress.port}`
+    DDA_CONTEXT_PROVIDER: 'openviking',
+    DDA_OPENVIKING_URL: `http://127.0.0.1:${contextAddress.port}`
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
@@ -504,13 +504,13 @@ test('aggregates dashboard state from the same scoped stores as a task run', asy
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-dashboard-workspace-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
   const env = {
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_THREAD_STORE: `${trajectory}.threads.json`,
-    HMCODEX_MEMORY_STORE: `${trajectory}.memory.json`,
-    HMCODEX_DREAM_STORE: `${trajectory}.dream.json`,
-    HMCODEX_PLUGIN_GOVERNANCE_STORE: `${trajectory}.plugins.json`,
-    HMCODEX_EVOLUTION_STORE: `${trajectory}.evolution.json`,
-    HMCODEX_EVALUATION_STORE: `${trajectory}.evaluation.json`
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_THREAD_STORE: `${trajectory}.threads.json`,
+    DDA_MEMORY_STORE: `${trajectory}.memory.json`,
+    DDA_DREAM_STORE: `${trajectory}.dream.json`,
+    DDA_PLUGIN_GOVERNANCE_STORE: `${trajectory}.plugins.json`,
+    DDA_EVOLUTION_STORE: `${trajectory}.evolution.json`,
+    DDA_EVALUATION_STORE: `${trajectory}.evaluation.json`
   };
   const created = await run(['thread', 'create', '--workspace', workspace, '--title', '聚合状态'], env);
   assert.equal(created.code, 0, `${created.stderr}\n${created.stdout}`);
@@ -535,7 +535,7 @@ test('aggregates dashboard state from the same scoped stores as a task run', asy
 for (const extension of ['json', 'db']) {
 test(`uses the Harness Event Store as the task event backend (${extension})`, async (t) => {
   const channel = extension === 'db' ? 'WINDOWS_PHASE1_READ_ONLY' : 'WINDOWS_MVP_PRE_PHASE1';
-  const invoke = (args, env) => run(args, { ...env, HMCODEX_RELEASE_CHANNEL: channel });
+  const invoke = (args, env) => run(args, { ...env, DDA_RELEASE_CHANNEL: channel });
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-harness-'));
   await writeFile(join(workspace, 'README.md'), '# Harness fixture\n');
   const server = createServer((_request, response) => {
@@ -551,8 +551,8 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
   const result = await invoke(['task', '--provider', 'deepseek', '--prompt', '检查 Harness', '--workspace', workspace], {
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: 'http://127.0.0.1:' + address.port,
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   });
   assert.equal(result.code, 0, result.stderr + '\n' + result.stdout);
   const payload = JSON.parse(result.stdout.trim());
@@ -574,8 +574,8 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
   const harnessStore = { events: await createHarnessEventStore({ storagePath: harness }).list() };
   assert.equal(harnessStore.events.find((event) => event.eventId === canonicalOutcome.verifierReportIds[0])?.kind, 'VerificationCompleted');
   const rebuilt = await invoke(['rebuild-read-model', '--trajectory-store', trajectory, '--read-model', join(workspace, 'read-model.json')], {
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   });
   assert.equal(rebuilt.code, 0, rebuilt.stderr + '\n' + rebuilt.stdout);
   const rebuiltProjection = JSON.parse(rebuilt.stdout.trim()).projection;
@@ -584,8 +584,8 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
   assert.equal(rebuiltProjection.feedback.length, 1);
   assert.equal(rebuiltProjection.feedback[0].outcomeId, rebuiltProjection.outcomes[0].outcomeId);
   const verify = await invoke(['harness-events', 'verify', '--harness-event-store', harness], {
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   });
   assert.equal(verify.code, 0, verify.stderr + '\n' + verify.stdout);
   const verification = JSON.parse(verify.stdout.trim()).verification;
@@ -594,16 +594,16 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
   await writeFile(trajectory + '.decision-trace.json', '{not-json', 'utf8');
   const evaluated = await invoke(['evaluate', '--run-id', canonicalOutcome.runId,
     '--harness-event-store', harness, '--decision-trace-store', trajectory + '.decision-trace.json'], {
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   });
   assert.equal(evaluated.code, 0, evaluated.stderr + '\n' + evaluated.stdout);
   const evaluation = JSON.parse(evaluated.stdout.trim()).evaluation;
   assert.equal(evaluation.decisionCount, traceStore.decisions.length);
   await writeFile(trajectory + '.feedback.json', '{not-json', 'utf8');
   const dashboard = await invoke(['dashboard'], {
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   });
   assert.equal(dashboard.code, 0, dashboard.stderr + '\n' + dashboard.stdout);
   const dashboardPayload = JSON.parse(dashboard.stdout.trim());
@@ -616,7 +616,7 @@ test(`uses the Harness Event Store as the task event backend (${extension})`, as
   if (extension === 'db') {
     // Restore a valid stale cache: the deleted run must still stay deleted.
     await writeFile(trajectory + '.decision-trace.json', JSON.stringify(traceStore));
-    const env = { HMCODEX_TRAJECTORY_STORE: trajectory, HMCODEX_HARNESS_EVENT_STORE: harness };
+    const env = { DDA_TRAJECTORY_STORE: trajectory, DDA_HARNESS_EVENT_STORE: harness };
     const purged = await invoke(['harness-events', 'purge', '--run-id', canonicalOutcome.runId,
       '--harness-event-store', harness], env);
     assert.equal(purged.code, 0, purged.stderr + '\n' + purged.stdout);

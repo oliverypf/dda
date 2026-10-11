@@ -50,8 +50,8 @@ test('purged run leaves only a tombstone and cannot be resurrected by caches or 
 
   const env = {
     ...process.env,
-    HMCODEX_TRAJECTORY_STORE: trajectory,
-    HMCODEX_HARNESS_EVENT_STORE: harness
+    DDA_TRAJECTORY_STORE: trajectory,
+    DDA_HARNESS_EVENT_STORE: harness
   };
   const exportPath = join(directory, 'export-run-a.json');
   const exported = JSON.parse((await invoke(['export-data', '--run-id', 'run-a', '--output', exportPath], env)).stdout);

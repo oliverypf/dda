@@ -297,7 +297,7 @@ test('stops repeated workspace requests after four rounds without new evidence',
 
 test('stops at the configured tool-round cap instead of allowing an unbounded loop', async () => {
   // 生产默认不限轮数；此用例显式设置上限来验证熔断行为本身。
-  process.env.HMCODEX_MAX_TOOL_ROUNDS = '4';
+  process.env.DDA_MAX_TOOL_ROUNDS = '4';
   const registry = new ToolRegistry();
   registry.register({
     name: 'fixture.noop',
@@ -321,7 +321,7 @@ test('stops at the configured tool-round cap instead of allowing an unbounded lo
   try {
     await assert.rejects(root.taskRunner.run({ prompt: 'loop', workspace }), /TOOL_LOOP_LIMIT/);
   } finally {
-    delete process.env.HMCODEX_MAX_TOOL_ROUNDS;
+    delete process.env.DDA_MAX_TOOL_ROUNDS;
     await root.fiber.dispose();
   }
 });

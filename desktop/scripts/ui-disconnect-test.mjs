@@ -3,7 +3,7 @@
 //
 // 1. Copy the real model config to a temporary file and point baseURL at an
 //    unreachable loopback port.
-// 2. Launch the installed app with HMCODEX_MODEL_CONFIG=<temporary config>.
+// 2. Launch the installed app with DDA_MODEL_CONFIG=<temporary config>.
 // 3. Submit a task and assert the UI reaches a terminal state and shows the
 //    transport failure.
 // 4. Relaunch with the real config and assert a new task can complete.
@@ -22,11 +22,11 @@ const option = (name, fallback) => {
   const index = argv.indexOf(name);
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
 };
-const exe = option('--exe', process.env.HMCODEX_UI_EXE ?? DEFAULT_EXE);
-const port = Number(option('--port', process.env.HMCODEX_UI_PORT ?? '9334'));
+const exe = option('--exe', process.env.DDA_UI_EXE ?? DEFAULT_EXE);
+const port = Number(option('--port', process.env.DDA_UI_PORT ?? '9334'));
 const keepApp = !argv.includes('--close');
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const workspaceRoot = process.env.HMCODEX_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
+const workspaceRoot = process.env.DDA_UI_WORKSPACE_ROOT ?? resolve(scriptRoot, '..');
 
 const results = [];
 const record = (name, status, detail = '') => {
@@ -126,8 +126,8 @@ const launch = (fixtureEnv, envOverrides = {}) => {
       ...process.env,
       ...fixtureEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_WORKSPACE_ROOT: fixtureEnv?.HMCODEX_WORKSPACE_ROOT ?? workspaceRoot,
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_WORKSPACE_ROOT: fixtureEnv?.DDA_WORKSPACE_ROOT ?? workspaceRoot,
       ...envOverrides
     }
   });
@@ -221,7 +221,7 @@ const main = async () => {
   let client;
   let recoveredPid;
   try {
-    const disconnectedPid = launch(fixture.env, { HMCODEX_MODEL_CONFIG: patchedConfigPath, HMCODEX_MODEL_REGISTRY: badRegistryPath });
+    const disconnectedPid = launch(fixture.env, { DDA_MODEL_CONFIG: patchedConfigPath, DDA_MODEL_REGISTRY: badRegistryPath });
     console.log(`disconnectedAppPid=${disconnectedPid}`);
     client = await connect();
     await waitForReady(client);
@@ -240,7 +240,7 @@ const main = async () => {
     stop(disconnectedPid);
     await delay(5000);
 
-    recoveredPid = launch(fixture.env, { HMCODEX_MODEL_REGISTRY: goodRegistryPath });
+    recoveredPid = launch(fixture.env, { DDA_MODEL_REGISTRY: goodRegistryPath });
     console.log(`recoveredAppPid=${recoveredPid}`);
     client = await connect();
     await waitForReady(client);

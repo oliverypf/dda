@@ -90,7 +90,7 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const base = `http://127.0.0.1:${address.port}`;
-  const keyName = `HMCODEX_TEST_CANDIDATE_KEY_${randomUUID().replaceAll('-', '')}`;
+  const keyName = `DDA_TEST_CANDIDATE_KEY_${randomUUID().replaceAll('-', '')}`;
   const configPath = join(workspace, 'model-config.json');
   await writeFile(configPath, JSON.stringify({
     schemaVersion: '1.0',

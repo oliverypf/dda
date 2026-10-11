@@ -50,10 +50,10 @@ test('plugin CLI persists governance and only loads ACTIVE plugins', async () =>
   await writeFile(entryPath, 'export const createPlugin = () => {}\n', 'utf8');
   await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf8');
   const env = {
-    HMCODEX_PLUGIN_GOVERNANCE_STORE: governancePath,
-    HMCODEX_PLUGIN_ROOT: pluginRoot,
-    HMCODEX_EVOLUTION_STORE: evolutionPath,
-    HMCODEX_EVALUATION_STORE: evaluationPath
+    DDA_PLUGIN_GOVERNANCE_STORE: governancePath,
+    DDA_PLUGIN_ROOT: pluginRoot,
+    DDA_EVOLUTION_STORE: evolutionPath,
+    DDA_EVALUATION_STORE: evaluationPath
   };
 
   const discovered = await run([
@@ -131,7 +131,7 @@ test('plugin CLI persists governance and only loads ACTIVE plugins', async () =>
 
 test('plugin CLI rejects malformed metadata and missing plugin identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-plugin-cli-errors-'));
-  const env = { HMCODEX_PLUGIN_GOVERNANCE_STORE: join(root, 'plugins.json') };
+  const env = { DDA_PLUGIN_GOVERNANCE_STORE: join(root, 'plugins.json') };
   const missingId = await run(['plugin', 'transition', '--state', 'ACTIVE'], env);
   assert.equal(missingId.code, 1);
   assert.equal(parse(missingId).error, 'PLUGIN_ID_REQUIRED');
@@ -155,8 +155,8 @@ test('evolution CLI cannot bypass evaluator promotion gate', async () => {
   const attempted = await run([
     'evolution', 'transition', '--proposal-id', proposal.proposalId, '--state', 'ACTIVE'
   ], {
-    HMCODEX_EVOLUTION_STORE: proposalPath,
-    HMCODEX_EVALUATION_STORE: evaluationPath
+    DDA_EVOLUTION_STORE: proposalPath,
+    DDA_EVALUATION_STORE: evaluationPath
   });
   assert.equal(attempted.code, 1);
   assert.equal(parse(attempted).error, 'EVOLUTION_PROMOTION_REQUIRED');
@@ -183,9 +183,9 @@ test('evolution CLI requires a passed HOLDOUT dataset for holdout-gated promotio
   await registry.transition(proposal.proposalId, 'SHADOW');
   await registry.transition(proposal.proposalId, 'CANARY');
   const env = {
-    HMCODEX_EVOLUTION_STORE: proposalPath,
-    HMCODEX_EVALUATION_STORE: evaluationPath,
-    HMCODEX_HARNESS_EVENT_STORE: join(root, 'events.db')
+    DDA_EVOLUTION_STORE: proposalPath,
+    DDA_EVALUATION_STORE: evaluationPath,
+    DDA_HARNESS_EVENT_STORE: join(root, 'events.db')
   };
   const blocked = await run([
     'evolution', 'promote', '--proposal-id', proposal.proposalId,
@@ -237,8 +237,8 @@ test('evolution CLI derives a PROPOSED candidate from a persisted verified outco
   const generated = await run([
     'evolution', 'propose-from-outcome', '--outcome-id', outcome.outcomeId
   ], {
-    HMCODEX_EVOLUTION_STORE: proposalPath,
-    HMCODEX_EVALUATION_STORE: evaluationPath
+    DDA_EVOLUTION_STORE: proposalPath,
+    DDA_EVALUATION_STORE: evaluationPath
   });
   assert.equal(generated.code, 0, `${generated.stderr}\n${generated.stdout}`);
   const payload = parse(generated);
@@ -261,8 +261,8 @@ test('memory CLI requires source event ids to exist in the trajectory and match 
   const trajectory = createTrajectoryStore(trajectoryPath);
   const event = await trajectory.append({ runId: 'run-source', kind: 'TaskRunCompleted', payload: { status: 'SUCCEEDED' } });
   const env = {
-    HMCODEX_MEMORY_STORE: memoryPath,
-    HMCODEX_TRAJECTORY_STORE: trajectoryPath
+    DDA_MEMORY_STORE: memoryPath,
+    DDA_TRAJECTORY_STORE: trajectoryPath
   };
 
   const missing = await run([

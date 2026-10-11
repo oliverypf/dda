@@ -127,9 +127,9 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   ], {
     env: {
       ...process.env,
-      HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      HMCODEX_TRAJECTORY_STORE: trajectory,
-      HMCODEX_HARNESS_EVENT_STORE: harness
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness
     },
     windowsHide: true
   });

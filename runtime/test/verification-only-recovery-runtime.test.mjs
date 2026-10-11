@@ -106,8 +106,8 @@ for (const [mode, eventual, delayed = false] of [['READ_ONLY', 'PASS'], ['CONTRO
     const config = join(workspace, 'model-config.json'), trajectory = join(workspace, 'trajectory.jsonl'), store = join(workspace, 'harness.db');
     await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'fixture', endpoint: `http://127.0.0.1:${port}/model`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY',
       decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY', timeoutMs: delayed ? 200 : 5000, verificationTimeoutMs: 5000 } }));
-    const env = { GOAL_VERIFY_ONLY_FIX_KEY: 'local-only-key', HMCODEX_DATA_DIR: workspace, HMCODEX_HARNESS_EVENT_STORE: store,
-      HMCODEX_CONTEXT_PROVIDER: 'journal', HMCODEX_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY', HMCODEX_JEV_ENABLED: '1', HMCODEX_JEV_ENFORCE: '1' };
+    const env = { GOAL_VERIFY_ONLY_FIX_KEY: 'local-only-key', DDA_DATA_DIR: workspace, DDA_HARNESS_EVENT_STORE: store,
+      DDA_CONTEXT_PROVIDER: 'journal', DDA_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
     const args = ['src/index.mjs', 'task', '--config', config, '--workspace', workspace, '--trajectory-store', trajectory, '--thread-store', join(workspace, 'threads.json'),
       '--max-recovery-attempts', '2', '--prompt', mode === 'READ_ONLY' ? 'Read README.md with a real tool and report its marker.' : 'Change only value.mjs to export value=1, run the immutable tests and report the actual result.'];
     if (mode === 'CONTROLLED') args.push('--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node');

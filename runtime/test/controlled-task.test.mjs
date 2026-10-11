@@ -62,7 +62,7 @@ test('runs a bounded OpenAI tool round through CONTROLLED executor approval', as
   t.after(() => server.close());
   await listenOnFetchablePort(server);
   const address = server.address();
-  const keyName = `HMCODEX_TEST_CONTROLLED_KEY_${randomUUID().replaceAll('-', '')}`;
+  const keyName = `DDA_TEST_CONTROLLED_KEY_${randomUUID().replaceAll('-', '')}`;
   const result = await run([
     'task',
     '--provider', 'openai-chat',

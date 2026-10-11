@@ -37,7 +37,7 @@ test('native workspace I/O exits after completion without reducing the 60-second
     console.log(JSON.stringify({done:true,content:result.content}));`;
   const baselineFile = join(directory, 'legacy-child.mjs'), correctedFile = join(directory, 'corrected-child.mjs');
   await writeFile(baselineFile, legacy); await writeFile(correctedFile, corrected);
-  const env = { HMCODEX_WORKSPACE_TIMEOUT_MS: '60000' };
+  const env = { DDA_WORKSPACE_TIMEOUT_MS: '60000' };
   const baseline = await runEvidenceProcess(process.execPath, [baselineFile], { env, timeoutMs: 3000 });
   assert.match(baseline.stdout, /ACTUAL_FS_EXIT_EVIDENCE/u);
   assert.equal(baseline.timedOut, true);

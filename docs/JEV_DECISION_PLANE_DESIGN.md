@@ -86,7 +86,7 @@ Jev 不作为 Planner、Executor、Verifier 或 Judge 角色注册；它是横�
 当前实现属于渐进迁移阶段，Jev 已进入部分运行主链，但还不是完整的编排控制者。以下边界必须在产品状态和 Decision Trace 中明确标记：
 
 - `ACTION_GATE`、候选选择、行为验证以及部分 stop/recovery 已接入 Jev；
-- `CLASSIFY_TASK`、`SELECT_ROUTE`、`SELECT_TOPOLOGY` 现在共享同一个在分类之前解析的 Decision Engine，并各自由独立的显式 opt-in 开关控制（`decision` 块的 `classificationEnabled` / `routeSelectionEnabled` / `topologyEnabled`，或 `HMCODEX_JEV_CLASSIFY_ENABLED` / `HMCODEX_JEV_ROUTE_ENABLED` / `HMCODEX_JEV_TOPOLOGY_ENABLED`）。默认关闭；未 opt-in 时这三个决策仍由 `RuleRouter` 和固定规则完成，并在 Decision Trace 中标记 `RULE_FALLBACK`。
+- `CLASSIFY_TASK`、`SELECT_ROUTE`、`SELECT_TOPOLOGY` 现在共享同一个在分类之前解析的 Decision Engine，并各自由独立的显式 opt-in 开关控制（`decision` 块的 `classificationEnabled` / `routeSelectionEnabled` / `topologyEnabled`，或 `DDA_JEV_CLASSIFY_ENABLED` / `DDA_JEV_ROUTE_ENABLED` / `DDA_JEV_TOPOLOGY_ENABLED`）。默认关闭；未 opt-in 时这三个决策仍由 `RuleRouter` 和固定规则完成，并在 Decision Trace 中标记 `RULE_FALLBACK`。
 - 迁移仍不完整，不得宣称为 100%：
   - `SELECT_ROUTE` 现在确实把安全过滤后的路由交给 Jev，但 Jev 只能把已选路由收紧为 `BLOCKED`（fail-closed），不能放宽、改写角色或绕过批准模型集合；
   - 规则分类器目前仍只产出 `inspect | modify | test | unknown`，尚未扩展到设计中的 `inspect | investigate | implement | configure | diagnose | external-operation`，因此 `diagnose` 任务类从不出现，`SELECT_TOPOLOGY` 的 `DIAGNOSE_PROBE_RECOVER` 候选当前不可达；

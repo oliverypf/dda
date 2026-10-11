@@ -23,11 +23,11 @@ test('lightweight history CLI matches the main entry point and stays read-only',
       runId: 'run', kind: 'TaskRunCompleted', payload: { n: offset + n }
     })));
   }
-  const env = { ...process.env, HMCODEX_DATA_DIR: directory, HMCODEX_HARNESS_EVENT_STORE: harnessPath,
-    HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' };
-  delete env.HMCODEX_BAKED_RELEASE_CHANNEL;
-  delete env.HMCODEX_THREAD_STORE;
-  delete env.HMCODEX_TRAJECTORY_STORE;
+  const env = { ...process.env, DDA_DATA_DIR: directory, DDA_HARNESS_EVENT_STORE: harnessPath,
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' };
+  delete env.DDA_BAKED_RELEASE_CHANNEL;
+  delete env.DDA_THREAD_STORE;
+  delete env.DDA_TRAJECTORY_STORE;
   const call = async (entry, args) => {
     const start = performance.now();
     const { stdout } = await promisify(execFile)(process.execPath,

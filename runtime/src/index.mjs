@@ -214,12 +214,12 @@ const modelOverridesFromArgs = () => ({
 });
 
 const command = process.argv[2] ?? 'snapshot';
-const eventOutput = argValue('--events') ?? process.env.HMCODEX_EVENTS ?? '';
+const eventOutput = argValue('--events') ?? process.env.DDA_EVENTS ?? '';
 
 const csv = (value) => String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 
 const executionMode = () => {
-  const raw = arg('--execution-mode', arg('--mode', process.env.HMCODEX_EXECUTION_MODE ?? EXECUTION_MODES.READ_ONLY));
+  const raw = arg('--execution-mode', arg('--mode', process.env.DDA_EXECUTION_MODE ?? EXECUTION_MODES.READ_ONLY));
   if (raw === EXECUTION_MODES.READ_ONLY) return assertReleaseExecutionMode(EXECUTION_MODES.READ_ONLY);
   if (raw === EXECUTION_MODES.CONTROLLED || raw === 'CONTROLLED_WRITE') return assertReleaseExecutionMode(EXECUTION_MODES.CONTROLLED);
   throw new Error('EXECUTION_MODE_INVALID');
@@ -255,8 +255,8 @@ const executionOptions = (mode) => ({
   mode,
   ...(argValue('--command-allowlist') !== undefined
     ? { commandAllowlist: csv(argValue('--command-allowlist')) }
-    : process.env.HMCODEX_COMMAND_ALLOWLIST
-      ? { commandAllowlist: csv(process.env.HMCODEX_COMMAND_ALLOWLIST) }
+    : process.env.DDA_COMMAND_ALLOWLIST
+      ? { commandAllowlist: csv(process.env.DDA_COMMAND_ALLOWLIST) }
       : {})
 });
 
@@ -267,7 +267,7 @@ const defaultEvolutionEvaluationStore = () => resolveStoreFile('evolution-evalua
 const defaultTrajectoryStore = () => resolveStoreFile('trajectory.jsonl');
 
 const auditSigningOptions = () => {
-  const keyEnv = argValue('--audit-signing-key-env') ?? process.env.HMCODEX_GIT_AUDIT_SIGNING_KEY_ENV ?? 'HMCODEX_GIT_AUDIT_SIGNING_KEY';
+  const keyEnv = argValue('--audit-signing-key-env') ?? process.env.DDA_GIT_AUDIT_SIGNING_KEY_ENV ?? 'DDA_GIT_AUDIT_SIGNING_KEY';
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(keyEnv)) throw new Error('GIT_AUDIT_SIGNING_ENV_INVALID');
   const key = process.env[keyEnv];
   return key ? { signingKey: key, signingKeyRef: keyEnv } : {};
@@ -280,7 +280,7 @@ const defaultHarnessEventStore = () => resolveStoreFile('hmcodex.db');
 // Task execution and recovery must resolve the same authority for an identical
 // trajectory scope. Legacy storage remains a pre-Phase-1 compatibility path.
 const taskHarnessEventStore = (trajectoryPath, scopedTrajectory) => assertReleaseHarnessStore(
-  arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
+  arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore()
       : isReadOnlyRelease() && trajectoryPath ? `${trajectoryPath}.db` : undefined))
 );
@@ -373,22 +373,22 @@ async function runTask() {
   const workspaceRoot = canonicalWorkspacePath(arg('--workspace', ''));
   const mode = executionMode();
   const releaseChannel = resolveReleaseChannel();
-  const approvedCapabilities = capabilityNames(arg('--lease-capabilities', process.env.HMCODEX_LEASE_CAPABILITIES ?? ''));
-  const approvedCommands = csv(arg('--lease-commands', process.env.HMCODEX_LEASE_COMMANDS ?? ''));
-  const approvedNetworkTargets = parseNetworkTargets(arg('--network-targets', process.env.HMCODEX_NETWORK_TARGETS));
-  const mcpConfigPath = arg('--mcp-config', process.env.HMCODEX_MCP_CONFIG);
+  const approvedCapabilities = capabilityNames(arg('--lease-capabilities', process.env.DDA_LEASE_CAPABILITIES ?? ''));
+  const approvedCommands = csv(arg('--lease-commands', process.env.DDA_LEASE_COMMANDS ?? ''));
+  const approvedNetworkTargets = parseNetworkTargets(arg('--network-targets', process.env.DDA_NETWORK_TARGETS));
+  const mcpConfigPath = arg('--mcp-config', process.env.DDA_MCP_CONFIG);
   const autoEvolutionProposal = parseBoolean(
     process.argv.includes('--auto-evolution-proposal') ? 'true' : argValue('--auto-evolution-proposal'),
-    parseBoolean(process.env.HMCODEX_AUTO_EVOLUTION_PROPOSAL, false)
+    parseBoolean(process.env.DDA_AUTO_EVOLUTION_PROPOSAL, false)
   );
-  const agentMode = String(arg('--agent-mode', process.env.HMCODEX_AGENT_MODE ?? 'single')).toLowerCase();
+  const agentMode = String(arg('--agent-mode', process.env.DDA_AGENT_MODE ?? 'single')).toLowerCase();
   if (!['single', 'multi'].includes(agentMode)) throw new Error('AGENT_MODE_INVALID');
   const resumeRequested = process.argv.includes('--resume');
   const runId = `run-${randomUUID()}`;
   taskResponseRunId = runId;
   const evolutionVerificationToken = randomUUID();
   const runStartedAtMs = Date.now();
-  const requestedTaskTimeoutMs = Number(arg('--task-timeout-ms', process.env.HMCODEX_TASK_TIMEOUT_MS ?? '0'));
+  const requestedTaskTimeoutMs = Number(arg('--task-timeout-ms', process.env.DDA_TASK_TIMEOUT_MS ?? '0'));
   const taskTimeoutMs = Number.isFinite(requestedTaskTimeoutMs) && requestedTaskTimeoutMs > 0
     ? Math.min(Math.floor(requestedTaskTimeoutMs), 24 * 60 * 60 * 1000)
     : 0;
@@ -435,7 +435,7 @@ async function runTask() {
     writeStdout(`${JSON.stringify(event)}\n`);
   };
   const heartbeatState = { current: 'STARTING' };
-  const requestedHeartbeatIntervalMs = Number(arg('--heartbeat-interval-ms', process.env.HMCODEX_HEARTBEAT_INTERVAL_MS ?? '2000'));
+  const requestedHeartbeatIntervalMs = Number(arg('--heartbeat-interval-ms', process.env.DDA_HEARTBEAT_INTERVAL_MS ?? '2000'));
   const heartbeatIntervalMs = Number.isFinite(requestedHeartbeatIntervalMs)
     ? Math.max(250, Math.min(10000, Math.trunc(requestedHeartbeatIntervalMs)))
     : 2000;
@@ -693,14 +693,14 @@ async function runTask() {
     return approvalPromise;
   };
   setRuntimePhase('STORAGE_CONFIGURATION');
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const cancelRegistryPath = argValue('--cancel-store')
-      ?? process.env.HMCODEX_CANCEL_STORE
+      ?? process.env.DDA_CANCEL_STORE
       ?? taskCancelStorePath(trajectoryPath);
   const cancelRegistry = createTaskCancelRegistry({ storagePath: cancelRegistryPath });
-  const cancelPollMs = Math.min(5000, Math.max(100, Number(arg('--cancel-poll-ms', process.env.HMCODEX_CANCEL_POLL_MS ?? '500')) || 500));
+  const cancelPollMs = Math.min(5000, Math.max(100, Number(arg('--cancel-poll-ms', process.env.DDA_CANCEL_POLL_MS ?? '500')) || 500));
   const pollCancellation = async () => {
     if (cancelPollStopped || taskCancelError || taskAbortController.signal.aborted) return;
     try {
@@ -736,14 +736,14 @@ async function runTask() {
     }
     logger.info(`run phase complete | runId=${runId} | phase=LEGACY_MIGRATION_CHECK | durationMs=${Date.now() - migrationStartedAt}`);
   }
-  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
+  const threadPath = arg('--thread-store', process.env.DDA_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
   setRuntimePhase('STORAGE_CAPACITY_CHECK');
   const storageCapacity = await assertStorageCapacityForRun({
     paths: [trajectoryPath, harnessEventStorePath, threadPath],
-    maxBytes: Number(arg('--storage-max-bytes', process.env.HMCODEX_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
-    warningRatio: Number(arg('--storage-warning-ratio', process.env.HMCODEX_STORAGE_WARNING_RATIO ?? '0.7')),
-    criticalRatio: Number(arg('--storage-critical-ratio', process.env.HMCODEX_STORAGE_CRITICAL_RATIO ?? '0.85')),
-    hardRatio: Number(arg('--storage-hard-ratio', process.env.HMCODEX_STORAGE_HARD_RATIO ?? '0.95'))
+    maxBytes: Number(arg('--storage-max-bytes', process.env.DDA_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
+    warningRatio: Number(arg('--storage-warning-ratio', process.env.DDA_STORAGE_WARNING_RATIO ?? '0.7')),
+    criticalRatio: Number(arg('--storage-critical-ratio', process.env.DDA_STORAGE_CRITICAL_RATIO ?? '0.85')),
+    hardRatio: Number(arg('--storage-hard-ratio', process.env.DDA_STORAGE_HARD_RATIO ?? '0.95'))
   });
   const taskHarnessEventStoreInstance = harnessEventStorePath
     ? createMeteredHarnessEventStore({
@@ -752,7 +752,7 @@ async function runTask() {
       })
     : undefined;
   const trajectory = createTrajectoryStore(trajectoryPath, taskHarnessEventStoreInstance ? { harnessEventStore: taskHarnessEventStoreInstance } : {});
-  const gitAuditPath = arg('--git-audit-store', process.env.HMCODEX_GIT_AUDIT_STORE ?? scopedStorePath('git-audit.json', defaultGitAuditStore));
+  const gitAuditPath = arg('--git-audit-store', process.env.DDA_GIT_AUDIT_STORE ?? scopedStorePath('git-audit.json', defaultGitAuditStore));
   const gitAudit = createGitAuditStore({ storagePath: gitAuditPath, ...auditSigningOptions() });
   let gitAuditLoadError;
   try {
@@ -762,8 +762,8 @@ async function runTask() {
   }
   const gitObserver = createGitObserver({
     workspaceRoot,
-    timeoutMs: Number(arg('--git-observer-timeout-ms', process.env.HMCODEX_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
-    untrackedFiles: arg('--git-observer-untracked', process.env.HMCODEX_GIT_OBSERVER_UNTRACKED ?? 'normal')
+    timeoutMs: Number(arg('--git-observer-timeout-ms', process.env.DDA_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
+    untrackedFiles: arg('--git-observer-untracked', process.env.DDA_GIT_OBSERVER_UNTRACKED ?? 'normal')
   });
   const appendGitAuditCheckpoint = async (checkpointKind, correlation = {}, details = {}) => {
     const safeCorrelation = Object.fromEntries(Object.entries(correlation).filter(([, value]) => typeof value === 'string' && value.trim()));
@@ -825,7 +825,7 @@ async function runTask() {
   const threads = createThreadStore({ storagePath: threadPath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('THREAD_STORE_LOAD');
   await threads.load();
-  const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
+  const feedbackPath = arg('--feedback-store', process.env.DDA_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
   const feedbackRegistry = createFeedbackRegistry({ storagePath: feedbackPath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('FEEDBACK_STORE_LOAD');
   await feedbackRegistry.load();
@@ -868,7 +868,7 @@ async function runTask() {
       ].join('\n')
     : '';
   const checkpointContext = assembleCheckpointContext({ checkpoint: thread.checkpoint });
-  const executionStatePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE
+  const executionStatePath = arg('--execution-state-store', process.env.DDA_EXECUTION_STATE_STORE
     ?? (harnessEventStorePath ? `${harnessEventStorePath}.execution-read-model.json` : (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.execution.json` : undefined)));
   const executionState = createExecutionStateStore({ storagePath: executionStatePath, eventStore: trajectory.harnessEventStore, releaseChannel });
   setRuntimePhase('EXECUTION_STATE_LOAD');
@@ -883,7 +883,7 @@ async function runTask() {
       sensitivity: 'SECURITY_AUDIT'
     });
   }
-  const memoryPath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE ?? scopedStorePath('memory.json', defaultMemoryStore));
+  const memoryPath = arg('--memory-store', process.env.DDA_MEMORY_STORE ?? scopedStorePath('memory.json', defaultMemoryStore));
   const memoryJournal = createMemoryJournal({ storagePath: memoryPath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('MEMORY_STORE_LOAD');
   await memoryJournal.load();
@@ -912,19 +912,19 @@ async function runTask() {
   } catch (error) {
     contextRecallError = error instanceof Error ? error.message : String(error);
   }
-  const profilePath = arg('--profile-store', process.env.HMCODEX_PROFILE_STORE ?? scopedStorePath('profiles.json', defaultProfileStore));
+  const profilePath = arg('--profile-store', process.env.DDA_PROFILE_STORE ?? scopedStorePath('profiles.json', defaultProfileStore));
   const profileRegistry = createProfileRegistry({ storagePath: profilePath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('PROFILE_STORE_LOAD');
   await profileRegistry.load();
-  const creditBlamePath = arg('--credit-blame-store', process.env.HMCODEX_CREDIT_BLAME_STORE ?? scopedStorePath('credit-blame.json', defaultCreditBlameStore));
+  const creditBlamePath = arg('--credit-blame-store', process.env.DDA_CREDIT_BLAME_STORE ?? scopedStorePath('credit-blame.json', defaultCreditBlameStore));
   const creditBlameLedger = createCreditBlameLedger({ storagePath: creditBlamePath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('CREDIT_BLAME_LOAD');
   await creditBlameLedger.load();
-  const modelEgressPath = arg('--model-egress-store', process.env.HMCODEX_MODEL_EGRESS_STORE ?? scopedStorePath('model-egress.json', defaultModelEgressStore));
+  const modelEgressPath = arg('--model-egress-store', process.env.DDA_MODEL_EGRESS_STORE ?? scopedStorePath('model-egress.json', defaultModelEgressStore));
   const modelEgressLedger = createModelEgressLedger({ storagePath: modelEgressPath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('MODEL_EGRESS_LOAD');
   await modelEgressLedger.load();
-  const roleContextPath = arg('--role-context-store', process.env.HMCODEX_ROLE_CONTEXT_STORE ?? scopedStorePath('role-contexts.json', defaultRoleContextStore));
+  const roleContextPath = arg('--role-context-store', process.env.DDA_ROLE_CONTEXT_STORE ?? scopedStorePath('role-contexts.json', defaultRoleContextStore));
   const roleSessions = createRoleSessionManager({ storagePath: roleContextPath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('ROLE_CONTEXT_STORE_LOAD');
   await roleSessions.load();
@@ -964,7 +964,7 @@ async function runTask() {
       ...(details.plan === undefined && currentPlanCheckpoint !== undefined ? { plan: currentPlanCheckpoint } : {})
     });
   };
-  const coordinatorPath = arg('--run-store', process.env.HMCODEX_RUN_STORE ?? (trajectoryPath ? `${trajectoryPath}.runs/${runId}.json` : undefined));
+  const coordinatorPath = arg('--run-store', process.env.DDA_RUN_STORE ?? (trajectoryPath ? `${trajectoryPath}.runs/${runId}.json` : undefined));
   const coordinatorEventStore = trajectory.harnessEventStore;
   const coordinator = createTaskRunCoordinator({
     runId,
@@ -990,7 +990,7 @@ async function runTask() {
   });
   await coordinator.load();
   setRuntimePhase('READY_FOR_CLASSIFICATION');
-  const decisionTracePath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE ?? scopedStorePath('decision-trace.json', defaultDecisionTraceStore));
+  const decisionTracePath = arg('--decision-trace-store', process.env.DDA_DECISION_TRACE_STORE ?? scopedStorePath('decision-trace.json', defaultDecisionTraceStore));
   const decisionTrace = createAgentDecisionTrace({ storagePath: decisionTracePath, eventStore: trajectory.harnessEventStore });
   await decisionTrace.load();
   const decisionIds = [];
@@ -1238,7 +1238,7 @@ async function runTask() {
   let decisionEngine;
   let decisionConfig;
   // The Jev decision plane is resolved once, from the file-backed `decision`
-  // block and the HMCODEX_JEV_* environment overrides, before task
+  // block and the DDA_JEV_* environment overrides, before task
   // classification so CLASSIFY_TASK, SELECT_ROUTE and SELECT_TOPOLOGY consult
   // the same opt-in engine instead of a separate env-only instance. Each
   // decision point is additionally gated by its own feature flag and fails
@@ -1471,13 +1471,13 @@ async function runTask() {
     pendingActions: ['classify task']
   });
   const configArgument = argValue('--config');
-  const environmentConfigPath = process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined;
+  const environmentConfigPath = process.env.DDA_MODEL_CONFIG?.trim() || undefined;
   const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
   fileConfig = await loadModelConfig(configuredPath, {
     required: configArgument !== undefined || environmentConfigPath !== undefined
   });
   // Jev is opt-in per deployment: a `decision` block or any non-empty
-  // HMCODEX_JEV_* variable. A bare JEV_API_KEY alone never enables it.
+  // DDA_JEV_* variable. A bare JEV_API_KEY alone never enables it.
   decisionExplicitlyConfigured = isDecisionPlaneConfigured({ fileConfig, env: process.env });
   decisionConfig = resolveDecisionConfig({ fileConfig, env: process.env });
   {
@@ -1502,7 +1502,7 @@ async function runTask() {
   let taskClass = ruleTaskClass;
   let classificationSource = 'rule';
   // CLASSIFY_TASK consults Jev only when the operator opts in with
-  // HMCODEX_JEV_CLASSIFY_ENABLED or decision.classificationEnabled; otherwise
+  // DDA_JEV_CLASSIFY_ENABLED or decision.classificationEnabled; otherwise
   // the deterministic rule classifier remains authoritative.
   if (decisionEngine?.enabled && decisionConfig?.classificationEnabled === true) {
     const classificationCandidates = ['inspect', 'modify', 'test', 'unknown'].map((candidateId) => ({
@@ -1673,7 +1673,7 @@ async function runTask() {
     historyContext = selectedPack.text.slice(0, 6000);
     await recordDecision({ stepId: 'context-pack', role: 'planner', roleContextId: `${runId}-planner`, decisionType: 'SELECT_CONTEXT_PACK', actionKind: 'CONTEXT_PACK', parentDecisionIds: [], summary: `Selected context pack ${selectedPack.candidateId}`, outputRefs: [`context-pack-${runId}`], evidenceRefs: [], options: contextCandidates.map((item) => ({ optionId: item.candidateId, actionKind: 'CONTEXT_PACK', summary: item.summary, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: item.candidateId === selectedPack.candidateId ? [] : ['NOT_SELECTED'] })), selectedOptionId: selectedPack.candidateId, reasonCodes: [contextSelection.source === 'jev' ? 'JEV_DECISION' : 'CONTEXT_PACK_DEFAULT'], selectionCriteria: ['bounded-context-pack'] });
   }
-  const modelRegistryPath = arg('--model-registry', process.env.HMCODEX_MODEL_REGISTRY ?? scopedStorePath('model-registry.json', defaultModelRegistryStore));
+  const modelRegistryPath = arg('--model-registry', process.env.DDA_MODEL_REGISTRY ?? scopedStorePath('model-registry.json', defaultModelRegistryStore));
   modelRegistry = createModelRegistry({ storagePath: modelRegistryPath, eventStore: trajectory.harnessEventStore });
   await modelRegistry.load();
   for (const configuredModel of modelConfig.models ?? []) {
@@ -1937,15 +1937,15 @@ async function runTask() {
     roles: Object.keys(routeDecision.roles ?? {}).sort(),
     model: { provider: modelConfig.provider, protocol: modelConfig.protocol, model: modelConfig.model }
   });
-  const evolutionStore = arg('--evolution-store', process.env.HMCODEX_EVOLUTION_STORE ?? scopedStorePath('evolution-proposals.json', defaultEvolutionStore));
-  const evolutionEvaluationStore = arg('--evaluation-store', process.env.HMCODEX_EVALUATION_STORE ?? scopedStorePath('evolution-evaluations.json', defaultEvolutionEvaluationStore));
+  const evolutionStore = arg('--evolution-store', process.env.DDA_EVOLUTION_STORE ?? scopedStorePath('evolution-proposals.json', defaultEvolutionStore));
+  const evolutionEvaluationStore = arg('--evaluation-store', process.env.DDA_EVALUATION_STORE ?? scopedStorePath('evolution-evaluations.json', defaultEvolutionEvaluationStore));
   const pluginGovernanceStore = arg(
     '--plugin-store',
-    arg('--governance-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE
-      ?? process.env.HMCODEX_PLUGIN_STORE
+    arg('--governance-store', process.env.DDA_PLUGIN_GOVERNANCE_STORE
+      ?? process.env.DDA_PLUGIN_STORE
       ?? scopedStorePath('plugin-governance.json', defaultPluginGovernanceStore))
   );
-  const pluginRoot = arg('--plugin-root', process.env.HMCODEX_PLUGIN_ROOT ?? defaultPluginRoot());
+  const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
   const runtimeStorePaths = [
     trajectoryPath,
     cancelRegistryPath,
@@ -1986,7 +1986,7 @@ async function runTask() {
   });
   const executor = createPlatformExecutor({ monitor });
   const networkAdapter = new RestrictedNetworkAdapter({ monitor });
-  const leaseTtlRaw = arg('--lease-ttl-ms', process.env.HMCODEX_LEASE_TTL_MS);
+  const leaseTtlRaw = arg('--lease-ttl-ms', process.env.DDA_LEASE_TTL_MS);
   const leaseTtlMs = leaseTtlRaw === undefined ? undefined : Number(leaseTtlRaw);
   if (leaseTtlRaw !== undefined && (!Number.isInteger(leaseTtlMs) || leaseTtlMs < 1)) throw new Error('LEASE_TTL_INVALID');
   const leaseProvider = createExplicitLeaseProvider({
@@ -2071,7 +2071,7 @@ async function runTask() {
       workspaceRoot,
       excludedPaths: workspaceExcludedPaths,
       sessionId: runId,
-      sessionStatePath: arg('--kernel-session-store', process.env.HMCODEX_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
+      sessionStatePath: arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
       env: process.env
     });
     emitEvent(residentKernel.attached ? 'kernel.attached' : 'kernel.unavailable', {
@@ -3018,7 +3018,7 @@ async function runTask() {
     });
     let finalResult;
     let activeActionParentDecisionIds = [plannerDecision?.decisionId ?? allocationDecision.decisionId];
-    const recoveryLimitRaw = arg('--max-recovery-attempts', process.env.HMCODEX_MAX_RECOVERY_ATTEMPTS ?? '1');
+    const recoveryLimitRaw = arg('--max-recovery-attempts', process.env.DDA_MAX_RECOVERY_ATTEMPTS ?? '1');
     const recoveryLimit = Number(recoveryLimitRaw);
     if (!Number.isInteger(recoveryLimit) || recoveryLimit < 1 || recoveryLimit > 8) {
       throw new Error('RECOVERY_ATTEMPT_LIMIT_INVALID');
@@ -4681,9 +4681,9 @@ const parseBoolean = (value, fallback = false) => {
 
 async function runTaskCancelCommand() {
   const operation = positionalOperation('request');
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const storagePath = argValue('--cancel-store')
-    ?? process.env.HMCODEX_CANCEL_STORE
+    ?? process.env.DDA_CANCEL_STORE
     ?? taskCancelStorePath(trajectoryPath);
   const registry = createTaskCancelRegistry({ storagePath });
   if (operation === 'list') {
@@ -4705,36 +4705,36 @@ async function runTaskCancelCommand() {
 }
 
 async function runCapacityCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const paths = [
     taskHarnessEventStore(trajectoryPath, scopedTrajectory),
     trajectoryPath,
-    argValue('--thread-store') ?? process.env.HMCODEX_THREAD_STORE
+    argValue('--thread-store') ?? process.env.DDA_THREAD_STORE
       ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultThreadStore())
   ];
   return { ok: true, operation: 'capacity', assessment: await assessStorageCapacity({
     paths,
-    maxBytes: Number(arg('--storage-max-bytes', process.env.HMCODEX_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
-    warningRatio: Number(arg('--storage-warning-ratio', process.env.HMCODEX_STORAGE_WARNING_RATIO ?? '0.7')),
-    criticalRatio: Number(arg('--storage-critical-ratio', process.env.HMCODEX_STORAGE_CRITICAL_RATIO ?? '0.85')),
-    hardRatio: Number(arg('--storage-hard-ratio', process.env.HMCODEX_STORAGE_HARD_RATIO ?? '0.95'))
+    maxBytes: Number(arg('--storage-max-bytes', process.env.DDA_STORAGE_MAX_BYTES ?? String(DEFAULT_MAX_BYTES))),
+    warningRatio: Number(arg('--storage-warning-ratio', process.env.DDA_STORAGE_WARNING_RATIO ?? '0.7')),
+    criticalRatio: Number(arg('--storage-critical-ratio', process.env.DDA_STORAGE_CRITICAL_RATIO ?? '0.85')),
+    hardRatio: Number(arg('--storage-hard-ratio', process.env.DDA_STORAGE_HARD_RATIO ?? '0.95'))
   }) };
 }
 
 async function runSupportBundleCommand() {
   const outputPath = arg('--output');
   if (!outputPath) throw new Error('SUPPORT_BUNDLE_OUTPUT_REQUIRED');
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
-  const auditPath = arg('--audit-store', process.env.HMCODEX_GIT_AUDIT_STORE ?? (harnessPath ? `${harnessPath}.git-audit.json` : defaultGitAuditStore()));
-  const decisionPath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE
+  const auditPath = arg('--audit-store', process.env.DDA_GIT_AUDIT_STORE ?? (harnessPath ? `${harnessPath}.git-audit.json` : defaultGitAuditStore()));
+  const decisionPath = arg('--decision-trace-store', process.env.DDA_DECISION_TRACE_STORE
     ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.decision-trace.json` : defaultDecisionTraceStore()));
-  const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE
+  const feedbackPath = arg('--feedback-store', process.env.DDA_FEEDBACK_STORE
     ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.feedback.json` : defaultFeedbackStore()));
-  const profilePath = arg('--profile-store', process.env.HMCODEX_MODEL_SCENARIO_PROFILE_STORE ?? defaultModelScenarioProfileStore());
-  const readModelPath = arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? (harnessPath ? `${harnessPath}.read-model.json` : undefined));
+  const profilePath = arg('--profile-store', process.env.DDA_MODEL_SCENARIO_PROFILE_STORE ?? defaultModelScenarioProfileStore());
+  const readModelPath = arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? (harnessPath ? `${harnessPath}.read-model.json` : undefined));
   await assertProjectionOutput(outputPath, [harnessPath, trajectoryPath, auditPath, decisionPath, feedbackPath, profilePath, readModelPath], 'SUPPORT_BUNDLE_OUTPUT_CONFLICT');
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   let harness;
@@ -4777,7 +4777,7 @@ async function runSupportBundleCommand() {
   }
   const bundle = {
     schemaVersion: '1.0',
-    bundleType: 'HMCODEX_SUPPORT_BUNDLE',
+    bundleType: 'DDA_SUPPORT_BUNDLE',
     createdAtMs: Date.now(),
     releaseChannel: resolveReleaseChannel(),
     runtime: { node: process.version, platform: process.platform },
@@ -4797,9 +4797,9 @@ async function runSupportBundleCommand() {
 }
 
 async function runModelProfileCommand() {
-  const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? defaultFeedbackStore());
-  const profilePath = arg('--profile-store', process.env.HMCODEX_MODEL_SCENARIO_PROFILE_STORE ?? defaultModelScenarioProfileStore());
-  const harnessPath = arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
+  const feedbackPath = arg('--feedback-store', process.env.DDA_FEEDBACK_STORE ?? defaultFeedbackStore());
+  const profilePath = arg('--profile-store', process.env.DDA_MODEL_SCENARIO_PROFILE_STORE ?? defaultModelScenarioProfileStore());
+  const harnessPath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const feedback = createFeedbackRegistry({ storagePath: feedbackPath, eventStore });
@@ -4826,8 +4826,8 @@ async function runModelProfileCommand() {
 }
 
 async function runFeedbackCommand() {
-  const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? defaultFeedbackStore());
-  const harnessPath = arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
+  const feedbackPath = arg('--feedback-store', process.env.DDA_FEEDBACK_STORE ?? defaultFeedbackStore());
+  const harnessPath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const registry = createFeedbackRegistry({ storagePath: feedbackPath, eventStore });
@@ -4874,14 +4874,14 @@ async function runFeedbackCommand() {
 }
 
 async function runDecisionEvaluationCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const decisionTracePath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
+  const decisionTracePath = arg('--decision-trace-store', process.env.DDA_DECISION_TRACE_STORE
     ?? (scopedTrajectory && trajectoryPath ? trajectoryPath + '.decision-trace.json' : defaultDecisionTraceStore()));
   const runId = arg('--run-id');
   if (!runId) throw new Error('DECISION_EVALUATOR_RUN_ID_REQUIRED');
-  const harnessPath = argValue('--harness-event-store') ?? process.env.HMCODEX_HARNESS_EVENT_STORE;
+  const harnessPath = argValue('--harness-event-store') ?? process.env.DDA_HARNESS_EVENT_STORE;
   const eventStore = harnessPath ? createHarnessEventStore({ storagePath: harnessPath }) : undefined;
   if (eventStore) await eventStore.load();
   const trace = createAgentDecisionTrace({ storagePath: decisionTracePath, ...(eventStore ? { eventStore } : {}) });
@@ -4910,8 +4910,8 @@ async function runDecisionEvaluationCommand() {
 }
 
 async function runMetricsCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   if (!harnessPath) throw new Error('METRICS_EVENT_STORE_REQUIRED');
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
@@ -4934,7 +4934,7 @@ async function runMetricsCommand() {
   for (const [runId, sequence] of Object.entries(latestSequenceByRun)) {
     projectionLag[runId] = Math.max(0, sequence - (projection.lastEventSequence?.[runId] ?? 0));
   }
-  const decisionTracePath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE
+  const decisionTracePath = arg('--decision-trace-store', process.env.DDA_DECISION_TRACE_STORE
     ?? (scopedTrajectory && trajectoryPath ? trajectoryPath + '.decision-trace.json' : defaultDecisionTraceStore()));
   const trace = createAgentDecisionTrace({ storagePath: decisionTracePath, eventStore });
   await trace.load();
@@ -4942,7 +4942,7 @@ async function runMetricsCommand() {
   const storagePaths = [
     harnessPath,
     decisionTracePath,
-    arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? `${harnessPath}.read-model.json`)
+    arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? `${harnessPath}.read-model.json`)
   ].filter((value) => typeof value === 'string' && value.trim());
   let storageBytes = 0;
   const storageFiles = [];
@@ -4991,8 +4991,8 @@ async function runExportDataCommand() {
   const runId = argValue('--run-id');
   const threadId = argValue('--thread-id');
   if (runId && threadId) throw new Error('EXPORT_DATA_SCOPE_CONFLICT');
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   if (!harnessPath) throw new Error('EXPORT_DATA_EVENT_STORE_REQUIRED');
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
@@ -5003,7 +5003,7 @@ async function runExportDataCommand() {
     scope = { type: 'RUN', runId };
     events = await eventStore.list({ runId });
   } else if (threadId) {
-    const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE
+    const threadPath = arg('--thread-store', process.env.DDA_THREAD_STORE
       ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultThreadStore()));
     const threads = createThreadStore({ storagePath: threadPath });
     await threads.load();
@@ -5054,15 +5054,15 @@ async function runExportDataCommand() {
 
 async function runReleaseCheckCommand() {
   const releaseChannel = resolveReleaseChannel();
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   if (!harnessPath) throw new Error('RELEASE_CHECK_EVENT_STORE_REQUIRED');
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const verification = await eventStore.verify();
   const projection = await createReadModelRebuilder({ eventStore }).rebuild();
-  const decisionTracePath = arg('--decision-trace-store', process.env.HMCODEX_DECISION_TRACE_STORE
+  const decisionTracePath = arg('--decision-trace-store', process.env.DDA_DECISION_TRACE_STORE
     ?? (scopedTrajectory && trajectoryPath ? trajectoryPath + '.decision-trace.json' : defaultDecisionTraceStore()));
   const trace = createAgentDecisionTrace({ storagePath: decisionTracePath, eventStore });
   await trace.load();
@@ -5118,7 +5118,7 @@ async function runReleaseCheckCommand() {
   };
   const privacy = scanSupportBundle({
     schemaVersion: '1.0',
-    bundleType: 'HMCODEX_RELEASE_CHECK',
+    bundleType: 'DDA_RELEASE_CHECK',
     releaseChannel,
     versions,
     stores: {
@@ -5189,8 +5189,8 @@ async function runReleaseManifestCommand() {
   const defaultLocks = [join(runtimeRoot, 'package-lock.json'), join(repositoryRoot, 'desktop', 'package-lock.json')];
   const lockPaths = argValuesAll('--lock').length ? argValuesAll('--lock') : defaultLocks.filter((path) => existsSync(path));
   const artifactPaths = argValuesAll('--artifact').filter((path) => existsSync(path));
-  const governancePath = arg('--plugin-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE ?? defaultPluginGovernanceStore());
-  const registryPath = arg('--model-registry', process.env.HMCODEX_MODEL_REGISTRY_STORE ?? defaultModelRegistryStore());
+  const governancePath = arg('--plugin-store', process.env.DDA_PLUGIN_GOVERNANCE_STORE ?? defaultPluginGovernanceStore());
+  const registryPath = arg('--model-registry', process.env.DDA_MODEL_REGISTRY_STORE ?? defaultModelRegistryStore());
   const governance = createPluginGovernance({ storagePath: governancePath });
   const registry = createModelRegistry({ storagePath: registryPath });
   await Promise.all([governance.load(), registry.load()]);
@@ -5238,7 +5238,7 @@ async function runReleaseManifestCommand() {
   const decision = buildReleaseDecision({ versionManifest: { versions }, sbom, pluginLock, modelLock, checks, evidence });
   const manifest = {
     schemaVersion: '1.0',
-    artifact: 'HMCODEX_VERSION_MANIFEST',
+    artifact: 'DDA_VERSION_MANIFEST',
     generatedAtMs: Date.now(),
     releaseChannel,
     versions,
@@ -5261,11 +5261,11 @@ async function runReleaseManifestCommand() {
 }
 
 async function runReadModelCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   if (!harnessPath) throw new Error('READ_MODEL_EVENT_STORE_REQUIRED');
-  const projectionPath = arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? `${harnessPath}.read-model.json`);
+  const projectionPath = arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? `${harnessPath}.read-model.json`);
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   const rebuilder = createReadModelRebuilder({ eventStore });
   const operation = command === 'rebuild-read-model' ? 'rebuild'
@@ -5300,12 +5300,12 @@ async function runReadModelCommand() {
 }
 
 async function runHarnessEventStoreCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = isReadOnlyRelease()
     ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
-    : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
+    : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore() : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
   const store = createHarnessEventStore({ storagePath: harnessPath });
   const operation = positionalOperation('summary');
@@ -5332,12 +5332,12 @@ async function runHarnessEventStoreCommand() {
   if (operation === 'verify') return { ok: true, verification: await store.verify() };
   if (operation === 'summary') return { ok: true, summary: store.summary() };
   if (operation === 'retention-worker') {
-    const retentionMs = Number(arg('--retention-ms', process.env.HMCODEX_RETENTION_MS ?? String(30 * 24 * 60 * 60 * 1000)));
+    const retentionMs = Number(arg('--retention-ms', process.env.DDA_RETENTION_MS ?? String(30 * 24 * 60 * 60 * 1000)));
     if (!Number.isSafeInteger(retentionMs) || retentionMs < 0) throw new Error('RETENTION_PERIOD_INVALID');
-    const intervalMs = parseRetentionWorkerInterval(arg('--interval-ms', process.env.HMCODEX_RETENTION_WORKER_INTERVAL_MS));
-    const batchSize = parseRetentionWorkerBatchSize(arg('--batch-size', process.env.HMCODEX_RETENTION_WORKER_BATCH_SIZE));
-    const failureLimit = parseRetentionWorkerFailureLimit(arg('--failure-limit', process.env.HMCODEX_RETENTION_WORKER_FAILURE_LIMIT));
-    const progressPath = arg('--progress-store', process.env.HMCODEX_RETENTION_PROGRESS_STORE ?? (harnessPath ? `${harnessPath}.retention-progress.json` : undefined));
+    const intervalMs = parseRetentionWorkerInterval(arg('--interval-ms', process.env.DDA_RETENTION_WORKER_INTERVAL_MS));
+    const batchSize = parseRetentionWorkerBatchSize(arg('--batch-size', process.env.DDA_RETENTION_WORKER_BATCH_SIZE));
+    const failureLimit = parseRetentionWorkerFailureLimit(arg('--failure-limit', process.env.DDA_RETENTION_WORKER_FAILURE_LIMIT));
+    const progressPath = arg('--progress-store', process.env.DDA_RETENTION_PROGRESS_STORE ?? (harnessPath ? `${harnessPath}.retention-progress.json` : undefined));
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once('SIGINT', stop);
@@ -5370,7 +5370,7 @@ async function runHarnessEventStoreCommand() {
   }
 
   if (operation === 'retention') {
-    const retentionMs = Number(arg('--retention-ms', process.env.HMCODEX_RETENTION_MS ?? String(30 * 24 * 60 * 60 * 1000)));
+    const retentionMs = Number(arg('--retention-ms', process.env.DDA_RETENTION_MS ?? String(30 * 24 * 60 * 60 * 1000)));
     if (!Number.isSafeInteger(retentionMs) || retentionMs < 0) throw new Error('RETENTION_PERIOD_INVALID');
     const events = await store.list({ runId: argValue('--run-id') });
     const groups = new Map();
@@ -5392,7 +5392,7 @@ async function runHarnessEventStoreCommand() {
     const purged = [];
     for (const run of expired.slice(0, purgeLimit)) purged.push({ runId: run.runId, ...(await store.purgeRun(run.runId, { reason: 'RETENTION_EXPIRED' })) });
     const remainingExpiredCount = Math.max(0, expired.length - purged.length);
-    const readModelPath = arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? (harnessPath ? harnessPath + '.read-model.json' : undefined));
+    const readModelPath = arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? (harnessPath ? harnessPath + '.read-model.json' : undefined));
     let projection;
     if (readModelPath && purged.length) {
       const rebuilder = createReadModelRebuilder({ eventStore: store });
@@ -5404,7 +5404,7 @@ async function runHarnessEventStoreCommand() {
     const runId = argValue('--run-id');
     if (!runId) throw new Error('HARNESS_PURGE_RUN_REQUIRED');
     const result = await store.purgeRun(runId, { reason: arg('--reason', 'USER_DELETE') });
-    const readModelPath = arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? (harnessPath ? harnessPath + '.read-model.json' : undefined));
+    const readModelPath = arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? (harnessPath ? harnessPath + '.read-model.json' : undefined));
     let projection;
     if (readModelPath) {
       const rebuilder = createReadModelRebuilder({ eventStore: store });
@@ -5416,12 +5416,12 @@ async function runHarnessEventStoreCommand() {
 }
 
 async function runGitAuditCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
-  const auditPath = arg('--audit-store', process.env.HMCODEX_GIT_AUDIT_STORE
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
+  const auditPath = arg('--audit-store', process.env.DDA_GIT_AUDIT_STORE
     ?? (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.git-audit.json` : defaultGitAuditStore()));
-  const harnessEventStorePath = arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
+  const harnessEventStorePath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore() : undefined));
   const trajectory = createTrajectoryStore(trajectoryPath, harnessEventStorePath ? { harnessStoragePath: harnessEventStorePath } : {});
   const audit = createGitAuditStore({ storagePath: auditPath, ...auditSigningOptions() });
@@ -5430,8 +5430,8 @@ async function runGitAuditCommand() {
     const runId = arg('--run-id', `audit-${randomUUID()}`);
     const observation = await createGitObserver({
       workspaceRoot: canonicalWorkspacePath(arg('--workspace', '')),
-      timeoutMs: Number(arg('--timeout-ms', process.env.HMCODEX_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
-      untrackedFiles: arg('--git-observer-untracked', process.env.HMCODEX_GIT_OBSERVER_UNTRACKED ?? 'normal')
+      timeoutMs: Number(arg('--timeout-ms', process.env.DDA_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
+      untrackedFiles: arg('--git-observer-untracked', process.env.DDA_GIT_OBSERVER_UNTRACKED ?? 'normal')
     }).snapshot({ reason: argValue('--reason') });
     const event = await trajectory.append({
       runId,
@@ -5510,12 +5510,12 @@ async function runGitAuditCommand() {
 }
 
 async function runMemoryCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const phase1 = isReadOnlyRelease();
-  const storagePath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE
+  const storagePath = arg('--memory-store', process.env.DDA_MEMORY_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
-  const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
+  const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore() : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
@@ -5656,8 +5656,8 @@ async function runMemoryCommand() {
 }
 
 async function runExecutionStateCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const storagePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE ?? (trajectoryPath ? `${trajectoryPath}.execution.json` : undefined));
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const storagePath = arg('--execution-state-store', process.env.DDA_EXECUTION_STATE_STORE ?? (trajectoryPath ? `${trajectoryPath}.execution.json` : undefined));
   const store = createExecutionStateStore({ storagePath });
   await store.load();
   const operation = positionalOperation('list');
@@ -5698,20 +5698,20 @@ async function runExecutionStateCommand() {
 // only closes orphaned approvals/leases/contexts and never replays a task or
 // side effect automatically.
 async function runRecoveryCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessEventStorePath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
   const trajectory = createTrajectoryStore(trajectoryPath, harnessEventStorePath ? { harnessStoragePath: harnessEventStorePath } : {});
   const recoveryRunId = arg('--run-id', 'recovery-' + randomUUID());
   const scopedStorePath = (suffix, fallback) => scopedTrajectory && trajectoryPath
     ? `${trajectoryPath}.${suffix}`
     : fallback();
-  const executionStatePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE
+  const executionStatePath = arg('--execution-state-store', process.env.DDA_EXECUTION_STATE_STORE
     ?? (harnessEventStorePath ? `${harnessEventStorePath}.execution-read-model.json` : (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.execution.json` : undefined)));
-  const roleContextPath = arg('--role-context-store', process.env.HMCODEX_ROLE_CONTEXT_STORE
+  const roleContextPath = arg('--role-context-store', process.env.DDA_ROLE_CONTEXT_STORE
     ?? scopedStorePath('role-contexts.json', defaultRoleContextStore));
-  const dreamPath = arg('--dream-store', process.env.HMCODEX_DREAM_STORE
+  const dreamPath = arg('--dream-store', process.env.DDA_DREAM_STORE
     ?? scopedStorePath('dream.json', defaultDreamStore));
   const execution = createExecutionStateStore({ storagePath: executionStatePath, eventStore: trajectory.harnessEventStore });
   const roleSessions = createRoleSessionManager({ storagePath: roleContextPath, eventStore: trajectory.harnessEventStore });
@@ -5723,8 +5723,8 @@ async function runRecoveryCommand() {
     try {
       const observation = await createGitObserver({
         workspaceRoot: canonicalWorkspacePath(recoveryWorkspace),
-        timeoutMs: Number(arg('--timeout-ms', process.env.HMCODEX_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
-        untrackedFiles: arg('--git-observer-untracked', process.env.HMCODEX_GIT_OBSERVER_UNTRACKED ?? 'normal')
+        timeoutMs: Number(arg('--timeout-ms', process.env.DDA_GIT_OBSERVER_TIMEOUT_MS ?? '60000')),
+        untrackedFiles: arg('--git-observer-untracked', process.env.DDA_GIT_OBSERVER_UNTRACKED ?? 'normal')
       }).snapshot({ reason: 'RECOVERY' });
       const gitStatus = observation.status && typeof observation.status === 'object' ? observation.status : {};
       workspace = {
@@ -5743,7 +5743,7 @@ async function runRecoveryCommand() {
         pathDigestTruncated: gitStatus.pathDigestTruncated === true
       };
       const event = await trajectory.append({ runId: recoveryRunId, kind: 'GitStateObserved', payload: { checkpointKind: 'RECOVERY', observation }, sensitivity: 'SECURITY_AUDIT' });
-      const auditPath = arg('--audit-store', process.env.HMCODEX_GIT_AUDIT_STORE ?? (harnessEventStorePath ? `${harnessEventStorePath}.git-audit.json` : defaultGitAuditStore()));
+      const auditPath = arg('--audit-store', process.env.DDA_GIT_AUDIT_STORE ?? (harnessEventStorePath ? `${harnessEventStorePath}.git-audit.json` : defaultGitAuditStore()));
       const audit = createGitAuditStore({ storagePath: auditPath, ...auditSigningOptions() });
       await audit.load();
       await audit.append({ runId: recoveryRunId, eventId: event.eventId, eventSequence: event.sequence, checkpointKind: 'RECOVERY', status: 'READY', observationDigest: observation.observationDigest, trajectoryRootDigest: event.recordDigest, observation });
@@ -5810,7 +5810,7 @@ const dreamCandidatesFromEvents = (events) => {
 };
 
 const readDreamActiveRuns = async () => {
-  const path = argValue('--active-runs-file') ?? process.env.HMCODEX_DREAM_ACTIVE_RUNS_FILE;
+  const path = argValue('--active-runs-file') ?? process.env.DDA_DREAM_ACTIVE_RUNS_FILE;
   if (!path) return Number(arg('--active-runs', '1'));
   try {
     const text = await readFile(path, 'utf8');
@@ -5876,20 +5876,20 @@ const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, p
 };
 
 async function runDreamCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const phase1 = isReadOnlyRelease();
-  const memoryPath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE
+  const memoryPath = arg('--memory-store', process.env.DDA_MEMORY_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
-  const dreamPath = arg('--dream-store', process.env.HMCODEX_DREAM_STORE
+  const dreamPath = arg('--dream-store', process.env.DDA_DREAM_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.dream.json` : defaultDreamStore()));
   const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
-    : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
+    : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const trajectory = scopedTrajectory && !phase1 ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
   const journal = createMemoryJournal({ storagePath: memoryPath, eventStore: scopedTrajectory && !phase1 ? undefined : eventStore });
-  const projectId = arg('--project-id', process.env.HMCODEX_PROJECT_ID ?? 'default');
+  const projectId = arg('--project-id', process.env.DDA_PROJECT_ID ?? 'default');
   const scheduler = createDreamScheduler({ storagePath: dreamPath, projectId, eventStore });
   const memoryVerifier = createMemoryVerifier();
   await Promise.all([journal.load(), scheduler.load()]);
@@ -5898,8 +5898,8 @@ async function runDreamCommand() {
   if (operation === 'run') return runDreamCycle({ trajectory, journal, scheduler, memoryVerifier, projectId });
   if (operation !== 'daemon') throw new Error('DREAM_OPERATION_INVALID');
 
-  const intervalMs = parseDreamMaintenanceInterval(arg('--interval-ms', process.env.HMCODEX_DREAM_DAEMON_INTERVAL_MS));
-  const failureLimit = parseDreamMaintenanceFailureLimit(arg('--failure-limit', process.env.HMCODEX_DREAM_DAEMON_FAILURE_LIMIT));
+  const intervalMs = parseDreamMaintenanceInterval(arg('--interval-ms', process.env.DDA_DREAM_DAEMON_INTERVAL_MS));
+  const failureLimit = parseDreamMaintenanceFailureLimit(arg('--failure-limit', process.env.DDA_DREAM_DAEMON_FAILURE_LIMIT));
   const controller = new AbortController();
   const stop = () => controller.abort();
   process.once('SIGINT', stop);
@@ -5993,19 +5993,19 @@ const readPluginManifest = async () => {
 };
 
 async function runPluginCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const phase1 = isReadOnlyRelease();
   const storagePath = arg(
     '--plugin-store',
-    arg('--governance-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE
-      ?? process.env.HMCODEX_PLUGIN_STORE
+    arg('--governance-store', process.env.DDA_PLUGIN_GOVERNANCE_STORE
+      ?? process.env.DDA_PLUGIN_STORE
       ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.plugin-governance.json` : defaultPluginGovernanceStore()))
   );
   const scopedPluginStore = argValue('--plugin-store') !== undefined
     || argValue('--governance-store') !== undefined
-    || Boolean(process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE?.trim() || process.env.HMCODEX_PLUGIN_STORE?.trim());
-  const harnessPath = arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE
+    || Boolean(process.env.DDA_PLUGIN_GOVERNANCE_STORE?.trim() || process.env.DDA_PLUGIN_STORE?.trim());
+  const harnessPath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : scopedPluginStore ? storagePath + '.harness-events.db' : defaultHarnessEventStore()));
   if (phase1) assertReleaseHarnessStore(harnessPath);
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
@@ -6024,8 +6024,8 @@ async function runPluginCommand() {
     : undefined;
   let promotionEvaluator;
   if (requestedState === 'ACTIVE') {
-    const proposalPath = arg('--evolution-store', process.env.HMCODEX_EVOLUTION_STORE ?? defaultEvolutionStore());
-    const reportPath = arg('--evaluation-store', process.env.HMCODEX_EVALUATION_STORE ?? defaultEvolutionEvaluationStore());
+    const proposalPath = arg('--evolution-store', process.env.DDA_EVOLUTION_STORE ?? defaultEvolutionStore());
+    const reportPath = arg('--evaluation-store', process.env.DDA_EVALUATION_STORE ?? defaultEvolutionEvaluationStore());
     const [{ EvolutionRegistry }, { EvolutionEvaluator }] = await Promise.all([
       import('./plugins/evolution-registry.mjs'),
       import('./evolution-evaluator.mjs')
@@ -6108,7 +6108,7 @@ async function runPluginCommand() {
   }
 
   if (operation === 'discover') {
-    const pluginRoot = arg('--plugin-root', process.env.HMCODEX_PLUGIN_ROOT ?? defaultPluginRoot());
+    const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
     if (!pluginRoot) throw new Error('PLUGIN_ROOT_REQUIRED');
     const manifest = await readPluginManifest();
     const entryPath = argValue('--entry-path') ?? argValue('--entry') ?? manifest.entryPath;
@@ -6149,7 +6149,7 @@ async function runPluginCommand() {
     return { ok: true, plugin };
   }
   if (operation === 'load') {
-    const pluginRoot = arg('--plugin-root', process.env.HMCODEX_PLUGIN_ROOT ?? defaultPluginRoot());
+    const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
     if (!pluginRoot) throw new Error('PLUGIN_ROOT_REQUIRED');
     const registry = new PluginRegistry();
     const loader = createDynamicPluginLoader({ rootDir: pluginRoot, governance, registry });
@@ -6181,15 +6181,15 @@ const readJsonValue = async (name, { required = true } = {}) => {
 };
 
 async function runEvolutionCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
-  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const phase1 = isReadOnlyRelease();
-  const proposalPath = arg('--evolution-store', process.env.HMCODEX_EVOLUTION_STORE
+  const proposalPath = arg('--evolution-store', process.env.DDA_EVOLUTION_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-proposals.json` : defaultEvolutionStore()));
-  const reportPath = arg('--evaluation-store', process.env.HMCODEX_EVALUATION_STORE
+  const reportPath = arg('--evaluation-store', process.env.DDA_EVALUATION_STORE
     ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-evaluations.json` : defaultEvolutionEvaluationStore()));
   const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
-    : arg('--harness-event-store', process.env.HMCODEX_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
+    : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const [{ EvolutionRegistry }, { EvolutionEvaluator }] = await Promise.all([
@@ -6361,13 +6361,13 @@ async function runTools() {
 }
 
 async function runThreadCommand() {
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const explicitThreadStore = argValue('--thread-store') !== undefined
-    || Boolean(process.env.HMCODEX_THREAD_STORE?.trim());
+    || Boolean(process.env.DDA_THREAD_STORE?.trim());
   const harnessEventStorePath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
-  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? defaultThreadStore());
+  const threadPath = arg('--thread-store', process.env.DDA_THREAD_STORE ?? defaultThreadStore());
   // The dashboard reads the default Phase 1 thread projection from the
   // durable Harness Event Store. Thread commands must use the same authority;
   // otherwise the sidebar can list a thread that get/resume immediately
@@ -6421,7 +6421,7 @@ async function runThreadEventsCommand() {
 async function runHealth() {
   const releaseChannel = resolveReleaseChannel();
   const configArgument = argValue('--config');
-  const environmentConfigPath = process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined;
+  const environmentConfigPath = process.env.DDA_MODEL_CONFIG?.trim() || undefined;
   const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
   const fileConfig = await loadModelConfig(configuredPath, {
     required: configArgument !== undefined || environmentConfigPath !== undefined
@@ -6452,29 +6452,29 @@ async function runHealth() {
 // provider-neutral while sharing one module load and one set of file locks.
 async function runDashboardCommand() {
   const releaseChannel = resolveReleaseChannel();
-  const trajectoryPath = arg('--trajectory-store', process.env.HMCODEX_TRAJECTORY_STORE ?? defaultTrajectoryStore());
+  const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
-    || Boolean(process.env.HMCODEX_TRAJECTORY_STORE?.trim());
+    || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessEventStorePath = taskHarnessEventStore(trajectoryPath, scopedTrajectory);
-  const readModelPath = arg('--read-model', process.env.HMCODEX_READ_MODEL_STORE ?? (harnessEventStorePath ? harnessEventStorePath + '.read-model.json' : undefined));
+  const readModelPath = arg('--read-model', process.env.DDA_READ_MODEL_STORE ?? (harnessEventStorePath ? harnessEventStorePath + '.read-model.json' : undefined));
   const scopedStorePath = (suffix, fallback) => scopedTrajectory && trajectoryPath
     ? `${trajectoryPath}.${suffix}`
     : fallback();
-  const threadPath = arg('--thread-store', process.env.HMCODEX_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
+  const threadPath = arg('--thread-store', process.env.DDA_THREAD_STORE ?? scopedStorePath('threads.json', defaultThreadStore));
   if (argValue('--summary') === 'true') {
     return runHistoryCommand('dashboard');
   }
-  const executionStatePath = arg('--execution-state-store', process.env.HMCODEX_EXECUTION_STATE_STORE
+  const executionStatePath = arg('--execution-state-store', process.env.DDA_EXECUTION_STATE_STORE
     ?? (harnessEventStorePath ? `${harnessEventStorePath}.execution-read-model.json` : (scopedTrajectory && trajectoryPath ? `${trajectoryPath}.execution.json` : undefined)));
-  const feedbackPath = arg('--feedback-store', process.env.HMCODEX_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
+  const feedbackPath = arg('--feedback-store', process.env.DDA_FEEDBACK_STORE ?? scopedStorePath('feedback.json', defaultFeedbackStore));
   const dashboardEventStore = createHarnessEventStore({ storagePath: harnessEventStorePath });
   const feedback = createFeedbackRegistry({ storagePath: feedbackPath, eventStore: dashboardEventStore });
-  const memoryPath = arg('--memory-store', process.env.HMCODEX_MEMORY_STORE ?? scopedStorePath('memory.json', defaultMemoryStore));
-  const dreamPath = arg('--dream-store', process.env.HMCODEX_DREAM_STORE ?? defaultDreamStore());
-  const pluginPath = arg('--plugin-store', arg('--governance-store', process.env.HMCODEX_PLUGIN_GOVERNANCE_STORE
-    ?? process.env.HMCODEX_PLUGIN_STORE ?? scopedStorePath('plugin-governance.json', defaultPluginGovernanceStore)));
-  const evolutionPath = arg('--evolution-store', process.env.HMCODEX_EVOLUTION_STORE ?? scopedStorePath('evolution-proposals.json', defaultEvolutionStore));
-  const evaluationPath = arg('--evaluation-store', process.env.HMCODEX_EVALUATION_STORE ?? scopedStorePath('evolution-evaluations.json', defaultEvolutionEvaluationStore));
+  const memoryPath = arg('--memory-store', process.env.DDA_MEMORY_STORE ?? scopedStorePath('memory.json', defaultMemoryStore));
+  const dreamPath = arg('--dream-store', process.env.DDA_DREAM_STORE ?? defaultDreamStore());
+  const pluginPath = arg('--plugin-store', arg('--governance-store', process.env.DDA_PLUGIN_GOVERNANCE_STORE
+    ?? process.env.DDA_PLUGIN_STORE ?? scopedStorePath('plugin-governance.json', defaultPluginGovernanceStore)));
+  const evolutionPath = arg('--evolution-store', process.env.DDA_EVOLUTION_STORE ?? scopedStorePath('evolution-proposals.json', defaultEvolutionStore));
+  const evaluationPath = arg('--evaluation-store', process.env.DDA_EVALUATION_STORE ?? scopedStorePath('evolution-evaluations.json', defaultEvolutionEvaluationStore));
   const [{ EvolutionRegistry }, { EvolutionEvaluator }] = await Promise.all([
     import('./plugins/evolution-registry.mjs'),
     import('./evolution-evaluator.mjs')
@@ -6482,8 +6482,8 @@ async function runDashboardCommand() {
   const execution = createExecutionStateStore({ storagePath: executionStatePath });
   const memory = createMemoryJournal({ storagePath: memoryPath });
   const dream = harnessEventStorePath
-    ? createDreamScheduler({ eventStore: dashboardEventStore, projectId: arg('--project-id', process.env.HMCODEX_PROJECT_ID ?? 'default') })
-    : createDreamScheduler({ storagePath: dreamPath, projectId: arg('--project-id', process.env.HMCODEX_PROJECT_ID ?? 'default') });
+    ? createDreamScheduler({ eventStore: dashboardEventStore, projectId: arg('--project-id', process.env.DDA_PROJECT_ID ?? 'default') })
+    : createDreamScheduler({ storagePath: dreamPath, projectId: arg('--project-id', process.env.DDA_PROJECT_ID ?? 'default') });
   const governance = harnessEventStorePath
     ? createPluginGovernance({ eventStore: dashboardEventStore })
     : createPluginGovernance({ storagePath: pluginPath });
@@ -6537,7 +6537,7 @@ async function runDashboardCommand() {
     }
   }
   const { threads: threadList } = await readThreadHistory({ harnessPath: harnessEventStorePath, threadPath, trajectoryPath,
-    explicitThreadStore: argValue('--thread-store') !== undefined || Boolean(process.env.HMCODEX_THREAD_STORE?.trim()), listOnly: true });
+    explicitThreadStore: argValue('--thread-store') !== undefined || Boolean(process.env.DDA_THREAD_STORE?.trim()), listOnly: true });
   const feedbackList = await feedback.listDurableSummaries().catch(() => []);
   const pluginList = governance.list();
   // Version lifecycle facts come from the same governance store. The desktop
@@ -6638,7 +6638,7 @@ async function runDashboardCommand() {
 logger.install();
 {
   const bannerConfigPath = argValue('--config')
-    ?? (process.env.HMCODEX_MODEL_CONFIG?.trim() || undefined)
+    ?? (process.env.DDA_MODEL_CONFIG?.trim() || undefined)
     ?? defaultModelConfigPath();
   logger.info(`runtime start | node=${process.version} | pid=${process.pid} | argv=${JSON.stringify(redactRuntimeArgv(process.argv.slice(2)))} | modelConfig=${bannerConfigPath ?? 'none'}`);
 }

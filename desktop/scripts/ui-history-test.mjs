@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const output = resolve(process.env.HMCODEX_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/history-ui/', import.meta.url)));
+const output = resolve(process.env.DDA_UI_ARTIFACTS ?? fileURLToPath(new URL('../../.codex-tmp/history-ui/', import.meta.url)));
 const types = { '.js': 'application/javascript', '.css': 'text/css', '.html': 'text/html' };
 const server = createServer(async (req, res) => {
   try {
@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({ headless: true, channel: process.env.HMCODEX_BROWSER_CHANNEL });
+const browser = await chromium.launch({ headless: true, channel: process.env.DDA_BROWSER_CHANNEL });
 const results = [];
 const errors = [];
 

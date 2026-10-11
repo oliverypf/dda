@@ -107,11 +107,11 @@ test('gives the JSON file priority over legacy environment variables and CLI pri
     apiKeyEnv: 'FILE_KEY'
   };
   const env = {
-    HMCODEX_MODEL_PROVIDER: 'compatible',
-    HMCODEX_MODEL_PROTOCOL: 'responses',
-    HMCODEX_MODEL: 'env-model',
-    HMCODEX_MODEL_BASE_URL: 'https://env.example/v1',
-    HMCODEX_MODEL_API_KEY_ENV: 'ENV_KEY'
+    DDA_MODEL_PROVIDER: 'compatible',
+    DDA_MODEL_PROTOCOL: 'responses',
+    DDA_MODEL: 'env-model',
+    DDA_MODEL_BASE_URL: 'https://env.example/v1',
+    DDA_MODEL_API_KEY_ENV: 'ENV_KEY'
   };
   assert.deepEqual(resolveModelConfig({ fileConfig, env }), {
     schemaVersion: '1.0',
@@ -258,13 +258,13 @@ test('resolves Jev decision settings without changing the model route', () => {
       }
     },
     env: {
-      HMCODEX_JEV_ENABLED: 'false',
-      HMCODEX_JEV_ENFORCE: 'true',
-      HMCODEX_JEV_ENDPOINT: 'https://jev-env.example/decide',
-      HMCODEX_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
-      HMCODEX_JEV_MODEL: 'jev-env',
-      HMCODEX_JEV_TIMEOUT_MS: '500',
-      HMCODEX_JEV_MAX_STATE_CHARS: '4000'
+      DDA_JEV_ENABLED: 'false',
+      DDA_JEV_ENFORCE: 'true',
+      DDA_JEV_ENDPOINT: 'https://jev-env.example/decide',
+      DDA_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
+      DDA_JEV_MODEL: 'jev-env',
+      DDA_JEV_TIMEOUT_MS: '500',
+      DDA_JEV_MAX_STATE_CHARS: '4000'
     }
   }), {
     enabled: false,
@@ -279,13 +279,13 @@ test('resolves Jev decision settings without changing the model route', () => {
 
   assert.deepEqual(resolveDecisionConfig({
     env: {
-      HMCODEX_JEV_ENABLED: 'on',
-      HMCODEX_JEV_ENFORCE: 'off',
-      HMCODEX_JEV_ENDPOINT: 'https://jev-env.example/decide',
-      HMCODEX_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
-      HMCODEX_JEV_MODEL: 'jev-env',
-      HMCODEX_JEV_TIMEOUT_MS: '500',
-      HMCODEX_JEV_MAX_STATE_CHARS: '4000'
+      DDA_JEV_ENABLED: 'on',
+      DDA_JEV_ENFORCE: 'off',
+      DDA_JEV_ENDPOINT: 'https://jev-env.example/decide',
+      DDA_JEV_API_KEY_ENV: 'ENV_JEV_KEY',
+      DDA_JEV_MODEL: 'jev-env',
+      DDA_JEV_TIMEOUT_MS: '500',
+      DDA_JEV_MAX_STATE_CHARS: '4000'
     }
   }), {
     enabled: true,
@@ -301,21 +301,21 @@ test('resolves Jev decision settings without changing the model route', () => {
 
 test('rejects invalid Jev environment overrides', () => {
   for (const value of ['99', '60001', 'NaN']) {
-    assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: value } }), /decision.verificationTimeoutMs/);
+    assert.throws(() => resolveDecisionConfig({ env: { DDA_JEV_VERIFICATION_TIMEOUT_MS: value } }), /decision.verificationTimeoutMs/);
   }
-  assert.equal(resolveDecisionConfig({ env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 30000);
+  assert.equal(resolveDecisionConfig({ env: { DDA_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 30000);
   assert.equal(resolveDecisionConfig({ fileConfig: { decision: { verificationTimeoutMs: 20000 } },
-    env: { HMCODEX_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 20000);
-  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_TIMEOUT_MS: '12' } }), /MODEL_CONFIG_INVALID_FIELD:decision.timeoutMs/);
-  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_MAX_STATE_CHARS: '999' } }), /MODEL_CONFIG_INVALID_FIELD:decision.maxStateChars/);
-  assert.throws(() => resolveDecisionConfig({ env: { HMCODEX_JEV_API_KEY_ENV: 'not-a-valid-name' } }), /MODEL_CONFIG_INVALID_FIELD:decision.apiKeyEnv/);
+    env: { DDA_JEV_VERIFICATION_TIMEOUT_MS: '30000' } }).verificationTimeoutMs, 20000);
+  assert.throws(() => resolveDecisionConfig({ env: { DDA_JEV_TIMEOUT_MS: '12' } }), /MODEL_CONFIG_INVALID_FIELD:decision.timeoutMs/);
+  assert.throws(() => resolveDecisionConfig({ env: { DDA_JEV_MAX_STATE_CHARS: '999' } }), /MODEL_CONFIG_INVALID_FIELD:decision.maxStateChars/);
+  assert.throws(() => resolveDecisionConfig({ env: { DDA_JEV_API_KEY_ENV: 'not-a-valid-name' } }), /MODEL_CONFIG_INVALID_FIELD:decision.apiKeyEnv/);
 });
 
 test('resolves extended Jev decision flags independently', () => {
   assert.deepEqual(resolveDecisionConfig({
     env: {
-      HMCODEX_JEV_RECOVERY_DIRECTION_ENABLED: 'true',
-      HMCODEX_JEV_CONTEXT_PACK_ENABLED: 'on'
+      DDA_JEV_RECOVERY_DIRECTION_ENABLED: 'true',
+      DDA_JEV_CONTEXT_PACK_ENABLED: 'on'
     }
   }), {
     enabled: true,
@@ -349,8 +349,8 @@ test('health reports the resolved route without requiring an API key', async () 
     apiKeyEnv: 'HEALTH_KEY'
   }));
   const result = await run(['health', '--config', configPath], {
-    HMCODEX_MODEL_PROVIDER: 'deepseek',
-    HMCODEX_MODEL: 'wrong-model'
+    DDA_MODEL_PROVIDER: 'deepseek',
+    DDA_MODEL: 'wrong-model'
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());

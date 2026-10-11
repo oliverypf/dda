@@ -77,7 +77,7 @@ cache:  $HOME/.cache/hmcodex
 优先级：
 
 1. 命令行 `--config`、`--data-dir`、store 专用参数；
-2. `HMCODEX_MODEL_CONFIG`、`HMCODEX_DATA_DIR` 和各 store 环境变量；
+2. `DDA_MODEL_CONFIG`、`DDA_DATA_DIR` 和各 store 环境变量；
 3. XDG 默认路径；
 4. 内置默认值。
 
@@ -153,7 +153,7 @@ Supervisor 启动时扫描本应用自己记录的活动 pid/pgid，不扫描并
 
 - `PATH`、`HOME`、`USER`、`LANG`、`LC_*`；
 - XDG 目录变量；
-- `HMCODEX_*` 非秘密配置变量；
+- `DDA_*` 非秘密配置变量；
 - 用户明确声明的 provider key 环境变量名，但不记录对应值。
 
 默认不把以下内容写入事件或日志：

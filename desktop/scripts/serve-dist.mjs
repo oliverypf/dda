@@ -5,7 +5,7 @@ import { projectPaths } from './windows-path.mjs';
 
 const { desktopRoot } = projectPaths(import.meta.url);
 const root = resolve(desktopRoot, 'dist');
-const host = process.env.HMCODEX_HOST ?? '127.0.0.1';
+const host = process.env.DDA_HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 1420);
 
 const contentTypes = {

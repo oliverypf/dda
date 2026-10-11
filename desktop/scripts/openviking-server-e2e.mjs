@@ -9,7 +9,7 @@ import { createOpenVikingContextPort } from '../../runtime/src/openviking-contex
 const scriptRoot = fileURLToPath(new URL('.', import.meta.url));
 const srcTauriRoot = join(scriptRoot, '..', 'src-tauri');
 const targetTriple = process.platform === 'win32' ? 'x86_64-pc-windows-msvc' : process.arch;
-const executable = join(srcTauriRoot, 'target', targetTriple, process.env.HMCODEX_OPENVIKING_BUILD_MODE ?? 'debug', process.platform === 'win32' ? 'openviking-server.exe' : 'openviking-server');
+const executable = join(srcTauriRoot, 'target', targetTriple, process.env.DDA_OPENVIKING_BUILD_MODE ?? 'debug', process.platform === 'win32' ? 'openviking-server.exe' : 'openviking-server');
 
 const freePort = async () => new Promise((resolvePort, rejectPort) => {
   const server = createServer();
@@ -23,7 +23,7 @@ const freePort = async () => new Promise((resolvePort, rejectPort) => {
 const port = await freePort();
 const dataDir = await mkdtemp(join(scriptPathDataRoot(), 'hmcodex-openviking-'));
 const child = spawn(executable, ['--host', '127.0.0.1', '--port', String(port)], {
-  env: { ...process.env, HMCODEX_OPENVIKING_DATA_DIR: dataDir, HMCODEX_OPENVIKING_API_KEY: 'e2e-loopback-key' },
+  env: { ...process.env, DDA_OPENVIKING_DATA_DIR: dataDir, DDA_OPENVIKING_API_KEY: 'e2e-loopback-key' },
   stdio: 'ignore',
   windowsHide: true
 });

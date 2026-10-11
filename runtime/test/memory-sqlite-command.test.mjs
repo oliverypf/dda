@@ -14,10 +14,10 @@ test('Phase 1 memory proposal reads evidence and writes facts in the scoped task
   const trajectory = join(directory, 'trajectory.jsonl');
   const events = createHarnessEventStore({ storagePath: `${trajectory}.db` });
   const { event } = await events.append({ runId: 'r1', kind: 'Observed', payload: {} });
-  const env = { ...process.env, HMCODEX_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY', HMCODEX_TRAJECTORY_STORE: trajectory, HMCODEX_DATA_DIR: directory };
-  delete env.HMCODEX_HARNESS_EVENT_STORE;
-  delete env.HMCODEX_MEMORY_STORE;
-  delete env.HMCODEX_DREAM_STORE;
+  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY', DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
+  delete env.DDA_HARNESS_EVENT_STORE;
+  delete env.DDA_MEMORY_STORE;
+  delete env.DDA_DREAM_STORE;
   const cli = fileURLToPath(new URL('../src/index.mjs', import.meta.url));
   const invoke = async (...args) => JSON.parse((await promisify(execFile)(process.execPath, [cli, 'memory', ...args], { env, windowsHide: true })).stdout);
   const proposed = await invoke('propose', '--run-id', 'r1', '--statement', 'Structured fixture observation', '--source-event-ids', JSON.stringify([event.eventId]));
@@ -45,8 +45,8 @@ test('Phase 1 memory proposal reads evidence and writes facts in the scoped task
   const checked = await promisify(execFile)(process.execPath, [cli, 'harness-events', 'verify'], { env, windowsHide: true });
   assert.equal(JSON.parse(checked.stdout).verification.ok, true);
   const bundlePath = join(directory, 'support.json');
-  delete env.HMCODEX_DECISION_TRACE_STORE;
-  delete env.HMCODEX_FEEDBACK_STORE;
+  delete env.DDA_DECISION_TRACE_STORE;
+  delete env.DDA_FEEDBACK_STORE;
   await writeFile(`${trajectory}.decision-trace.json`, '{');
   await writeFile(`${trajectory}.feedback.json`, '{');
   await writeFile(`${trajectory}.feedback.json.backup`, '{');

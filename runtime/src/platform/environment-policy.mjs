@@ -6,10 +6,10 @@ const RUNTIME_ALLOW = [
   /^LANG$/u,
   /^LC_[A-Z0-9_]+$/u,
   /^XDG_[A-Z0-9_]+$/u,
-  /^HMCODEX_(?!.*(?:KEY|TOKEN|SECRET|PASSWORD))[A-Z0-9_]+$/u,
-  // HMCODEX_*_KEY_ENV holds the name of a credential variable, not a secret
+  /^DDA_(?!.*(?:KEY|TOKEN|SECRET|PASSWORD))[A-Z0-9_]+$/u,
+  // DDA_*_KEY_ENV holds the name of a credential variable, not a secret
   // value, so the runtime needs it to know which variable to read.
-  /^HMCODEX_[A-Z0-9_]*_KEY_ENV$/u,
+  /^DDA_[A-Z0-9_]*_KEY_ENV$/u,
   /^TERM$/u,
   /^SHELL$/u,
   /^TMPDIR$/u,

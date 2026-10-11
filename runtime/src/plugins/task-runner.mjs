@@ -186,18 +186,34 @@ const markFailureLessonResolved = async (lessons, tool, path) => {
   return changed;
 };
 
+// Discrete workspace.* tools and the kernel's workspace_* aliases share the
+// same relative-path contract. Real models often send an absolute path; both
+// surfaces must rewrite it before ReadonlyWorkspace sees the argument.
+const WORKSPACE_PATH_TOOLS = new Set([
+  'workspace.list', 'workspace.read', 'workspace.focus',
+  'kernel.workspace_list', 'kernel.workspace_read', 'kernel.workspace_focus'
+]);
+const isWorkspacePathTool = (name) => WORKSPACE_PATH_TOOLS.has(name);
+const isWorkspaceContentTool = (name) => name === 'workspace.read' || name === 'workspace.focus'
+  || name === 'kernel.workspace_read' || name === 'kernel.workspace_focus';
+
 const normalizeWorkspacePathArg = (rawPath, workspaceRoot) => {
   if (typeof rawPath !== 'string') return rawPath;
   const trimmed = rawPath.trim();
   if (!trimmed) return trimmed;
   const driveAbsolute = /^[A-Za-z]:[\\/]/.test(trimmed);
-  if (trimmed.startsWith('\\\\') || driveAbsolute) {
-    if (!workspaceRoot) throw new Error('WORKSPACE_PATH_FORBIDDEN');
-    const candidate = canonicalMappedPath(trimmed);
-    const root = canonicalMappedPath(workspaceRoot);
-    const rel = relative(root, candidate);
-    if (rel === '..' || rel.startsWith(`..${sep}`)) throw new Error('WORKSPACE_PATH_FORBIDDEN');
-    return (rel === '' ? '.' : rel).split(sep).join('/');
+  const uncAbsolute = trimmed.startsWith('\\\\');
+  const posixAbsolute = trimmed.startsWith('/');
+  if (uncAbsolute || driveAbsolute || posixAbsolute) {
+    if (workspaceRoot) {
+      const candidate = canonicalMappedPath(trimmed);
+      const root = canonicalMappedPath(workspaceRoot);
+      const rel = relative(root, candidate);
+      if (rel !== '..' && !rel.startsWith(`..${sep}`)) {
+        return (rel === '' ? '' : rel).split(sep).join('/');
+      }
+    }
+    if (uncAbsolute || driveAbsolute) throw new Error('WORKSPACE_PATH_FORBIDDEN');
   }
   return trimmed.replace(/^[\\/]+/, '');
 };
@@ -419,7 +435,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             } else {
             try {
               let finalArguments = rawArguments;
-              if ((['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)) && typeof rawArguments?.path === 'string') {
+              if (isWorkspacePathTool(call.name) && typeof rawArguments?.path === 'string') {
                 try {
                   finalArguments = { ...rawArguments, path: normalizeWorkspacePathArg(rawArguments.path, workspace.root) };
                 } catch (normalizeError) {
@@ -436,10 +452,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               }
               output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: sha256Digest(call.arguments) });
               if (output?.path && output.ok !== false) {
-                const currentDigest = ['workspace.read', 'workspace.focus'].includes(call.name) ? output.digest
+                const currentDigest = isWorkspaceContentTool(call.name) ? output.digest
                   : ['file.write', 'file.patch'].includes(call.name) ? output.contentDigest : undefined;
                 if (currentDigest) observedFileDigests.set(pathKey(output.path), currentDigest);
-                if (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)
+                if (isWorkspacePathTool(call.name)
                   && await markFailureLessonResolved(failureLessons, call.name, finalArguments.path)) {
                   await persistFailureLessons(workspace, failureLessons);
                 }
@@ -462,11 +478,11 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               const baseMessage = errorCode.includes('WORKSPACE_PATH_FORBIDDEN') || errorCode.includes('WORKSPACE_INVALID_PATH')
                 ? `Use a path relative to the authorized workspace; received ${originalPath || '<missing>'}.`
                 : safeErrorMessage(error, errorCode);
-              const availablePaths = (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)) && workspace.entries?.length
+              const availablePaths = isWorkspacePathTool(call.name) && workspace.entries?.length
                 ? ` Available snapshot paths: ${workspace.entries.slice(0, 24).map((entry) => entry.path).join(', ')}`
                 : '';
               output = { errorCode, message: `${baseMessage}${availablePaths}` };
-              if (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name)
+              if (isWorkspacePathTool(call.name)
                 && errorCode === 'WORKSPACE_NOT_FOUND') {
                 const lesson = await recordFailureLesson(failureLessons, {
                   tool: call.name,
@@ -520,7 +536,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 }
               : { outputDigest: resultDigest, outputChars: JSON.stringify(output).length })
           };
-          if (!isError && (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name))) {
+          if (!isError && isWorkspacePathTool(call.name)) {
             // Paths are intentionally excluded so repeatedly listing different
             // aliases of the same directory still counts as no new evidence.
             const evidenceValue = output && typeof output === 'object'
@@ -560,7 +576,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             text: `HOST_PROGRESS_CHECKPOINT: ${count} successful new workspace inspection results since the previous checkpoint or successful file.write/file.patch. This does not establish whether other commands modified files. Reassess the original goal and identify the exact evidence still missing; avoid another broad reread. If the user requested implementation and you have enough evidence, make a small scoped change and verify it. For analysis-only goals, continue scoped analysis or report findings. This checkpoint grants no permissions, requires no mutation, and is not evidence of completion.` }] }));
           await onEvent?.({ kind: 'harness.progress_checkpoint', round, inspectionCount: count });
         }
-        const workspaceEvidenceCalls = calls.filter((call) => ['workspace.list', 'workspace.read', 'workspace.focus'].includes(call.name));
+        const workspaceEvidenceCalls = calls.filter((call) => isWorkspacePathTool(call.name));
         if (workspaceEvidenceCalls.length > 0 && workspaceEvidenceCalls.length === calls.length) {
           noNewWorkspaceEvidenceRounds = roundProducedNewWorkspaceEvidence ? 0 : noNewWorkspaceEvidenceRounds + 1;
           if (noNewWorkspaceEvidenceRounds >= 4) {

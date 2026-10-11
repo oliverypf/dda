@@ -18,14 +18,16 @@ import { logger } from './logger.mjs';
 import { createTrajectoryStore, sha256Digest, parseLegacyTrajectoryEvents } from './trajectory-store.mjs';
 import { createGitObserver } from './git-observer.mjs';
 import { createGitAuditStore } from './git-audit-store.mjs';
+import { createHarnessEventStore } from './harness-event-store.mjs';
+// Version vocabulary comes straight from the extracted platform-agnostic model
+// so the monolith depends on the shared package rather than the other way round.
 import {
-  createHarnessEventStore,
   HARNESS_APP_VERSION,
   HARNESS_POLICY_VERSION,
   HARNESS_PRODUCER_VERSION,
   HARNESS_PROTOCOL_VERSION,
   HARNESS_STORAGE_SCHEMA_VERSION
-} from './harness-event-store.mjs';
+} from '../../packages/harness-model/src/versions.mjs';
 import { checkpointHarnessDatabase, restoreHarnessDatabase } from './harness-store-checkpoint.mjs';
 import { assertLegacyHarnessMigrated } from './harness-store-migration-guard.mjs';
 import { assertProjectionOutput } from './projection-output-guard.mjs';

@@ -187,3 +187,35 @@ Phase 0.5 必须在真实目标设备或官方模拟环境验证：
 8. 企业 flavor 的 AppServiceExtensionAbility（若计划发布）。
 
 POC 失败时降级 capability，不修改 Core 契约或绕过 Security Model。
+
+## 14. 通往共享 Harness 的迁移路径（App Server 取消后）
+
+状态：仅文档；本阶段不重写 ArkUI。
+
+### 14.1 现状
+
+`entry/` 目前仍连接**已取消的远程 App Server**：
+
+- `entry/src/main/ets/services/AppServerWebSocketTransport.ets`：WSS 传输实现；
+- `entry/src/main/ets/services/CodexSession.ets` + `CodexProtocol.ets`：会话与协议封装；
+- UI 层 `Index.ets` 通过 `CodexTransport` 抽象（真实为 App Server，测试为 `MockCodexTransport`）获取会话、workspace 与审批。
+
+多平台架构基线（§1、§5）已明确：远程 App Server 只能是**可选连接模式**，不是本地客户端的前置依赖。因此 HarmonyOS 需要一条通往共享 harness 的路径，而不是继续把 App Server 当作唯一后端。
+
+### 14.2 目标
+
+HarmonyOS 复用与 Linux CLI / Windows 相同的 harness 语义：共享 `@dda/harness-model` 的协议版本、退出/错误词汇、`runtime_event` 词汇与终态判定，并通过与 [`HarnessFacade`](../packages/harness-core/README.md)（见 [ADR-0024](adr/0024-harness-facade-and-package-split.md)）对齐的入口面驱动本地或受监管运行时；App Server 退化为可选远程 Adapter。
+
+### 14.3 分步路径（按依赖顺序，不在本阶段实现）
+
+1. **冻结契约边界**：保持 `CodexTransport` 接口不变，使其成为未来替换点；UI 不直接感知后端形态。
+2. **对齐词汇**：将 `CodexTypes.ets` / `CodexProtocol.ets` 中的事件 kind、错误码、协议版本与 `@dda/harness-model` 对照，差异记为契约债；跨端用同一组 fixture 回归。
+3. **引入 harness-backed transport**：实现一个满足现有 `CodexTransport` 接口的新 transport，其后端为共享 harness 入口面（本地受监管运行时或 facade 对齐的本机连接），而非远程 App Server。可先以 `MockCodexTransport` 同款注入方式切换，UI 零改动。
+4. **App Server 降级为可选**：默认走共享 harness transport；App Server 仅在用户显式选择远程模式时启用，保留 §6 的 WSS/鉴权/单帧约束。
+5. **能力门控**：本地 Executor 仍受 §8 与 §13 的 POC 门槛约束；未验证设备保持只读/会话降级，不因“接入了共享 harness”而放权。
+
+### 14.4 本阶段边界（诚实说明）
+
+- 未新增/修改任何 `.ets` 代码：ArkUI/ohosTest 工程此处无法构建验证，贸然加 stub 可能破坏 HarmonyOS 构建；
+- `HarnessFacade` 当前以 Node 子进程驱动单体 runtime，HarmonyOS（ArkTS/无 Node）不能直接复用该实现，只能复用其**入口面契约**与 `harness-model` 词汇；
+- 因此本条目是**路径文档**，落地见 [MONOLITH_EXTRACTION_STATUS.md](MONOLITH_EXTRACTION_STATUS.md) 的后续步骤。

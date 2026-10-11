@@ -18,11 +18,24 @@ import {
 } from './harness-store-schema.mjs';
 
 export const HARNESS_STORE_SCHEMA_VERSION = '1.0';
-export const HARNESS_PROTOCOL_VERSION = '1.0';
-export const HARNESS_STORAGE_SCHEMA_VERSION = 1;
-export const HARNESS_APP_VERSION = process.env.HMCODEX_APP_VERSION?.trim() || '0.1.0';
-export const HARNESS_PRODUCER_VERSION = 'hmcodex-runtime@0.1.0';
-export const HARNESS_POLICY_VERSION = 'runtime-safety-1';
+// The harness version vocabulary now lives in the platform-agnostic
+// @dda/harness-model package. We re-export it here so existing importers (and
+// stored events referencing these identities) keep working unchanged while the
+// values have a single cross-platform source of truth.
+export {
+  HARNESS_PROTOCOL_VERSION,
+  HARNESS_STORAGE_SCHEMA_VERSION,
+  HARNESS_APP_VERSION,
+  HARNESS_PRODUCER_VERSION,
+  HARNESS_POLICY_VERSION
+} from '../../packages/harness-model/src/versions.mjs';
+import {
+  HARNESS_PROTOCOL_VERSION,
+  HARNESS_STORAGE_SCHEMA_VERSION,
+  HARNESS_APP_VERSION,
+  HARNESS_PRODUCER_VERSION,
+  HARNESS_POLICY_VERSION
+} from '../../packages/harness-model/src/versions.mjs';
 
 const MAX_EVENTS = 100_000;
 const MAX_RECEIPTS = 100_000;

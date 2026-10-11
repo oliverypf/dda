@@ -1,0 +1,20 @@
+{
+  "name": "@dda/harness-model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Platform-agnostic DTOs, version constants, event vocabulary and exit-code contract shared by every dda client (linux-cli, desktop, HarmonyOS).",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./versions": "./src/versions.mjs",
+    "./exit-codes": "./src/exit-codes.mjs",
+    "./event-kinds": "./src/event-kinds.mjs"
+  },
+  "main": "./src/index.mjs",
+  "scripts": {
+    "test": "node --test"
+  }
+}

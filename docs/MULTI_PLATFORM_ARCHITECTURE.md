@@ -69,6 +69,8 @@ hmCodex/
 
 首阶段不强行把 ArkTS、TypeScript 和 Rust 编译成同一个运行时。`contracts/` 是事实源，各端通过生成或手写的薄 DTO 适配；可复用的核心行为先以契约测试和回放 fixture 固化，再逐步抽取共享实现。
 
+实现状态（架构拆分启动件，见 [ADR-0024](adr/0024-harness-facade-and-package-split.md) 与 [MONOLITH_EXTRACTION_STATUS.md](MONOLITH_EXTRACTION_STATUS.md)）：`packages/harness-model` 与 `packages/harness-core` 已建立。`harness-model` 承载平台无关的版本词汇、CLI 退出码契约与 `runtime_event` 词汇；`harness-core` 导出 `HarnessFacade` 作为 `linux-cli` 等壳层的稳定入口面。**绝大多数运行时行为仍在单体 `runtime/src/index.mjs`**，facade 目前以受监管子进程方式驱动它；目前仅版本词汇被真正物理抽离。
+
 ## 5. 本地 Memory Journal 与 Jev 决策方式
 
 上下文使用本地 `MemoryJournal` 与当前 run 的证据轨迹，不再依赖 OpenViking sidecar、`viking://` 命名空间或独立 context 服务。记忆内容必须带来源、范围、版本和有效期，并按不可信外部资料处理。

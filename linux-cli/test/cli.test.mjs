@@ -117,6 +117,8 @@ test('support-info reports the linux platform and the selected data root', async
   assert.equal(payload.protocolVersion, '1.0');
   assert.equal(payload.dataRoot, dataDir);
   assert.equal(payload.runtime.ok, true);
+  const runtimePackage = JSON.parse(await readFile(new URL('../../runtime/package.json', import.meta.url), 'utf8'));
+  assert.equal(payload.runtimeVersion, runtimePackage.version);
 });
 
 test('read-only task arguments fail closed before a model call', async () => {

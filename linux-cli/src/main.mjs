@@ -380,7 +380,7 @@ export async function main(argv, io = {}) {
       return approvalDeclined ? EXIT.APPROVAL_DENIED : exitCodeForError(code);
     }
     if (parsed.command === 'support-info') {
-      const payload = supportInfo(result, paths, policy, host);
+      const payload = supportInfo(result, paths, policy, host, await runtimePackageVersion());
       if (format === 'jsonl') emitJson(payload);
       else stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
       return EXIT.SUCCESS;
@@ -408,7 +408,7 @@ export async function main(argv, io = {}) {
   }
 }
 
-function supportInfo(runtimeResult, paths, policy, host) {
+function supportInfo(runtimeResult, paths, policy, host, runtimeVersion) {
   const identity = resolvePlatformIdentity({
     HMCODEX_PLATFORM: host,
     HMCODEX_RELEASE_CHANNEL: releaseChannelForPolicy(policy)
@@ -418,7 +418,8 @@ function supportInfo(runtimeResult, paths, policy, host) {
     platform: identity.platform,
     architecture: identity.architecture,
     node: process.version,
-    runtimeVersion: CLI_VERSION,
+    cliVersion: CLI_VERSION,
+    runtimeVersion,
     protocolVersion: PROTOCOL_VERSION,
     policyChannel: identity.policyChannel,
     executor: identity.executor,

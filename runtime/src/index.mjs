@@ -71,7 +71,7 @@ import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
 import { resolveStoreFile } from './platform/paths.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
-import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES } from './controlled-tools.mjs';
+import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
@@ -463,10 +463,18 @@ async function runTask() {
   // rule fallback) is what forces an explicit approval; the operator's pre-task
   // capability setup still governs the non-risky path.
   const gateApprovalDecisions = new Map();
+  // Verifier-uncertain re-approval: when a verifier verdict (Rule or Jev
+  // VERIFY_BEHAVIOR) leaves an attempt UNCERTAIN or STALLED, the run does not
+  // simply record the status and continue. This run-level flag makes the lease
+  // provider require an explicit approval for the next side-effecting action,
+  // which the shared fail-closed policy prompts (live user) or refuses (no live
+  // approver) exactly like a mid-task REQUIRE_APPROVAL. A clean PASS clears it.
+  const verifierReapproval = { active: false, reasonCode: undefined };
   const gateDecisionFor = ({ context } = {}) => {
     const entry = (context?.toolCallId && gateApprovalDecisions.get(context.toolCallId))
       ?? (context?.argumentsDigest && gateApprovalDecisions.get(context.argumentsDigest));
-    return entry ? { requireApproval: entry.requireApproval === true } : undefined;
+    const requireApproval = entry?.requireApproval === true || verifierReapproval.active === true;
+    return requireApproval ? { requireApproval: true } : undefined;
   };
   const approvalInterface = eventOutput === 'stdout' && mode === EXECUTION_MODES.CONTROLLED
     ? createInterface({ input: process.stdin })
@@ -3751,6 +3759,28 @@ async function runTask() {
           if (providerError) verification = { ...verification, stopRecovery: true, providerError,
             nextAction: 'RESTORE_VERIFICATION_SERVICE',
             summary: `Verification service unavailable (${providerError}); preserve execution evidence and stop without replaying implementation` };
+        }
+        // Verifier-uncertain re-approval: an UNCERTAIN or STALLED verdict freezes
+        // further side effects behind an explicit approval for the next recovery
+        // attempt rather than continuing silently. A verification-only retry
+        // (semantic provider unavailable) or a stop-recovery report does not run
+        // new side effects, so neither arms the gate. A clean PASS disarms it.
+        if (verifierStateRequiresReapproval({ status: verification.status })
+          && verification.verificationOnlyRetry !== true && verification.stopRecovery !== true) {
+          if (!verifierReapproval.active) {
+            verifierReapproval.active = true;
+            verifierReapproval.reasonCode = `VERIFIER_${verification.status}`;
+            emitEvent('verification.reapproval_required', {
+              attempt,
+              stepId: step.stepId,
+              status: verification.status,
+              reasonCode: verifierReapproval.reasonCode
+            });
+          }
+        } else if (verification.status === 'PASS' && verifierReapproval.active) {
+          verifierReapproval.active = false;
+          verifierReapproval.reasonCode = undefined;
+          emitEvent('verification.reapproval_cleared', { attempt, stepId: step.stepId });
         }
         finalResult = result;
         finalVerification = verification;

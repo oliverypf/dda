@@ -225,6 +225,24 @@ export const resolveApprovalOutcome = ({ requireApproval = false, hasLiveApprove
     ? APPROVAL_OUTCOMES.PROMPT
     : requireApproval ? APPROVAL_OUTCOMES.REFUSE : APPROVAL_OUTCOMES.AUTO_APPROVE;
 
+// Verifier verdicts that must freeze further side effects behind an explicit
+// re-approval instead of silently continuing recovery. A verifier (the Rule
+// Verifier or a Jev VERIFY_BEHAVIOR judgment) that cannot vouch for the result
+// (UNCERTAIN) or reports stalled progress (STALLED) is treated, for the next
+// side-effecting action, like a mid-task REQUIRE_APPROVAL. Jev's "high
+// uncertainty" is normalized into the UNCERTAIN status upstream, so keying off
+// the settled verifier status also covers that case.
+export const REAPPROVAL_VERIFIER_STATUSES = Object.freeze(new Set(['UNCERTAIN', 'STALLED']));
+
+/**
+ * Decide whether a settled verifier report must force an explicit re-approval of
+ * the next side-effecting action. This never relaxes a decision: it only adds an
+ * approval requirement, which the shared fail-closed policy then resolves to a
+ * prompt (live user) or a refusal (no live approver).
+ */
+export const verifierStateRequiresReapproval = ({ status } = {}) =>
+  REAPPROVAL_VERIFIER_STATUSES.has(String(status ?? '').toUpperCase());
+
 const baseRiskForCapability = (capability) => {
   if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK) return 'HIGH';
   if (capability === CAPABILITIES.TEST) return 'MEDIUM';

@@ -149,7 +149,7 @@ export const registerResidentKernelTools = (registry, kernel) => {
   });
   registry.register({
     name: 'kernel.host_request',
-    description: 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2.',
+    description: 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
     inputSchema: hostRequestSchema,
     readOnly: true,
     metadata: kernelMeta,

@@ -3144,7 +3144,12 @@ async function runTask() {
             const toolEvidence = await collectDecisionEvidence({ kinds: ['ToolInvocationCompleted', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
             const terminalToolEvidence = actionDecisionEvidence([...previousActions, ...verificationActions], { includeReadPaths: true });
             const toolEvidenceIds = toolEvidence.map((ref) => ref.evidenceId);
-            const toolReadOnly = ['workspace.list', 'workspace.read', 'workspace.focus'].includes(call.name);
+            // Derive from the registered tool flag so kernel.* inspection and
+            // session tools are allowed in READ_ONLY without a growing name
+            // list. kernel.host_request is registered readOnly:true because
+            // Phase-1 only answers inert probes, but it is the Phase-2
+            // side-effect bridge and must stay blocked in READ_ONLY.
+            const toolReadOnly = call.toolPolicyFacts?.readOnly === true && call.name !== 'kernel.host_request';
             const previousReadonlyObservation = decisionEngine.enabled
               ? readonlyRegistryObservation([...resumedReadonlyEvents, ...await listDurableRunEvents()]) : undefined;
             const workspaceEvidence = decisionEngine.enabled ? await toolWorkspaceDecisionEvidence({

@@ -147,6 +147,48 @@ test('runs a model-requested tool and sends its result into the next round', asy
   }
 });
 
+test('rewrites absolute paths for kernel.workspace_* the same way as workspace.*', async () => {
+  const seen = [];
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'kernel.workspace_read', description: 'Kernel read fixture.', readOnly: true,
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false },
+    handler: ({ path }) => { seen.push(path); return { path, content: 'ok' }; }
+  });
+  const providerPlugin = cordisPlugin((ctx) => {
+    ctx.provide('modelProvider', {
+      provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+      async *stream(request) {
+        if (request.messages.some((message) => message.source?.kind === 'tool')) {
+          yield { type: 'text-delta', text: 'read done' };
+          yield { type: 'finish', reason: { kind: 'stop' } };
+          return;
+        }
+        yield {
+          type: 'tool-call', id: 'call_abs', name: 'kernel.workspace_read',
+          arguments: JSON.stringify({ path: '/workspace/README.md' })
+        };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      }
+    });
+  }, 'fixture-kernel-abs-path');
+  const root = new Context();
+  await root.plugin(toolRegistryPlugin(registry));
+  await root.plugin(providerPlugin);
+  await root.plugin(taskRunnerPlugin);
+  try {
+    const result = await root.taskRunner.run({
+      prompt: 'read',
+      workspace: { ...workspace, root: '/workspace' },
+      mode: 'READ_ONLY'
+    });
+    assert.equal(result.text, 'read done');
+    assert.deepEqual(seen, ['README.md']);
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
 test('READ_ONLY requests expose only read-only tools', async () => {
   const registry = new ToolRegistry({ allowSideEffects: true });
   registry.register({

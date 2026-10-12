@@ -12,7 +12,7 @@ import { ToolRegistry } from '../src/tool-registry.mjs';
 import {
   createKernelEffectAuditLog, createKernelEffectDenylist, createKernelEffectsDispatcher,
   isHiddenWhileKernelEffects, kernelEffectDenylistKey, kernelEffectsAvailability,
-  parseKernelEffectsFlag, resolveKernelApprovalPolicy, KERNEL_BATCH_LIMITS
+  parseKernelEffectsFlag, resolveKernelApprovalPolicy
 } from '../src/kernel/effects.mjs';
 import { registerResidentKernelTools } from '../src/kernel/kernel-tools.mjs';
 
@@ -317,14 +317,17 @@ test('batch: declined card writes nothing; one dangerous item refuses the whole 
   assert.deepEqual(dangerous.effects, []);
 });
 
-test('batch limits: item count, bytes, one batch per round', async () => {
-  const h = await harness({ env: batchEnv, files: { 'c.txt': 'c' } });
-  const many = Array.from({ length: KERNEL_BATCH_LIMITS.maxItems + 1 }, (_, i) => ({ op: 'write', path: `f${i}.txt`, content: 'x', expectedBaseDigest: null }));
-  await assert.rejects(h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: many } }, { roundId: 'r0' }), /KERNEL_BATCH_LIMIT_EXCEEDED/);
-  await assert.rejects(h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: [{ op: 'write', path: 'big.txt', content: 'x'.repeat(KERNEL_BATCH_LIMITS.maxBytes + 1), expectedBaseDigest: null }] } }, { roundId: 'r0b' }), /KERNEL_BATCH_LIMIT_EXCEEDED/);
-  await h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: items3.slice(0, 1) } }, { roundId: 'r1' });
-  await assert.rejects(h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: items3.slice(1, 2) } }, { roundId: 'r1' }), /KERNEL_BATCH_ROUND_LIMIT/);
+test('batch business caps removed (F6): large batches admitted; transport ceilings remain elsewhere', async () => {
+  const h = await harness({ policyEnv: { DDA_KERNEL_WRITE_BATCH: '1' } });
+  const many = Array.from({ length: 12 }, (_, i) => ({ op: 'write', path: `f${i}.txt`, content: 'x', expectedBaseDigest: null }));
+  const result = await h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: many } }, { roundId: 'r-large' });
+  assert.equal(result.ok, true);
+  assert.equal(result.committed.length, 12);
+  // A second batch in the same round is still tracked but no longer refused by a business perRound cap.
+  const again = await h.dispatcher.dispatch({ kind: 'fs.write_batch', payload: { items: [{ op: 'write', path: 'extra.txt', content: 'y', expectedBaseDigest: null }] } }, { roundId: 'r-large' });
+  assert.equal(again.ok, true);
 });
+
 
 test('batch failure stops, reports the committed prefix, skips the rest, never rolls back', async () => {
   const h = await harness({

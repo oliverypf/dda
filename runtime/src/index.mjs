@@ -78,6 +78,11 @@ import {
   createKernelEffectAuditLog, createKernelEffectDenylist, createKernelEffectsDispatcher,
   isHiddenWhileKernelEffects, kernelEffectsAvailability, kernelEffectsRequested
 } from './kernel/effects.mjs';
+import { createEffectJournal } from './kernel/effect-journal.mjs';
+import { getJournalAls, JOURNAL_BITS } from './kernel/journal-als.mjs';
+import { isCodeCellsEnabled, createCellHost, codeCellsAvailability } from './kernel/cell-host.mjs';
+import { isKernelSandboxEnabled } from './kernel/sandbox.mjs';
+import { registerKernelExecTool } from './kernel/kernel-tools.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
@@ -1982,6 +1987,7 @@ async function runTask() {
   const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
   const kernelEffectDenylistPath = arg('--kernel-effect-denylist', process.env.DDA_KERNEL_EFFECT_DENYLIST) ?? resolveStoreFile('kernel-effect-denylist.json');
   const kernelEffectAuditPath = arg('--kernel-effect-audit', process.env.DDA_KERNEL_EFFECT_AUDIT) ?? resolveStoreFile('kernel-effect-audit.jsonl');
+  const kernelEffectJournalPath = arg('--kernel-effect-journal', process.env.DDA_KERNEL_EFFECT_JOURNAL) ?? resolveStoreFile('kernel-effect-journal.json');
   const runtimeStorePaths = [
     ...(kernelEffectsRequested(process.env) ? [kernelEffectDenylistPath, kernelEffectAuditPath] : []),
     trajectoryPath,
@@ -2107,6 +2113,13 @@ async function runTask() {
   // keeps read-only tools only; discrete write/test/shell/network never return.
   let kernelEffectsDispatcher;
   let kernelEffectsRequestedForRun = false;
+  let effectJournal = null;
+  let cellHost = null;
+  const cellsOrEffects = kernelEffectsRequested(process.env) || isCodeCellsEnabled(process.env);
+  if (cellsOrEffects) {
+    effectJournal = createEffectJournal({ storagePath: kernelEffectJournalPath });
+    await effectJournal.load();
+  }
   if (kernelEffectsRequested(process.env)) {
     kernelEffectsRequestedForRun = true;
     toolRegistry.hide(isHiddenWhileKernelEffects);
@@ -2150,7 +2163,9 @@ async function runTask() {
         }),
         denylist: kernelEffectDenylist,
         audit: createKernelEffectAuditLog({ storagePath: kernelEffectAuditPath }),
-        emit: (type, payload) => emitEvent(type, payload)
+        emit: (type, payload) => emitEvent(type, payload),
+        journal: effectJournal,
+        journalBit: JOURNAL_BITS.KERNEL
       });
     }
   }
@@ -2186,6 +2201,65 @@ async function runTask() {
       refusedKinds: effectsAvailability.refusedKinds,
       approvalPolicy: effectsAvailability.approvalPolicy,
       writeBatch: effectsAvailability.writeBatch
+    });
+  }
+
+  // Phase-2b: rehydrate journal BEFORE first kernel/cell dispatch (F5/I11).
+  if (effectJournal?.available && kernelEffectsDispatcher) {
+    await kernelEffectsDispatcher.rehydrateJournal();
+  } else if (effectJournal?.available) {
+    await effectJournal.rehydrate();
+  }
+
+  // Phase-2b code cells (default OFF). Requires resident + sandbox canary + journal.
+  if (isCodeCellsEnabled(process.env) && isKernelSandboxEnabled(process.env) && residentKernel?.attached) {
+    const sessionStatePathForCells = arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json');
+    cellHost = createCellHost({
+      env: process.env,
+      workspaceRoot,
+      excludedPaths: workspaceExcludedPaths,
+      sessionId: runId,
+      sessionStore: residentKernel.sessionStore,
+      workspace,
+      effectsDispatcher: kernelEffectsDispatcher,
+      journal: effectJournal,
+      onEmit: (type, payload) => emitEvent(type, payload),
+      readonlyBridge: async (kind, payload) => {
+        // Phase-1 readonly bridge: same ReadonlyWorkspace + SessionState (F2/I2).
+        if (kind === 'host.ping') return { ok: true, pong: true };
+        if (kind === 'host.capabilities') return { effects: kernelEffectsDispatcher?.availability?.kinds ?? [], cells: true };
+        if (!residentKernel?.kernel) throw Object.assign(new Error('KERNEL_NOT_ATTACHED'), { code: 'KERNEL_NOT_ATTACHED' });
+        if (kind === 'workspace.focus') {
+          return residentKernel.kernel.request('workspace.focus', payload ?? {});
+        }
+        if (kind.startsWith('workspace.') || kind.startsWith('session_state.')) {
+          return residentKernel.kernel.request(kind, payload ?? {});
+        }
+        throw Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
+      }
+    });
+    const started = await cellHost.start({
+      dataDir: resolveStoreFile('.'),
+      sessionStatePath: sessionStatePathForCells,
+      journalPath: kernelEffectJournalPath,
+      coordinatorMode: 'A',
+      nonSecretWorkspaceFile: undefined
+    });
+    emitEvent(started.ready ? 'kernel.cells_ready' : 'kernel.cells_unavailable', {
+      runId,
+      reason: started.reason,
+      backend: started.backend
+    });
+    if (started.ready) {
+      registerKernelExecTool(toolRegistry, cellHost);
+    }
+  } else if (isCodeCellsEnabled(process.env)) {
+    emitEvent('kernel.cells_unavailable', {
+      runId,
+      reason: !isKernelSandboxEnabled(process.env) ? 'SANDBOX_DISABLED'
+        : !residentKernel?.attached ? 'KERNEL_NOT_ATTACHED'
+          : !effectJournal?.available ? 'JOURNAL_UNAVAILABLE'
+            : 'CELLS_GATED'
     });
   }
   mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });
@@ -2238,6 +2312,19 @@ async function runTask() {
           operationId: context.intent.operationId,
           capability: event.capability
         });
+        // F5/I11: ALS bit set → STARTED fsync is the last successful onLeaseStarted step.
+        const journalCtx = getJournalAls();
+        if (journalCtx?.bit) {
+          if (!effectJournal?.available) {
+            const err = new Error('JOURNAL_UNAVAILABLE');
+            err.code = 'JOURNAL_UNAVAILABLE';
+            throw err;
+          }
+          await effectJournal.recordStarted(journalCtx.effectId, {
+            leaseId: context.leaseRecordId,
+            capability: event.capability
+          });
+        }
       },
       onLeaseConsumed: async (event) => {
         const contextKey = executionDigest({ capability: event.capability, request: event.request });
@@ -2287,9 +2374,21 @@ async function runTask() {
             auditStatus: 'SCOPE_VIOLATION',
             scopeResult: observed
           });
-          throw new Error('SCOPE_VIOLATION');
+          // F5/16th: SCOPE_VIOLATION → write FAILED (journal) before throw; never COMPLETED.
+          const journalCtxScope = getJournalAls();
+          if (journalCtxScope?.bit && effectJournal?.available) {
+            await effectJournal.recordFailed(journalCtxScope.effectId, { errorCode: 'SCOPE_VIOLATION' }).catch(() => {});
+          }
+          const scopeErr = new Error('SCOPE_VIOLATION');
+          scopeErr.code = 'SCOPE_VIOLATION';
+          throw scopeErr;
         }
         const outcomeDigest = sha256Digest(JSON.stringify(event.result ?? {}));
+        const journalCtxDone = getJournalAls();
+        if (journalCtxDone?.bit && effectJournal?.available) {
+          if (ok) await effectJournal.recordCompleted(journalCtxDone.effectId, { outcomeDigest });
+          else await effectJournal.recordFailed(journalCtxDone.effectId, { errorCode: 'EXECUTOR_RESULT_FAILED', outcomeDigest });
+        }
         await appendActionEvent(ok ? 'ActionExecuted' : 'ActionFailed', {
           operationId: context.intent.operationId,
           intentId: context.intent.recordId,
@@ -2314,6 +2413,28 @@ async function runTask() {
         const context = approvalContexts.get(contextKey);
         if (!context) return;
         const message = event.error instanceof Error ? event.error.message : String(event.error ?? 'LEASE_EXECUTION_FAILED');
+        const errCode = event.error?.code ?? (typeof message === 'string' && message.includes('SCOPE_VIOLATION') ? 'SCOPE_VIOLATION' : undefined);
+        const journalCtxFail = getJournalAls();
+        if (journalCtxFail?.bit && effectJournal?.available) {
+          const existing = await effectJournal.get(journalCtxFail.effectId).catch(() => null);
+          const alreadyTerminal = existing && ['COMPLETED', 'FAILED', 'UNKNOWN'].includes(existing.state);
+          const isScope = errCode === 'SCOPE_VIOLATION';
+          if (alreadyTerminal || isScope) {
+            // F5/15th–17th: idempotent cleanup only — do NOT rewrite UNKNOWN or arm.
+          } else if (existing?.state === 'STARTED') {
+            // Classified failure after STARTED → FAILED, do not arm.
+            await effectJournal.recordFailed(journalCtxFail.effectId, { errorCode: errCode ?? 'LEASE_EXECUTION_FAILED' }).catch(() => {});
+          } else {
+            // pre-operation failure: no arm (STARTED never written).
+          }
+          if (alreadyTerminal || isScope || existing?.state !== 'STARTED') {
+            // Skip master UNCERTAIN revoke path for journal-terminal / pre-op / scope.
+            if (alreadyTerminal || isScope) {
+              approvalContexts.delete(contextKey);
+              return;
+            }
+          }
+        }
         if (context.leaseRecordId) {
           await executionState.revokeLease(context.leaseRecordId, 'EXECUTION_OUTCOME_UNCERTAIN').catch(() => {});
         }

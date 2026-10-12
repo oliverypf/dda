@@ -8,6 +8,7 @@ import { assessRequestRisk } from '../controlled-tools.mjs';
 import { applyTextPatch, textDigest } from '../text-patch.mjs';
 import { persistJsonFile, readPersistentJsonFile } from '../persistent-json-store.mjs';
 import { parseHostRequestPayload } from './host-request-payload.mjs';
+import { runWithJournalAls, JOURNAL_BITS } from './journal-als.mjs';
 
 /**
  * Prime Phase-2a: side effects requested through kernel.host_request.
@@ -57,7 +58,9 @@ export const KERNEL_APPROVAL_POLICIES = Object.freeze({
   PER_REQUEST: 'per-request'
 });
 
-export const KERNEL_BATCH_LIMITS = Object.freeze({ maxItems: 10, maxBytes: 256 * 1024, perRound: 1 });
+// F6/I14: no batch business caps (maxItems/maxBytes/perRound removed).
+// Transport ceilings (KERNEL_MAX_MESSAGE_BYTES / payload string 1MB) remain elsewhere.
+export const KERNEL_BATCH_LIMITS = Object.freeze({ maxItems: Number.POSITIVE_INFINITY, maxBytes: Number.POSITIVE_INFINITY, perRound: Number.POSITIVE_INFINITY });
 
 export const KERNEL_EFFECT_ERROR_CODES = Object.freeze({
   REFUSED: 'KERNEL_SIDE_EFFECT_REFUSED',
@@ -101,7 +104,8 @@ const canonicalJson = (value) => {
   }
   return JSON.stringify(value ?? null);
 };
-const digestOf = (value) => sha256(canonicalJson(value));
+export const digestOf = (value) => sha256(canonicalJson(value));
+export const canonicalEffectDigest = digestOf;
 
 /** Parse DDA_KERNEL_EFFECTS. Only the 2a kinds can be enabled. */
 export const parseKernelEffectsFlag = (env = process.env) => {
@@ -299,7 +303,9 @@ export const createKernelEffectsDispatcher = ({
   audit = createKernelEffectAuditLog(),
   emit = () => {},
   runId,
-  autoDenylistOnUnknown = true
+  autoDenylistOnUnknown = true,
+  journal = null,
+  journalBit = JOURNAL_BITS.KERNEL
 } = {}) => {
   if (typeof invokeTool !== 'function') throw new TypeError('KERNEL_EFFECTS_INVOKE_REQUIRED');
   const enabledKinds = new Set(availability?.available ? availability.kinds : []);
@@ -370,9 +376,16 @@ export const createKernelEffectsDispatcher = ({
         ...(batchGrant && forced.length === 0 && !assessment.dangerous ? { batchGrant } : {})
       }
     };
+    const effectId = context?.journalEffectId ?? `effect-${randomUUID()}`;
+    if (journal?.available) {
+      await journal.recordRequested({
+        effectId, kind, bit: journalBit, digest: digestOf(input),
+        toolCallId: context?.toolCallId, runId, cellId: context?.cellId
+      }).catch(() => {});
+    }
     let result;
     try {
-      result = await invokeTool(tool, input, effectContext);
+      result = await runWithJournalAls({ bit: journalBit, effectId }, () => invokeTool(tool, input, effectContext));
     } catch (error) {
       const code = errorCode(error);
       const uncertain = UNCERTAIN_ERROR_CODES.has(code);
@@ -388,6 +401,9 @@ export const createKernelEffectsDispatcher = ({
     if (!uncertain && forced.includes(KERNEL_EFFECT_ERROR_CODES.OUTCOME_UNCERTAIN)) {
       outcomeUncertain.active = false;
       outcomeUncertain.reasonCode = undefined;
+      if (journal?.available) {
+        await journal.recordUncertainClear({ effectId, reason: 'LIVE_APPROVED_DISCHARGE' }).catch(() => {});
+      }
     }
     if (uncertain) {
       armUncertain(result?.timedOut ? KERNEL_EFFECT_ERROR_CODES.TIMEOUT : KERNEL_EFFECT_ERROR_CODES.OUTCOME_UNCERTAIN);
@@ -422,9 +438,8 @@ export const createKernelEffectsDispatcher = ({
     if (!availability?.writeBatch) throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.BATCH_DISABLED, 'set DDA_KERNEL_WRITE_BATCH=1');
     if (!isPlainObject(payload) || !Array.isArray(payload.items) || payload.items.length === 0) throw invalid('fs.write_batch needs items');
     const items = payload.items;
-    if (items.length > KERNEL_BATCH_LIMITS.maxItems) throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.BATCH_LIMIT, `at most ${KERNEL_BATCH_LIMITS.maxItems} items`);
     const roundKey = context?.roundId ?? 'unscoped-round';
-    if (batchRounds.has(roundKey)) throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.BATCH_ROUND_LIMIT, 'one fs.write_batch per model round');
+    // F6: no per-round / item / byte business caps.
     let totalBytes = 0;
     const seen = new Set();
     for (const item of items) {
@@ -435,8 +450,7 @@ export const createKernelEffectsDispatcher = ({
       if (typeof text !== 'string') throw invalid('write item needs content');
       totalBytes += Buffer.byteLength(text, 'utf8');
     }
-    if (totalBytes > KERNEL_BATCH_LIMITS.maxBytes) throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.BATCH_LIMIT, `at most ${KERNEL_BATCH_LIMITS.maxBytes} bytes`);
-    batchRounds.add(roundKey);
+    batchRounds.add(roundKey); // retained for metrics only; not enforced as a cap
     const batchId = `kernel-batch-${randomUUID()}`;
     // Pre-admission: resolve every item to a concrete write and check the N
     // leases/risks before anything executes.
@@ -464,7 +478,8 @@ export const createKernelEffectsDispatcher = ({
     const nonQualifying = prepared.filter((entry) => entry.dangerous || entry.forced.length > 0);
     const live = hasLiveApprover() === true;
     const summary = prepared.map(({ item, discreteInput, bytes, contentDigest }) => ({ op: item.op, path: discreteInput.path, bytes, contentDigest }));
-    const batchDigest = digestOf({ batchId, items: summary });
+    // F9: canonical batch digest is over items (path/bytes/contentDigest), not random batchId.
+    const batchDigest = digestOf({ items: summary });
     emit('kernel.batch_requested', { batchId, batchDigest, size: prepared.length, nonQualifying: nonQualifying.length });
     if (nonQualifying.length && !live) {
       await audit.append({ runId, batchId, batchDigest, phase: 'BATCH_REFUSED', approvalPath: 'REFUSED_NO_LIVE_APPROVER',
@@ -540,8 +555,18 @@ export const createKernelEffectsDispatcher = ({
     handles,
     dispatch,
     outcomeUncertain,
+    journal,
     noteBridgeOutcome(code) {
       if (code === KERNEL_EFFECT_ERROR_CODES.OUTCOME_UNCERTAIN || code === KERNEL_EFFECT_ERROR_CODES.TIMEOUT) armUncertain(code);
+    },
+    async rehydrateJournal() {
+      if (!journal?.available) return { armed: [] };
+      const { armed, uncertainClears } = await journal.rehydrate();
+      const cleared = new Set((uncertainClears ?? []).map((c) => c.effectId));
+      for (const item of armed) {
+        if (!cleared.has(item.effectId)) armUncertain(item.reasonCode);
+      }
+      return { armed };
     },
     availability
   };

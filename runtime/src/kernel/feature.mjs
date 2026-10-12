@@ -71,3 +71,8 @@ export const residentKernelAvailability = (env = process.env, { platform = proce
     reason
   };
 };
+
+
+/** Phase-2b flag names (default OFF). Imported by docs/tests; gating lives in cell-host/sandbox. */
+export const KERNEL_CODE_CELLS_FLAG = 'DDA_KERNEL_CODE_CELLS';
+export const KERNEL_SANDBOX_FLAG = 'DDA_KERNEL_SANDBOX';

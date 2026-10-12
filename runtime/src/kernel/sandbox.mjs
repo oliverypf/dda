@@ -22,6 +22,13 @@ export const SANDBOX_ERROR_CODES = Object.freeze({
   TIMEOUT: 'SANDBOX_CANARY_TIMEOUT'
 });
 
+/** Deny-write canary pass only on real permission/rofs denial — never ENOENT. */
+export const isDeniedWriteError = (error) => {
+  const code = error?.code;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EROFS';
+};
+
+
 const NATIVE_DIR = fileURLToPath(new URL('../../native/kernel-sandbox/', import.meta.url));
 const ADDON_PATH = join(NATIVE_DIR, 'build', 'Release', 'dda_kernel_sandbox.node');
 const SHIM_PATH = join(NATIVE_DIR, 'require-shim.cjs');

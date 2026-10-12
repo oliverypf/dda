@@ -70,6 +70,7 @@ export const KERNEL_EFFECT_ERROR_CODES = Object.freeze({
   APPROVAL_REQUIRED: 'KERNEL_EFFECT_APPROVAL_REQUIRED',
   INVALID_PAYLOAD: 'KERNEL_EFFECT_INVALID_PAYLOAD',
   AUDIT_UNAVAILABLE: 'KERNEL_EFFECT_AUDIT_UNAVAILABLE',
+  JOURNAL_UNAVAILABLE: 'JOURNAL_UNAVAILABLE',
   BATCH_DISABLED: 'KERNEL_BATCH_DISABLED',
   BATCH_LIMIT: 'KERNEL_BATCH_LIMIT_EXCEEDED',
   BATCH_ROUND_LIMIT: 'KERNEL_BATCH_ROUND_LIMIT',
@@ -377,15 +378,23 @@ export const createKernelEffectsDispatcher = ({
       }
     };
     const effectId = context?.journalEffectId ?? `effect-${randomUUID()}`;
+    const activeJournalBit = context?.journalBit ?? journalBit;
     if (journal?.available) {
-      await journal.recordRequested({
-        effectId, kind, bit: journalBit, digest: digestOf(input),
-        toolCallId: context?.toolCallId, runId, cellId: context?.cellId
-      }).catch(() => {});
+      try {
+        await journal.recordRequested({
+          effectId, kind, bit: activeJournalBit, digest: digestOf(input),
+          toolCallId: context?.toolCallId, runId, cellId: context?.cellId
+        });
+      } catch (error) {
+        throw new KernelEffectError(
+          KERNEL_EFFECT_ERROR_CODES.JOURNAL_UNAVAILABLE,
+          error?.message ?? 'recordRequested failed'
+        );
+      }
     }
     let result;
     try {
-      result = await runWithJournalAls({ bit: journalBit, effectId }, () => invokeTool(tool, input, effectContext));
+      result = await runWithJournalAls({ bit: activeJournalBit, effectId }, () => invokeTool(tool, input, effectContext));
     } catch (error) {
       const code = errorCode(error);
       const uncertain = UNCERTAIN_ERROR_CODES.has(code);

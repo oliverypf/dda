@@ -15,6 +15,7 @@ import {
   encodeCellMessage, createCellFramer, mintCellEpoch, isValidCellEpoch, admitExecFrame, CellProtocolError
 } from './cell-protocol.mjs';
 import { KERNEL_READ_OPS, KERNEL_BRIDGE_READ_KINDS } from './protocol.mjs';
+import { JOURNAL_BITS } from './journal-als.mjs';
 
 const DEFAULT_WORKER = fileURLToPath(new URL('./cell-worker.mjs', import.meta.url));
 const DEFAULT_CELL_TIMEOUT_MS = 30_000;
@@ -167,9 +168,10 @@ export class CellHost {
       canaryPaths: canary.paths,
       denyWritePaths: [
         ...denyWritePaths,
+        ...bodies.flatMap((body) => [body, `${body}.lock`]),
         ...(dataDir ? [dataDir] : []),
         ...(sessionStatePath ? [sessionStatePath, `${sessionStatePath}.lock`] : []),
-        ...(journalPath ? [journalPath] : [])
+        ...(journalPath ? [journalPath, `${journalPath}.lock`] : [])
       ],
       closedFds: []
     };
@@ -367,7 +369,7 @@ export class CellHost {
       const toolCallId = `${cellId}::${ordinal}`;
       const result = await this.#effectsDispatcher.dispatch(
         { kind, payload: message.payload },
-        { toolCallId, cellId, fromCell: true }
+        { toolCallId, cellId, fromCell: true, journalBit: JOURNAL_BITS.CELL }
       );
       this.#send({
         v: CELL_PROTOCOL_VERSION,

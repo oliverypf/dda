@@ -72,11 +72,19 @@ node --test test/kernel-phase2b-*.test.mjs
 - Full Landlock ABI3 C launcher with private-root allow-list FS rules: **not
   claimed available**. Missing bwrap ⇒ `LANDLOCK_INCOMPLETE` / cells stay off
   (fail-closed; no half-sandbox). Stage-2 N-API path remains for the bwrap worker.
-- CoordinatorPath (A)/(B) plant rules and full PJS plant+hold serialization for
-  every excluded body during canary: required-path validation + mode A (skip
-  coordinator) are implemented; production plant+hold for every PJS body under
-  a live run lock window is best-effort (canary probes private-tmp sentinels +
-  absolute deny paths).
+- CoordinatorPath (A)/(B) full PJS plant+hold for every excluded body under a
+  live run lock window: required-path validation + mode A (skip coordinator)
+  are implemented; production plant still uses private-tmp sentinels plus
+  absolute deny paths. Deny-write canary no longer treats ENOENT as pass.
+- Journal on-disk transitions currently persist `REQUESTED → STARTED →
+  COMPLETED|FAILED|UNKNOWN`. Intermediate `GATED` / `APPROVED` / `LEASED`
+  disk states are **Deferred** (schema allows them; wiring not yet fsynced).
+  `recordRequested` is fail-closed when the journal is enabled (same as STARTED).
+- Cell `host.request` writes journal with `JOURNAL_BITS.CELL` (overrides the
+  host dispatcher default `KERNEL` bit).
+- Committed `runtime/native/kernel-sandbox/build/Release/dda_kernel_sandbox.node`
+  is a linux-x64 prebuild for the CI/Node ABI it was built with; rebuild with
+  `npm run build:kernel-sandbox` (Node >=24) when the ABI drifts.
 - F9 digest unification is applied on the model `kernel.host_request` path and
   batch digest; cell path reuses the same dispatcher digests when effects run.
 - `DDA_KERNEL_SANDBOX_OP_WORKER` remains default off (F10).

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detectKernelOsSandbox, normalizeExcludedBodySet, buildCanaryRequiredPaths,
-  loadSandboxNative, isKernelSandboxEnabled, CANARY_BUDGET_MS
+  loadSandboxNative, isKernelSandboxEnabled, CANARY_BUDGET_MS, isDeniedWriteError
 } from '../src/kernel/sandbox.mjs';
 import { persistentJsonDefaults } from '../src/persistent-json-store.mjs';
 
@@ -55,4 +55,13 @@ test('enabled sandbox prefers bwrap; Landlock incomplete is fail-closed (never s
   }
   assert.equal(detected.backend, 'bwrap');
   assert.notEqual(detected.backend, 'landlock');
+});
+
+test('deny-write canary accepts only EACCES/EPERM/EROFS — never ENOENT', () => {
+  assert.equal(isDeniedWriteError({ code: 'EACCES' }), true);
+  assert.equal(isDeniedWriteError({ code: 'EPERM' }), true);
+  assert.equal(isDeniedWriteError({ code: 'EROFS' }), true);
+  assert.equal(isDeniedWriteError({ code: 'ENOENT' }), false);
+  assert.equal(isDeniedWriteError({ code: 'EIO' }), false);
+  assert.equal(isDeniedWriteError(null), false);
 });

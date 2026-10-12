@@ -9,14 +9,14 @@
  *   5. Accept `exec` frames; run in a persistent vm context; host.request reverse channel
  */
 import vm from 'node:vm';
-import { createWriteStream } from 'node:fs';
-import { open as openFs, readFile, writeFile, access, constants as fsConstants } from 'node:fs/promises';
+import { open as openFs } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import {
   CELL_PROTOCOL_VERSION, CELL_MESSAGE_TYPES, CELL_ERROR_CODES,
   encodeCellMessage, createCellFramer, isValidCellEpoch
 } from './cell-protocol.mjs';
+import { isDeniedWriteError } from './sandbox.mjs';
 
 const send = (message) => {
   process.stdout.write(encodeCellMessage(message));
@@ -47,18 +47,18 @@ const runCanary = async (handoff) => {
     if (typeof p !== 'string' || !p.startsWith('/')) failCanary('CANARY_PATH_NOT_ABSOLUTE', p);
   }
 
-  // (a) Denied-write / denied-read of sensitive absolute paths: open for write must fail.
+  // (a) Deny-write probes: success writing = fail; ENOENT/other ≠ pass for denylist.
+  const denyWrite = new Set(Array.isArray(handoff.denyWritePaths) ? handoff.denyWritePaths : []);
   for (const p of paths) {
+    const mustDeny = denyWrite.has(p);
     try {
       const handle = await openFs(p, 'a');
       await handle.close();
-      // If we can append, the path is writable — fail closed for denylist targets
-      // marked as denyWrite. Non-deny paths may be readable.
-      if (Array.isArray(handoff.denyWritePaths) && handoff.denyWritePaths.includes(p)) {
-        failCanary('CANARY_WRITE_UNEXPECTEDLY_ALLOWED', p);
+      if (mustDeny) failCanary('CANARY_WRITE_UNEXPECTEDLY_ALLOWED', p);
+    } catch (error) {
+      if (mustDeny && !isDeniedWriteError(error)) {
+        failCanary('CANARY_WRITE_NOT_DENIED', `${p}:${error?.code ?? 'unknown'}`);
       }
-    } catch {
-      // expected for denied paths
     }
   }
 

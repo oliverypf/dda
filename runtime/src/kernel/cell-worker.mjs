@@ -16,7 +16,12 @@ import {
   CELL_PROTOCOL_VERSION, CELL_MESSAGE_TYPES, CELL_ERROR_CODES,
   encodeCellMessage, createCellFramer, isValidCellEpoch
 } from './cell-protocol.mjs';
-import { isDeniedWriteError } from './sandbox.mjs';
+
+/** Inlined (do not import sandbox.mjs — bwrap only ro-binds worker + protocol modules). */
+const isDeniedWriteError = (error) => {
+  const code = error?.code;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EROFS';
+};
 
 const send = (message) => {
   process.stdout.write(encodeCellMessage(message));

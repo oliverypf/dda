@@ -768,7 +768,7 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
       const proposed = experienceMemories().filter((item) => item.status === 'PROPOSED').length;
       const revoked = experienceMemories().filter((item) => item.status === 'RETRACTED').length;
       rows = [
-        ['记忆状态', `已启用 ${active} · 待确认 ${proposed} · 已撤回 ${revoked}`],
+        ['记忆状态', `已启用 ${active} · 待审核 ${proposed} · 已撤回 ${revoked}`],
         ['Dream 记录', `${model.dreamRuns.length} 次`],
         ['后台维护', readOnlySettingsValue(model.runtime.dreamMaintenance?.state, '未托管')],
         ['敏感事实', '普通清理不会隐式放权']
@@ -1246,8 +1246,8 @@ const panelDetails = (key: string, label: string, body: string, open = false, cl
   `<details class="${className}" data-disclosure-id="${escapeHtml(key)}" ${(contextDisclosureState.get(key) ?? open) ? 'open' : ''}><summary>${escapeHtml(label)}</summary><div class="panel-detail-body">${body}</div></details>`;
 // Explain the purpose before opening a section, and retain the reader's choice
 // across streamed updates just like record-level disclosures.
-const contextGroup = (key: string, title: string, description: string, body: string, meta = '', className = 'context-section context-disclosure purpose-group'): string =>
-  `<details class="${className}" data-disclosure-id="${escapeHtml(key)}" ${contextDisclosureState.get(key) ? 'open' : ''}>
+const contextGroup = (key: string, title: string, description: string, body: string, meta = '', className = 'context-section context-disclosure purpose-group', defaultOpen = false): string =>
+  `<details class="${className}" data-disclosure-id="${escapeHtml(key)}" ${(contextDisclosureState.get(key) ?? defaultOpen) ? 'open' : ''}>
     <summary><span class="purpose-group-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(description)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ''}</span><span class="purpose-group-arrow" aria-hidden="true">›</span></summary>
     <div class="panel-detail-body">${body}</div></details>`;
 const panelFields = (fields: Array<[string, unknown]>): string => `<dl class="panel-fields">${fields
@@ -1285,26 +1285,31 @@ const experienceMemories = (): DisplayMemory[] => model.memories.filter(memory =
 const memoryUsageHelp = (memory: DisplayMemory): string => memory.scope === 'workspace'
   ? '启用后，Agent 处理这个项目的后续任务时，可以检索这条内容作为参考。'
   : `启用后，Agent 可在“${memory.scope}”范围内检索这条内容作为参考。`;
-const memoryStatusLabel = (status: string): string => ({ PROPOSED: '尚未使用 · 待确认内容', VERIFIED: '内容已确认 · 尚未启用', ACTIVE: '已启用', RETRACTED: '已停止使用', REJECTED: '不采用', EXPIRED: '已过期', PRUNED: '已清理' } as Record<string, string>)[status] ?? governanceStateLabel(status);
+const memoryStatusLabel = (status: string): string => ({ PROPOSED: '待你核对 · 尚未启用', VERIFIED: '已核验 · 等待启用', ACTIVE: '已启用', RETRACTED: '已停止使用', REJECTED: '不采用', EXPIRED: '已过期', PRUNED: '已清理' } as Record<string, string>)[status] ?? governanceStateLabel(status);
 const memoryExplanation = (memory: DisplayMemory): string => panelFields([
   ['记住什么', memory.statement || '这条记录没有提供具体内容，请先补充。'],
   ['有什么用', memoryUsageHelp(memory)],
   ['现在怎么做', memoryStateHelp(memory.status)]
 ]);
 const memoryStateHelp = (status: string): string => ({
-  PROPOSED: '核对上面的内容是否正确、有用。正确就点“内容正确”，不适合保留就点“不采用”。确认后还需单独启用。',
-  VERIFIED: '内容已确认。希望 Agent 以后参考这条内容，就点“让 Agent 使用”。',
+  PROPOSED: '第 1 步：打开“来源与保存信息”，确认内容准确、来源对应、以后确实有帮助。确认无误后点“确认已核验”；不准确或不想保留就点“不采用”。',
+  VERIFIED: '第 2 步：内容已经核验。点“启用记忆”后，Agent 才会在后续任务中参考它。',
   ACTIVE: 'Agent 已经可以参考这条内容。不再适用时，点“停止使用”；记录仍会保留。',
   REJECTED: '已拒绝收录，不会作为有效记忆使用。', RETRACTED: '已撤回，后续任务不再使用。',
   EXPIRED: '已过期，需要重新核对内容和适用范围。'
 } as Record<string, string>)[status] ?? '状态详情见下方记录。';
+const memoryReviewGuide = (memory: DisplayMemory): string => {
+  if (memory.status === 'PROPOSED') return '<div class="task-guidance memory-review-guide" data-memory-review-step="verify"><strong>第 1 步：先核对这条经验</strong><p>请先读“记住什么”，再打开“来源与保存信息”。按这三点判断：内容是否准确、来源是否对应这次任务、以后是否值得参考。</p><p class="task-current-goal">确认没问题后点“确认已核验”；发现错误、敏感信息或无法确认来源，就点“不采用”。</p></div>';
+  if (memory.status === 'VERIFIED') return '<div class="task-guidance task-guidance-active memory-review-guide" data-memory-review-step="activate"><strong>第 2 步：决定是否让 Agent 使用</strong><p>这条经验已经通过你的核对，但 Agent 目前还不会使用它。</p><p class="task-current-goal">确认以后确实要作为项目参考，再点“启用记忆”；不想使用时可以先保留在这里。</p></div>';
+  return '';
+};
 const panelSources = (runId?: string, eventIds: string[] = []): string => {
   const links = eventIds.map((ref, index) => {
     const item = resolveEvidenceTarget(ref);
     return item ? `<button class="governance-button" data-action="focus-evidence" data-evidence-ref="${escapeHtml(ref)}">查看来源证据 ${index + 1}</button>` : '';
   }).filter(Boolean);
   if (runId && model.timeline.some(item => item.runId === runId)) links.push(`<button class="governance-button" data-action="focus-run" data-run-id="${escapeHtml(runId)}">查看来源任务</button>`);
-  if (!links.length && (runId || eventIds.length)) links.push('<span class="panel-note">来源尚未载入当前视图。</span><button class="governance-button" data-action="navigate" data-page="runs">到运行记录查找</button>');
+  if (!links.length && (runId || eventIds.length)) links.push('<p class="panel-note">来源尚未载入当前视图。</p><button class="governance-button" data-action="navigate" data-page="runs">到运行记录查找</button>');
   return `<div class="governance-actions">${links.join('')}</div>`;
 };
 const panelActionNotice = (key: string): string => governanceActionNotice?.key === key
@@ -1314,12 +1319,12 @@ const renderExperienceActions = (memory: DisplayMemory, surface: string): string
   const id = escapeHtml(memory.memoryId);
   const button = (operation: string, label: string, extra = '', tone = ''): string => `<button class="governance-button ${tone}" data-action="memory-action" data-operation="${operation}" data-memory-id="${id}" ${extra}>${label}</button>`;
   const primary = memory.status === 'PROPOSED'
-    ? button('verify', '内容正确', 'data-accepted="true"', 'governance-button-primary') + button('verify', '不采用', 'data-accepted="false"')
-    : memory.status === 'VERIFIED' ? button('activate', '让 Agent 使用', '', 'governance-button-primary')
+    ? button('verify', '确认已核验', 'data-accepted="true"', 'governance-button-primary') + button('verify', '不采用', 'data-accepted="false"')
+    : memory.status === 'VERIFIED' ? button('activate', '启用记忆', '', 'governance-button-primary')
     : memory.status === 'ACTIVE' ? button('retract', '停止使用') : '';
   const conflict = memory.conflictsWithMemoryIds?.length ? button('resolve-conflict', '处理内容冲突', '', 'governance-button-warning') : '';
   const editable = ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status);
-  return `<div class="governance-actions">${primary}${conflict}</div>${editable ? panelDetails(`memory-actions:${surface}:${memory.memoryId}`, '修改内容或删除记录', `<div class="governance-actions"><button class="governance-button" data-action="memory-edit" data-memory-id="${id}">修改这条内容</button>${button('delete', '删除记录', '', 'governance-button-danger')}</div>`) : ''}`;
+  return `<div class="governance-actions">${primary}${conflict}</div>${editable ? panelDetails(`memory-actions:${surface}:${memory.memoryId}`, '修改内容或删除记录', `<div class="governance-actions"><button class="governance-button" data-action="memory-edit" data-memory-id="${id}">修改这条内容</button>${button('delete', '删除记录', '', 'governance-button-danger')}</div>`, surface === 'page') : ''}`;
 };
 const renderMemoryActivityArchive = (surface: 'panel' | 'page'): string => {
   const records = model.memories.filter(memory => memoryActivityRecord(memory)).slice().sort((a, b) => b.updatedAtMs - a.updatedAtMs);
@@ -1768,8 +1773,9 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
   const memoryRows = memories.map(memory => {
     return `<article class="governance-row panel-card" data-memory-id="${escapeHtml(memory.memoryId)}">
       <div class="panel-card-heading"><strong>供以后参考的一条经验</strong>${panelState(memory.status, memoryStatusLabel(memory.status))}</div>
-      ${memoryExplanation(memory)}
-      ${panelDetails(`memory:${memory.memoryId}`, '核对来源与保存信息', panelFields([
+        ${memoryExplanation(memory)}
+        ${memoryReviewGuide(memory)}
+      ${panelDetails(`memory:${memory.memoryId}`, '来源与保存信息（建议先打开核对）', panelFields([
         ['保存的原文', memory.statement], ['更新时间', panelDate(memory.updatedAtMs)], ['版本', memory.version], ['来源事件', memory.sourceEventIds],
         ['系统评分（不代表正确率）', memory.confidence],
         ['有效期', memory.expiresAtMs ? panelDate(memory.expiresAtMs) : '未设置'], ['敏感性', memory.sensitivity ? sensitivityDisplayLabel(memory.sensitivity) : '未提供'],
@@ -2327,7 +2333,7 @@ const renderContextContent = (): string => {
 
         ${renderSelectedFile()}`, workspaceTitle)}
 
-        ${contextGroup('tools:memory', '让 Agent 记住有用经验', '审核并启用可靠的经验，供以后的任务参考。', renderGovernance('memory'), `${experienceMemories().filter(item => item.status === 'ACTIVE').length} 条已启用 · ${experienceMemories().filter(item => item.status === 'PROPOSED').length} 条待确认 · ${experienceMemories().filter(item => item.status === 'VERIFIED').length} 条待启用`)}
+        ${contextGroup('tools:memory', '让 Agent 记住有用经验', '先核对内容和来源，再决定是否让 Agent 使用。', renderGovernance('memory'), `${experienceMemories().filter(item => item.status === 'ACTIVE').length} 条已启用 · ${experienceMemories().filter(item => item.status === 'PROPOSED').length} 条待审核 · ${experienceMemories().filter(item => item.status === 'VERIFIED').length} 条已核验待启用`, undefined, true)}
 
         ${contextGroup('tools:permissions', 'Agent 可以做哪些操作', '查看读文件、改文件、执行命令和联网的权限。', `<section class="context-section capability-section">
           <div class="section-heading">
@@ -2902,11 +2908,11 @@ const renderMemoryPage = (): string => {
       + (memory.version !== undefined ? ' · 版本 ' + memory.version : '')
       + (relations ? ' · ' + relations : '');
     const editing = memoryEditState?.memoryId === memory.memoryId;
-    return `<article class="run-history-row memory-row" data-memory-id="${escapeHtml(memory.memoryId)}"><div class="run-history-copy"><strong>供以后参考的一条经验</strong><span>${escapeHtml(memoryStatusLabel(memory.status))}</span>${memoryExplanation(memory)}${panelDetails('memory-page:' + memory.memoryId, '核对来源与保存信息', panelFields([['记录信息', details], ['系统评分（不代表正确率）', memory.confidence]]) + panelSources(memory.runId, memory.sourceEventIds ?? []))}</div>${editing ? renderEditForm(memory) : renderMemoryActions(memory)}</article>`;
+    return `<article class="run-history-row memory-row" data-memory-id="${escapeHtml(memory.memoryId)}"><div class="run-history-copy"><strong>供以后参考的一条经验</strong><span>${escapeHtml(memoryStatusLabel(memory.status))}</span>${memoryExplanation(memory)}${memoryReviewGuide(memory)}${panelDetails('memory-page:' + memory.memoryId, '来源与保存信息（建议先打开核对）', panelFields([['记录信息', details], ['系统评分（不代表正确率）', memory.confidence]]) + panelSources(memory.runId, memory.sourceEventIds ?? []), true)}</div>${editing ? renderEditForm(memory) : renderMemoryActions(memory)}</article>`;
   }).join('');
-  const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待确认 ' + counts.proposed + '</span><span>待启用 ' + counts.verified + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
+  const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待审核 ' + counts.proposed + '</span><span>已核验待启用 ' + counts.verified + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
   const editHint = memoryEditState ? '<div class="page-status memory-edit-hint"><strong>正在编辑 ' + escapeHtml(memoryEditState.memoryId) + '</strong><span>编辑会创建新版本，提交前请核对来源和敏感性。</span></div>' : '';
-  return '<div class="page-placeholder"><span class="eyebrow">供后续任务参考</span><h1>已保存的经验</h1><p class="panel-purpose">核对具体内容后再启用。Agent 可以在以后的任务中检索已启用的经验；运行统计不计入经验数量。</p>'
+  return '<div class="page-placeholder"><span class="eyebrow">供后续任务参考</span><h1>已保存的经验</h1><p class="panel-purpose">先看“记住什么”，再打开来源详情核对内容、来源和适用范围。确认准确且有帮助后，点“确认已核验”；最后再决定是否点“启用记忆”。Agent 只会使用已启用的经验，运行统计不计入经验数量。</p>'
     + (governanceReadFailed ? '<div class="page-status memory-action-error" role="alert"><strong>刷新未完成</strong><span>无法读取最新治理状态，当前显示上次读取的记录。请重新读取后核对。</span><button class="secondary-button" data-action="refresh-governance">重新读取</button></div>' : '')
     + (memoryActionError ? '<div class="page-status memory-action-error" role="alert"><strong>操作未完成</strong><span>请求未成功返回，结果尚未确认。请先刷新治理状态核对，再决定是否重试；页面保留上次读取的记录。</span><button class="secondary-button" data-action="refresh-governance">刷新治理状态</button></div>' : '')
     + statusSummary + editHint

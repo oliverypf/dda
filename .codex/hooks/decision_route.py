@@ -11,6 +11,11 @@ sys.path.insert(0, str(SOURCE_ROOT))
 config = PROJECT_ROOT / "jev.config.json"
 if config.is_file():
     os.environ["DECISION_AGENT_CONFIG"] = str(config)
+# The maintained decision package still calls its credential variable
+# JEV_API_KEY. Keep the project-facing OpenRouter name as the source of truth
+# and bridge it only in this child process; never write the secret to config.
+if os.environ.get("OPENROUTER_API_KEY"):
+    os.environ["JEV_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
 
 from decision_agent.direction import main
 

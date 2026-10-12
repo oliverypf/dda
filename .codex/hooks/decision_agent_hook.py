@@ -19,6 +19,11 @@ if str(SOURCE_ROOT) not in sys.path:
 CONFIG = PROJECT_ROOT / "jev.config.json"
 if CONFIG.is_file():
     os.environ["DECISION_AGENT_CONFIG"] = str(CONFIG)
+# The maintained decision package still calls its credential variable
+# JEV_API_KEY. Keep the project-facing OpenRouter name as the source of truth
+# and bridge it only in this child process; never write the secret to config.
+if os.environ.get("OPENROUTER_API_KEY"):
+    os.environ["JEV_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
 
 from decision_agent.codex_hook import main  # noqa: E402
 

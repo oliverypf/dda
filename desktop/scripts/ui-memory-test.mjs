@@ -225,7 +225,7 @@ try {
     };
   });
   const panel = page.locator('.context-panel');
-  await panel.locator('[data-action="refresh-governance"]').click();
+  await panel.locator('[data-disclosure-id="tools:memory"] [data-action="refresh-governance"]').click();
   await panel.locator('[data-memory-id="readable-9"]').first().waitFor();
   assert.match(await panel.innerText(), /长期记忆 · 10 条 · 10 条待审核/);
   assert.equal(await panel.locator('[data-disclosure-id="group:memory"] article').count(), 8);
@@ -236,7 +236,7 @@ try {
   await details.locator('summary').click();
   assert.match(await details.innerText(), /Verified task outcome/);
   await page.evaluate(() => { window.__memoryTest.memories[9].updatedAtMs = 101; window.__memoryTest.memories[9].statement = '项目约定：修改文件后运行测试并保留详细来源，以便之后核对。这段长内容应当完整换行显示。'; });
-  await panel.locator('[data-action="refresh-governance"]').click();
+  await panel.locator('[data-disclosure-id="tools:memory"] [data-action="refresh-governance"]').click();
   await page.waitForFunction(() => document.querySelector('[data-disclosure-id="group:memory"] article')?.dataset.memoryId === 'readable-8');
   assert.equal(await details.evaluate(el => el.open), true, 'open state follows identity after reorder');
   assert.equal(await panel.locator('[data-disclosure-id="memory:readable-7"]').evaluate(el => el.open), false, 'other record stays closed');

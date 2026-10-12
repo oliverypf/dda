@@ -2461,8 +2461,8 @@ const refreshModeControls = (): void => {
   setTextIfChanged(version, `v${model.runtime.version} · ${controlled ? '受控模式' : '只读模式'}`);
   const note = app.querySelector<HTMLElement>('.composer-note');
   setTextIfChanged(note, controlled
-    ? '受控模式只允许已配置范围；每个命令或写入仍需单次审批。'
-    : '当前为只读模式，Agent 只能看文件，不会执行命令、修改文件或访问网络。');
+    ? '受控模式：每次执行命令或修改文件前，都会先询问你是否同意。'
+    : '只读模式：Agent 只能看文件，不会执行命令、修改文件或访问网络。');
 };
 
 const renderHistoryView = (timelineItems = model.timeline): void => {

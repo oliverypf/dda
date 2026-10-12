@@ -2079,7 +2079,47 @@ const timelineTechnicalDetails = (item: TimelineItem): string => {
   return `<details class="timeline-details timeline-technical-details"><summary>技术详情</summary><dl>${visible.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}${item.truncated ? '<div><dt>输出状态</dt><dd>内容已截断或脱敏</dd></div>' : ''}</dl></details>`;
 };
 
-const timelineItemHtml = (item: TimelineItem): string => `
+const timelineItemHtml = (item: TimelineItem): string => {
+  // 工具调用显示：模仿 Codex 风格的清晰执行过程
+  if (item.toolName) {
+    const toolLabel = toolDisplayLabel(item.toolName);
+    const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
+    const isSuccess = item.status === 'COMPLETE';
+    const isFailed = item.status === 'ERROR';
+    
+    // 提取关键信息：文件名或命令
+    let targetInfo = '';
+    if (item.commandText) {
+      const cmd = item.commandText.split('\n')[0].trim();
+      targetInfo = cmd.length > 60 ? cmd.substring(0, 60) + '...' : cmd;
+    } else if (item.body) {
+      const bodyMatch = item.body.match(/[\\/]([^\\/]+\.[a-z0-9]+)/i);
+      if (bodyMatch) targetInfo = bodyMatch[1];
+    }
+    
+    return `
+        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(item.toolName)}">
+          <div class="timeline-step-indicator">
+            <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
+          </div>
+          <div class="timeline-step-content">
+            <div class="timeline-step-header">
+              <strong class="timeline-step-title">${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}</strong>
+              ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
+              <time>${formatTime(item.createdAtMs)}</time>
+            </div>
+            ${item.body && !isRunning ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${item.commandText ? `<details class="timeline-step-details">
+              <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
+              <pre><code>${escapeHtml(item.commandText)}</code></pre>
+            </details>` : ''}
+            ${timelineTechnicalDetails(item)}
+          </div>
+        </article>`;
+  }
+  
+  // Agent 回复和其他事件：保持原样式
+  return `
         <article class="timeline-item timeline-${item.kind.toLowerCase()}" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}"${item.toolName ? ` data-tool-name="${escapeHtml(item.toolName)}"` : ''}>
           <div class="timeline-marker" aria-hidden="true">
             <i data-lucide="${timelineIcon(item)}"></i>
@@ -2096,6 +2136,7 @@ const timelineItemHtml = (item: TimelineItem): string => `
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
         </article>`;
+};
 
 const historyIcons = (root: ParentNode): void => createIcons({ icons: {
   Bot, UserRound, CircleAlert, CheckCircle2, TerminalSquare, File, Folder,

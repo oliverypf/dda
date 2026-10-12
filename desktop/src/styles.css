@@ -426,6 +426,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .timeline-status-complete { border-color: #b8d8c5; color: var(--green); background: #f2fbf5; }
 .timeline-status-error { border-color: #efc8c8; color: var(--red); background: #fff7f7; }
 .timeline-body { max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 13px; line-height: 1.7; }
+
+/* Codex-style tool execution steps */
+.timeline-tool-step { border: 1px solid var(--border-soft); border-radius: 8px; padding: 14px 16px !important; background: var(--surface); }
+.timeline-tool-step[data-status="STREAMING"], .timeline-tool-step[data-status="PENDING"] { border-color: #e6c579; background: #fffcf5; }
+.timeline-tool-step[data-status="COMPLETE"] { border-color: #d0e5d8; background: #f8fcfa; }
+.timeline-tool-step[data-status="ERROR"], .timeline-tool-step[data-status="FAILED"] { border-color: #f3cccc; background: #fffbfb; }
+.timeline-step-indicator { display: flex; align-items: flex-start; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; }
+.timeline-step-indicator i { width: 18px; height: 18px; }
+.timeline-step-indicator .spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.timeline-step-content { min-width: 0; }
+.timeline-step-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.timeline-step-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.timeline-step-target { font-size: 12px; color: var(--text-soft); font-family: Consolas, monospace; padding: 2px 6px; background: var(--surface-subtle); border-radius: 4px; }
+.timeline-step-header time { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.timeline-step-summary { font-size: 12px; color: var(--text-soft); line-height: 1.6; margin-bottom: 8px; }
+.timeline-step-details { margin-top: 8px; }
+.timeline-step-details summary { font-size: 12px; color: var(--text-soft); cursor: pointer; padding: 4px 0; }
+.timeline-step-details summary:hover { color: var(--text); }
+.timeline-step-details pre { max-width: 100%; margin: 6px 0 0; padding: 8px 10px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 4px; background: var(--surface-subtle); font: 11px/1.5 Consolas, monospace; }
 .stream-caret { display: inline-block; width: 6px; height: 14px; margin: 1px 0 -2px 3px; background: var(--blue); animation: blink 0.9s step-end infinite; }
 
 .composer-wrap { grid-row: 4; position: relative; z-index: 5; padding: 12px 20px 10px; border-top: 1px solid var(--border); background: var(--surface-subtle); }

@@ -76,7 +76,7 @@ const hostRequestSchema = {
 };
 
 /** Register the kernel ops on a ToolRegistry as the primary model surface. */
-export const registerResidentKernelTools = (registry, kernel) => {
+export const registerResidentKernelTools = (registry, kernel, { hostRequestDispatcher } = {}) => {
   if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
   if (!kernel || typeof kernel.request !== 'function') throw new Error('KERNEL_TOOLS_KERNEL_REQUIRED');
 
@@ -147,13 +147,41 @@ export const registerResidentKernelTools = (registry, kernel) => {
     metadata: kernelMeta,
     handler: ({ key }) => kernel.request('session_state.delete', { key })
   });
+  const effectsOn = Boolean(hostRequestDispatcher?.availability?.available);
+  const effectKinds = effectsOn ? hostRequestDispatcher.availability.kinds : [];
+  const batchOn = effectsOn && hostRequestDispatcher.availability.writeBatch === true;
+  const bridgeToWorker = async (kind, payload) => {
+    try {
+      return await kernel.request('host_request', { kind, ...(payload === undefined ? {} : { payload }) });
+    } catch (error) {
+      // A bridge timeout/uncertain outcome is never replayed and arms the
+      // "next effect needs an individual live approval" flag (FROZEN #6).
+      hostRequestDispatcher?.noteBridgeOutcome?.(error?.code);
+      throw error;
+    }
+  };
   registry.register({
     name: 'kernel.host_request',
-    description: 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
+    description: effectsOn
+      ? 'Host bridge of the resident kernel. Inert probes: host.ping, host.capabilities. Host-executed side effects (Phase-2a, each one gated, approved and leased by the host exactly like the former discrete tools): '
+        + effectKinds.map((kind) => ({
+          'fs.write': 'fs.write payload {path, content, expectedBaseDigest (digest from the latest read, or null for a new file)}',
+          'fs.patch': 'fs.patch payload {path, replacements:[{oldText,newText,expectedCount?}], expectedBaseDigest?}',
+          'test.run': 'test.run payload {command, args?, cwd?, timeoutMs?} (lease-approved test commands only)'
+        })[kind]).join('; ')
+        + (batchOn ? `; fs.write_batch payload {items:[{op:'write'|'patch', path, content|replacements, expectedBaseDigest}]} (<=${10} items, <=256KB, one batch per round; stops at the first failure and never rolls back)` : '')
+        + '. shell.exec and net.fetch are refused. Paths MUST be workspace-relative.'
+      : 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
     inputSchema: hostRequestSchema,
-    readOnly: true,
-    metadata: kernelMeta,
-    handler: ({ kind, payload }) => kernel.request('host_request', { kind, ...(payload === undefined ? {} : { payload }) })
+    // With effects on the bridge is a side-effect tool (never read-only).
+    readOnly: !effectsOn,
+    metadata: effectsOn ? { actionClass: 'SIDE_EFFECT', surface: 'resident-kernel', kernelEffects: effectKinds, kernelWriteBatch: batchOn } : kernelMeta,
+    handler: async ({ kind, payload }, context) => {
+      if (hostRequestDispatcher && typeof hostRequestDispatcher.handles === 'function' && hostRequestDispatcher.handles(kind)) {
+        return hostRequestDispatcher.dispatch({ kind, payload }, context);
+      }
+      return bridgeToWorker(kind, payload);
+    }
   });
   return registry;
 };
@@ -174,7 +202,8 @@ export const attachResidentKernel = async ({
   nodeVersion = process.version,
   workerPath,
   nodeBinary,
-  requestTimeoutMs
+  requestTimeoutMs,
+  hostRequestDispatcher
 } = {}) => {
   const availability = residentKernelAvailability(env, { platform, nodeVersion });
   if (!availability.available) {
@@ -203,6 +232,6 @@ export const attachResidentKernel = async ({
       stop: async () => {}
     };
   }
-  registerResidentKernelTools(registry, kernel);
+  registerResidentKernelTools(registry, kernel, { hostRequestDispatcher });
   return { attached: true, availability, kernel, sessionStore, stop: () => kernel.stop() };
 };

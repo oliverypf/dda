@@ -302,3 +302,11 @@ The model cannot create or reuse leases. `shell.execute`, `test.execute` and
 `file.write` always pass through `RuntimeSafetyMonitor`, `PolicyLease` and
 `RestrictedWindowsExecutor`; command/cwd/path scope, timeout, output limits and
 secret redaction are enforced before results return to the model or trajectory.
+
+## Resident kernel effects (Prime Phase-2a, default OFF)
+
+With `DDA_RESIDENT_KERNEL=1`, `DDA_PLATFORM=linux-cli`, CONTROLLED mode, a matching
+`--lease-capabilities` and `DDA_KERNEL_EFFECTS=fs.write,fs.patch,test.run`, the model performs
+writes/patches/tests only through `kernel.host_request`; the host executes them through the same
+lease/approval chain as the discrete tools, which are hidden for the run. `shell.exec` /
+`net.fetch` are refused. See [`docs/RESIDENT_KERNEL_PHASE2A.md`](../docs/RESIDENT_KERNEL_PHASE2A.md).

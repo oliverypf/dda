@@ -74,6 +74,10 @@ import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
 import { resolveStoreFile } from './platform/paths.mjs';
 import { isResidentKernelEnabled } from './kernel/feature.mjs';
+import {
+  createKernelEffectAuditLog, createKernelEffectDenylist, createKernelEffectsDispatcher,
+  isHiddenWhileKernelEffects, kernelEffectsAvailability, kernelEffectsRequested
+} from './kernel/effects.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
@@ -477,7 +481,11 @@ async function runTask() {
   const gateDecisionFor = ({ context } = {}) => {
     const entry = (context?.toolCallId && gateApprovalDecisions.get(context.toolCallId))
       ?? (context?.argumentsDigest && gateApprovalDecisions.get(context.argumentsDigest));
-    const requireApproval = entry?.requireApproval === true || verifierReapproval.active === true;
+    // Prime Phase-2a: a kernel host_request effect may ADD an approval
+    // requirement (per-request policy, host denylist, uncertain kernel
+    // outcome). It can never remove one.
+    const requireApproval = entry?.requireApproval === true || verifierReapproval.active === true
+      || context?.kernelEffect?.requireApproval === true;
     return requireApproval ? { requireApproval: true } : undefined;
   };
   const approvalInterface = eventOutput === 'stdout' && mode === EXECUTION_MODES.CONTROLLED
@@ -532,8 +540,14 @@ async function runTask() {
       // Ignore malformed host input; the pending approval will expire safely.
     }
   });
-  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk } = {}) => {
+  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk, context: approvalCallContext } = {}) => {
     const requestId = `approval-${randomUUID()}`;
+    // Prime Phase-2a fs.write_batch: one live batch approval covers exactly
+    // the pre-admitted, non-risky items (matched by path + content digest).
+    // Never applies when anything requires an explicit approval.
+    const batchGranted = requireApproval !== true
+      && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
+      && approvalCallContext.kernelEffect.batchGrant.consume({ capability, request }) === true;
     const requestDigest = executionDigest({ capability, request });
     const approvalExpiresAt = Date.now() + APPROVAL_TTL_MS;
     const risk = providedRisk ?? (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
@@ -549,6 +563,15 @@ async function runTask() {
       ...(typeof request?.command === 'string' ? { command: request.command.slice(0, 4096) } : {}),
       ...(typeof request?.path === 'string' ? { path: request.path.slice(0, 512) } : {}),
       ...(typeof request?.cwd === 'string' ? { cwd: request.cwd.slice(0, 512) } : {}),
+      ...(Array.isArray(request?.kernelBatchItems) ? {
+        kernelBatch: {
+          batchId: String(request.kernelBatchId ?? '').slice(0, 80),
+          items: request.kernelBatchItems.slice(0, 10).map((item) => ({
+            op: String(item?.op ?? '').slice(0, 8), path: String(item?.path ?? '').slice(0, 512),
+            bytes: Number(item?.bytes) || 0, contentDigest: String(item?.contentDigest ?? '').slice(0, 80)
+          }))
+        }
+      } : {}),
       ...(typeof request?.host === 'string' ? {
         host: request.host.slice(0, 253),
         ...(typeof request?.method === 'string' ? { method: request.method.slice(0, 10) } : {}),
@@ -558,7 +581,7 @@ async function runTask() {
     let resolveApproval;
     const approvalPromise = new Promise((resolve) => { resolveApproval = resolve; });
     const pending = { resolve: resolveApproval, timer: undefined, requestDigest, context: undefined };
-    if (approvalInterface) {
+    if (approvalInterface && !batchGranted) {
       pending.timer = setTimeout(() => {
         void (async () => {
           pendingApprovals.delete(requestId);
@@ -629,7 +652,7 @@ async function runTask() {
       await executionState.transition(intent.recordId, 'WAITING_APPROVAL');
       pending.context = { intent, approval, capability, request, scopeSnapshot, capabilitySnapshot: { releaseChannel, capabilities: approvedCapabilities, commands: approvedCommands, ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}) } };
       approvalContexts.set(requestDigest, pending.context);
-      if (approvalInterface && coordinator.state === 'EXECUTING') {
+      if (approvalInterface && !batchGranted && coordinator.state === 'EXECUTING') {
         await coordinator.transitionAndFlush('WAITING_APPROVAL', {
           reason: 'APPROVAL_REQUIRED',
           metadata: { requestId, capability }
@@ -655,6 +678,11 @@ async function runTask() {
         requestDigest,
         scopeSnapshotDigest: scopeSnapshot.snapshotDigest
       });
+      if (batchGranted) {
+        await executionState.transition(approval.recordId, 'APPROVED', { reason: 'KERNEL_BATCH_APPROVAL' });
+        await executionState.transition(intent.recordId, 'APPROVED', { reason: 'KERNEL_BATCH_APPROVAL' });
+        return true;
+      }
       if (!approvalInterface) {
         // No live approver is connected. A risk-based or dangerous action must
         // not be silently granted by host policy; only a pre-approved, non-risky
@@ -1952,7 +1980,10 @@ async function runTask() {
       ?? scopedStorePath('plugin-governance.json', defaultPluginGovernanceStore))
   );
   const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
+  const kernelEffectDenylistPath = arg('--kernel-effect-denylist', process.env.DDA_KERNEL_EFFECT_DENYLIST) ?? resolveStoreFile('kernel-effect-denylist.json');
+  const kernelEffectAuditPath = arg('--kernel-effect-audit', process.env.DDA_KERNEL_EFFECT_AUDIT) ?? resolveStoreFile('kernel-effect-audit.jsonl');
   const runtimeStorePaths = [
+    ...(kernelEffectsRequested(process.env) ? [kernelEffectDenylistPath, kernelEffectAuditPath] : []),
     trajectoryPath,
     cancelRegistryPath,
     ...(trajectoryPath ? [`${trajectoryPath}.runs`] : []),
@@ -2070,9 +2101,67 @@ async function runTask() {
   // sandbox is available, the kernel ops become the primary model tool surface;
   // the discrete read-only workspace tools above stay registered as a fallback.
   // The kernel is read-only in Phase-1 and refuses every side-effect request.
+  // Prime Phase-2a (default OFF): when the operator asks for kernel effects
+  // (DDA_KERNEL_EFFECTS), every discrete side-effect tool is hidden for the
+  // whole run (FROZEN #4). If the kernel then is unavailable or lost, the model
+  // keeps read-only tools only; discrete write/test/shell/network never return.
+  let kernelEffectsDispatcher;
+  if (kernelEffectsRequested(process.env)) {
+    toolRegistry.hide(isHiddenWhileKernelEffects);
+    const effectsAvailability = kernelEffectsAvailability({
+      env: process.env,
+      executionMode: mode,
+      kernelAttached: true,
+      canLease: (capability) => leaseProvider.canLease(capability)
+    });
+    emitEvent('kernel.effects', {
+      available: effectsAvailability.available,
+      reason: effectsAvailability.reason,
+      kinds: effectsAvailability.kinds,
+      unleasedKinds: effectsAvailability.unleasedKinds,
+      refusedKinds: effectsAvailability.refusedKinds,
+      approvalPolicy: effectsAvailability.approvalPolicy,
+      writeBatch: effectsAvailability.writeBatch
+    });
+    if (effectsAvailability.available) {
+      const kernelEffectDenylist = createKernelEffectDenylist({ storagePath: kernelEffectDenylistPath });
+      const { integrity } = await kernelEffectDenylist.load();
+      if (integrity === 'TAMPERED') emitEvent('kernel.effect_denylist_tampered', { reason: 'DIGEST_MISMATCH_FAIL_CLOSED' });
+      kernelEffectsDispatcher = createKernelEffectsDispatcher({
+        availability: effectsAvailability,
+        executionMode: mode,
+        workspaceRoot,
+        workspace,
+        runId,
+        invokeTool: (name, input, context) => toolRegistry.invokeInternal(name, input, context),
+        canLease: (capability) => leaseProvider.canLease(capability),
+        hasLiveApprover: () => Boolean(approvalInterface),
+        isKernelAlive: async () => {
+          if (!residentKernel?.attached || !residentKernel.kernel) return false;
+          const pong = await residentKernel.kernel.request('host_request', { kind: 'host.ping' });
+          return Boolean(pong);
+        },
+        verifierReapprovalActive: () => verifierReapproval.active === true,
+        gateRequiresApproval: (context) => {
+          const entry = (context?.toolCallId && gateApprovalDecisions.get(context.toolCallId))
+            ?? (context?.argumentsDigest && gateApprovalDecisions.get(context.argumentsDigest));
+          return entry?.requireApproval === true;
+        },
+        requestBatchApproval: ({ batchId, batchDigest, items }) => requestApproval({
+          capability: CAPABILITIES.WRITE_FILE,
+          request: { kernelBatchId: batchId, kernelBatchDigest: batchDigest, kernelBatchItems: items },
+          requireApproval: false
+        }),
+        denylist: kernelEffectDenylist,
+        audit: createKernelEffectAuditLog({ storagePath: kernelEffectAuditPath }),
+        emit: (type, payload) => emitEvent(type, payload)
+      });
+    }
+  }
   if (isResidentKernelEnabled(process.env)) {
     const { attachResidentKernel } = await import('./kernel/kernel-tools.mjs');
     residentKernel = await attachResidentKernel({
+      ...(kernelEffectsDispatcher ? { hostRequestDispatcher: kernelEffectsDispatcher } : {}),
       registry: toolRegistry,
       workspaceRoot,
       excludedPaths: workspaceExcludedPaths,

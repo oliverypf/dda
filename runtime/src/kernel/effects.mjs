@@ -7,6 +7,7 @@ import { CAPABILITIES } from '../runtime-safety-monitor.mjs';
 import { assessRequestRisk } from '../controlled-tools.mjs';
 import { applyTextPatch, textDigest } from '../text-patch.mjs';
 import { persistJsonFile, readPersistentJsonFile } from '../persistent-json-store.mjs';
+import { parseHostRequestPayload } from './host-request-payload.mjs';
 
 /**
  * Prime Phase-2a: side effects requested through kernel.host_request.
@@ -524,7 +525,8 @@ export const createKernelEffectsDispatcher = ({
     return { ok: true, batchId, batchDigest, committed, skipped: [] };
   };
 
-  const dispatch = async ({ kind, payload } = {}, context = {}) => {
+  const dispatch = async ({ kind, payload: rawPayload } = {}, context = {}) => {
+    const payload = parseHostRequestPayload(rawPayload);
     if (KERNEL_DEFERRED_EFFECT_KINDS.includes(kind)) {
       throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.REFUSED, `${kind} is deferred and refused in Phase-2a`);
     }

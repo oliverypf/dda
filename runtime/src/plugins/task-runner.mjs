@@ -1,5 +1,6 @@
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { canonicalJson } from '../model-tool-calls.mjs';
+import { HOST_REQUEST_TOOL_NAME, normalizeHostRequestArguments } from '../kernel/host-request-payload.mjs';
 import { logger } from '../logger.mjs';
 import { canonicalMappedPath } from '../platform/workspace-path.mjs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -249,7 +250,12 @@ const collectToolCalls = (calls) => {
     }
     if (seen.has(call.id)) throw new Error('TOOL_CALL_DUPLICATE_ID');
     seen.add(call.id);
-    return { id: call.id, name: call.name, arguments: normalizeToolArgument(call.arguments ?? '{}') };
+    let args = normalizeToolArgument(call.arguments ?? '{}');
+    // Prime Phase-2a: unwrap a JSON-string host_request payload ONCE, before
+    // the arguments digest, the action-gate claim and the registry invoke all
+    // read call.arguments, so every consumer sees the same object.
+    if (call.name === HOST_REQUEST_TOOL_NAME) args = canonicalJson(normalizeHostRequestArguments(JSON.parse(args)));
+    return { id: call.id, name: call.name, arguments: args };
   });
 };
 

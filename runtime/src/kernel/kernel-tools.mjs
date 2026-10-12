@@ -1,6 +1,7 @@
 import { createResidentKernel } from './resident-kernel.mjs';
 import { createSessionStateStore } from './session-state.mjs';
 import { residentKernelAvailability } from './feature.mjs';
+import { parseHostRequestPayload } from './host-request-payload.mjs';
 
 /**
  * Model-facing tool surface for the resident kernel.
@@ -15,7 +16,8 @@ import { residentKernelAvailability } from './feature.mjs';
 // An empty schema accepts any JSON value. The strict object dialect used by the
 // tool registry forces additionalProperties:false whenever 'object' appears in a
 // type list, which would reject nested session values; "any JSON" is the correct
-// contract for an opaque session value or host_request payload.
+// contract for an opaque session value. (host_request payloads use a strict
+// per-kind object schema below.)
 const ANY_JSON_VALUE = {};
 
 const workspaceListSchema = {
@@ -65,11 +67,66 @@ const sessionSetSchema = {
   additionalProperties: false
 };
 
+// Per-kind host_request payload fields (union of fs.write / fs.patch /
+// test.run / fs.write_batch). The strict dialect forces
+// additionalProperties:false, which is exactly the contract we want for effect
+// payloads. A JSON-string payload is also accepted at the schema boundary
+// because real models often stringify it; it is unwrapped once by
+// host-request-payload.mjs before the gate and the dispatcher see it.
+const replacementSchema = {
+  type: 'object',
+  properties: {
+    oldText: { type: 'string' },
+    newText: { type: 'string' },
+    expectedCount: { type: 'integer', minimum: 1 }
+  },
+  required: ['oldText', 'newText'],
+  additionalProperties: false
+};
+const digestOrNull = { type: ['string', 'null'], maxLength: 128 };
+const hostRequestPayloadObjectSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', minLength: 1, maxLength: 512 },
+    content: { type: 'string' },
+    expectedBaseDigest: digestOrNull,
+    replacements: { type: 'array', items: replacementSchema, maxItems: 64 },
+    command: { type: 'string', minLength: 1, maxLength: 512 },
+    args: { type: 'array', items: { type: 'string', maxLength: 4096 }, maxItems: 128 },
+    cwd: { type: 'string', maxLength: 512 },
+    timeoutMs: { type: 'integer', minimum: 1 },
+    maxOutputBytes: { type: 'integer', minimum: 1 },
+    maxOutputChars: { type: 'integer', minimum: 1 },
+    items: {
+      type: 'array',
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: {
+          op: { type: 'string', enum: ['write', 'patch'] },
+          path: { type: 'string', minLength: 1, maxLength: 512 },
+          content: { type: 'string' },
+          replacements: { type: 'array', items: replacementSchema, maxItems: 64 },
+          expectedBaseDigest: digestOrNull
+        },
+        required: ['op', 'path'],
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+};
+
 const hostRequestSchema = {
   type: 'object',
   properties: {
     kind: { type: 'string', minLength: 1, maxLength: 120 },
-    payload: ANY_JSON_VALUE
+    payload: {
+      anyOf: [
+        hostRequestPayloadObjectSchema,
+        { type: 'string', minLength: 2, maxLength: 1024 * 1024, description: 'Prefer an object; a JSON-encoded object string is accepted and unwrapped.' }
+      ]
+    }
   },
   required: ['kind'],
   additionalProperties: false
@@ -176,7 +233,9 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
     // With effects on the bridge is a side-effect tool (never read-only).
     readOnly: !effectsOn,
     metadata: effectsOn ? { actionClass: 'SIDE_EFFECT', surface: 'resident-kernel', kernelEffects: effectKinds, kernelWriteBatch: batchOn } : kernelMeta,
-    handler: async ({ kind, payload }, context) => {
+    handler: async ({ kind, payload: rawPayload }, context) => {
+      // Same shared unwrap as the task runner (idempotent on objects).
+      const payload = parseHostRequestPayload(rawPayload);
       if (hostRequestDispatcher && typeof hostRequestDispatcher.handles === 'function' && hostRequestDispatcher.handles(kind)) {
         return hostRequestDispatcher.dispatch({ kind, payload }, context);
       }

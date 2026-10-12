@@ -237,3 +237,22 @@ test('live jsonl approver: fs.write_batch shows one batch card and writes N file
   assert.ok(events.some((event) => event.kind === 'kernel.batch_completed'));
   assert.equal(code, 0, `${stderr}\n${stdout.slice(-2000)}`);
 });
+
+test('effects on: a JSON-string payload (as real models send it) is unwrapped once and fs.write runs via the gate + dispatcher', async (t) => {
+  const { result, toolResults, workspace, auditPath } = await scenario(t, {
+    call: { name: 'kernel.host_request', args: { kind: 'fs.write', payload: JSON.stringify({ path: 'notes.txt', content: 'from string payload\n', expectedBaseDigest: null }) } }
+  });
+  assert.equal(await readFile(join(workspace, 'notes.txt'), 'utf8'), 'from string payload\n', `${result.stderr}\n${toolResults.join('\n')}`);
+  assert.ok(!toolResults.some((content) => /KERNEL_EFFECT_INVALID_PAYLOAD|TOOL_ACTION_BLOCKED/u.test(content)), toolResults.join('\n'));
+  const audit = (await readFile(auditPath, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(audit.map((record) => record.phase), ['REQUESTED', 'COMPLETED']);
+  assert.equal(audit[1].key, 'CONTROLLED|fs.write|workspace_write');
+});
+
+test('effects on: a JSON-string secret-path payload is still seen and refused by the gate', async (t) => {
+  const { toolResults, workspace } = await scenario(t, {
+    call: { name: 'kernel.host_request', args: { kind: 'fs.write', payload: JSON.stringify({ path: '.env', content: 'TOKEN=1\n', expectedBaseDigest: null }) } }
+  });
+  assert.equal(await exists(join(workspace, '.env')), false);
+  assert.ok(toolResults.some((content) => /SAFETY_LEASE_REQUIRED|TOOL_ACTION_BLOCKED/u.test(content)), toolResults.join('\n'));
+});

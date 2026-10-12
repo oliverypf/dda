@@ -7,6 +7,8 @@ import { createResidentKernel } from '../src/kernel/resident-kernel.mjs';
 import { createSessionStateStore } from '../src/kernel/session-state.mjs';
 import { KERNEL_ERROR_CODES } from '../src/kernel/protocol.mjs';
 
+const protocolModuleUrl = new URL('../src/kernel/protocol.mjs', import.meta.url).href;
+
 const workspaceWithFiles = async () => {
   const root = await mkdtemp(join(tmpdir(), 'kernel-ws-'));
   await writeFile(join(root, 'README.md'), '# Title\nalpha beta gamma\nunique_marker here\n');
@@ -115,7 +117,7 @@ test('never auto-replays a non-replay-safe op that was in flight at crash time',
   // it receives, simulating a crash mid-operation.
   const workerPath = join(root, 'crash-worker.mjs');
   await writeFile(workerPath, `
-    import { createMessageFramer, encodeMessage, kernelSuccess, KERNEL_PROTOCOL_VERSION } from ${JSON.stringify(join(process.cwd(), 'src/kernel/protocol.mjs'))};
+    import { createMessageFramer, encodeMessage, kernelSuccess, KERNEL_PROTOCOL_VERSION } from ${JSON.stringify(protocolModuleUrl)};
     const framer = createMessageFramer();
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (chunk) => {

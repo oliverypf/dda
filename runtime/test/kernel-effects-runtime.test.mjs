@@ -8,6 +8,10 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
+const residentKernelTestEnv = process.platform === 'linux'
+  ? {}
+  : { DDA_RESIDENT_KERNEL_SANDBOX: '1' };
+
 // End-to-end Prime Phase-2a: a scripted model drives kernel.host_request in a
 // CONTROLLED run with no live approver (host-policy AUTO subset only).
 
@@ -87,6 +91,7 @@ const scenario = async (t, { call, env = {} }) => {
     DDA_EXECUTION_MODE: 'CONTROLLED',
     DDA_RESIDENT_KERNEL: '1',
     DDA_PLATFORM: 'linux-cli',
+    ...residentKernelTestEnv,
     DDA_KERNEL_EFFECTS: 'fs.write',
     DDA_KERNEL_EFFECT_AUDIT: auditPath,
     DDA_KERNEL_EFFECT_DENYLIST: join(stores, 'denylist.json'),
@@ -156,6 +161,20 @@ test('kernel unavailable (non-Linux identity): read-only tools only, no discrete
   assert.equal(await exists(join(workspace, 'notes.txt')), false);
 });
 
+test('kernel effects stay unavailable when the resident kernel attach is disabled', async (t) => {
+  const { result, advertised, workspace } = await scenario(t, {
+    env: { DDA_PLATFORM: 'linux-cli', DDA_RESIDENT_KERNEL_SANDBOX: '0' },
+    call: { name: 'file.write', args: { path: 'notes.txt', content: 'discrete\n' } }
+  });
+  const names = advertised.join(',');
+  assert.ok(advertised.length > 0, result.stderr);
+  assert.doesNotMatch(names, /kernel_x2e_host_request/u, names);
+  assert.ok(advertised.every((name) => /^hmc_workspace_x2e_(list|read|focus)$/u.test(name)
+    || name === 'hmc_file_x2e_diff'), names);
+  assert.match(JSON.stringify(lastJsonLine(result.stdout).harness?.errors ?? []), /TOOL_NOT_FOUND/u);
+  assert.equal(await exists(join(workspace, 'notes.txt')), false);
+});
+
 test('live jsonl approver: fs.write_batch shows one batch card and writes N files with N leases', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'dda-kernel-batch-e2e-'));
   const stores = await mkdtemp(join(tmpdir(), 'dda-kernel-batch-stores-'));
@@ -196,6 +215,7 @@ test('live jsonl approver: fs.write_batch shows one batch card and writes N file
       ...process.env, [keyName]: 'test-key',
       DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL', DDA_EXECUTION_MODE: 'CONTROLLED',
       DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli',
+      ...residentKernelTestEnv,
       DDA_KERNEL_EFFECTS: 'fs.write', DDA_KERNEL_WRITE_BATCH: '1',
       DDA_KERNEL_EFFECT_AUDIT: join(stores, 'audit.jsonl'), DDA_KERNEL_EFFECT_DENYLIST: join(stores, 'denylist.json'),
       DDA_KERNEL_SESSION_STORE: join(stores, 'session.json')

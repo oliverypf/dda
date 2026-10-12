@@ -2106,22 +2106,18 @@ async function runTask() {
   // whole run (FROZEN #4). If the kernel then is unavailable or lost, the model
   // keeps read-only tools only; discrete write/test/shell/network never return.
   let kernelEffectsDispatcher;
+  let kernelEffectsRequestedForRun = false;
   if (kernelEffectsRequested(process.env)) {
+    kernelEffectsRequestedForRun = true;
     toolRegistry.hide(isHiddenWhileKernelEffects);
+    // The bridge must exist before attachResidentKernel so the worker can
+    // register kernel.host_request. Publish the final availability only after
+    // attach returns below; a failed attach therefore fails closed.
     const effectsAvailability = kernelEffectsAvailability({
       env: process.env,
       executionMode: mode,
       kernelAttached: true,
       canLease: (capability) => leaseProvider.canLease(capability)
-    });
-    emitEvent('kernel.effects', {
-      available: effectsAvailability.available,
-      reason: effectsAvailability.reason,
-      kinds: effectsAvailability.kinds,
-      unleasedKinds: effectsAvailability.unleasedKinds,
-      refusedKinds: effectsAvailability.refusedKinds,
-      approvalPolicy: effectsAvailability.approvalPolicy,
-      writeBatch: effectsAvailability.writeBatch
     });
     if (effectsAvailability.available) {
       const kernelEffectDenylist = createKernelEffectDenylist({ storagePath: kernelEffectDenylistPath });
@@ -2173,6 +2169,23 @@ async function runTask() {
       runId,
       reason: residentKernel.availability?.reason,
       ...(residentKernel.availability?.error ? { error: residentKernel.availability.error } : {})
+    });
+  }
+  if (kernelEffectsRequestedForRun) {
+    const effectsAvailability = kernelEffectsAvailability({
+      env: process.env,
+      executionMode: mode,
+      kernelAttached: residentKernel?.attached === true,
+      canLease: (capability) => leaseProvider.canLease(capability)
+    });
+    emitEvent('kernel.effects', {
+      available: effectsAvailability.available,
+      reason: effectsAvailability.reason,
+      kinds: effectsAvailability.kinds,
+      unleasedKinds: effectsAvailability.unleasedKinds,
+      refusedKinds: effectsAvailability.refusedKinds,
+      approvalPolicy: effectsAvailability.approvalPolicy,
+      writeBatch: effectsAvailability.writeBatch
     });
   }
   mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });

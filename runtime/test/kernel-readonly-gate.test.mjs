@@ -11,6 +11,7 @@ import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 const KERNEL_ENV = {
   DDA_RESIDENT_KERNEL: '1',
   DDA_PLATFORM: 'linux-cli',
+  ...(process.platform === 'linux' ? {} : { DDA_RESIDENT_KERNEL_SANDBOX: '1' }),
   DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
   DDA_EXECUTION_MODE: 'READ_ONLY'
 };

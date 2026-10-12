@@ -12,6 +12,9 @@ import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 // scripted chat-completions model. Every speed flag is default OFF.
 
 const MARKER = 'JEV_SPEED_MARKER';
+const residentKernelTestEnv = process.platform === 'linux'
+  ? {}
+  : { DDA_RESIDENT_KERNEL_SANDBOX: '1' };
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const base = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('DDA_') && name !== 'JEV_API_KEY'));
@@ -199,7 +202,7 @@ const scenario = async (t, {
     DDA_JEV_API_KEY_ENV: 'JEV_SPEED_KEY', DDA_JEV_TIMEOUT_MS: '5000',
     DDA_RELEASE_CHANNEL: executionMode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY',
     DDA_EXECUTION_MODE: executionMode,
-    ...(kernel ? { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' } : {}),
+    ...(kernel ? { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli', ...residentKernelTestEnv } : {}),
     ...env
   });
   const decisionTrace = await readFile(`${trajectory}.decision-trace.json`, 'utf8').then(JSON.parse).catch(() => undefined);

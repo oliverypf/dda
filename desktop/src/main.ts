@@ -363,7 +363,7 @@ const settingsSections = {
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
   workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
   plugins: { title: '插件', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
-  verifier: { title: '安全、审批与连续验证', description: '调整验证预算，并查看审批与安全策略的当前状态。', icon: 'shield-check' },
+  verifier: { title: '安全与质量检查', description: '调整自动质量检查设置，查看审批与安全策略的当前状态。', icon: 'shield-check' },
   memory: { title: '记忆与后台整理', description: '查看记忆状态、后台整理和治理数量。', icon: 'heart-pulse' },
   personalization: { title: '隐私/保留与个性化', description: '设置回复习惯，并查看敏感数据与保留策略状态。', icon: 'user-round' },
   storage: { title: '存储', description: '查看配置路径、投影版本和持久化状态。', icon: 'file-cog' },
@@ -887,23 +887,25 @@ const renderSettingsModal = (): string => {
                 <div class="settings-card"><label class="settings-field settings-field-multiline"><span>希望助手如何回复？<small>例如：每次回复都使用中文；先给结论，再解释原因。</small></span><textarea name="customInstructions" rows="8" maxlength="8000" aria-describedby="custom-instructions-hint" placeholder="每次回复都使用中文，保持简洁。">${escapeHtml(customInstructions)}</textarea></label></div>
                 <p class="settings-hint" id="custom-instructions-hint">适用于所有任务，作为系统级提示随模型请求发送。最多 8000 字符，可分多行。保存后从下一次任务开始生效；清空并保存即可停用。</p>
               </section>
-              <section class="settings-group" id="settings-panel-verifier" data-settings-panel="verifier" data-role="verifier-settings" aria-label="连续验证">
-                <h3>判定标准与预算</h3><div class="settings-card">
-                <label class="settings-field"><span>判定标准（每行一条，最多 8 条）</span><textarea name="verifierCriteria" rows="3" maxlength="8000" spellcheck="false" placeholder="留空使用运行时内置的三条标准">${escapeHtml(verifierValues.verifierCriteria)}</textarea></label>
+              <section class="settings-group" id="settings-panel-verifier" data-settings-panel="verifier" data-role="verifier-settings" aria-label="质量检查">
+                <h3>自动质量检查设置</h3>
+                <p class="settings-description">Agent 完成任务后，系统会自动检查结果质量。通常不需要调整这些参数。</p>
+                <div class="settings-card">
+                <label class="settings-field"><span>检查要点（每行一条，最多 8 条）</span><textarea name="verifierCriteria" rows="3" maxlength="8000" spellcheck="false" placeholder="留空使用默认检查项：代码能运行、测试能通过、符合用户要求">${escapeHtml(verifierValues.verifierCriteria)}</textarea></label>
                 <div class="settings-grid">
-                  <label class="settings-field"><span>重复次数（1-16）</span><input name="verifierRepetitions" type="number" min="1" max="16" step="1" value="${escapeHtml(verifierValues.verifierRepetitions)}"></label>
-                  <label class="settings-field"><span>最大比较数（1-512）</span><input name="verifierMaxComparisons" type="number" min="1" max="512" step="1" value="${escapeHtml(verifierValues.verifierMaxComparisons)}"></label>
+                  <label class="settings-field"><span>检查次数（1-16）</span><input name="verifierRepetitions" type="number" min="1" max="16" step="1" value="${escapeHtml(verifierValues.verifierRepetitions)}"><small>多次检查提高准确性</small></label>
+                  <label class="settings-field"><span>最多对比方案数（1-512）</span><input name="verifierMaxComparisons" type="number" min="1" max="512" step="1" value="${escapeHtml(verifierValues.verifierMaxComparisons)}"><small>比较不同完成方式</small></label>
                 </div>
                 <div class="settings-grid">
-                  <label class="settings-field"><span>支点数（1-8）</span><input name="verifierPivots" type="number" min="1" max="8" step="1" value="${escapeHtml(verifierValues.verifierPivots)}"></label>
-                  <label class="settings-field"><span>提示长度上限（1024-200000）</span><input name="verifierMaxPromptChars" type="number" min="1024" max="200000" step="1" value="${escapeHtml(verifierValues.verifierMaxPromptChars)}"></label>
+                  <label class="settings-field"><span>基准点数量（1-8）</span><input name="verifierPivots" type="number" min="1" max="8" step="1" value="${escapeHtml(verifierValues.verifierPivots)}"><small>用于对比的参考标准</small></label>
+                  <label class="settings-field"><span>检查内容长度上限（字符）</span><input name="verifierMaxPromptChars" type="number" min="1024" max="200000" step="1" value="${escapeHtml(verifierValues.verifierMaxPromptChars)}"><small>太长会影响速度</small></label>
                 </div>
-                <label class="settings-field"><span>随机种子（可留空）</span><input name="verifierSeed" maxlength="200" spellcheck="false" value="${escapeHtml(verifierValues.verifierSeed)}"></label>
+                <label class="settings-field"><span>固定随机数（高级，可留空）</span><input name="verifierSeed" maxlength="200" spellcheck="false" value="${escapeHtml(verifierValues.verifierSeed)}"><small>用于重现检查结果</small></label>
                 <div class="settings-grid">
-                  <label class="settings-field"><span>PASS 阈值（0-1）</span><input name="verifierPassThreshold" type="number" min="0" max="1" step="0.01" value="${escapeHtml(verifierValues.verifierPassThreshold)}"></label>
-                  <label class="settings-field"><span>FAIL 阈值（0-1）</span><input name="verifierFailThreshold" type="number" min="0" max="1" step="0.01" value="${escapeHtml(verifierValues.verifierFailThreshold)}"></label>
+                  <label class="settings-field"><span>通过分数线（0-1）</span><input name="verifierPassThreshold" type="number" min="0" max="1" step="0.01" value="${escapeHtml(verifierValues.verifierPassThreshold)}"><small>高于此分数判定为通过</small></label>
+                  <label class="settings-field"><span>失败分数线（0-1）</span><input name="verifierFailThreshold" type="number" min="0" max="1" step="0.01" value="${escapeHtml(verifierValues.verifierFailThreshold)}"><small>低于此分数判定为失败</small></label>
                 </div>
-                </div><p class="settings-hint">留空即使用运行时默认值（重复 2 次、最大比较 32、支点 2、上限 60000 字符、PASS 0.9 / FAIL 0.5）。清空全部项会从配置文件移除该段。</p>
+                </div><p class="settings-hint">推荐使用默认值：检查 2 次、最多对比 32 个方案、2 个基准点、最长 60000 字符、通过分 0.9 / 失败分 0.5。留空全部项会恢复默认设置。</p>
               </section>
               </div>
               <div class="settings-save-area" aria-live="polite">
@@ -1584,15 +1586,15 @@ const renderContinuousVerification = (): string => {
   // The process row is the only place a step-level score appears, and it is
   // always the host-derived expectation rather than model-authored text.
   const processRow = hasProcess
-    ? `<div class="runtime-line" data-verification-unknown="${process?.status === 'UNKNOWN' || process?.status === 'ABSTAIN' ? 'true' : ''}" data-process-verification="${escapeHtml(process?.status ?? 'ABSTAIN')}"><i data-lucide="shield-check"></i><span>过程验证：${escapeHtml(statusDisplayLabel(process?.status, '暂不判断'))} · 分数 ${typeof process?.score === 'number' ? process.score.toFixed(3) : '—'} · 波动 ${typeof process?.variance === 'number' ? process.variance.toFixed(4) : '—'}${processDistribution ? ` · 概率 ${escapeHtml(processDistribution)}` : ''}${process?.thresholds ? ` · 通过阈值 ${process.thresholds.passThreshold}，失败阈值 ${process.thresholds.failThreshold}` : ''}${processSourceLabel(process?.source) ? ` · 来源 ${escapeHtml(processSourceLabel(process?.source))}` : ''}</span></div>`
+    ? `<div class="runtime-line" data-verification-unknown="${process?.status === 'UNKNOWN' || process?.status === 'ABSTAIN' ? 'true' : ''}" data-process-verification="${escapeHtml(process?.status ?? 'ABSTAIN')}"><i data-lucide="shield-check"></i><span>执行过程检查：${escapeHtml(statusDisplayLabel(process?.status, '暂不判定'))} · 得分 ${typeof process?.score === 'number' ? process.score.toFixed(3) : '—'} · 波动 ${typeof process?.variance === 'number' ? process.variance.toFixed(4) : '—'}${processDistribution ? ` · 概率分布 ${escapeHtml(processDistribution)}` : ''}${process?.thresholds ? ` · 通过分 ${process.thresholds.passThreshold}，失败分 ${process.thresholds.failThreshold}` : ''}${processSourceLabel(process?.source) ? ` · 数据来源 ${escapeHtml(processSourceLabel(process?.source))}` : ''}</span></div>`
     : '';
-  return `<section class="context-section continuous-verification-section" aria-label="连续验证">
-    <div class="section-heading"><div><span class="section-kicker">连续验证</span><h3>连续验证</h3></div><span class="context-count">${completed.length} 次汇总 · ${records.length} 条样本</span></div>
-    ${panelPurpose('重复核对候选方案与执行过程。分数和概率反映核验记录；任务是否完成还需查看最终验收结果。')}
+  return `<section class="context-section continuous-verification-section" aria-label="质量检查">
+    <div class="section-heading"><div><span class="section-kicker">自动质量检查</span><h3>质量检查记录</h3></div><span class="context-count">${completed.length} 次检查 · ${records.length} 条记录</span></div>
+    ${panelPurpose('Agent 完成任务后，系统会自动检查结果是否符合要求。这里显示检查分数和详细记录。')}
     ${processRow}
     ${completed.map((record) => {
       const ranking = (record.ranking ?? []).map((item) => `${item.candidateId ?? '?'} ${typeof item.score === 'number' ? item.score.toFixed(2) : '—'}`).join(' · ');
-      const config = record.config ? `重复 ${record.config.repetitions ?? '—'} · 最大比较 ${record.config.maxComparisons ?? '—'}` : '';
+      const config = record.config ? `检查 ${record.config.repetitions ?? '—'} 次 · 最多对比 ${record.config.maxComparisons ?? '—'} 个方案` : '';
       const related = samples.filter((sample) => sample.stepId === record.stepId);
       const sampleText = related.map((sample) => {
         const leftDistribution = formatDistribution(sample.leftDistribution);
@@ -1601,7 +1603,7 @@ const renderContinuousVerification = (): string => {
         const right = `${sample.rightId ?? '?'}:${sample.rightScore?.toFixed(2) ?? '—'}±${sample.rightVariance?.toFixed(3) ?? '—'}${rightDistribution ? ` [${rightDistribution}]` : ''}`;
         return `${left} vs ${right}`;
       }).join('；');
-      return `<div class="governance-row" data-verification-event="${escapeHtml(record.eventId)}"><div class="governance-copy"><strong>${escapeHtml(record.stepId ?? 'verification')}</strong><span>${escapeHtml(config)}${ranking ? ` · 排名 ${escapeHtml(ranking)}` : ''}${sampleText ? ` · 样本 ${escapeHtml(sampleText)}` : ''}</span></div></div>`;
+      return `<div class="governance-row" data-verification-event="${escapeHtml(record.eventId)}"><div class="governance-copy"><strong>${escapeHtml(record.stepId ?? '检查项')}</strong><span>${escapeHtml(config)}${ranking ? ` · 评分排名 ${escapeHtml(ranking)}` : ''}${sampleText ? ` · 对比记录 ${escapeHtml(sampleText)}` : ''}</span></div></div>`;
     }).join('')}
   </section>`;
 };
@@ -2319,14 +2321,14 @@ const renderContextContent = (): string => {
         ${contextGroup('tools:workspace', '查看项目文件', '确认 Agent 正在读取哪个项目，浏览文件内容。', `<section class="context-section workspace-section">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">工作区</span>
+              <span class="section-kicker">当前项目</span>
               <h3 title="${escapeHtml(workspacePath)}">${escapeHtml(model.workspace.rootLabel)}</h3>
             </div>
             ${model.workspace.granted && model.workspace.currentPath
               ? '<button class="icon-button small" data-action="workspace-up" title="返回上级" aria-label="返回上级"><i data-lucide="arrow-left"></i></button>'
               : ''}
           </div>
-          ${panelPurpose('当前任务可以访问的项目文件。点击文件查看内容，点击文件夹进入目录。')}
+          ${panelPurpose('Agent 只能看到这个文件夹里的内容。点击文件查看详情，点击文件夹进入目录。')}
           <div class="workspace-path" title="${escapeHtml(workspacePath)}">${escapeHtml(workspacePath)}</div>
           <div class="workspace-list" data-scroll-anchor="workspace-list">${renderWorkspaceEntries()}</div>
         </section>
@@ -2335,29 +2337,29 @@ const renderContextContent = (): string => {
 
         ${contextGroup('tools:memory', '让 Agent 记住有用经验', '先核对内容和来源，再决定是否让 Agent 使用。', renderGovernance('memory'), `${experienceMemories().filter(item => item.status === 'ACTIVE').length} 条已启用 · ${experienceMemories().filter(item => item.status === 'PROPOSED').length} 条待审核 · ${experienceMemories().filter(item => item.status === 'VERIFIED').length} 条已核验待启用`, undefined, true)}
 
-        ${contextGroup('tools:permissions', 'Agent 可以做哪些操作', '查看读文件、改文件、执行命令和联网的权限。', `<section class="context-section capability-section">
+        ${contextGroup('tools:permissions', 'Agent 能做什么', '当前 Agent 可以访问哪些功能，哪些需要你确认。', `<section class="context-section capability-section">
           <div class="section-heading">
-            <div><span class="section-kicker">权限与审批</span><h3>允许哪些操作</h3></div>
+            <div><span class="section-kicker">安全设置</span><h3>当前允许的操作</h3></div>
           </div>
-          ${panelPurpose(controlled ? '受控模式：命令与写入需要逐项批准。待确认的操作会单独显示在面板上方。' : '只读模式：可以查看已授权工作区，命令执行和文件修改处于关闭状态。')}
+          ${panelPurpose(controlled ? '当前为受控模式：Agent 每次执行命令或修改文件前，会先询问你是否同意。' : '当前为只读模式：Agent 只能查看文件，不会执行命令、修改文件或访问网络。')}
           <dl class="capability-list">
-            <div><dt>工作区读取</dt><dd class="${model.workspace.granted ? 'capability-on' : ''}"><i data-lucide="${model.workspace.granted ? 'check-circle-2' : 'x-circle'}"></i>${model.workspace.granted ? '已授权' : '尚未授权'}</dd></div>
-            <div><dt>命令执行</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
-            <div><dt>文件写入</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '受控' : '关闭'}</dd></div>
-            <div><dt>外部网络</dt><dd class="${controlled && controlledNetworkTargets.parsed.length ? 'capability-on' : ''}"><i data-lucide="${controlled && controlledNetworkTargets.parsed.length ? 'check-circle-2' : 'x-circle'}"></i>${controlled && controlledNetworkTargets.parsed.length ? `受控 · ${escapeHtml(controlledNetworkTargets.parsed.map((target) => target.host).join(', '))}` : '关闭'}</dd></div>
+            <div><dt>读文件</dt><dd class="${model.workspace.granted ? 'capability-on' : ''}"><i data-lucide="${model.workspace.granted ? 'check-circle-2' : 'x-circle'}"></i>${model.workspace.granted ? '已允许' : '未授权'}</dd></div>
+            <div><dt>执行命令</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '需要你确认' : '已关闭'}</dd></div>
+            <div><dt>改文件</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '需要你确认' : '已关闭'}</dd></div>
+            <div><dt>访问网络</dt><dd class="${controlled && controlledNetworkTargets.parsed.length ? 'capability-on' : ''}"><i data-lucide="${controlled && controlledNetworkTargets.parsed.length ? 'check-circle-2' : 'x-circle'}"></i>${controlled && controlledNetworkTargets.parsed.length ? `需要你确认 · ${escapeHtml(controlledNetworkTargets.parsed.map((target) => target.host).join(', '))}` : '已关闭'}</dd></div>
           </dl>
           ${controlled ? panelDetails('network-targets', '设置网络访问范围（高级）', `
-            ${panelPurpose('使用 JSON 列出允许访问的域名、端口和请求方式。留空时关闭外部网络。')}
+            ${panelPurpose('使用 JSON 格式列出允许 Agent 访问的网站、端口和请求方式。留空则不允许访问任何网络。')}
             <div class="network-target-editor">
-              <label for="network-targets-input">网络目标列表（JSON，留空表示关闭）</label>
+              <label for="network-targets-input">允许访问的网站列表（JSON 格式，留空=关闭网络）</label>
               <input id="network-targets-input" data-role="network-targets" type="text" spellcheck="false"
                 placeholder='[{"host":"api.example.com","port":443,"scheme":"https","methods":["GET"]}]'
                 value="${escapeHtml(controlledNetworkTargets.text)}" />
               ${controlledNetworkTargets.error ? `<div class="network-target-error">${escapeHtml(controlledNetworkTargets.error)}</div>` : ''}
             </div>`) : ''}
-          <button class="governance-button" data-action="navigate" data-page="safety">打开权限与审批管理</button>
-          ${panelDetails('permissions:past', '查看已批准或已过期的请求', model.approvals.filter(approval => approval.state === 'APPROVED' || approval.state === 'EXPIRED').map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
-        </section>`, controlled ? '当前为受控模式：修改和执行需逐项批准' : '当前为只读模式：不改文件、不执行命令')}
+          <button class="governance-button" data-action="navigate" data-page="safety">查看审批记录和详细权限</button>
+          ${panelDetails('permissions:past', '查看已处理的请求', model.approvals.filter(approval => approval.state === 'APPROVED' || approval.state === 'EXPIRED').map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
+        </section>`, controlled ? '当前为受控模式：每次操作前都会询问你' : '当前为只读模式：不会改动任何东西')}}
 
         ${contextGroup('tools:troubleshooting', '遇到问题 / 查看执行细节', '查操作记录、模型选择依据和连接状态，帮助定位失败原因。', `
         <button class="governance-button" data-action="navigate" data-page="diagnostics">打开模型设置与故障排查</button>
@@ -2419,7 +2421,7 @@ const refreshModeControls = (): void => {
   const note = app.querySelector<HTMLElement>('.composer-note');
   setTextIfChanged(note, controlled
     ? '受控模式只允许已配置范围；每个命令或写入仍需单次审批。'
-    : '当前为只读模式，不会执行命令、修改文件或发起外部网络操作。');
+    : '当前为只读模式，Agent 只能看文件，不会执行命令、修改文件或访问网络。');
 };
 
 const renderHistoryView = (timelineItems = model.timeline): void => {
@@ -3360,7 +3362,7 @@ const render = (): void => {
             </div>
           </form>
           <p id="composer-prompt-error" role="alert" class="settings-message settings-message-error" ${composerPromptError ? '' : 'hidden'}>${escapeHtml(composerPromptError)}</p>
-          <p class="composer-note">${controlled ? '受控模式只允许已配置范围；每个命令或写入仍需单次审批。' : '当前为只读模式，不会执行命令、修改文件或发起外部网络操作。'}</p>
+          <p class="composer-note">${controlled ? '受控模式：每次执行命令或修改文件前，都会先询问你是否同意。' : '只读模式：Agent 只能看文件，不会执行命令、修改文件或访问网络。'}</p>
         </footer>
       </main>
 

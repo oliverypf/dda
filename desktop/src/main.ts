@@ -2081,8 +2081,11 @@ const timelineTechnicalDetails = (item: TimelineItem): string => {
 
 const timelineItemHtml = (item: TimelineItem): string => {
   // 工具调用显示：模仿 Codex 风格的清晰执行过程
-  if (item.toolName) {
-    const toolLabel = toolDisplayLabel(item.toolName);
+  // 识别条件：有 toolName 字段，或者 title 是"工具结果"，或者 evidenceKind 是 terminal
+  const isToolCall = item.toolName || item.title === '工具结果' || item.evidenceKind === 'terminal';
+  
+  if (isToolCall) {
+    const toolLabel = item.toolName ? toolDisplayLabel(item.toolName) : '执行操作';
     const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
     const isSuccess = item.status === 'COMPLETE';
     const isFailed = item.status === 'ERROR';
@@ -2095,10 +2098,11 @@ const timelineItemHtml = (item: TimelineItem): string => {
     } else if (item.body) {
       const bodyMatch = item.body.match(/[\\/]([^\\/]+\.[a-z0-9]+)/i);
       if (bodyMatch) targetInfo = bodyMatch[1];
+      else if (item.body.length < 80) targetInfo = item.body;
     }
     
     return `
-        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(item.toolName)}">
+        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}"${item.toolName ? ` data-tool-name="${escapeHtml(item.toolName)}"` : ''}>
           <div class="timeline-step-indicator">
             <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
           </div>
@@ -2108,7 +2112,7 @@ const timelineItemHtml = (item: TimelineItem): string => {
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
               <time>${formatTime(item.createdAtMs)}</time>
             </div>
-            ${item.body && !isRunning ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${item.body && !isRunning && !targetInfo ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
             ${item.commandText ? `<details class="timeline-step-details">
               <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
               <pre><code>${escapeHtml(item.commandText)}</code></pre>

@@ -437,6 +437,7 @@ export class ToolRegistry {
   #onInvocation;
   #allowSideEffects;
   #strictInvocationPersistence;
+  #hiddenPredicates = [];
 
   constructor(options = {}) {
     if (!isPlainObject(options)) fail(TOOL_ERROR_CODES.INVALID_DEFINITION, 'options must be an object');
@@ -463,16 +464,47 @@ export class ToolRegistry {
     return publicDefinition(normalized);
   }
 
+  /**
+   * Hide tools from the model-facing surface. A hidden tool is omitted from
+   * list() and refused by invoke() with TOOL_NOT_FOUND, so a model cannot see
+   * or call it; only the host can still reach it through invokeInternal().
+   * The predicate is re-evaluated on every call so tools registered later
+   * (plugins, MCP, browser) are covered too. Hiding never un-hides.
+   */
+  hide(predicate) {
+    if (typeof predicate !== 'function') fail(TOOL_ERROR_CODES.INVALID_DEFINITION, 'hide predicate must be a function');
+    this.#hiddenPredicates.push(predicate);
+  }
+
+  isHidden(name) {
+    const tool = typeof name === 'string' ? this.#tools.get(name) : undefined;
+    if (!tool) return false;
+    const definition = publicDefinition(tool);
+    return this.#hiddenPredicates.some((predicate) => {
+      try { return predicate(definition) === true; } catch { return true; }
+    });
+  }
+
   list() {
-    return [...this.#tools.values()].map(publicDefinition);
+    return [...this.#tools.values()].filter((tool) => !this.isHidden(tool.name)).map(publicDefinition);
   }
 
   async invoke(name, input = {}, context = undefined) {
+    return this.#invoke(name, input, context, { allowHidden: false });
+  }
+
+  /** Host-only path that may reach hidden tools. Never hand this to a model. */
+  async invokeInternal(name, input = {}, context = undefined) {
+    return this.#invoke(name, input, context, { allowHidden: true });
+  }
+
+  async #invoke(name, input = {}, context = undefined, { allowHidden = false } = {}) {
     const startedAt = Date.now();
     let inputDigest;
     let invocationCallbackFailed = false;
     try {
       if (typeof name !== 'string' || !this.#tools.has(name)) fail(TOOL_ERROR_CODES.NOT_FOUND, String(name), { name });
+      if (!allowHidden && this.isHidden(name)) fail(TOOL_ERROR_CODES.NOT_FOUND, String(name), { name, hidden: true });
       const tool = this.#tools.get(name);
       const safeInput = clone(input, TOOL_ERROR_CODES.INVALID_INPUT, 'input must be cloneable');
       if (!isJsonValue(safeInput)) fail(TOOL_ERROR_CODES.INVALID_INPUT, 'input must be JSON data');

@@ -1,6 +1,7 @@
 import { createResidentKernel } from './resident-kernel.mjs';
 import { createSessionStateStore } from './session-state.mjs';
 import { residentKernelAvailability } from './feature.mjs';
+import { parseHostRequestPayload } from './host-request-payload.mjs';
 
 /**
  * Model-facing tool surface for the resident kernel.
@@ -15,7 +16,8 @@ import { residentKernelAvailability } from './feature.mjs';
 // An empty schema accepts any JSON value. The strict object dialect used by the
 // tool registry forces additionalProperties:false whenever 'object' appears in a
 // type list, which would reject nested session values; "any JSON" is the correct
-// contract for an opaque session value or host_request payload.
+// contract for an opaque session value. (host_request payloads use a strict
+// per-kind object schema below.)
 const ANY_JSON_VALUE = {};
 
 const workspaceListSchema = {
@@ -65,18 +67,73 @@ const sessionSetSchema = {
   additionalProperties: false
 };
 
+// Per-kind host_request payload fields (union of fs.write / fs.patch /
+// test.run / fs.write_batch). The strict dialect forces
+// additionalProperties:false, which is exactly the contract we want for effect
+// payloads. A JSON-string payload is also accepted at the schema boundary
+// because real models often stringify it; it is unwrapped once by
+// host-request-payload.mjs before the gate and the dispatcher see it.
+const replacementSchema = {
+  type: 'object',
+  properties: {
+    oldText: { type: 'string' },
+    newText: { type: 'string' },
+    expectedCount: { type: 'integer', minimum: 1 }
+  },
+  required: ['oldText', 'newText'],
+  additionalProperties: false
+};
+const digestOrNull = { type: ['string', 'null'], maxLength: 128 };
+const hostRequestPayloadObjectSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', minLength: 1, maxLength: 512 },
+    content: { type: 'string' },
+    expectedBaseDigest: digestOrNull,
+    replacements: { type: 'array', items: replacementSchema, maxItems: 64 },
+    command: { type: 'string', minLength: 1, maxLength: 512 },
+    args: { type: 'array', items: { type: 'string', maxLength: 4096 }, maxItems: 128 },
+    cwd: { type: 'string', maxLength: 512 },
+    timeoutMs: { type: 'integer', minimum: 1 },
+    maxOutputBytes: { type: 'integer', minimum: 1 },
+    maxOutputChars: { type: 'integer', minimum: 1 },
+    items: {
+      type: 'array',
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: {
+          op: { type: 'string', enum: ['write', 'patch'] },
+          path: { type: 'string', minLength: 1, maxLength: 512 },
+          content: { type: 'string' },
+          replacements: { type: 'array', items: replacementSchema, maxItems: 64 },
+          expectedBaseDigest: digestOrNull
+        },
+        required: ['op', 'path'],
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+};
+
 const hostRequestSchema = {
   type: 'object',
   properties: {
     kind: { type: 'string', minLength: 1, maxLength: 120 },
-    payload: ANY_JSON_VALUE
+    payload: {
+      anyOf: [
+        hostRequestPayloadObjectSchema,
+        { type: 'string', minLength: 2, maxLength: 1024 * 1024, description: 'Prefer an object; a JSON-encoded object string is accepted and unwrapped.' }
+      ]
+    }
   },
   required: ['kind'],
   additionalProperties: false
 };
 
 /** Register the kernel ops on a ToolRegistry as the primary model surface. */
-export const registerResidentKernelTools = (registry, kernel) => {
+export const registerResidentKernelTools = (registry, kernel, { hostRequestDispatcher } = {}) => {
   if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
   if (!kernel || typeof kernel.request !== 'function') throw new Error('KERNEL_TOOLS_KERNEL_REQUIRED');
 
@@ -147,13 +204,43 @@ export const registerResidentKernelTools = (registry, kernel) => {
     metadata: kernelMeta,
     handler: ({ key }) => kernel.request('session_state.delete', { key })
   });
+  const effectsOn = Boolean(hostRequestDispatcher?.availability?.available);
+  const effectKinds = effectsOn ? hostRequestDispatcher.availability.kinds : [];
+  const batchOn = effectsOn && hostRequestDispatcher.availability.writeBatch === true;
+  const bridgeToWorker = async (kind, payload) => {
+    try {
+      return await kernel.request('host_request', { kind, ...(payload === undefined ? {} : { payload }) });
+    } catch (error) {
+      // A bridge timeout/uncertain outcome is never replayed and arms the
+      // "next effect needs an individual live approval" flag (FROZEN #6).
+      hostRequestDispatcher?.noteBridgeOutcome?.(error?.code);
+      throw error;
+    }
+  };
   registry.register({
     name: 'kernel.host_request',
-    description: 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
+    description: effectsOn
+      ? 'Host bridge of the resident kernel. Inert probes: host.ping, host.capabilities. Host-executed side effects (Phase-2a, each one gated, approved and leased by the host exactly like the former discrete tools): '
+        + effectKinds.map((kind) => ({
+          'fs.write': 'fs.write payload {path, content, expectedBaseDigest (digest from the latest read, or null for a new file)}',
+          'fs.patch': 'fs.patch payload {path, replacements:[{oldText,newText,expectedCount?}], expectedBaseDigest?}',
+          'test.run': 'test.run payload {command, args?, cwd?, timeoutMs?} (lease-approved test commands only)'
+        })[kind]).join('; ')
+        + (batchOn ? `; fs.write_batch payload {items:[{op:'write'|'patch', path, content|replacements, expectedBaseDigest}]} (<=${10} items, <=256KB, one batch per round; stops at the first failure and never rolls back)` : '')
+        + '. shell.exec and net.fetch are refused. Paths MUST be workspace-relative.'
+      : 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
     inputSchema: hostRequestSchema,
-    readOnly: true,
-    metadata: kernelMeta,
-    handler: ({ kind, payload }) => kernel.request('host_request', { kind, ...(payload === undefined ? {} : { payload }) })
+    // With effects on the bridge is a side-effect tool (never read-only).
+    readOnly: !effectsOn,
+    metadata: effectsOn ? { actionClass: 'SIDE_EFFECT', surface: 'resident-kernel', kernelEffects: effectKinds, kernelWriteBatch: batchOn } : kernelMeta,
+    handler: async ({ kind, payload: rawPayload }, context) => {
+      // Same shared unwrap as the task runner (idempotent on objects).
+      const payload = parseHostRequestPayload(rawPayload);
+      if (hostRequestDispatcher && typeof hostRequestDispatcher.handles === 'function' && hostRequestDispatcher.handles(kind)) {
+        return hostRequestDispatcher.dispatch({ kind, payload }, context);
+      }
+      return bridgeToWorker(kind, payload);
+    }
   });
   return registry;
 };
@@ -174,7 +261,8 @@ export const attachResidentKernel = async ({
   nodeVersion = process.version,
   workerPath,
   nodeBinary,
-  requestTimeoutMs
+  requestTimeoutMs,
+  hostRequestDispatcher
 } = {}) => {
   const availability = residentKernelAvailability(env, { platform, nodeVersion });
   if (!availability.available) {
@@ -203,6 +291,6 @@ export const attachResidentKernel = async ({
       stop: async () => {}
     };
   }
-  registerResidentKernelTools(registry, kernel);
+  registerResidentKernelTools(registry, kernel, { hostRequestDispatcher });
   return { attached: true, availability, kernel, sessionStore, stop: () => kernel.stop() };
 };

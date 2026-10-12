@@ -1,5 +1,6 @@
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { canonicalJson } from '../model-tool-calls.mjs';
+import { HOST_REQUEST_TOOL_NAME, normalizeHostRequestArguments } from '../kernel/host-request-payload.mjs';
 import { logger } from '../logger.mjs';
 import { canonicalMappedPath } from '../platform/workspace-path.mjs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -46,6 +47,26 @@ const safeErrorMessage = (error, fallback = '') => {
   const withoutCode = raw.startsWith(`${code}:`) ? raw.slice(code.length + 1) : raw;
   const normalized = withoutCode.replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 640);
   return normalized || fallback || code;
+};
+
+// Prime Phase-2a: the action gate (Jev/rules) must see the unwrapped effect
+// of a kernel.host_request, exactly like the equivalent discrete tool.
+const KERNEL_EFFECT_GATE_VIEW = Object.freeze({
+  'fs.write': { name: 'file.write', capability: 'file.write' },
+  'fs.patch': { name: 'file.patch', capability: 'file.write' },
+  'fs.write_batch': { name: 'file.write', capability: 'file.write' },
+  'test.run': { name: 'test.execute', capability: 'test.execute' }
+});
+const gateView = (name, request) => {
+  if (name !== 'kernel.host_request' || !request || typeof request !== 'object') return { name, request: request ?? {} };
+  const view = KERNEL_EFFECT_GATE_VIEW[request.kind];
+  if (!view) return { name, request };
+  const payload = request.payload && typeof request.payload === 'object' && !Array.isArray(request.payload) ? request.payload : {};
+  if (request.kind === 'fs.write_batch') {
+    const paths = Array.isArray(payload.items) ? payload.items.map((item) => item?.path).filter((path) => typeof path === 'string') : [];
+    return { ...view, kernelEffectKind: request.kind, request: paths.length ? { path: paths[0] } : {}, batchPaths: paths.slice(0, 10) };
+  }
+  return { ...view, kernelEffectKind: request.kind, request: payload };
 };
 
 const toolSchemas = (registry, mode = 'READ_ONLY') => registry.list()
@@ -229,7 +250,12 @@ const collectToolCalls = (calls) => {
     }
     if (seen.has(call.id)) throw new Error('TOOL_CALL_DUPLICATE_ID');
     seen.add(call.id);
-    return { id: call.id, name: call.name, arguments: normalizeToolArgument(call.arguments ?? '{}') };
+    let args = normalizeToolArgument(call.arguments ?? '{}');
+    // Prime Phase-2a: unwrap a JSON-string host_request payload ONCE, before
+    // the arguments digest, the action-gate claim and the registry invoke all
+    // read call.arguments, so every consumer sees the same object.
+    if (call.name === HOST_REQUEST_TOOL_NAME) args = canonicalJson(normalizeHostRequestArguments(JSON.parse(args)));
+    return { id: call.id, name: call.name, arguments: args };
   });
 };
 
@@ -289,7 +315,8 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       let noNewWorkspaceEvidenceRounds = 0;
       let inspectionsSinceProgressCheckpoint = 0;
       const canOfferImplementationCheckpoint = mode === 'CONTROLLED'
-        && tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write');
+        && (tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write')
+          || (toolDefinitions.get('kernel.host_request')?.readOnly === false));
 
        const effectiveMaxToolRounds = resolveMaxToolRounds(maxToolRounds);
        const roundsLeft = (round) => effectiveMaxToolRounds === Infinity || round <= effectiveMaxToolRounds;
@@ -366,22 +393,27 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           content: assistantBlocks,
           source: { provider: provider.provider, model: provider.model }
         }));
+        const roundId = `${Date.now().toString(36)}-${round}-${Math.random().toString(36).slice(2, 10)}`;
         for (const call of calls) {
           const toolDefinition = toolDefinitions.get(call.name);
+          const effectView = gateView(call.name, JSON.parse(call.arguments));
           const toolGate = await onToolCall?.({
             round,
             id: call.id,
             name: call.name,
             argumentsDigest: sha256Digest(call.arguments),
-            proposedInputClaim: proposedToolDecisionClaim(call.name, JSON.parse(call.arguments)),
+            proposedInputClaim: proposedToolDecisionClaim(effectView.name, effectView.request),
             toolPolicyFacts: { registered: Boolean(toolDefinition), readOnly: toolDefinition?.readOnly === true,
               available: Boolean(toolDefinition) && toolDefinition.metadata?.available !== false,
-              capability: toolDefinition?.metadata?.capability },
+              capability: effectView.capability ?? toolDefinition?.metadata?.capability,
+              ...(effectView.kernelEffectKind ? { kernelEffectKind: effectView.kernelEffectKind } : {}) },
             proposedProcessIntent: call.name === 'test.execute' && toolDefinition?.metadata?.processObservationPolicy === 'RESTRICTED_WINDOWS_NO_PRELOAD'
               ? nodeProcessIntent(JSON.parse(call.arguments)) : undefined,
             requestSummary: (() => {
-              const request = JSON.parse(call.arguments);
+              const request = effectView.request;
               return {
+                ...(effectView.kernelEffectKind ? { kernelEffectKind: effectView.kernelEffectKind } : {}),
+                ...(effectView.batchPaths ? { batchPaths: effectView.batchPaths } : {}),
                 ...(typeof request.path === 'string' ? { path: request.path } : {}),
                 ...(typeof request.cwd === 'string' ? { cwd: request.cwd } : {}),
                 ...(typeof request.command === 'string' ? { commandDigest: sha256Digest(request.command) } : {}),
@@ -450,7 +482,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 && typeof finalArguments.path === 'string' && observedFileDigests.has(pathKey(finalArguments.path))) {
                 finalArguments = { ...finalArguments, expectedDigest: observedFileDigests.get(pathKey(finalArguments.path)) };
               }
-              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: sha256Digest(call.arguments) });
+              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: sha256Digest(call.arguments), roundId });
               if (output?.path && output.ok !== false) {
                 const currentDigest = isWorkspaceContentTool(call.name) ? output.digest
                   : ['file.write', 'file.patch'].includes(call.name) ? output.contentDigest : undefined;

@@ -16,6 +16,9 @@ import {
 } from './cell-protocol.mjs';
 import { KERNEL_READ_OPS, KERNEL_BRIDGE_READ_KINDS } from './protocol.mjs';
 import { JOURNAL_BITS } from './journal-als.mjs';
+import {
+  classifyCellHostKind, cellOpTitle, createCellExecTimeline, dispatchCellMessages
+} from './cell-exec-timeline.mjs';
 
 const DEFAULT_WORKER = fileURLToPath(new URL('./cell-worker.mjs', import.meta.url));
 const WINDOWS_WORKER = fileURLToPath(new URL('./cell-worker-windows.mjs', import.meta.url));
@@ -203,6 +206,11 @@ export class CellHost {
   #computePaused = false;
   #computeRemainingMs = null;
   #suppressedDigests = new Map(); // cellId → Set(digest)
+  #cellOpSinks = null;
+  #journalPath;
+  #onCellBegin;
+  #onCellTerminal;
+  #execTimeline = null;
 
   constructor({
     env = process.env,
@@ -221,7 +229,11 @@ export class CellHost {
     onEmit = () => {},
     sessionKeep,
     nodeVersion = process.version,
-    residentAvailable = true
+    residentAvailable = true,
+    cellOpSinks = null,
+    journalPath,
+    onCellBegin,
+    onCellTerminal
   } = {}) {
     this.#env = env;
     this.#platform = platform;
@@ -240,6 +252,10 @@ export class CellHost {
     this.#journal = journal;
     this.#cellTimeoutMs = Number(env?.[KERNEL_CELL_TIMEOUT_FLAG] ?? cellTimeoutMs ?? DEFAULT_CELL_TIMEOUT_MS) || DEFAULT_CELL_TIMEOUT_MS;
     this.#onEmit = onEmit;
+    this.#cellOpSinks = cellOpSinks;
+    this.#journalPath = journalPath;
+    this.#onCellBegin = onCellBegin;
+    this.#onCellTerminal = onCellTerminal;
   }
 
   get ready() {
@@ -409,6 +425,7 @@ export class CellHost {
       this.#ready = true;
       this.#startedOnce = true;
       this.#stopping = false;
+      if (availability.windowsDesktop === true) this.#ensureExecTimeline();
       this.#readySandbox = readyMessage?.sandbox ?? null;
       this.#readyWorkerWarning = readyMessage?.warning ?? null;
       return {
@@ -425,6 +442,16 @@ export class CellHost {
       await this.stop().catch(() => {});
       return { ready: false, reason: error?.code ?? error?.message ?? SANDBOX_ERROR_CODES.UNAVAILABLE };
     }
+  }
+
+  #ensureExecTimeline() {
+    if (this.#execTimeline) return;
+    this.#execTimeline = createCellExecTimeline({
+      emit: (payload) => this.#onEmit('kernel.cell_op', payload),
+      sinks: this.#cellOpSinks,
+      badge: () => this.#badgeFields(),
+      journalPath: this.#journalPath
+    });
   }
 
   #badgeFields() {
@@ -454,6 +481,7 @@ export class CellHost {
     });
     this.#child.on('exit', (code, signal) => {
       this.#ready = false;
+      this.#finishCell(this.#activeCellId);
       this.#failAllPending('WORKER_EXIT', { code, signal });
       this.#child = null;
       if (this.#startedOnce && !this.#stopping) {
@@ -515,7 +543,9 @@ export class CellHost {
       this.#onEmit('kernel.cell_frame_error', { code: error?.code });
       return;
     }
-    for (const message of messages) this.#handleMessage(message);
+    dispatchCellMessages(messages, (message) => this.#handleMessage(message), (error) => {
+      this.#execTimeline?.drop(`handler:${error?.code ?? error?.message ?? 'throw'}`);
+    });
   }
 
   #handleMessage(message) {
@@ -538,7 +568,8 @@ export class CellHost {
       const pending = this.#pendingExec.get(message.execId);
       if (!pending) return;
       this.#pendingExec.delete(message.execId);
-      // Clear authoritative epoch at cell terminal.
+      // Cell terminal does not end rows that already entered the bridge or dispatcher.
+      this.#finishCell(message.cellId ?? pending.cellId ?? this.#activeCellId);
       this.#activeCellEpoch = null;
       this.#stopComputeClock();
       if (message.ok) pending.resolve(message);
@@ -556,25 +587,124 @@ export class CellHost {
           error: error?.message
         });
       });
+      return;
     }
+    if (message.type === CELL_MESSAGE_TYPES.OP_PROGRESS) {
+      this.#handleOpProgress(message);
+    }
+  }
+
+  #handleOpProgress(message) {
+    const timeline = this.#execTimeline;
+    const drop = (reason) => {
+      if (timeline) timeline.drop(reason);
+    };
+    if (!message || typeof message.epoch !== 'string' || !Number.isInteger(message.seq) || message.seq < 1
+      || typeof message.chunk !== 'string'
+      || (typeof message.requestId !== 'string' && typeof message.toolCallId !== 'string')) {
+      drop('malformed');
+      return;
+    }
+    if (!this.#activeCellEpoch || message.epoch !== this.#activeCellEpoch) {
+      drop('stale');
+      return;
+    }
+    if (!timeline) return;
+    const row = typeof message.toolCallId === 'string'
+      ? timeline.find(message.epoch, message.toolCallId)
+      : timeline.findByRequest(message.epoch, message.requestId);
+    if (!row) {
+      drop('unknown');
+      return;
+    }
+    const seq = timeline.noteSeq(row, message.seq);
+    if (seq === 'ok') timeline.appendChunk(row, message.chunk);
+  }
+
+  #finishCell(cellId) {
+    if (!cellId) return;
+    this.#execTimeline?.cancelUnentered(cellId);
+    this.#onCellTerminal?.({ cellId });
   }
 
   async #handleHostRequest(message) {
     // Positive equality BEFORE any dispatch (incl. readonly bridge) — F7/I12.
+    // A stale request is HOST_REQUEST_REFUSED and does not open a row.
     if (!this.#activeCellEpoch || !isValidCellEpoch(this.#activeCellEpoch)
       || message.epoch !== this.#activeCellEpoch) {
       throw Object.assign(new Error(CELL_ERROR_CODES.EPOCH_REFUSED), { code: CELL_ERROR_CODES.EPOCH_REFUSED });
     }
     const kind = message.kind;
+    const cellId = message.cellId ?? this.#activeCellId ?? 'unknown-cell';
+    const ordinal = Number.isInteger(message.cellOpIndex)
+      ? message.cellOpIndex
+      : Number(String(message.requestId ?? '').replace(/^hr-/, ''));
+    const cellOpIndex = Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1;
+    const requestId = typeof message.requestId === 'string' ? message.requestId : `hr-${cellOpIndex}`;
+    const toolCallId = `${cellId}::${requestId}`;
+    const epoch = this.#activeCellEpoch;
+    const classification = classifyCellHostKind(kind, (candidate) => this.#effectsDispatcher?.handles?.(candidate) === true);
+    const timeline = this.#execTimeline;
+    if (timeline) {
+      timeline.begin({
+        epoch,
+        cellId,
+        requestId,
+        toolCallId,
+        cellOpIndex,
+        kind,
+        classification,
+        title: cellOpTitle(kind, message.payload)
+      });
+    }
     // Pause compute clock for the whole host_request round-trip (approval+exec).
     this.#pauseComputeClock();
     try {
-      if (READ_KIND_SET.has(kind)) {
+      if (classification === 'read') {
         // Phase-1 readonly bridge — same ReadonlyWorkspace / SessionState; no #15/effects.
+        // Reads are COMPLETED from the host_response envelope, not an inner ok/outcome.
         if (typeof this.#readonlyBridge !== 'function') {
           throw Object.assign(new Error('READONLY_BRIDGE_UNAVAILABLE'), { code: 'READONLY_BRIDGE_UNAVAILABLE' });
         }
-        const result = await this.#readonlyBridge(kind, message.payload);
+        timeline?.markEntered(epoch, toolCallId);
+        try {
+          const result = await this.#readonlyBridge(kind, message.payload);
+          timeline?.endFromResult(epoch, toolCallId, { classification: 'read', envelopeOk: true });
+          this.#send({
+            v: CELL_PROTOCOL_VERSION,
+            type: CELL_MESSAGE_TYPES.HOST_RESPONSE,
+            requestId: message.requestId,
+            ok: true,
+            result
+          });
+        } catch (error) {
+          timeline?.endFromResult(epoch, toolCallId, { classification: 'read', error });
+          throw error;
+        }
+        return;
+      }
+      if (classification !== 'effect') {
+        const refused = Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
+        timeline?.endFromResult(epoch, toolCallId, { error: refused });
+        throw refused;
+      }
+      timeline?.markEntered(epoch, toolCallId);
+      try {
+        const result = await this.#effectsDispatcher.dispatch(
+          { kind, payload: message.payload },
+          {
+            toolCallId,
+            cellId,
+            fromCell: true,
+            journalBit: JOURNAL_BITS.CELL,
+            cellApproval: {
+              code: this.#activeCode ?? '',
+              cellOpIndex,
+              hostRequest: { kind, payload: message.payload ?? null }
+            }
+          }
+        );
+        timeline?.endFromResult(epoch, toolCallId, { classification: 'effect', result });
         this.#send({
           v: CELL_PROTOCOL_VERSION,
           type: CELL_MESSAGE_TYPES.HOST_RESPONSE,
@@ -582,39 +712,10 @@ export class CellHost {
           ok: true,
           result
         });
-        return;
+      } catch (error) {
+        timeline?.endFromResult(epoch, toolCallId, { classification: 'effect', error });
+        throw error;
       }
-      // Write kinds → effects dispatcher (requires DDA_KERNEL_EFFECTS gate).
-      if (!this.#effectsDispatcher?.handles?.(kind)) {
-        throw Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
-      }
-      const cellId = message.cellId ?? this.#activeCellId ?? 'unknown-cell';
-      const ordinal = Number.isInteger(message.cellOpIndex)
-        ? message.cellOpIndex
-        : Number(String(message.requestId ?? '').replace(/^hr-/, ''));
-      const cellOpIndex = Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1;
-      const toolCallId = `${cellId}::${message.requestId ?? cellOpIndex}`;
-      const result = await this.#effectsDispatcher.dispatch(
-        { kind, payload: message.payload },
-        {
-          toolCallId,
-          cellId,
-          fromCell: true,
-          journalBit: JOURNAL_BITS.CELL,
-          cellApproval: {
-            code: this.#activeCode ?? '',
-            cellOpIndex,
-            hostRequest: { kind, payload: message.payload ?? null }
-          }
-        }
-      );
-      this.#send({
-        v: CELL_PROTOCOL_VERSION,
-        type: CELL_MESSAGE_TYPES.HOST_RESPONSE,
-        requestId: message.requestId,
-        ok: true,
-        result
-      });
     } finally {
       this.#resumeComputeClock();
     }
@@ -638,6 +739,7 @@ export class CellHost {
     this.#computeDeadline = setTimeout(() => {
       const pending = [...this.#pendingExec.values()];
       this.#pendingExec.clear();
+      this.#finishCell(this.#activeCellId);
       this.#activeCellEpoch = null;
       for (const p of pending) {
         p.reject(Object.assign(new Error(CELL_ERROR_CODES.TIMEOUT), { code: CELL_ERROR_CODES.TIMEOUT }));
@@ -703,6 +805,7 @@ export class CellHost {
     this.#activeCellEpoch = epoch;
     this.#activeCellId = cellId;
     this.#activeCode = typeof code === 'string' ? code : '';
+    this.#onCellBegin?.({ cellId });
     this.#onEmit('kernel.cell_status', {
       toolName: 'kernel.exec',
       itemId: `cell-${cellId}`,
@@ -729,7 +832,7 @@ export class CellHost {
 
     this.#startComputeClock(this.#cellTimeoutMs);
     const resultPromise = new Promise((resolvePromise, reject) => {
-      this.#pendingExec.set(execId, { resolve: resolvePromise, reject });
+      this.#pendingExec.set(execId, { resolve: resolvePromise, reject, cellId });
     });
     this.#child.stdin.write(wire);
     return resultPromise;

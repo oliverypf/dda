@@ -20,8 +20,18 @@ import {
   settingsPanelOffersSandboxOption,
   showsWindowsNoOsSandboxBadge,
   truncateCellCode,
-  unknownJournalHtml
+  unknownJournalHtml,
+  approvalCardTitle,
+  approvalStateFromResolved,
+  isPendingApprovalSection,
+  isApprovalStatusList,
+  isPastApprovalList,
+  groupCellExecRows,
+  cellOpElapsedMs,
+  cellExecTimelineHtml,
+  mergeCellOpRow
 } from './windows-desktop-cells';
+import type { CellExecRow, TimelineItem } from './models';
 
 describe('windows desktop code cells presentation', () => {
   it('badges only when warning and sandbox both match the worker READY fields', () => {
@@ -150,5 +160,107 @@ describe('windows desktop code cells presentation', () => {
     expect(next.cellsSession?.reason).toBe('WINDOWS_NO_OS_SANDBOX');
     expect(next.runtime.cellsAvailability?.reason).toBe('DESKTOP_SESSION_KEEP_REQUIRED');
     expect(next.runtime.cellsAvailability?.source).toBe('fresh-health');
+  });
+});
+
+const row = (patch: Partial<CellExecRow> & Pick<CellExecRow, 'toolCallId' | 'cellOpIndex' | 'state'>): CellExecRow => ({
+  epoch: 'ab'.repeat(16),
+  classification: 'read',
+  title: patch.kind ?? 'workspace.list',
+  kind: 'workspace.list',
+  startedAtMs: 1_000,
+  ...patch
+});
+
+describe('windows desktop cell exec timeline presentation', () => {
+  it('titles a CANCELLED card and keeps approval buttons off that state', () => {
+    expect(approvalCardTitle({ state: 'CANCELLED' })).toBe('已取消（cell 已结束）');
+    expect(approvalCardTitle({ state: 'APPROVED', leaseId: undefined })).toBe('正在重新检查策略');
+    expect(approvalStateFromResolved('CANCELLED', 'REQUESTED')).toBe('CANCELLED');
+    expect(approvalStateFromResolved('EXPIRED', 'REQUESTED')).toBe('REQUESTED');
+    expect(isPendingApprovalSection('REQUESTED')).toBe(true);
+    expect(isPendingApprovalSection('CANCELLED')).toBe(false);
+    expect(['REQUESTED', 'APPROVED', 'EXPIRED', 'CANCELLED'].every(isApprovalStatusList)).toBe(true);
+    expect(isApprovalStatusList('DECLINED')).toBe(false);
+    expect(['APPROVED', 'EXPIRED', 'CANCELLED', 'DECLINED'].every(isPastApprovalList)).toBe(true);
+    expect(isPastApprovalList('REQUESTED')).toBe(false);
+  });
+
+  it('groups only consecutive finished reads and leaves effects and pending rows alone', () => {
+    const epoch = 'cd'.repeat(16);
+    const groups = groupCellExecRows([
+      row({ epoch, toolCallId: 'a', cellOpIndex: 1, state: 'COMPLETED', title: 'workspace.list' }),
+      row({ epoch, toolCallId: 'b', cellOpIndex: 2, state: 'COMPLETED', title: 'workspace.read' }),
+      row({ epoch, toolCallId: 'c', cellOpIndex: 3, state: 'RUNNING', classification: 'effect', title: 'fs.write', approvalWaiting: true }),
+      row({ epoch, toolCallId: 'd', cellOpIndex: 4, state: 'COMPLETED', title: 'host.ping' }),
+      row({ epoch, toolCallId: 'e', cellOpIndex: 6, state: 'COMPLETED', title: 'workspace.focus' })
+    ]);
+    expect(groups.map((group) => group.kind)).toEqual(['reads', 'single', 'single', 'single']);
+    expect(groups[0].rows).toHaveLength(2);
+    expect(groups[2].rows[0].title).toBe('host.ping');
+  });
+
+  it('merges a row by epoch and toolCallId without dropping other card fields', () => {
+    const existing: TimelineItem = {
+      itemId: 'cell-cell-1',
+      kind: 'STATUS',
+      title: '运行中',
+      body: 'log line',
+      status: 'STREAMING',
+      createdAtMs: 1,
+      toolName: 'kernel.exec',
+      rows: [row({ toolCallId: 'cell-1::hr-1', cellOpIndex: 1, state: 'RUNNING', output: 'old' })]
+    };
+    const merged = mergeCellOpRow(existing, row({
+      toolCallId: 'cell-1::hr-1',
+      cellOpIndex: 1,
+      state: 'COMPLETED',
+      output: 'tail'
+    }));
+    expect(merged).toHaveLength(1);
+    expect(merged[0].state).toBe('COMPLETED');
+    expect(merged[0].output).toBe('tail');
+    expect(existing.title).toBe('运行中');
+    expect(existing.body).toBe('log line');
+  });
+
+  it('renders terminal colors, a journal link, and no approval buttons', () => {
+    const html = cellExecTimelineHtml([
+      row({ toolCallId: 'r', cellOpIndex: 1, state: 'FAILED', classification: 'effect', title: 'fs.write' }),
+      row({ toolCallId: 'g', cellOpIndex: 2, state: 'CANCELLED', title: 'workspace.list' }),
+      row({ toolCallId: 'u', cellOpIndex: 3, state: 'UNKNOWN', classification: 'effect', title: 'test.run', journalPath: 'C:\\journal.json' })
+    ], 5_000);
+    expect(html).toContain('cell-op-bad');
+    expect(html).toContain('cell-op-muted');
+    expect(html).toContain('cell-op-unknown');
+    expect(html).toContain('查看 journal');
+    expect(html).toContain('C:\\journal.json');
+    expect(html).not.toContain('批准一次');
+    expect(html).not.toContain('拒绝操作');
+    expect(html).toContain('已取消');
+    expect(html).toContain('不确定');
+  });
+
+  it('pauses the running timer during approval wait and uses duration after the row ends', () => {
+    const waiting = row({
+      toolCallId: 'w',
+      cellOpIndex: 1,
+      state: 'RUNNING',
+      classification: 'effect',
+      startedAtMs: 1_000,
+      approvalWaiting: true,
+      approvalStartedAt: 1_400,
+      approvalWaitMs: 0
+    });
+    expect(cellOpElapsedMs(waiting, 9_000)).toBe(400);
+    const done = row({
+      toolCallId: 'd',
+      cellOpIndex: 2,
+      state: 'COMPLETED',
+      startedAtMs: 1_000,
+      durationMs: 250,
+      approvalWaitMs: 500
+    });
+    expect(cellOpElapsedMs(done, 9_000)).toBe(250);
   });
 });

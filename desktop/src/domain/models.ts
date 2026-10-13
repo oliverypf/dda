@@ -194,6 +194,41 @@ export interface TimelineItem {
   sandbox?: string;
   journalPath?: string;
   cellState?: 'STARTED' | 'UNKNOWN' | 'RESET';
+  /** Live host.request rows for a Windows desktop cell. Merged by epoch + toolCallId. */
+  rows?: CellExecRow[];
+}
+
+export type CellExecRowState =
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'REFUSED'
+  | 'DECLINED'
+  | 'EXPIRED'
+  | 'UNKNOWN'
+  | 'CANCELLED';
+
+export interface CellExecRow {
+  epoch: string;
+  toolCallId: string;
+  requestId?: string;
+  cellId?: string;
+  cellOpIndex: number;
+  classification: 'read' | 'effect' | 'refused';
+  kind?: string;
+  title: string;
+  state: CellExecRowState;
+  errorCode?: string;
+  approvalRequestId?: string;
+  approvalWaiting?: boolean;
+  approvalWaitMs?: number;
+  approvalStartedAt?: number;
+  startedAtMs?: number;
+  durationMs?: number;
+  output?: string;
+  outputBytes?: number;
+  truncated?: boolean;
+  journalPath?: string;
 }
 
 export interface ApprovalReadModel {

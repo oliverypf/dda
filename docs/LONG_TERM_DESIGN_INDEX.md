@@ -47,6 +47,14 @@
 | [UI_UX_SPEC.md](UI_UX_SPEC.md) | PC 信息架构、read model、审批、回放、无障碍和错误恢复 | Phase 1 |
 | [adr/README.md](adr/README.md) | 架构决策记录流程与已接受决策 | 全阶段 |
 
+已落地的冻结实现稿（不进入 §2 权威顺序；只记录当时的实现决定）：
+
+| 文档 | 负责内容 |
+| --- | --- |
+| [design/prime-phase2b-cells-sandbox.md](design/prime-phase2b-cells-sandbox.md) | Phase-2b journal、OS 沙箱与 code cells（[#21](https://github.com/oliverypf/dda/pull/21)） |
+| [design/windows-cli-unsandboxed-cells.md](design/windows-cli-unsandboxed-cells.md) | Windows CLI 无 OS 沙箱 code cells（[#23](https://github.com/oliverypf/dda/pull/23)） |
+| [design/windows-desktop-code-cells.md](design/windows-desktop-code-cells.md) | Windows 桌面端 code cells（[#24](https://github.com/oliverypf/dda/pull/24)） |
+
 ## 4. 稳定契约与实现自由
 
 长期稳定、不得由 Adapter 自行改变的契约：

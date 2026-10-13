@@ -11,7 +11,8 @@ import {
   SAFETY_ERROR_CODES,
   SafetyError,
   boundOutput,
-  digest
+  digest,
+  nodeSpawnCommand
 } from '../runtime-safety-monitor.mjs';
 import { buildChildEnv } from './environment-policy.mjs';
 import { isLinuxCliPlatform } from './paths.mjs';
@@ -193,7 +194,7 @@ export class LinuxPosixExecutor extends ExecutorPort {
   async #process(authorization, request, options = {}) {
     const limits = this.#monitor.limits;
     const result = await collectPosixOutput({
-      command: authorization.command.command,
+      command: nodeSpawnCommand(authorization.command.command),
       args: authorization.command.args,
       cwd: authorization.cwd.absolutePath,
       env: executionEnv(request.env),

@@ -233,11 +233,52 @@ const normalizeRelativePath = (value, { allowEmpty = false } = {}) => {
   return parts.join(sep);
 };
 
-const commandBase = (command) => basename(command).toLowerCase();
+const NODE_BARE_NAMES = new Set(['node', 'node.exe']);
+
+const pathsEqual = (left, right) => {
+  try {
+    const normalize = (value) => {
+      const resolved = resolve(value);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    return normalize(left) === normalize(right);
+  } catch {
+    return false;
+  }
+};
+
+// The running runtime, even when its filename is not `node`/`node.exe`.
+const isProcessExecPath = (command) => {
+  if (typeof command !== 'string' || !command || command === 'node' || command.toLowerCase() === 'node.exe') return false;
+  if (command === process.execPath) return true;
+  if (!isAbsolute(command)) return false;
+  return pathsEqual(command, process.execPath);
+};
+
+const commandBase = (command) => {
+  const base = basename(command).toLowerCase();
+  // Absolute execPath is the node binary for allowlist purposes. Keep an
+  // existing `node`/`node.exe` basename so current command matching is unchanged.
+  if (isProcessExecPath(command) && !NODE_BARE_NAMES.has(base)) return 'node';
+  return base;
+};
+
 const commandMatches = (set, name) => {
   if (set.has(name)) return true;
+  if ((name === process.execPath.toLowerCase() || isProcessExecPath(name)) && (set.has('node') || set.has('node.exe'))) return true;
   const stem = name.replace(/\.(?:exe|cmd)$/i, '');
   return set.has(stem) || set.has(`${stem}.exe`) || set.has(`${stem}.cmd`);
+};
+
+// Bare `node` follows PATH and can be an older binary than this process.
+// Spawn process.execPath with an args array and shell:false; shell:true
+// splits paths that contain spaces (typical on Windows).
+export const nodeSpawnCommand = (command) => {
+  if (typeof command !== 'string' || !command) return command;
+  const base = basename(command).toLowerCase();
+  const bare = !command.includes('/') && !command.includes('\\');
+  if ((bare && NODE_BARE_NAMES.has(base)) || isProcessExecPath(command)) return process.execPath;
+  return command;
 };
 
 const parseCommand = (request) => {

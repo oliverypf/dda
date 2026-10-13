@@ -9,7 +9,8 @@ import {
   SAFETY_ERROR_CODES,
   SafetyError,
   boundOutput,
-  digest
+  digest,
+  nodeSpawnCommand
 } from './runtime-safety-monitor.mjs';
 
 const MAX_TIMEOUT_MS = 60 * 1000;
@@ -262,7 +263,7 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
     const maxOutputBytes = boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes);
     const maxOutputChars = boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars);
     const result = await collectProcessOutput({
-      command: authorization.command.command,
+      command: nodeSpawnCommand(authorization.command.command),
       args: authorization.command.args,
       cwd: authorization.cwd.absolutePath,
       env: safeEnvironment(request.env),

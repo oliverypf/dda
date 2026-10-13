@@ -300,12 +300,21 @@ export const attachResidentKernel = async ({
  *
  * Windows unsandboxed registration must NOT claim OS sandbox (Prime-aligned).
  */
-export const registerKernelExecTool = (registry, cellHost, { windowsUnsandboxed = false } = {}) => {
+export const WINDOWS_CLI_KERNEL_EXEC_DESCRIPTION = 'Run a JavaScript code cell in the unsandboxed Windows resident cell worker (Phase-2b follow-on, Prime-aligned). NOT a security sandbox — code runs with the host user permissions; Node vm is not a security boundary. Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_WINDOWS_UNSANDBOXED + DDA_PLATFORM=windows-cli).';
+
+export const WINDOWS_DESKTOP_KERNEL_EXEC_DESCRIPTION = 'Run a JavaScript code cell on windows-desktop (DDA_PLATFORM=windows-desktop, confirmed by DDA_KERNEL_WINDOWS_DESKTOP_CELLS). NOT a security sandbox — code runs with the current Windows user permissions; Node vm is not a security boundary. Persistent vm context across cells while the session-keep runtime stays alive. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute does not require approval. The desktop experimental toggle injects DDA_KERNEL_WINDOWS_DESKTOP_CELLS together with DDA_KERNEL_WINDOWS_UNSANDBOXED on the session-keep path only.';
+
+export const LINUX_KERNEL_EXEC_DESCRIPTION = 'Run a JavaScript code cell inside the OS-sandboxed resident cell worker (Phase-2b). Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_SANDBOX).';
+
+export const registerKernelExecTool = (registry, cellHost, { windowsUnsandboxed = false, windowsDesktop = false } = {}) => {
   if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
   if (!cellHost || typeof cellHost.exec !== 'function') throw new Error('KERNEL_CELL_HOST_REQUIRED');
-  const description = windowsUnsandboxed
-    ? 'Run a JavaScript code cell in the unsandboxed Windows resident cell worker (Phase-2b follow-on, Prime-aligned). NOT a security sandbox — code runs with the host user permissions; Node vm is not a security boundary. Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_WINDOWS_UNSANDBOXED + DDA_PLATFORM=windows-cli).'
-    : 'Run a JavaScript code cell inside the OS-sandboxed resident cell worker (Phase-2b). Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_SANDBOX).';
+  // Desktop copy is its own branch. A shared windowsUnsandboxed boolean must not overwrite the CLI string.
+  const description = windowsDesktop
+    ? WINDOWS_DESKTOP_KERNEL_EXEC_DESCRIPTION
+    : windowsUnsandboxed
+      ? WINDOWS_CLI_KERNEL_EXEC_DESCRIPTION
+      : LINUX_KERNEL_EXEC_DESCRIPTION;
   registry.register({
     name: 'kernel.exec',
     description,
@@ -322,7 +331,8 @@ export const registerKernelExecTool = (registry, cellHost, { windowsUnsandboxed 
       actionClass: 'SIDE_EFFECT',
       surface: 'resident-kernel-cell',
       kernelExec: true,
-      ...(windowsUnsandboxed ? { windowsUnsandboxed: true, notASecuritySandbox: true } : {})
+      ...(windowsDesktop ? { windowsDesktop: true, notASecuritySandbox: true } : {}),
+      ...(windowsUnsandboxed && !windowsDesktop ? { windowsUnsandboxed: true, notASecuritySandbox: true } : {})
     },
     handler: async ({ code }, context) => {
       const result = await cellHost.exec({ code, cellId: context?.toolCallId ? `cell-${context.toolCallId}` : undefined });

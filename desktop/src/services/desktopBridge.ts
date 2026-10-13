@@ -81,6 +81,16 @@ export const desktopBridge = {
     return invoke<ModelConfigResponse>('save_model_config', { config });
   },
 
+  async desktopSettings(): Promise<{ experimentalCodeCells: boolean; settingsPath: string } | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    return invoke<{ experimentalCodeCells: boolean; settingsPath: string }>('desktop_settings');
+  },
+
+  async saveDesktopSettings(experimentalCodeCells: boolean): Promise<{ experimentalCodeCells: boolean; settingsPath: string }> {
+    if (!isTauriRuntime()) throw new Error('Web 预览不支持保存桌面设置');
+    return invoke<{ experimentalCodeCells: boolean; settingsPath: string }>('save_desktop_settings', { experimentalCodeCells });
+  },
+
   async contextSidecarStatus(): Promise<RuntimeContextSidecarStatus | undefined> {
     if (!isTauriRuntime()) return undefined;
     return invoke<RuntimeContextSidecarStatus>('context_sidecar_status');

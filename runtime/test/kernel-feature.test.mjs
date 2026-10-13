@@ -51,5 +51,14 @@ test('windows-cli on win32 may attach without OS sandbox; sandboxAvailable stays
     { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'windows-desktop' },
     { platform: 'win32', nodeVersion: 'v24.0.0' }
   );
-  assert.equal(desktop.available, false);
+  assert.equal(desktop.available, true);
+  assert.equal(desktop.sandboxAvailable, false);
+  assert.equal(desktop.windowsDesktopIdentity, true);
+  assert.equal(desktop.windowsCliIdentity, false);
+  const desktopWithSandboxOverride = residentKernelAvailability(
+    { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'windows-desktop', DDA_RESIDENT_KERNEL_SANDBOX: '1' },
+    { platform: 'win32', nodeVersion: 'v24.0.0' }
+  );
+  assert.equal(desktopWithSandboxOverride.available, true);
+  assert.equal(desktopWithSandboxOverride.sandboxAvailable, false);
 });

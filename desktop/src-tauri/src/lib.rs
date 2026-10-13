@@ -98,6 +98,8 @@ struct RuntimeSnapshot {
     config_loaded: bool,
     context_sidecar: LocalContextStatus,
     dream_maintenance: DreamMaintenanceStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cells_availability: Option<CellsAvailability>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -150,6 +152,18 @@ struct RuntimeConfigSummary {
     loaded: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CellsAvailability {
+    available: bool,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    sandbox_available: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeHealthResponse {
@@ -158,6 +172,9 @@ struct RuntimeHealthResponse {
     config: Option<RuntimeConfigSummary>,
     model: Option<RuntimeModelSummary>,
     error: Option<String>,
+    /// Absent on health payloads that are not a windows-desktop / cells probe.
+    #[serde(default)]
+    cells_availability: Option<CellsAvailability>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -679,7 +696,8 @@ async fn runtime_snapshot(app: AppHandle, state: State<'_, AppState>) -> Result<
 fn runtime_snapshot_impl(app: AppHandle, state: &AppState) -> Result<RuntimeSnapshot, String> {
     let release_channel = desktop_release_channel()?;
     let runtime = runtime_entrypoint(&app)?;
-    let output = runtime_command(&runtime)
+    let resource_dir = app.path().resource_dir().ok();
+    let output = runtime_command(&runtime, resource_dir.as_deref())
         .arg(runtime)
         .arg("health")
         .output()
@@ -724,6 +742,7 @@ fn runtime_snapshot_impl(app: AppHandle, state: &AppState) -> Result<RuntimeSnap
         config_loaded,
         context_sidecar: local_context_status(),
         dream_maintenance: dream_maintenance_status_impl(&state.dream_maintenance),
+        cells_availability: health.cells_availability,
     })
 }
 
@@ -1528,7 +1547,15 @@ fn run_model_task_blocking(
     let root = ensure_default_workspace(&app, &state)?;
     let runtime = runtime_entrypoint(&app)?;
     let _ = app.emit("context-sidecar-status", &local_context_status());
-    let mut command = runtime_command(&runtime);
+    let resource_dir = app.path().resource_dir().ok();
+    // The task child is the session-keep runtime the cells gate already assumes.
+    // Health and dashboard stay per-invoke and therefore stop at
+    // DESKTOP_SESSION_KEEP_REQUIRED. This does not add a second always-on process.
+    let mut command = runtime_command_for(
+        &runtime,
+        resource_dir.as_deref(),
+        TASK_RUNTIME_SPAWN_MODE,
+    );
     command
         .arg(runtime)
         .arg("task")
@@ -1617,6 +1644,8 @@ fn run_model_task_blocking(
                 format!("无法启动 Cordis runtime: {error}")
             })?;
         let pid = child.id();
+        // Reap-only. Assignment failure is not a cells disability.
+        bind_session_keep_reaper(pid);
         let child_stdin = child.stdin.take();
         *active_pid = Some(pid);
         if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
@@ -1642,8 +1671,7 @@ fn run_model_task_blocking(
                 if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
                     *heartbeat_seen = false;
                 }
-                let _ = child.kill();
-                let _ = child.wait();
+                stop_session_keep_child(&mut child);
                 return Err("运行时状态不可用".to_string());
             }
         };
@@ -1671,8 +1699,7 @@ fn run_model_task_blocking(
             if let Ok(mut requested) = state.active_runtime_cancel_requested.lock() {
                 *requested = false;
             }
-            let _ = child.kill();
-            let _ = child.wait();
+            stop_session_keep_child(&mut child);
             return Err("Cordis runtime 已在启动前取消".to_string());
         }
         if let Ok(mut launching) = state.active_runtime_launching.lock() {
@@ -1788,16 +1815,7 @@ fn run_model_task_blocking(
                         }
                     };
                     stdout_error = Some(message);
-                    let pid_text = pid.to_string();
-                    #[cfg(windows)]
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", pid_text.as_str(), "/T", "/F"])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .status();
-                    #[cfg(not(windows))]
-                    let _ = Command::new("kill")
-                        .args(["-TERM", pid_text.as_str()])
-                        .status();
+                    let _ = reap_runtime_tree(pid);
                     let _ = child.kill();
                     break;
                 }
@@ -1808,6 +1826,9 @@ fn run_model_task_blocking(
         append_desktop_log(&format!("runtime 进程异常退出: {error}"));
         format!("Cordis runtime 进程异常退出: {error}")
     });
+    // Parent has exited. Closing the job reaps any cell-worker grandchildren
+    // still inside it. Cancel/watchdog may already have closed the handle.
+    let _ = close_session_keep_job();
     match &status {
         Ok(value) => append_desktop_log(&format!("runtime child wait status={value:?}")),
         Err(error) => append_desktop_log(&format!("runtime child wait error={error}")),
@@ -1974,18 +1995,9 @@ fn cancel_runtime_process(state: &AppState) -> Result<RuntimeCancellation, Strin
     };
     append_desktop_log(&format!("cancel_runtime_process: killing pid={pid}"));
 
-    let pid_text = pid.to_string();
-    #[cfg(windows)]
-    let status = Command::new("taskkill")
-        .args(["/PID", pid_text.as_str(), "/T", "/F"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-    #[cfg(not(windows))]
-    let status = Command::new("kill")
-        .args(["-TERM", pid_text.as_str()])
-        .status();
+    let status = reap_runtime_tree(pid);
     let status = match status {
-        Ok(status) => status,
+        Ok(cancelled) => cancelled,
         Err(error) => {
             if let Ok(_state_guard) = state.runtime_state_lock.lock() {
                 if let Ok(mut active_pid) = state.active_runtime_pid.lock() {
@@ -2002,7 +2014,7 @@ fn cancel_runtime_process(state: &AppState) -> Result<RuntimeCancellation, Strin
             return Err(format!("无法取消 Cordis runtime: {error}"));
         }
     };
-    if status.success() {
+    if status {
         return Ok(RuntimeCancellation { cancelled: true });
     }
     if let Ok(_state_guard) = state.runtime_state_lock.lock() {
@@ -2178,11 +2190,457 @@ fn unc_root_and_suffix(path: &Path) -> Option<(String, String)> {
     Some((root, suffix))
 }
 
-fn runtime_command(runtime: &Path) -> Command {
-    let mut command =
-        Command::new(std::env::var_os("DDA_NODE").unwrap_or_else(|| "node".into()));
+const CELLS_ENV_KEYS: [&str; 3] = [
+    "DDA_KERNEL_CODE_CELLS",
+    "DDA_KERNEL_WINDOWS_UNSANDBOXED",
+    "DDA_KERNEL_WINDOWS_DESKTOP_CELLS",
+];
+const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DesktopSpawnMode {
+    /// Fresh Node process. Must not inject resident or cells flags.
+    PerInvoke,
+    /// The desktop task child. Sets `DDA_RESIDENT_KERNEL` and, when the
+    /// experimental toggle is on, the three cells variables. Not a second daemon.
+    SessionKeep,
+}
+
+/// Production task spawn. Health, dashboard, and history stay `PerInvoke`.
+const TASK_RUNTIME_SPAWN_MODE: DesktopSpawnMode = DesktopSpawnMode::SessionKeep;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DesktopSpawnEnvPlan {
+    set: Vec<(String, String)>,
+    remove: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessReapPlan {
+    JobKillOnClose,
+    TaskkillTree,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSettings {
+    #[serde(default)]
+    experimental_code_cells: bool,
+}
+
+fn local_app_data_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn desktop_settings_path_in(local_app_data: &Path) -> PathBuf {
+    local_app_data.join("hmCodex").join("desktop-settings.json")
+}
+
+fn windows_desktop_journal_path(local_app_data: &Path, file_name: &str) -> PathBuf {
+    local_app_data
+        .join("hmCodex")
+        .join("journal")
+        .join("windows-desktop")
+        .join(file_name)
+}
+
+fn load_desktop_settings_from(path: &Path) -> Result<DesktopSettings, String> {
+    if !path.is_file() {
+        return Ok(DesktopSettings {
+            experimental_code_cells: false,
+        });
+    }
+    let content = fs::read_to_string(path)
+        .map_err(|error| format!("读取桌面设置失败: {error}"))?;
+    let value: Value = serde_json::from_str(content.trim_start_matches('\u{feff}'))
+        .map_err(|error| format!("桌面设置不是有效 JSON: {error}"))?;
+    let experimental_code_cells = value
+        .get("experimentalCodeCells")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Ok(DesktopSettings {
+        experimental_code_cells,
+    })
+}
+
+fn load_desktop_settings() -> Result<DesktopSettings, String> {
+    let Some(root) = local_app_data_dir() else {
+        return Ok(DesktopSettings {
+            experimental_code_cells: false,
+        });
+    };
+    load_desktop_settings_from(&desktop_settings_path_in(&root))
+}
+
+fn persist_desktop_settings_at(path: &Path, settings: &DesktopSettings) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "桌面设置路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建桌面设置目录失败: {error}"))?;
+    let mut document = if path.is_file() {
+        let content = fs::read_to_string(path)
+            .map_err(|error| format!("读取桌面设置失败: {error}"))?;
+        serde_json::from_str::<Value>(content.trim_start_matches('\u{feff}')).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    let object = document
+        .as_object_mut()
+        .ok_or_else(|| "桌面设置不是 JSON 对象".to_string())?;
+    object.insert(
+        "experimentalCodeCells".to_string(),
+        Value::Bool(settings.experimental_code_cells),
+    );
+    let body = serde_json::to_vec_pretty(&document)
+        .map_err(|error| format!("序列化桌面设置失败: {error}"))?;
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, body).map_err(|error| format!("写入桌面设置失败: {error}"))?;
+    fs::rename(&temporary, path).map_err(|error| format!("保存桌面设置失败: {error}"))?;
+    Ok(())
+}
+
+fn persist_desktop_settings(settings: &DesktopSettings) -> Result<(), String> {
+    let root = local_app_data_dir().ok_or_else(|| "LOCALAPPDATA 不可用，无法保存桌面设置".to_string())?;
+    persist_desktop_settings_at(&desktop_settings_path_in(&root), settings)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSettingsResponse {
+    experimental_code_cells: bool,
+    settings_path: String,
+}
+
+fn desktop_settings_response(settings: &DesktopSettings) -> DesktopSettingsResponse {
+    DesktopSettingsResponse {
+        experimental_code_cells: settings.experimental_code_cells,
+        settings_path: local_app_data_dir()
+            .map(|root| desktop_settings_path_in(&root).display().to_string())
+            .unwrap_or_default(),
+    }
+}
+
+#[tauri::command]
+fn desktop_settings() -> Result<DesktopSettingsResponse, String> {
+    Ok(desktop_settings_response(&load_desktop_settings()?))
+}
+
+#[tauri::command]
+fn save_desktop_settings(experimental_code_cells: bool) -> Result<DesktopSettingsResponse, String> {
+    let settings = DesktopSettings {
+        experimental_code_cells,
+    };
+    persist_desktop_settings(&settings)?;
+    Ok(desktop_settings_response(&settings))
+}
+
+/// Env ownership for every desktop runtime spawn.
+///
+/// Cells flags are injected only when the experimental toggle is on AND this
+/// spawn is the session-keep path. Turning the toggle off removes only those
+/// three variables. `DDA_PLATFORM` is always set and never removed.
+/// `DDA_RESIDENT_KERNEL` is set only on the session-keep path.
+fn plan_desktop_spawn_env(
+    experimental_code_cells: bool,
+    mode: DesktopSpawnMode,
+    local_app_data: Option<&Path>,
+) -> DesktopSpawnEnvPlan {
+    let mut set = vec![("DDA_PLATFORM".to_string(), "windows-desktop".to_string())];
+    let mut remove = vec!["DDA_KERNEL_SANDBOX".to_string()];
+    if experimental_code_cells && mode == DesktopSpawnMode::SessionKeep {
+        for key in CELLS_ENV_KEYS {
+            set.push((key.to_string(), "1".to_string()));
+        }
+    } else if !experimental_code_cells {
+        for key in CELLS_ENV_KEYS {
+            remove.push(key.to_string());
+        }
+    }
+    if mode == DesktopSpawnMode::SessionKeep {
+        set.push(("DDA_RESIDENT_KERNEL".to_string(), "1".to_string()));
+    }
+    if let Some(root) = local_app_data {
+        set.push((
+            "DDA_KERNEL_EFFECT_JOURNAL".to_string(),
+            windows_desktop_journal_path(root, "kernel-effect-journal.json")
+                .display()
+                .to_string(),
+        ));
+        set.push((
+            "DDA_KERNEL_SESSION_STORE".to_string(),
+            windows_desktop_journal_path(root, "kernel-session.json")
+                .display()
+                .to_string(),
+        ));
+    }
+    DesktopSpawnEnvPlan { set, remove }
+}
+
+fn apply_desktop_spawn_env(command: &mut Command, plan: &DesktopSpawnEnvPlan) {
+    for key in &plan.remove {
+        command.env_remove(key);
+    }
+    for (key, value) in &plan.set {
+        command.env(key, value);
+    }
+}
+
+/// Node 24 is not vendored. 鹏飞 deferred frozen §8: use `resource_dir/node/node.exe`
+/// when that file is already present, otherwise PATH `node`, unless `DDA_NODE` is set.
+/// Cells still return `NODE_TOO_OLD` when the actual major is below 24.
+fn resolve_node_program(dda_node: Option<&std::ffi::OsStr>, resource_dir: Option<&Path>) -> std::ffi::OsString {
+    if let Some(override_node) = dda_node {
+        if !override_node.is_empty() {
+            return override_node.to_os_string();
+        }
+    }
+    if let Some(dir) = resource_dir {
+        let bundled = dir.join("node").join("node.exe");
+        if bundled.is_file() {
+            return bundled.into_os_string();
+        }
+    }
+    std::ffi::OsString::from("node")
+}
+
+fn runtime_creation_flags(mode: DesktopSpawnMode) -> u32 {
     #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
+    {
+        match mode {
+            DesktopSpawnMode::PerInvoke => CREATE_NO_WINDOW,
+            DesktopSpawnMode::SessionKeep => CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = mode;
+        0
+    }
+}
+
+fn process_reap_plan(job_assigned: bool) -> ProcessReapPlan {
+    if job_assigned {
+        ProcessReapPlan::JobKillOnClose
+    } else {
+        ProcessReapPlan::TaskkillTree
+    }
+}
+
+fn session_keep_job_is_open() -> bool {
+    SESSION_KEEP_JOB.lock().map(|guard| guard.is_some()).unwrap_or(false)
+}
+
+fn close_session_keep_job() -> bool {
+    let handle = match SESSION_KEEP_JOB.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => None,
+    };
+    let Some(handle) = handle else {
+        return false;
+    };
+    #[cfg(windows)]
+    {
+        unsafe { windows_job::close_raw(handle) }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        false
+    }
+}
+
+/// Assign a session-keep child to a kill-on-close job. Create failure is not a
+/// cells disability; callers fall back to `taskkill /T`. Per-invoke never assigns.
+fn bind_session_keep_reaper(pid: u32) -> bool {
+    let assigned = try_assign_kill_on_job_close(pid, TASK_RUNTIME_SPAWN_MODE);
+    if assigned {
+        append_desktop_log(&format!("session-keep job assigned pid={pid}"));
+    } else {
+        append_desktop_log(&format!(
+            "session-keep job not assigned pid={pid}; reap falls back to taskkill /T"
+        ));
+    }
+    assigned
+}
+
+fn stop_session_keep_child(child: &mut std::process::Child) {
+    let pid = child.id();
+    if !close_session_keep_job() {
+        let _ = taskkill_tree(pid);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn try_assign_kill_on_job_close(pid: u32, mode: DesktopSpawnMode) -> bool {
+    if mode != DesktopSpawnMode::SessionKeep || pid == 0 {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        windows_job::assign(pid)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+fn taskkill_tree(pid: u32) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(windows)]
+    {
+        Command::new("taskkill")
+            .args(["/PID", pid.to_string().as_str(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("kill")
+            .args(["-TERM", pid.to_string().as_str()])
+            .status()
+    }
+}
+
+/// Job-object close is the reap when a session-keep job was assigned. Create
+/// failure, or no stored job, falls back to `taskkill /T` and is not a cells error.
+fn reap_runtime_tree(pid: u32) -> std::io::Result<bool> {
+    let job_assigned = session_keep_job_is_open();
+    if process_reap_plan(job_assigned) == ProcessReapPlan::JobKillOnClose && close_session_keep_job() {
+        return Ok(true);
+    }
+    taskkill_tree(pid).map(|status| status.success())
+}
+
+static SESSION_KEEP_JOB: Mutex<Option<usize>> = Mutex::new(None);
+
+#[cfg(windows)]
+mod windows_job {
+    use super::SESSION_KEEP_JOB;
+    use std::ffi::c_void;
+
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: u32 = 9;
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
+    const PROCESS_SET_QUOTA: u32 = 0x0100;
+    const PROCESS_TERMINATE: u32 = 0x0001;
+
+    #[repr(C)]
+    struct BasicLimit {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        #[cfg(target_pointer_width = "64")]
+        _pad0: u32,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: u32,
+        #[cfg(target_pointer_width = "64")]
+        _pad1: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    struct IoCounters {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    struct ExtendedLimit {
+        basic: BasicLimit,
+        io_info: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    extern "system" {
+        fn CreateJobObjectW(attrs: *mut c_void, name: *const u16) -> *mut c_void;
+        fn SetInformationJobObject(
+            job: *mut c_void,
+            class: u32,
+            info: *const c_void,
+            len: u32,
+        ) -> i32;
+        fn AssignProcessToJobObject(job: *mut c_void, process: *mut c_void) -> i32;
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    pub fn close_raw(handle: usize) -> bool {
+        if handle == 0 {
+            return false;
+        }
+        unsafe { CloseHandle(handle as *mut c_void) != 0 }
+    }
+
+    pub fn assign(pid: u32) -> bool {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job.is_null() {
+                return false;
+            }
+            let mut info: ExtendedLimit = std::mem::zeroed();
+            info.basic.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let configured = SetInformationJobObject(
+                job,
+                JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                &info as *const ExtendedLimit as *const c_void,
+                std::mem::size_of::<ExtendedLimit>() as u32,
+            );
+            if configured == 0 {
+                CloseHandle(job);
+                return false;
+            }
+            let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+            if process.is_null() {
+                CloseHandle(job);
+                return false;
+            }
+            let assigned = AssignProcessToJobObject(job, process);
+            CloseHandle(process);
+            if assigned == 0 {
+                CloseHandle(job);
+                return false;
+            }
+            if let Ok(mut guard) = SESSION_KEEP_JOB.lock() {
+                if let Some(previous) = guard.replace(job as usize) {
+                    CloseHandle(previous as *mut c_void);
+                }
+            } else {
+                CloseHandle(job);
+                return false;
+            }
+            true
+        }
+    }
+}
+
+/// Short-lived queries (health, dashboard, history). Fresh health therefore
+/// stops at `NODE_TOO_OLD` or `DESKTOP_SESSION_KEEP_REQUIRED`. The task child
+/// uses `TASK_RUNTIME_SPAWN_MODE`.
+fn runtime_command(runtime: &Path, resource_dir: Option<&Path>) -> Command {
+    runtime_command_for(runtime, resource_dir, DesktopSpawnMode::PerInvoke)
+}
+
+fn runtime_command_for(
+    runtime: &Path,
+    resource_dir: Option<&Path>,
+    mode: DesktopSpawnMode,
+) -> Command {
+    let program = resolve_node_program(std::env::var_os("DDA_NODE").as_deref(), resource_dir);
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(runtime_creation_flags(mode));
     if let Some(channel) = option_env!("DDA_BAKED_RELEASE_CHANNEL") {
         command.env("DDA_BAKED_RELEASE_CHANNEL", channel);
     }
@@ -2190,6 +2648,11 @@ fn runtime_command(runtime: &Path) -> Command {
         "DDA_RELEASE_CHANNEL",
         desktop_release_channel().unwrap_or_else(|_| "INVALID_CHANNEL".to_string()),
     );
+    let cells_enabled = load_desktop_settings()
+        .map(|settings| settings.experimental_code_cells)
+        .unwrap_or(false);
+    let plan = plan_desktop_spawn_env(cells_enabled, mode, local_app_data_dir().as_deref());
+    apply_desktop_spawn_env(&mut command, &plan);
     if let Some(parent) = runtime.parent().and_then(Path::parent) {
         // Keep module resolution and any relative runtime data anchored at the
         // bundled runtime directory when the app is started from a shortcut.
@@ -2352,7 +2815,8 @@ fn run_runtime_json(app: &AppHandle, args: &[&str]) -> Result<Value, String> {
     append_desktop_log(&format!("runtime query start command={command_name} lock_wait_ms={lock_wait_ms}"));
     let runtime = runtime_entrypoint(app)?;
     let runtime = if is_history_read(args) { runtime.with_file_name("history-cli.mjs") } else { runtime };
-    let output = runtime_command(&runtime)
+    let resource_dir = app.path().resource_dir().ok();
+    let output = runtime_command(&runtime, resource_dir.as_deref())
         .arg(runtime)
         .args(args)
         .output()
@@ -2607,7 +3071,9 @@ pub fn run() {
             evolution_action,
             run_model_task,
             cancel_model_task,
-            resolve_runtime_approval
+            resolve_runtime_approval,
+            desktop_settings,
+            save_desktop_settings
         ])
         .build(tauri::generate_context!())
         .expect("error while building dda");
@@ -3020,6 +3486,153 @@ mod tests {
         let state = AppState::default();
         let result = cancel_runtime_process(&state).unwrap();
         assert!(!result.cancelled);
+    }
+
+    #[test]
+    fn desktop_spawn_env_owns_platform_cells_and_resident_separately() {
+        let root = PathBuf::from(r"C:\Users\tester\AppData\Local");
+        let off = plan_desktop_spawn_env(false, DesktopSpawnMode::PerInvoke, Some(&root));
+        assert!(off.set.iter().any(|(key, value)| key == "DDA_PLATFORM" && value == "windows-desktop"));
+        assert!(off.remove.iter().any(|key| key == "DDA_KERNEL_SANDBOX"));
+        for key in CELLS_ENV_KEYS {
+            assert!(off.remove.iter().any(|item| item == key), "{key} removed when toggle is off");
+            assert!(off.set.iter().all(|(name, _)| name != key));
+        }
+        assert!(off.set.iter().all(|(key, _)| key != "DDA_RESIDENT_KERNEL"));
+        assert!(off.remove.iter().all(|key| key != "DDA_PLATFORM"));
+        assert!(off.remove.iter().all(|key| key != "DDA_RESIDENT_KERNEL"));
+        let journal = off.set.iter().find(|(key, _)| key == "DDA_KERNEL_EFFECT_JOURNAL").unwrap();
+        let session = off.set.iter().find(|(key, _)| key == "DDA_KERNEL_SESSION_STORE").unwrap();
+        assert!(journal.1.replace('/', "\\").ends_with(r"hmCodex\journal\windows-desktop\kernel-effect-journal.json"));
+        assert!(session.1.replace('/', "\\").ends_with(r"hmCodex\journal\windows-desktop\kernel-session.json"));
+        assert!(!journal.1.replace('/', "\\").ends_with(r"hmCodex\kernel-effect-journal.json"));
+
+        let per_invoke_on = plan_desktop_spawn_env(true, DesktopSpawnMode::PerInvoke, Some(&root));
+        for key in CELLS_ENV_KEYS {
+            assert!(per_invoke_on.set.iter().all(|(name, _)| name != key));
+            assert!(per_invoke_on.remove.iter().all(|name| name != key));
+        }
+        assert!(per_invoke_on.set.iter().all(|(key, _)| key != "DDA_RESIDENT_KERNEL"));
+        assert!(per_invoke_on.remove.iter().all(|key| key != "DDA_PLATFORM"));
+
+        let session_keep = plan_desktop_spawn_env(true, DesktopSpawnMode::SessionKeep, Some(&root));
+        for key in CELLS_ENV_KEYS {
+            assert!(session_keep.set.iter().any(|(name, value)| name == key && value == "1"));
+            assert!(session_keep.remove.iter().all(|name| name != key));
+        }
+        assert!(session_keep.set.iter().any(|(key, value)| key == "DDA_RESIDENT_KERNEL" && value == "1"));
+        assert!(session_keep.remove.iter().any(|key| key == "DDA_KERNEL_SANDBOX"));
+        assert!(session_keep.remove.iter().all(|key| key != "DDA_PLATFORM"));
+
+        let session_keep_off = plan_desktop_spawn_env(false, DesktopSpawnMode::SessionKeep, None);
+        assert!(session_keep_off.set.iter().any(|(key, value)| key == "DDA_RESIDENT_KERNEL" && value == "1"));
+        for key in CELLS_ENV_KEYS {
+            assert!(session_keep_off.remove.iter().any(|name| name == key));
+        }
+        assert!(session_keep_off.set.iter().all(|(key, _)| key != "DDA_KERNEL_EFFECT_JOURNAL"));
+        assert_eq!(TASK_RUNTIME_SPAWN_MODE, DesktopSpawnMode::SessionKeep);
+    }
+
+    #[test]
+    fn task_runtime_spawn_is_session_keep_and_queries_stay_per_invoke() {
+        let task = runtime_command_for(
+            Path::new("index.mjs"),
+            None,
+            TASK_RUNTIME_SPAWN_MODE,
+        );
+        let health = runtime_command(Path::new("index.mjs"), None);
+        let resident = |command: &Command, key: &str| {
+            command.get_envs().find(|(name, _)| *name == key).map(|(_, value)| {
+                value.map(|item| item.to_string_lossy().into_owned())
+            })
+        };
+        assert_eq!(
+            resident(&task, "DDA_RESIDENT_KERNEL"),
+            Some(Some("1".to_string()))
+        );
+        assert_eq!(resident(&task, "DDA_PLATFORM"), Some(Some("windows-desktop".to_string())));
+        assert_eq!(resident(&task, "DDA_KERNEL_SANDBOX"), Some(None));
+        assert_eq!(resident(&health, "DDA_RESIDENT_KERNEL"), None);
+        assert_eq!(
+            resident(&health, "DDA_PLATFORM"),
+            Some(Some("windows-desktop".to_string()))
+        );
+        assert_eq!(runtime_creation_flags(TASK_RUNTIME_SPAWN_MODE), runtime_creation_flags(DesktopSpawnMode::SessionKeep));
+    }
+
+    #[test]
+    fn desktop_settings_default_off_and_round_trip_without_touching_model_config() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("hmCodex").join("desktop-settings.json");
+        let missing = load_desktop_settings_from(&path).unwrap();
+        assert!(!missing.experimental_code_cells);
+        persist_desktop_settings_at(&path, &DesktopSettings { experimental_code_cells: true }).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["experimentalCodeCells"], true);
+        assert!(saved.get("model").is_none());
+        assert_ne!(path.file_name().unwrap(), "model-config.json");
+        persist_desktop_settings_at(&path, &DesktopSettings { experimental_code_cells: false }).unwrap();
+        assert!(!load_desktop_settings_from(&path).unwrap().experimental_code_cells);
+    }
+
+    #[test]
+    fn bundled_node_exe_is_used_unless_dda_node_is_set() {
+        let directory = tempdir().unwrap();
+        let bundled = directory.path().join("node").join("node.exe");
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        fs::write(&bundled, b"node").unwrap();
+        assert_eq!(
+            resolve_node_program(None, Some(directory.path())),
+            bundled.as_os_str()
+        );
+        assert_eq!(
+            resolve_node_program(Some(std::ffi::OsStr::new("custom-node")), Some(directory.path())),
+            std::ffi::OsString::from("custom-node")
+        );
+        assert_eq!(
+            resolve_node_program(None, None),
+            std::ffi::OsString::from("node")
+        );
+    }
+
+    #[test]
+    fn job_object_reap_falls_back_when_assignment_fails() {
+        assert_eq!(CREATE_BREAKAWAY_FROM_JOB, 0x0100_0000);
+        assert!(!try_assign_kill_on_job_close(0, DesktopSpawnMode::PerInvoke));
+        assert!(!try_assign_kill_on_job_close(0, DesktopSpawnMode::SessionKeep));
+        assert_eq!(process_reap_plan(false), ProcessReapPlan::TaskkillTree);
+        assert_eq!(process_reap_plan(true), ProcessReapPlan::JobKillOnClose);
+        #[cfg(windows)]
+        {
+            assert_eq!(runtime_creation_flags(DesktopSpawnMode::PerInvoke), CREATE_NO_WINDOW);
+            assert_eq!(
+                runtime_creation_flags(DesktopSpawnMode::SessionKeep),
+                CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(runtime_creation_flags(DesktopSpawnMode::PerInvoke), 0);
+            assert_eq!(runtime_creation_flags(DesktopSpawnMode::SessionKeep), 0);
+        }
+    }
+
+    #[test]
+    fn health_payload_keeps_cells_availability_optional() {
+        let bare = parse_runtime_health_line(
+            r#"{"ok":true,"runtime":{"node":"v24.0.0"},"config":{"loaded":true},"model":{"provider":"openai","protocol":"responses","model":"gpt"}}"#,
+        )
+        .unwrap();
+        assert!(bare.cells_availability.is_none());
+        let with_cells = parse_runtime_health_line(
+            r#"{"ok":true,"runtime":{"node":"v22.0.0"},"cellsAvailability":{"available":false,"reason":"NODE_TOO_OLD","source":"fresh-health","sandboxAvailable":false}}"#,
+        )
+        .unwrap();
+        let cells = with_cells.cells_availability.unwrap();
+        assert!(!cells.available);
+        assert_eq!(cells.reason.as_deref(), Some("NODE_TOO_OLD"));
+        assert_eq!(cells.source.as_deref(), Some("fresh-health"));
+        assert_eq!(cells.sandbox_available, Some(false));
     }
 
     #[cfg(windows)]

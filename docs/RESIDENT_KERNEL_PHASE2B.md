@@ -51,12 +51,46 @@ Linux + bwrap when isolation matters.
 | `DDA_KERNEL_SANDBOX` | must be **unset/off** — truthy → `SANDBOX_UNSUPPORTED_ON_WINDOWS` | off |
 | journal path writable | same as Linux | store path |
 
-Refused this round: `windows-desktop` / UI identity, macOS, Job Objects.
-`sandbox.available` stays **false**; success reason is `WINDOWS_NO_OS_SANDBOX`
-(callers key off boolean `available`). Phase-2a write effects stay refused on
-Windows. Phase-1 read kernel tools register the same surface as Linux (readonly
-bridge). Worker entrypoint is separate (`cell-worker-windows.mjs`); protocol
-`ready` only — no FS/net/exec canary.
+`windows-cli` stays out of `PORTABLE_CLI_PLATFORMS`. `sandbox.available` stays
+**false**; success reason is `WINDOWS_NO_OS_SANDBOX`.
+
+### Amendment: windows-desktop cells
+
+`win32` × `windows-desktop` is a separate cells arm (not a CLI flag reuse).
+`codeCellsAvailability` checks that arm **before** `CODE_CELLS_DISABLED`, and only
+for that pair: unset `DDA_PLATFORM` stays on the generic path, and
+`linux` × explicit `windows-desktop` does not fall through to bwrap.
+Desktop success still reports `WINDOWS_NO_OS_SANDBOX` with `sandbox.available`
+false. Resident attach for `win32` × `windows-desktop` needs
+`DDA_RESIDENT_KERNEL` and Node ≥ 24 only; it does not read cells flags.
+The desktop **task** child is the session-keep spawn: it sets
+`DDA_RESIDENT_KERNEL=1`, injects the three cells variables only when
+`experimentalCodeCells` is on, and may be placed in a reap-only Job Object.
+Health, dashboard, and history stay per-invoke, so fresh health still stops at
+`NODE_TOO_OLD` or `DESKTOP_SESSION_KEEP_REQUIRED` and does not start a worker.
+There is no second always-on process.
+
+**Node 24 bundling is deferred** (鹏飞, vs frozen §8). The installer does not
+vendor a Node binary. `runtime_command` uses `resource_dir/node/node.exe` when
+that file is present, otherwise PATH `node`, unless `DDA_NODE` is set. A real
+major below 24 is still `NODE_TOO_OLD`.
+
+Journal defaults, when the platform is `windows-cli` or `windows-desktop` and
+no explicit journal path is set, are
+`%LOCALAPPDATA%\hmCodex\journal\<identity>\kernel-effect-journal.json` plus
+`kernel-session.json` in that same directory. There is no fallback to
+`hmCodex\kernel-effect-journal.json`. Legacy root migration runs only for
+`windows-cli` and rewrites `STARTED` to `UNKNOWN`. Desktop does not migrate it.
+
+A Windows Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` may reap an
+already-living session-keep runtime. It is not a sandbox. If the job cannot be
+created, cancel still uses `taskkill /T`. Tool copy for desktop cells is its
+own branch (`windows-desktop` / `DDA_KERNEL_WINDOWS_DESKTOP_CELLS`) and does not
+overwrite the `windows-cli` description. Callers key off boolean `available`.
+Phase-2a write effects stay refused on Windows. Phase-1 read kernel tools
+register the same surface as Linux (readonly bridge). Worker entrypoint is
+separate (`cell-worker-windows.mjs`); protocol `ready` only — no FS/net/exec
+canary.
 
 ## What landed
 

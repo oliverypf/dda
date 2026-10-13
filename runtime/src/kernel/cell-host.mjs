@@ -35,29 +35,77 @@ const READ_KIND_SET = new Set([...KERNEL_READ_OPS, ...KERNEL_BRIDGE_READ_KINDS])
 export const KERNEL_CODE_CELLS_FLAG = 'DDA_KERNEL_CODE_CELLS';
 export const KERNEL_CELL_TIMEOUT_FLAG = 'DDA_KERNEL_CELL_TIMEOUT_MS';
 export const KERNEL_WINDOWS_UNSANDBOXED_FLAG = 'DDA_KERNEL_WINDOWS_UNSANDBOXED';
+export const KERNEL_WINDOWS_DESKTOP_CELLS_FLAG = 'DDA_KERNEL_WINDOWS_DESKTOP_CELLS';
+const RESIDENT_KERNEL_FLAG = 'DDA_RESIDENT_KERNEL';
 
 const isTruthyFlag = (value) => typeof value === 'string' && ['1', 'true', 'on', 'yes', 'enabled'].includes(value.trim().toLowerCase());
 
 export const isCodeCellsEnabled = (env = process.env) => isTruthyFlag(env?.[KERNEL_CODE_CELLS_FLAG]);
 export const isWindowsUnsandboxedEnabled = (env = process.env) => isTruthyFlag(env?.[KERNEL_WINDOWS_UNSANDBOXED_FLAG]);
+export const isWindowsDesktopCellsEnabled = (env = process.env) => isTruthyFlag(env?.[KERNEL_WINDOWS_DESKTOP_CELLS_FLAG]);
+
+/** sessionKeep is true only when the session-keep path set DDA_RESIDENT_KERNEL. */
+export const isResidentSessionKeep = (env = process.env) => isTruthyFlag(env?.[RESIDENT_KERNEL_FLAG]);
+
+const nodeMajor = (version = process.version) => {
+  const match = /^v?(\d+)/.exec(String(version ?? ''));
+  return match ? Number(match[1]) : 0;
+};
+
+const windowsSandboxRefusal = (reason) => ({
+  available: false,
+  reason,
+  sandbox: { available: false, reason: 'NON_LINUX_PLATFORM', backend: null }
+});
 
 /**
  * Single cells gate. Callers key off boolean `available`, not reason === 'AVAILABLE'
  * (Windows success reason is WINDOWS_NO_OS_SANDBOX). Inject `platform` for tests.
+ *
+ * Desktop arm (`win32` × raw `DDA_PLATFORM=windows-desktop`) runs BEFORE
+ * `CODE_CELLS_DISABLED` and does not read `DDA_KERNEL_CODE_CELLS`. Unset
+ * `DDA_PLATFORM` is not rewritten via resolvePlatformIdentity, so it stays on
+ * the generic path. `linux` × explicit `windows-desktop` stays generic and is
+ * `CODE_CELLS_DISABLED` until CODE_CELLS is set, then `PLATFORM_IDENTITY_MISMATCH`.
  */
 export const codeCellsAvailability = async ({
   env = process.env,
   platform = process.platform,
   journalAvailable = false,
-  residentAvailable = false
+  residentAvailable = false,
+  nodeVersion = process.version,
+  sessionKeep = false
 } = {}) => {
+  const identity = env?.DDA_PLATFORM;
+  if (platform === 'win32' && identity === 'windows-desktop') {
+    if (nodeMajor(nodeVersion) < 24) return windowsSandboxRefusal('NODE_TOO_OLD');
+    if (sessionKeep !== true) return windowsSandboxRefusal('DESKTOP_SESSION_KEEP_REQUIRED');
+    if (!residentAvailable) return windowsSandboxRefusal('KERNEL_NOT_ATTACHED');
+    if (!journalAvailable) return windowsSandboxRefusal('JOURNAL_UNAVAILABLE');
+    if (!isWindowsDesktopCellsEnabled(env)) return windowsSandboxRefusal('WINDOWS_DESKTOP_CELLS_REQUIRED');
+    if (isTruthyFlag(env?.[KERNEL_SANDBOX_FLAG])) return windowsSandboxRefusal('SANDBOX_UNSUPPORTED_ON_WINDOWS');
+    if (!isWindowsUnsandboxedEnabled(env)) return windowsSandboxRefusal('WINDOWS_UNSANDBOXED_REQUIRED');
+    return {
+      available: true,
+      reason: 'WINDOWS_NO_OS_SANDBOX',
+      sandbox: { available: false, reason: 'NON_LINUX_PLATFORM', backend: null },
+      windowsDesktop: true
+    };
+  }
+
   if (!isCodeCellsEnabled(env)) return { available: false, reason: 'CODE_CELLS_DISABLED' };
   if (!residentAvailable) return { available: false, reason: 'KERNEL_NOT_ATTACHED' };
   if (!journalAvailable) return { available: false, reason: 'JOURNAL_UNAVAILABLE' };
 
-  const identity = env?.DDA_PLATFORM;
   // Identity × OS mismatches — before any sandbox probe.
+  // Compare the raw env string. Unset is not `windows-desktop`.
   if (identity === 'windows-cli' && platform !== 'win32') {
+    return { available: false, reason: 'PLATFORM_IDENTITY_MISMATCH' };
+  }
+  if (identity === 'windows-cli' && isWindowsDesktopCellsEnabled(env)) {
+    return { available: false, reason: 'PLATFORM_IDENTITY_MISMATCH' };
+  }
+  if (platform === 'linux' && identity === 'windows-desktop') {
     return { available: false, reason: 'PLATFORM_IDENTITY_MISMATCH' };
   }
   if (platform === 'win32' && identity !== 'windows-cli') {
@@ -87,13 +135,34 @@ export const codeCellsAvailability = async ({
     };
   }
 
-  // Linux OS-sandbox path only (WINDOWS_UNSANDBOXED must be ignored here).
+  // Linux OS-sandbox path only (WINDOWS_UNSANDBOXED / DESKTOP_CELLS ignored here).
   const sandbox = await detectKernelOsSandbox(env, platform);
   if (!sandbox.available) {
     return { available: false, reason: sandbox.reason ?? SANDBOX_ERROR_CODES.UNAVAILABLE, sandbox };
   }
   return { available: true, reason: 'AVAILABLE', sandbox };
 };
+
+/**
+ * Same availability call the task path and a fresh health spawn share.
+ * `sessionKeep` follows `DDA_RESIDENT_KERNEL` only. A per-invoke health spawn
+ * leaves that unset, so the desktop arm stops at NODE_TOO_OLD or
+ * DESKTOP_SESSION_KEEP_REQUIRED.
+ */
+export const observeCodeCells = async ({
+  env = process.env,
+  platform = process.platform,
+  nodeVersion = process.version,
+  residentAttached = false,
+  journalAvailable = false
+} = {}) => codeCellsAvailability({
+  env,
+  platform,
+  nodeVersion,
+  journalAvailable,
+  residentAvailable: residentAttached === true,
+  sessionKeep: isResidentSessionKeep(env)
+});
 
 export class CellHost {
   #env;
@@ -110,6 +179,16 @@ export class CellHost {
   #journal;
   #cellTimeoutMs;
   #onEmit;
+  #sessionKeep;
+  #nodeVersion;
+  #residentAvailable;
+  #lastStartOptions = null;
+  #startedOnce = false;
+  #activeCellId = null;
+  #activeCode = '';
+  #readySandbox = null;
+  #readyWorkerWarning = null;
+  #stopping = false;
 
   #child = null;
   #framer = null;
@@ -139,10 +218,16 @@ export class CellHost {
     readonlyBridge,
     journal,
     cellTimeoutMs,
-    onEmit = () => {}
+    onEmit = () => {},
+    sessionKeep,
+    nodeVersion = process.version,
+    residentAvailable = true
   } = {}) {
     this.#env = env;
     this.#platform = platform;
+    this.#sessionKeep = sessionKeep === undefined ? isResidentSessionKeep(env) : sessionKeep === true;
+    this.#nodeVersion = nodeVersion;
+    this.#residentAvailable = residentAvailable === true;
     this.#nodeBinary = nodeBinary;
     this.#workerPath = workerPath;
     this.#workspaceRoot = workspaceRoot;
@@ -175,15 +260,22 @@ export class CellHost {
     coordinatorMode = 'A',
     denyWritePaths = []
   } = {}) {
+    this.#lastStartOptions = {
+      dataDir, sessionStatePath, journalPath, sensitiveSentinel,
+      nonSecretWorkspaceFile, coordinatorPath, coordinatorMode, denyWritePaths
+    };
     if (this.#child) return { ready: this.#ready };
 
     const availability = await codeCellsAvailability({
       env: this.#env,
       platform: this.#platform,
       journalAvailable: this.#journal?.available === true,
-      residentAvailable: true
+      residentAvailable: this.#residentAvailable,
+      sessionKeep: this.#sessionKeep,
+      nodeVersion: this.#nodeVersion
     });
     if (!availability.available) {
+      // Desktop per-invoke and every other refusal stop here. Do not spawn a worker.
       return { ready: false, reason: availability.reason };
     }
 
@@ -280,6 +372,8 @@ export class CellHost {
     try {
       await readyWait;
       this.#ready = true;
+      this.#startedOnce = true;
+      this.#stopping = false;
       return { ready: true, backend: this.#backend };
     } catch (error) {
       await this.stop().catch(() => {});
@@ -311,14 +405,21 @@ export class CellHost {
     this.#attachChildIo();
 
     try {
-      await readyWait;
+      const readyMessage = await readyWait;
       this.#ready = true;
+      this.#startedOnce = true;
+      this.#stopping = false;
+      this.#readySandbox = readyMessage?.sandbox ?? null;
+      this.#readyWorkerWarning = readyMessage?.warning ?? null;
       return {
         ready: true,
         backend: null,
         reason: availability.reason,
-        windowsUnsandboxed: true,
-        warning: 'NOT_A_SECURITY_SANDBOX'
+        windowsUnsandboxed: availability.windowsUnsandboxed === true,
+        windowsDesktop: availability.windowsDesktop === true,
+        warning: 'NOT_A_SECURITY_SANDBOX',
+        workerWarning: this.#readyWorkerWarning,
+        sandbox: this.#readySandbox
       };
     } catch (error) {
       await this.stop().catch(() => {});
@@ -326,17 +427,43 @@ export class CellHost {
     }
   }
 
+  #badgeFields() {
+    if (this.#readySandbox === 'none' && this.#readyWorkerWarning === 'WINDOWS_NO_OS_SANDBOX') {
+      return { warning: 'WINDOWS_NO_OS_SANDBOX', sandbox: 'none' };
+    }
+    return {};
+  }
+
   #attachChildIo() {
     this.#child.stdout.setEncoding('utf8');
     this.#child.stderr.setEncoding('utf8');
     this.#child.stdout.on('data', (chunk) => this.#onStdout(chunk));
     this.#child.stderr.on('data', (chunk) => {
-      this.#onEmit('kernel.cell_worker_stderr', { chunk: String(chunk).slice(0, 2000) });
+      const text = String(chunk).slice(0, 2000);
+      const badge = this.#badgeFields();
+      this.#onEmit('kernel.cell_worker_stderr', { chunk: text, ...badge });
+      if (this.#activeCellId) {
+        this.#onEmit('kernel.cell_output', {
+          toolName: 'kernel.exec',
+          itemId: `cell-${this.#activeCellId}`,
+          chunk: text,
+          stream: 'stderr',
+          ...badge
+        });
+      }
     });
     this.#child.on('exit', (code, signal) => {
       this.#ready = false;
       this.#failAllPending('WORKER_EXIT', { code, signal });
       this.#child = null;
+      if (this.#startedOnce && !this.#stopping) {
+        this.#onEmit('kernel.cell_reset', {
+          toolName: 'kernel.exec',
+          title: 'cell 环境已重置，变量已丢失',
+          code,
+          signal
+        });
+      }
     });
   }
 
@@ -461,12 +588,25 @@ export class CellHost {
       if (!this.#effectsDispatcher?.handles?.(kind)) {
         throw Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
       }
-      const cellId = message.cellId ?? 'unknown-cell';
-      const ordinal = message.requestId;
-      const toolCallId = `${cellId}::${ordinal}`;
+      const cellId = message.cellId ?? this.#activeCellId ?? 'unknown-cell';
+      const ordinal = Number.isInteger(message.cellOpIndex)
+        ? message.cellOpIndex
+        : Number(String(message.requestId ?? '').replace(/^hr-/, ''));
+      const cellOpIndex = Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1;
+      const toolCallId = `${cellId}::${message.requestId ?? cellOpIndex}`;
       const result = await this.#effectsDispatcher.dispatch(
         { kind, payload: message.payload },
-        { toolCallId, cellId, fromCell: true, journalBit: JOURNAL_BITS.CELL }
+        {
+          toolCallId,
+          cellId,
+          fromCell: true,
+          journalBit: JOURNAL_BITS.CELL,
+          cellApproval: {
+            code: this.#activeCode ?? '',
+            cellOpIndex,
+            hostRequest: { kind, payload: message.payload ?? null }
+          }
+        }
       );
       this.#send({
         v: CELL_PROTOCOL_VERSION,
@@ -540,6 +680,14 @@ export class CellHost {
   }
 
   async exec({ code, cellId = `cell-${randomUUID()}` } = {}) {
+    if ((!this.#ready || !this.#child) && this.#startedOnce) {
+      this.#ready = false;
+      this.#child = null;
+      const restarted = await this.start(this.#lastStartOptions ?? {});
+      if (!restarted?.ready) {
+        throw Object.assign(new Error(restarted?.reason ?? SANDBOX_ERROR_CODES.UNAVAILABLE), { code: restarted?.reason ?? SANDBOX_ERROR_CODES.UNAVAILABLE });
+      }
+    }
     if (!this.#ready || !this.#child) {
       throw Object.assign(new Error(SANDBOX_ERROR_CODES.UNAVAILABLE), { code: SANDBOX_ERROR_CODES.UNAVAILABLE });
     }
@@ -553,6 +701,15 @@ export class CellHost {
     } while (this.#usedEpochs.has(epoch));
     this.#usedEpochs.add(epoch);
     this.#activeCellEpoch = epoch;
+    this.#activeCellId = cellId;
+    this.#activeCode = typeof code === 'string' ? code : '';
+    this.#onEmit('kernel.cell_status', {
+      toolName: 'kernel.exec',
+      itemId: `cell-${cellId}`,
+      state: 'STARTED',
+      label: '运行中',
+      ...this.#badgeFields()
+    });
 
     const execId = `exec-${randomUUID()}`;
     const { frame } = admitExecFrame({ cellId, epoch, code });
@@ -579,6 +736,7 @@ export class CellHost {
   }
 
   async stop() {
+    this.#stopping = true;
     this.#stopComputeClock();
     this.#ready = false;
     this.#activeCellEpoch = null;

@@ -146,6 +146,56 @@ export function createPlatformPaths(env = process.env, options = {}) {
 
 export const resolveStoreFile = (name, env = process.env) => createPlatformPaths(env).resolveStore(name);
 
+const WINDOWS_JOURNAL_IDENTITIES = new Set(['windows-cli', 'windows-desktop']);
+
+const windowsLocalAppData = (env = process.env) => {
+  const configured = typeof env.LOCALAPPDATA === 'string' ? env.LOCALAPPDATA.trim() : '';
+  if (configured) return configured;
+  if (env.DDA_PLATFORM === 'windows-cli') {
+    const profile = (typeof env.USERPROFILE === 'string' && env.USERPROFILE.trim())
+      || (typeof env.HOME === 'string' && env.HOME.trim())
+      || '';
+    if (profile) return joinPlatform(profile, 'AppData', 'Local');
+  }
+  return undefined;
+};
+
+/**
+ * Identity journal/session directory for windows-cli and windows-desktop.
+ * Never the root `hmCodex\\kernel-effect-journal.json`. Missing LOCALAPPDATA
+ * (and, for windows-cli only, a profile fallback) yields undefined so callers
+ * report JOURNAL_UNAVAILABLE instead of sharing the other identity's file.
+ */
+export const windowsIdentityJournalFile = (env = process.env, fileName) => {
+  const identity = typeof env.DDA_PLATFORM === 'string' ? env.DDA_PLATFORM.trim() : '';
+  if (!WINDOWS_JOURNAL_IDENTITIES.has(identity)) return undefined;
+  if (typeof fileName !== 'string' || !fileName.trim() || fileName.includes('/') || fileName.includes('\\')) return undefined;
+  const root = windowsLocalAppData(env);
+  if (!root) return undefined;
+  return joinPlatform(root, 'hmCodex', 'journal', identity, fileName);
+};
+
+export const resolveKernelEffectJournalPath = (env = process.env, explicit) => {
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
+  const identity = typeof env.DDA_PLATFORM === 'string' ? env.DDA_PLATFORM.trim() : '';
+  if (WINDOWS_JOURNAL_IDENTITIES.has(identity)) {
+    return windowsIdentityJournalFile(env, 'kernel-effect-journal.json');
+  }
+  return resolveStoreFile('kernel-effect-journal.json', env);
+};
+
+export const resolveKernelSessionPath = (env = process.env, explicit) => {
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
+  const identity = typeof env.DDA_PLATFORM === 'string' ? env.DDA_PLATFORM.trim() : '';
+  if (WINDOWS_JOURNAL_IDENTITIES.has(identity)) {
+    return windowsIdentityJournalFile(env, 'kernel-session.json');
+  }
+  return resolveStoreFile('kernel-session.json', env);
+};
+
+/** Legacy root file. windows-cli may migrate it once; windows-desktop must not. */
+export const legacyRootKernelEffectJournalPath = (env = process.env) => resolveStoreFile('kernel-effect-journal.json', env);
+
 export async function ensurePlatformDirs(paths) {
   const directories = [paths.configDir(), paths.dataDir(), paths.stateDir(), paths.cacheDir(), paths.logDir(), paths.pluginDir()]
     .filter((dir) => typeof dir === 'string' && dir);

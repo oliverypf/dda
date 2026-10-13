@@ -25,6 +25,7 @@ const main = async () => {
     v: CELL_PROTOCOL_VERSION,
     type: CELL_MESSAGE_TYPES.READY,
     backend: 'unsandboxed',
+    sandbox: 'none',
     warning: 'WINDOWS_NO_OS_SANDBOX'
   });
 
@@ -54,6 +55,7 @@ const main = async () => {
           v: CELL_PROTOCOL_VERSION,
           type: CELL_MESSAGE_TYPES.HOST_REQUEST,
           requestId,
+          cellOpIndex: hostRequestOrdinal,
           cellId,
           epoch: capturedEpoch,
           kind,

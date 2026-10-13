@@ -46,6 +46,22 @@ export interface RuntimeReadModel {
   configLoaded?: boolean;
   contextSidecar?: RuntimeContextSidecarStatus;
   dreamMaintenance?: RuntimeDreamMaintenanceStatus;
+  /** Fresh per-invoke health only. Steps 3–5 are not visible here. */
+  cellsAvailability?: CellsAvailabilityReadModel;
+}
+
+export interface CellsAvailabilityReadModel {
+  available: boolean;
+  reason?: string;
+  source?: 'fresh-health' | 'live-session';
+  sandboxAvailable?: boolean;
+}
+
+export interface CellsSessionReadModel {
+  available: boolean;
+  reason?: string;
+  source: 'live-session';
+  sandboxAvailable?: boolean;
 }
 
 export interface ModelConfig {
@@ -173,6 +189,11 @@ export interface TimelineItem {
   toolName?: string;
   evidenceKind?: string;
   truncated?: boolean;
+  /** Worker READY fields. Badge only when both match WINDOWS_NO_OS_SANDBOX + none. */
+  warning?: string;
+  sandbox?: string;
+  journalPath?: string;
+  cellState?: 'STARTED' | 'UNKNOWN' | 'RESET';
 }
 
 export interface ApprovalReadModel {
@@ -201,6 +222,13 @@ export interface ApprovalReadModel {
   method?: string;
   state: 'REQUESTED' | 'APPROVED' | 'DECLINED' | 'EXPIRED' | 'CANCELLED';
   createdAtMs: number;
+  cellOpIndex?: number;
+  /** Display name for requestDigest. Approval still compares requestDigest only. */
+  fingerprint?: string;
+  codePreview?: string;
+  toolName?: string;
+  warning?: string;
+  sandbox?: string;
 }
 
 export interface WorkspaceEntry {
@@ -263,6 +291,8 @@ export interface HarnessReadModel {
   timeline: TimelineItem[];
   workspace: WorkspaceReadModel;
   composer: ComposerReadModel;
+  /** Live session-keep cells state. Fresh health must not overwrite this. */
+  cellsSession?: CellsSessionReadModel;
 }
 
 export interface ContinuousVerificationRecord {
@@ -325,6 +355,7 @@ export interface RuntimeSnapshot {
   configLoaded?: boolean;
   contextSidecar?: RuntimeContextSidecarStatus;
   dreamMaintenance?: RuntimeDreamMaintenanceStatus;
+  cellsAvailability?: CellsAvailabilityReadModel;
 }
 
 export interface WorkspaceGrant {

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { persistJsonFile, readPersistentJsonFile } from '../persistent-json-store.mjs';
 
 /**
@@ -245,6 +247,38 @@ export const createEffectJournal = ({ storagePath } = {}) => {
     /** Plant-safe empty body (F5): journal-store rehydratable, no SessionState fields. */
     emptyBody: () => emptySnapshot()
   };
+};
+
+/**
+ * Move the pre-split root journal into the windows-cli identity file once.
+ * STARTED rows become UNKNOWN so a later rehydrate cannot clobber a desktop
+ * journal (desktop never calls this and never reads the root file).
+ */
+export const migrateLegacyWindowsCliJournal = async ({
+  env = process.env,
+  legacyPath,
+  destPath
+} = {}) => {
+  if (env?.DDA_PLATFORM !== 'windows-cli') return { migrated: false, reason: 'NOT_WINDOWS_CLI' };
+  if (!legacyPath || !destPath || legacyPath === destPath) return { migrated: false, reason: 'PATH_UNSET' };
+  const existing = await readPersistentJsonFile(destPath);
+  if (existing !== undefined && existing !== null) return { migrated: false, reason: 'DEST_EXISTS' };
+  const parsed = await readPersistentJsonFile(legacyPath);
+  if (parsed === undefined || parsed === null) return { migrated: false, reason: 'NO_LEGACY' };
+  const snapshot = validateSnapshot(parsed);
+  let startedToUnknown = 0;
+  const now = Date.now();
+  for (const effect of snapshot.effects) {
+    if (effect.state === JOURNAL_STATES.STARTED) {
+      effect.state = JOURNAL_STATES.UNKNOWN;
+      effect.unknownAtMs = now;
+      effect.unknownReason = 'LEGACY_MIGRATION_STARTED_TO_UNKNOWN';
+      startedToUnknown += 1;
+    }
+  }
+  await mkdir(dirname(destPath), { recursive: true });
+  await persistJsonFile(destPath, snapshot);
+  return { migrated: true, startedToUnknown };
 };
 
 export { JournalError };

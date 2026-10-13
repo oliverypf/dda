@@ -1,0 +1,16 @@
+{
+  "name": "dda-kernel-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase-2b in-tree N-API seccomp helper (emitStage1Filter / installFromHandoff)",
+  "gypfile": true,
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "build": "node-gyp rebuild"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"]
+}

@@ -12,7 +12,9 @@
     "test": "node --test --test-concurrency=6",
     "test:parallel": "node --test --test-concurrency=6",
     "test:harness-supervision": "node --test test/tool-availability.test.mjs test/task-runner-tools.test.mjs test/controlled-tools.test.mjs test/patch-workspace.test.mjs test/workspace-symbol-read.test.mjs test/workspace-readonly.test.mjs test/tool-registry.test.mjs",
-    "test:serial": "node --test --test-concurrency=1"
+    "test:serial": "node --test --test-concurrency=1",
+    "build:kernel-sandbox": "npm --prefix native/kernel-sandbox run build",
+    "test:phase2b": "node --test test/kernel-phase2b-journal.test.mjs test/kernel-phase2b-cell-protocol.test.mjs test/kernel-phase2b-sandbox.test.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

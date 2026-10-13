@@ -90,6 +90,17 @@ const replace = async (temporaryPath, filePath, options) => {
   }
 };
 
+
+/**
+ * Hold the same O_EXCL lock used by persistJsonFile / readPersistentJsonFile.
+ * Callers must release() promptly. Used by Phase-2b canary plant+hold (PJS bodies only).
+ */
+export const acquirePersistentLock = async (filePath, options = {}) => {
+  if (!filePath) throw new Error('PERSISTENCE_LOCK_PATH_REQUIRED');
+  const settings = { ...DEFAULTS, ...options };
+  return acquire(filePath, settings);
+};
+
 /**
  * Persist a JSON value while coordinating independent runtime processes.
  * Writes are made to a unique temporary file and replaced under a lock.

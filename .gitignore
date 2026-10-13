@@ -72,3 +72,11 @@ jev.config.json
 /.codex-tmp/
 **/__pycache__/
 /desktop/phase2-*.log
+
+# Phase-2b native addon intermediates (keep Release/*.node prebuild when present)
+runtime/native/kernel-sandbox/build/Release/obj.target/
+runtime/native/kernel-sandbox/build/Release/.deps/
+runtime/native/kernel-sandbox/build/Makefile
+runtime/native/kernel-sandbox/build/binding.Makefile
+runtime/native/kernel-sandbox/build/config.gypi
+runtime/native/kernel-sandbox/build/*.target.mk

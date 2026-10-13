@@ -1,6 +1,7 @@
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { canonicalJson } from '../model-tool-calls.mjs';
 import { HOST_REQUEST_TOOL_NAME, normalizeHostRequestArguments } from '../kernel/host-request-payload.mjs';
+import { digestOf } from '../kernel/effects.mjs';
 import { logger } from '../logger.mjs';
 import { canonicalMappedPath } from '../platform/workspace-path.mjs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -64,10 +65,35 @@ const gateView = (name, request) => {
   const payload = request.payload && typeof request.payload === 'object' && !Array.isArray(request.payload) ? request.payload : {};
   if (request.kind === 'fs.write_batch') {
     const paths = Array.isArray(payload.items) ? payload.items.map((item) => item?.path).filter((path) => typeof path === 'string') : [];
-    return { ...view, kernelEffectKind: request.kind, request: paths.length ? { path: paths[0] } : {}, batchPaths: paths.slice(0, 10) };
+    return { ...view, kernelEffectKind: request.kind, request: paths.length ? { path: paths[0] } : {}, batchPaths: paths };
   }
   return { ...view, kernelEffectKind: request.kind, request: payload };
 };
+
+/** F9 canonical argumentsDigest for #15 / suppression / audit (never bare sha256(call.arguments) alone for effects). */
+const f9ArgumentsDigest = (name, argsJson) => {
+  if (name !== 'kernel.host_request') return sha256Digest(argsJson);
+  let request;
+  try { request = JSON.parse(argsJson); } catch { return sha256Digest(argsJson); }
+  const kind = request?.kind;
+  const payload = request?.payload && typeof request.payload === 'object' ? request.payload : {};
+  if (kind === 'fs.write' || kind === 'fs.patch') {
+    return digestOf({ kind, path: payload.path, content: payload.content, replacements: payload.replacements, expectedBaseDigest: payload.expectedBaseDigest ?? null });
+  }
+  if (kind === 'fs.write_batch') {
+    const items = Array.isArray(payload.items) ? payload.items.map((item) => ({
+      op: item?.op, path: item?.path,
+      ...(item?.op === 'write' ? { content: item.content } : { replacements: item?.replacements }),
+      expectedBaseDigest: item?.expectedBaseDigest ?? null
+    })) : [];
+    return digestOf({ kind, items });
+  }
+  if (kind === 'test.run') {
+    return digestOf({ kind, command: payload.command, args: payload.args ?? [], cwd: payload.cwd ?? null });
+  }
+  return digestOf({ kind, payload });
+};
+
 
 const toolSchemas = (registry, mode = 'READ_ONLY') => registry.list()
   .filter((tool) => tool.metadata?.available !== false)
@@ -78,8 +104,10 @@ const toolSchemas = (registry, mode = 'READ_ONLY') => registry.list()
     parameters: tool.inputSchema
   }));
 
-const normalizeToolArgument = (value) => {
-  if (typeof value !== 'string' || value.length < 2 || value.length > MAX_TOOL_ARGUMENT_CHARS) {
+const normalizeToolArgument = (value, { toolName } = {}) => {
+  // I14/19th/21st: 32KB exemption ONLY for kernel.exec; hard top = cell frame encode.
+  const maxChars = toolName === 'kernel.exec' ? Number.POSITIVE_INFINITY : MAX_TOOL_ARGUMENT_CHARS;
+  if (typeof value !== 'string' || value.length < 2 || value.length > maxChars) {
     throw new Error('TOOL_CALL_ARGUMENTS_INVALID');
   }
   let parsed;
@@ -250,7 +278,7 @@ const collectToolCalls = (calls) => {
     }
     if (seen.has(call.id)) throw new Error('TOOL_CALL_DUPLICATE_ID');
     seen.add(call.id);
-    let args = normalizeToolArgument(call.arguments ?? '{}');
+    let args = normalizeToolArgument(call.arguments ?? '{}', { toolName: call.name });
     // Prime Phase-2a: unwrap a JSON-string host_request payload ONCE, before
     // the arguments digest, the action-gate claim and the registry invoke all
     // read call.arguments, so every consumer sees the same object.
@@ -401,7 +429,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             round,
             id: call.id,
             name: call.name,
-            argumentsDigest: sha256Digest(call.arguments),
+            argumentsDigest: f9ArgumentsDigest(call.name, call.arguments),
             proposedInputClaim: proposedToolDecisionClaim(effectView.name, effectView.request),
             toolPolicyFacts: { registered: Boolean(toolDefinition), readOnly: toolDefinition?.readOnly === true,
               available: Boolean(toolDefinition) && toolDefinition.metadata?.available !== false,
@@ -426,7 +454,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             round,
             id: call.id,
             name: call.name,
-            argumentsDigest: sha256Digest(call.arguments)
+            argumentsDigest: f9ArgumentsDigest(call.name, call.arguments)
           });
           let output;
           let processFailureCode;
@@ -482,7 +510,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 && typeof finalArguments.path === 'string' && observedFileDigests.has(pathKey(finalArguments.path))) {
                 finalArguments = { ...finalArguments, expectedDigest: observedFileDigests.get(pathKey(finalArguments.path)) };
               }
-              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: sha256Digest(call.arguments), roundId });
+              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: f9ArgumentsDigest(call.name, call.arguments), roundId });
               if (output?.path && output.ok !== false) {
                 const currentDigest = isWorkspaceContentTool(call.name) ? output.digest
                   : ['file.write', 'file.patch'].includes(call.name) ? output.contentDigest : undefined;

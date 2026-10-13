@@ -63,7 +63,7 @@ All of these must hold (FROZEN #8); otherwise effects stay off with a stable rea
   "next effect needs an individual live approval" (refused if nobody can answer). A
   live-approved, observed effect discharges that additive flag only.
 - **Leases and batches (FROZEN #3/#5).** One one-shot lease per effect. `fs.write_batch`
-  (needs `DDA_KERNEL_WRITE_BATCH=1`): ≤10 items, ≤256 KB, one batch per model round; patch items
+  (needs `DDA_KERNEL_WRITE_BATCH=1`): no item/byte/round business caps (Phase-2b F6); patch items
   are resolved to concrete writes up front (base digest checked); every item is risk/denylist/
   lease pre-admitted before anything runs. No live approver: all items must qualify for AUTO,
   else the whole batch is refused (nothing written). Live approver: one batch card
@@ -74,7 +74,7 @@ All of these must hold (FROZEN #8); otherwise effects stay off with a stable rea
 
 ## Not in this PR (honest scope)
 
-- `shell.exec` / `net.fetch` (refused), code cells / OS sandbox (Phase-2b).
+- `shell.exec` / `net.fetch` (refused), code cells / OS sandbox / crash journal — see RESIDENT_KERNEL_PHASE2B.md.
 - Design §5 crash journal states (`GATED/LEASED/STARTED…`), `SessionState.pendingOutcomes`
   injection into the context and the read-only `LIKELY_APPLIED/NOT_APPLIED/DIVERGED` re-check.
   Host-process crashes still rely on the existing ExecutionStateStore UNKNOWN handling.

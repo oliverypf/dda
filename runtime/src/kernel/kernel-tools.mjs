@@ -99,7 +99,6 @@ const hostRequestPayloadObjectSchema = {
     maxOutputChars: { type: 'integer', minimum: 1 },
     items: {
       type: 'array',
-      maxItems: 10,
       items: {
         type: 'object',
         properties: {
@@ -226,7 +225,7 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
           'fs.patch': 'fs.patch payload {path, replacements:[{oldText,newText,expectedCount?}], expectedBaseDigest?}',
           'test.run': 'test.run payload {command, args?, cwd?, timeoutMs?} (lease-approved test commands only)'
         })[kind]).join('; ')
-        + (batchOn ? `; fs.write_batch payload {items:[{op:'write'|'patch', path, content|replacements, expectedBaseDigest}]} (<=${10} items, <=256KB, one batch per round; stops at the first failure and never rolls back)` : '')
+        + (batchOn ? `; fs.write_batch payload {items:[{op:'write'|'patch', path, content|replacements, expectedBaseDigest}]} (no item/byte/round business caps; stops at the first failure and never rolls back; transport ceilings still apply)` : '')
         + '. shell.exec and net.fetch are refused. Paths MUST be workspace-relative.'
       : 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
     inputSchema: hostRequestSchema,
@@ -293,4 +292,37 @@ export const attachResidentKernel = async ({
   }
   registerResidentKernelTools(registry, kernel, { hostRequestDispatcher });
   return { attached: true, availability, kernel, sessionStore, stop: () => kernel.stop() };
+};
+
+/**
+ * Register kernel.exec (Phase-2b code cells). readOnly:false — never Jev readonly
+ * fast path; READ_ONLY mode must never run it (I8).
+ */
+export const registerKernelExecTool = (registry, cellHost) => {
+  if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
+  if (!cellHost || typeof cellHost.exec !== 'function') throw new Error('KERNEL_CELL_HOST_REQUIRED');
+  registry.register({
+    name: 'kernel.exec',
+    description: 'Run a JavaScript code cell inside the OS-sandboxed resident cell worker (Phase-2b). Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_SANDBOX).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', minLength: 1, description: 'JavaScript source. Hard size limit is the cell protocol frame (KERNEL_MAX_MESSAGE_BYTES), not the 32KB tool-arg cap.' }
+      },
+      required: ['code'],
+      additionalProperties: false
+    },
+    readOnly: false,
+    metadata: { actionClass: 'SIDE_EFFECT', surface: 'resident-kernel-cell', kernelExec: true },
+    handler: async ({ code }, context) => {
+      const result = await cellHost.exec({ code, cellId: context?.toolCallId ? `cell-${context.toolCallId}` : undefined });
+      return {
+        ok: result.ok !== false,
+        cellId: result.cellId,
+        epoch: result.epoch,
+        result: result.result ?? null,
+        ...(result.ok === false ? { errorCode: result.errorCode, errorMessage: result.errorMessage } : {})
+      };
+    }
+  });
 };

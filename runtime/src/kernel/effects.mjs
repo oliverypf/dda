@@ -81,7 +81,7 @@ export const KERNEL_EFFECT_ERROR_CODES = Object.freeze({
 
 // Error codes after which the outcome of the effect is not known. They never
 // replay and they arm the "next effect needs a live approval" flag.
-const UNCERTAIN_ERROR_CODES = new Set([
+export const UNCERTAIN_ERROR_CODES = new Set([
   'KERNEL_OUTCOME_UNCERTAIN', 'KERNEL_TIMEOUT', 'KERNEL_WORKER_CRASHED',
   'EXECUTOR_TIMEOUT', 'EXECUTOR_OUTCOME_UNKNOWN', 'EXECUTOR_ABORTED'
 ]);
@@ -497,8 +497,12 @@ export const createKernelEffectsDispatcher = ({
     }
     let batchGrant;
     if (!nonQualifying.length && live) {
+      const batchContext = {};
+      if (typeof context?.toolCallId === 'string') batchContext.toolCallId = context.toolCallId;
+      if (typeof context?.cellId === 'string' && context.cellId) batchContext.cellId = context.cellId;
+      if (context?.cellApproval) batchContext.cellApproval = context.cellApproval;
       const approved = typeof requestBatchApproval === 'function'
-        ? await requestBatchApproval({ batchId, batchDigest, items: summary }) : false;
+        ? await requestBatchApproval({ batchId, batchDigest, items: summary, context: batchContext }) : false;
       if (!approved) {
         await audit.append({ runId, batchId, batchDigest, phase: 'BATCH_DECLINED' }).catch(() => {});
         throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.BATCH_REFUSED, 'batch approval declined; nothing was written');

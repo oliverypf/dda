@@ -35,9 +35,16 @@ import {
   CELLS_RESET_TITLE,
   CELLS_RUNNING_LABEL,
   CELLS_UNKNOWN_TITLE,
+  approvalCardTitle,
   approvalCellDetailsHtml,
+  approvalStateFromResolved,
+  cellExecTimelineHtml,
   cellsSettingsPanelHtml,
   defaultDesktopCellsSettings,
+  isApprovalStatusList,
+  isPastApprovalList,
+  isPendingApprovalSection,
+  mergeCellOpRow,
   projectCellsSession,
   sandboxBadgeHtml,
   sessionBannerHtml,
@@ -46,7 +53,7 @@ import {
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
 import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
-import type { ContinuousVerificationRecord, HarnessReadModel, ModelConfig, ApprovalReadModel,
+import type { ContinuousVerificationRecord, HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
   ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
 import {
   appendTimelineItem,
@@ -259,6 +266,27 @@ let projectionRuns: Array<{ runId: string; title: string; state: string; started
 // stdin write only means that the response reached the runtime; it does not
 // mean that the persisted Approval/ActionIntent transition succeeded.
 const pendingApprovalResolutions = new Set<string>();
+let cellOpTimer: ReturnType<typeof setInterval> | undefined;
+const ensureCellOpTimer = (): void => {
+  const running = model.timeline.some((item) => item.rows?.some((row) => row.state === 'RUNNING'));
+  if (!running) {
+    if (cellOpTimer) {
+      clearInterval(cellOpTimer);
+      cellOpTimer = undefined;
+    }
+    return;
+  }
+  if (cellOpTimer) return;
+  cellOpTimer = setInterval(() => {
+    document.querySelectorAll<HTMLElement>('[data-cell-op-timer="1"]').forEach((node) => {
+      if (node.dataset.approvalPaused === 'true' || node.dataset.durationMs) return;
+      const started = Number(node.dataset.startedAt);
+      const wait = Number(node.dataset.approvalWaitMs) || 0;
+      if (!Number.isFinite(started)) return;
+      node.textContent = `${Math.max(0, Date.now() - started - wait)} ms`;
+    });
+  }, 1000);
+};
 const pendingRecoveryActions = new Set<string>();
 // Tauri events are delivered globally. Include the run and sequence when
 // de-duplicating so reconnects/re-renders cannot append the same event twice.
@@ -1994,14 +2022,10 @@ const renderRoutePanel = (): string => {
 
 const renderApprovalCard = (approval: ApprovalReadModel): string => {
   const requested = approval.state === 'REQUESTED';
-  const title = requested ? '需要批准一次'
-    : approval.state === 'EXPIRED' ? '审批已过期'
-    : approval.leaseState === 'FAILED' ? '授权不可继续使用 · 执行结果不确定'
-    : approval.leaseState === 'CONSUMED' ? '授权已使用 · ' + (approval.executionOk === true ? '执行器报告完成，验证结果另见证据' : approval.executionOk === false ? '执行器报告失败' : '执行结果未提供')
-    : approval.leaseState === 'CLAIMED' ? '执行器已领取授权'
-    : approval.leaseId ? '已授权执行' : '正在重新检查策略';
+  const title = approvalCardTitle(approval);
+  const cancelled = approval.state === 'CANCELLED' ? ' approval-cancelled' : '';
   return `
-    <article class="approval-card" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
+    <article class="approval-card${cancelled}" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
       ${approvalCellDetailsHtml(approval)}
       <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
@@ -2198,6 +2222,7 @@ const timelineItemHtml = (item: TimelineItem): string => {
           <div class="timeline-step-content">
             ${sandboxBadgeHtml(item)}
             ${unknownJournalHtml(item)}
+            ${item.toolName === 'kernel.exec' ? cellExecTimelineHtml(item.rows) : ''}
             <div class="timeline-step-header">
               <strong class="timeline-step-title">${item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}`}</strong>
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
@@ -2448,7 +2473,7 @@ const renderContextContent = (): string => {
         ${model.approvals.some(approval => approval.state === 'REQUESTED') ? `<section class="context-section pending-approval-section" data-pending-approvals tabindex="-1">
           <h3>需要你确认的操作</h3>
           <p class="panel-purpose">逐项核对要执行的内容和影响范围，再选择批准或拒绝。每次批准只针对对应操作。</p>
-          ${model.approvals.filter(approval => approval.state === 'REQUESTED').map(renderApprovalCard).join('')}
+          ${model.approvals.filter(approval => isPendingApprovalSection(approval.state)).map(renderApprovalCard).join('')}
         </section>` : ''}
 
         ${renderTaskValueSummary()}
@@ -2494,7 +2519,7 @@ const renderContextContent = (): string => {
               ${controlledNetworkTargets.error ? `<div class="network-target-error">${escapeHtml(controlledNetworkTargets.error)}</div>` : ''}
             </div>`) : ''}
           <button class="governance-button" data-action="navigate" data-page="safety">查看审批记录和详细权限</button>
-          ${panelDetails('permissions:past', '查看已处理的请求', model.approvals.filter(approval => approval.state === 'APPROVED' || approval.state === 'EXPIRED').map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
+          ${panelDetails('permissions:past', '查看已处理的请求', model.approvals.filter(approval => isPastApprovalList(approval.state)).map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
         </section>`, controlled ? '当前为受控模式：每次操作前都会询问你' : '当前为只读模式：不会改动任何东西')}}
 
         ${contextGroup('tools:troubleshooting', '遇到问题 / 查看执行细节', '查操作记录、模型选择依据和连接状态，帮助定位失败原因。', `
@@ -3062,7 +3087,7 @@ const renderMemoryPage = (): string => {
     + '<button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>';
 };
 const renderSafetyPage = (): string => {
-  const approvals = model.approvals.filter((approval) => approval.state === 'REQUESTED' || approval.state === 'APPROVED' || approval.state === 'EXPIRED');
+  const approvals = model.approvals.filter((approval) => isApprovalStatusList(approval.state));
   const controlled = model.composer.mode === 'CONTROLLED';
   const network = controlledNetworkTargets.parsed.length ? controlledNetworkTargets.parsed.map((target) => target.host).join(', ') : '关闭';
   const records = executionRecords.slice(-12).reverse();
@@ -3331,7 +3356,7 @@ const renderLiveView = (): void => {
   patchLiveRegion(slot('evidence'), [model.timeline], renderEvidencePanel);
   patchLiveRegion(slot('decisions'), [model.decisions], renderDecisionTrace);
   patchLiveRegion(slot('approvals'), [model.approvals, [...pendingApprovalResolutions].join(',')], () => {
-    const approvals = model.approvals.filter((approval) => approval.state === 'REQUESTED' || approval.state === 'APPROVED' || approval.state === 'EXPIRED');
+    const approvals = model.approvals.filter((approval) => isApprovalStatusList(approval.state));
     return approvals.length ? `<section class="workbench-approvals" aria-label="审批与授权状态"><div class="transcript-heading"><h2>审批与授权状态</h2></div>${approvals.map(renderApprovalCard).join('')}</section>` : '';
   });
   const agents = slot('agents');
@@ -4382,7 +4407,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     if (requestId) pendingApprovalResolutions.delete(requestId);
     const current = model.approvals.find((approval) => approval.requestId === requestId);
     if (current) {
-      const state = payload.state === 'APPROVED' || payload.state === 'DECLINED' ? payload.state : current.state;
+      const state = approvalStateFromResolved(payload.state, current.state);
       update(upsertApproval(model, {
         ...current,
         state,
@@ -4502,6 +4527,38 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     if (session) update(setCellsSession(model, session));
     return;
   }
+  if (event.kind === 'kernel.cell_op') {
+    const cellItemId = typeof payload.itemId === 'string' && payload.itemId ? payload.itemId : '';
+    const row = payload.row && typeof payload.row === 'object' && !Array.isArray(payload.row)
+      ? payload.row as CellExecRow
+      : undefined;
+    if (!cellItemId || !row || typeof row.epoch !== 'string' || typeof row.toolCallId !== 'string') return;
+    const warning = typeof payload.warning === 'string' ? payload.warning : undefined;
+    const sandbox = typeof payload.sandbox === 'string' ? payload.sandbox : undefined;
+    const existing = model.timeline.find((item) => item.itemId === cellItemId);
+    const rows = mergeCellOpRow(existing, row);
+    const item: TimelineItem = {
+      itemId: cellItemId,
+      runId: event.runId,
+      eventId: event.eventId,
+      eventSequence: event.sequence,
+      kind: 'STATUS',
+      title: existing?.title ?? CELLS_RUNNING_LABEL,
+      body: existing?.body ?? CELLS_RUNNING_LABEL,
+      status: existing?.status ?? 'STREAMING',
+      createdAtMs: existing?.createdAtMs ?? (Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now()),
+      toolName: 'kernel.exec',
+      ...(existing?.warning || warning ? { warning: existing?.warning ?? warning } : {}),
+      ...(existing?.sandbox || sandbox ? { sandbox: existing?.sandbox ?? sandbox } : {}),
+      ...(existing?.journalPath ? { journalPath: existing.journalPath } : {}),
+      ...(existing?.cellState ? { cellState: existing.cellState } : {}),
+      ...(existing?.truncated ? { truncated: existing.truncated } : {}),
+      rows
+    };
+    update(existing ? replaceTimelineItem(model, cellItemId, item) : appendTimelineItem(model, item));
+    ensureCellOpTimer();
+    return;
+  }
   if (event.kind === 'kernel.cell_output' || event.kind === 'kernel.cell_status' || event.kind === 'kernel.cell_reset' || event.kind === 'kernel.journal_unknown') {
     const cellItemId = typeof payload.itemId === 'string' && payload.itemId ? payload.itemId : `runtime-${eventKey}`;
     const warning = typeof payload.warning === 'string' ? payload.warning : undefined;
@@ -4536,6 +4593,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(started ? { cellState: 'STARTED' as const } : {}),
       ...(unknown ? { cellState: 'UNKNOWN' as const } : {}),
       ...(reset ? { cellState: 'RESET' as const } : {}),
+      ...(existing?.rows ? { rows: existing.rows } : {}),
       truncated: body.length >= 8000
     };
     update(existing ? replaceTimelineItem(model, cellItemId, item) : appendTimelineItem(model, item));

@@ -81,7 +81,8 @@ import {
 import { createEffectJournal, migrateLegacyWindowsCliJournal } from './kernel/effect-journal.mjs';
 import { getJournalAls, JOURNAL_BITS } from './kernel/journal-als.mjs';
 import { isCodeCellsEnabled, isResidentSessionKeep, createCellHost, observeCodeCells } from './kernel/cell-host.mjs';
-import { approvalSubject, cellApprovalPresentation } from './kernel/cell-approval.mjs';
+import { approvalSubject } from './kernel/cell-approval.mjs';
+import { createApprovalSession } from './kernel/approval-session.mjs';
 import { registerKernelExecTool } from './kernel/kernel-tools.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
@@ -469,7 +470,6 @@ async function runTask() {
     resumed: resumeRequested
   });
   setRuntimePhase('INITIALIZING');
-  const pendingApprovals = new Map();
   // Mid-task Jev action-gate decisions, persisted by tool-call id and argument
   // hash so the lease provider and approval path can honor a REQUIRE_APPROVAL
   // for the exact proposed action. A genuine Jev opinion (not the conservative
@@ -512,234 +512,51 @@ async function runTask() {
       process.stdin.destroy?.();
     }
   };
-  approvalInterface?.on('line', (line) => {
-    try {
-      const message = JSON.parse(line);
-      if (message?.type !== 'approval_response' || typeof message.requestId !== 'string') return;
-      const pending = pendingApprovals.get(message.requestId);
-      if (!pending) return;
-      if (message.displayedDigest !== pending.requestDigest) return;
-      pendingApprovals.delete(message.requestId);
-      clearTimeout(pending.timer);
-      const approved = message.approved === true;
-      void (async () => {
-        if (pending.context?.approval) await executionState.transition(pending.context.approval.recordId, approved ? 'APPROVED' : 'DECLINED');
-        if (pending.context?.intent) await executionState.transition(pending.context.intent.recordId, approved ? 'APPROVED' : 'REJECTED');
-        if (!approved) approvalContexts.delete(pending.requestDigest);
-        if (coordinator.state === 'WAITING_APPROVAL') {
-          await coordinator.transitionAndFlush(approved ? 'EXECUTING' : 'FAILED', {
-            reason: approved ? 'APPROVAL_GRANTED' : 'APPROVAL_DECLINED',
-            metadata: { requestId: message.requestId }
-          });
-        }
-        emitEvent('approval.resolved', {
-          requestId: message.requestId,
-          state: approved ? 'APPROVED' : 'DECLINED',
-          displayedDigest: pending.requestDigest,
-          ...(pending.context?.intent ? { intentId: pending.context.intent.recordId } : {}),
-          ...(pending.context?.approval ? { approvalId: pending.context.approval.recordId } : {})
-        });
-        pending.resolve(approved);
-      })().catch(() => pending.resolve(false));
-    } catch {
-      // Ignore malformed host input; the pending approval will expire safely.
-    }
-  });
-  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk, context: approvalCallContext } = {}) => {
-    const requestId = `approval-${randomUUID()}`;
-    // Prime Phase-2a fs.write_batch: one live batch approval covers exactly
-    // the pre-admitted, non-risky items (matched by path + content digest).
-    // Never applies when anything requires an explicit approval.
-    const batchGranted = requireApproval !== true
-      && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
-      && approvalCallContext.kernelEffect.batchGrant.consume({ capability, request }) === true;
-    const requestDigest = executionDigest(approvalSubject({ capability, request, context: approvalCallContext }));
-    const cellPresentation = approvalCallContext?.cellApproval
-      ? cellApprovalPresentation(requestDigest, approvalCallContext.cellApproval)
-      : null;
-    const approvalExpiresAt = Date.now() + APPROVAL_TTL_MS;
-    const risk = providedRisk ?? (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
-      ? 'HIGH'
-      : capability === CAPABILITIES.TEST ? 'MEDIUM' : 'LOW');
-    const safeRequest = {
-      capability,
-      requestDigest,
-      risk,
-      approvalExpiresAt,
+  const cellOpSinks = new Map();
+  const approvalSession = createApprovalSession({
+    approvalContexts,
+    runId,
+    logger,
+    emitEvent,
+    cellOpSinks,
+    hasLiveApprover: () => Boolean(approvalInterface),
+    executionState: () => executionState,
+    coordinator: () => coordinator,
+    activeSnapshotDigest: () => activeSnapshotDigest,
+    kernelExecBadge: () => kernelExecBadge,
+    releaseChannel: () => releaseChannel,
+    executorIdentity: () => executorDescriptor().id,
+    bindingSnapshot: () => allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation })),
+    capabilitySnapshot: () => ({
+      releaseChannel,
+      capabilities: approvedCapabilities,
+      commands: approvedCommands,
+      ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {})
+    }),
+    buildScope: ({ capability, request, operationId, bindingSnapshotDigest }) => createExecutionScopeSnapshot({
+      runId,
+      operationId,
+      workspaceRootDigest: activeSnapshotDigest,
+      canonicalRootDigest: activeSnapshotDigest,
+      repositoryRootDigest: initialGitObservation?.repositoryRootDigest,
+      beforeHead: initialGitObservation?.headDigest,
+      allowedCapabilities: [capability],
+      allowedPathRoots: typeof request?.path === 'string' ? [request.path] : [],
+      allowedCommands: typeof request?.command === 'string' ? [request.command] : [],
+      ...(approvedNetworkTargets.length ? { allowedNetworkTargets: approvedNetworkTargets.map((target) => target.host) } : {}),
+      executionMode: mode,
+      releaseChannel,
       policyVersion: 'runtime-safety-1',
-      scope: { snapshotDigest: activeSnapshotDigest, capability },
-      ...(typeof request?.command === 'string' ? { command: request.command.slice(0, 4096) } : {}),
-      ...(typeof request?.path === 'string' ? { path: request.path.slice(0, 512) } : {}),
-      ...(typeof request?.cwd === 'string' ? { cwd: request.cwd.slice(0, 512) } : {}),
-      ...(Array.isArray(request?.kernelBatchItems) ? {
-        kernelBatch: {
-          batchId: String(request.kernelBatchId ?? '').slice(0, 80),
-          items: request.kernelBatchItems.slice(0, 10).map((item) => ({
-            op: String(item?.op ?? '').slice(0, 8), path: String(item?.path ?? '').slice(0, 512),
-            bytes: Number(item?.bytes) || 0, contentDigest: String(item?.contentDigest ?? '').slice(0, 80)
-          }))
-        }
-      } : {}),
-      ...(cellPresentation ? {
-        cellOpIndex: cellPresentation.cellOpIndex,
-        fingerprint: cellPresentation.fingerprint,
-        codePreview: cellPresentation.codePreview,
-        toolName: 'kernel.exec',
-        // Card badge reads worker READY fields only. cells_ready keeps NOT_A_SECURITY_SANDBOX.
-        ...(kernelExecBadge ?? {})
-      } : {}),
-      ...(typeof request?.host === 'string' ? {
-        host: request.host.slice(0, 253),
-        ...(typeof request?.method === 'string' ? { method: request.method.slice(0, 10) } : {}),
-        ...(typeof request?.scheme === 'string' ? { scheme: request.scheme.slice(0, 10) } : {})
-      } : {})
-    };
-    let resolveApproval;
-    const approvalPromise = new Promise((resolve) => { resolveApproval = resolve; });
-    const pending = { resolve: resolveApproval, timer: undefined, requestDigest, context: undefined };
-    if (approvalInterface && !batchGranted) {
-      pending.timer = setTimeout(() => {
-        void (async () => {
-          pendingApprovals.delete(requestId);
-          approvalContexts.delete(requestDigest);
-          emitEvent('approval.expired', { requestId });
-          if (pending.context?.approval) await executionState.transition(pending.context.approval.recordId, 'EXPIRED').catch(() => {});
-          if (pending.context?.intent) await executionState.transition(pending.context.intent.recordId, 'REJECTED').catch(() => {});
-          if (coordinator.state === 'WAITING_APPROVAL') {
-            await coordinator.transitionAndFlush('FAILED', {
-              reason: 'APPROVAL_EXPIRED',
-              metadata: { requestId }
-            }).catch(() => {});
-          }
-          pending.resolve(false);
-        })();
-      }, APPROVAL_TTL_MS);
-      pendingApprovals.set(requestId, pending);
-    }
-    try {
-      const operationId = `operation-${requestId}`;
-      const bindingSnapshotDigest = sha256Digest(JSON.stringify(allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation }))));
-      const scopeSnapshot = createExecutionScopeSnapshot({
-        runId,
-        operationId,
-        workspaceRootDigest: activeSnapshotDigest,
-        canonicalRootDigest: activeSnapshotDigest,
-        repositoryRootDigest: initialGitObservation?.repositoryRootDigest,
-        beforeHead: initialGitObservation?.headDigest,
-        allowedCapabilities: [capability],
-        allowedPathRoots: typeof request?.path === 'string' ? [request.path] : [],
-        allowedCommands: typeof request?.command === 'string' ? [request.command] : [],
-        ...(approvedNetworkTargets.length ? { allowedNetworkTargets: approvedNetworkTargets.map((target) => target.host) } : {}),
-        executionMode: mode,
-        releaseChannel,
-        policyVersion: 'runtime-safety-1',
-        bindingSnapshotDigest,
-        createdAtMs: Date.now()
-      });
-      safeRequest.scope = { snapshotDigest: scopeSnapshot.snapshotDigest, capability };
-      const intent = await executionState.createIntent({
-        runId,
-        capability,
-        request,
-        requestDigest,
-        snapshotDigest: activeSnapshotDigest,
-        scope: scopeSnapshot,
-        operationId,
-        bindingSnapshot: allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation })),
-        capabilitySnapshot: { releaseChannel, capabilities: approvedCapabilities, commands: approvedCommands, ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}) },
-        releaseChannel,
-        executorIdentity: executorDescriptor().id,
-        policyVersion: 'runtime-safety-1'
-      });
-      await executionState.transition(intent.recordId, 'SAFETY_EVALUATING');
-      const approval = await executionState.createApproval({
-        runId,
-        intentId: intent.recordId,
-        capability,
-        requestDigest,
-        displayedDigest: requestDigest,
-        snapshotDigest: activeSnapshotDigest,
-        expiresAt: approvalExpiresAt,
-        bindingSnapshot: allocatedRoles.map(({ contextId, role, model, isolation }) => ({ contextId, role, model, isolation })),
-        capabilitySnapshot: { releaseChannel, capabilities: approvedCapabilities, commands: approvedCommands, ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}) },
-        releaseChannel,
-        policyVersion: 'runtime-safety-1'
-      });
-      await executionState.transition(approval.recordId, 'PRESENTED');
-      await executionState.transition(intent.recordId, 'WAITING_APPROVAL');
-      pending.context = { intent, approval, capability, request, scopeSnapshot, capabilitySnapshot: { releaseChannel, capabilities: approvedCapabilities, commands: approvedCommands, ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}) } };
-      approvalContexts.set(requestDigest, pending.context);
-      if (approvalInterface && !batchGranted && coordinator.state === 'EXECUTING') {
-        await coordinator.transitionAndFlush('WAITING_APPROVAL', {
-          reason: 'APPROVAL_REQUIRED',
-          metadata: { requestId, capability }
-        });
-      }
-      emitEvent('action_intent.created', {
-        intentId: intent.intentId ?? intent.recordId,
-        capability,
-        requestDigest,
-        snapshotDigest: activeSnapshotDigest,
-        policyVersion: 'runtime-safety-1'
-      });
-      await appendGitAuditCheckpoint('ACTION_REQUESTED', {
-        operationId: intent.operationId,
-        intentId: intent.recordId,
-        approvalId: approval.recordId
-      }, { capability, scopeSnapshotDigest: scopeSnapshot.snapshotDigest });
-      await appendActionEvent('ActionRequested', {
-        operationId: intent.operationId,
-        intentId: intent.recordId,
-        approvalId: approval.recordId,
-        capability,
-        requestDigest,
-        scopeSnapshotDigest: scopeSnapshot.snapshotDigest
-      });
-      if (batchGranted) {
-        await executionState.transition(approval.recordId, 'APPROVED', { reason: 'KERNEL_BATCH_APPROVAL' });
-        await executionState.transition(intent.recordId, 'APPROVED', { reason: 'KERNEL_BATCH_APPROVAL' });
-        return true;
-      }
-      if (!approvalInterface) {
-        // No live approver is connected. A risk-based or dangerous action must
-        // not be silently granted by host policy; only a pre-approved, non-risky
-        // action keeps the prior EXPLICIT_HOST_POLICY auto-approval.
-        if (resolveApprovalOutcome({ requireApproval, hasLiveApprover: false }) === APPROVAL_OUTCOMES.REFUSE) {
-          await executionState.transition(approval.recordId, 'DECLINED', { reason: 'APPROVAL_REQUIRED_NO_LIVE_APPROVER' });
-          await executionState.transition(intent.recordId, 'REJECTED', { reason: 'APPROVAL_REQUIRED_NO_LIVE_APPROVER' });
-          approvalContexts.delete(requestDigest);
-          emitEvent('approval.refused', {
-            requestId,
-            capability,
-            requestDigest,
-            risk,
-            reason: 'NO_LIVE_APPROVER',
-            ...(pending.context?.intent ? { intentId: pending.context.intent.recordId } : {}),
-            ...(pending.context?.approval ? { approvalId: pending.context.approval.recordId } : {})
-          });
-          return false;
-        }
-        await executionState.transition(approval.recordId, 'APPROVED', { reason: 'EXPLICIT_HOST_POLICY' });
-        await executionState.transition(intent.recordId, 'APPROVED', { reason: 'EXPLICIT_HOST_POLICY' });
-        return true;
-      }
-    } catch (error) {
-      logger.error(`approval request failed | requestId=${requestId} | error=${error?.stack ?? error}`);
-      clearTimeout(pending.timer);
-      pendingApprovals.delete(requestId);
-      pending.resolve(false);
-      return approvalPromise;
-    }
-    // Register and persist the request before emitting it so a fast host reply
-    // cannot race the pending approval map or the intent context.
-    emitEvent('approval.requested', {
-      requestId,
-      ...safeRequest,
-      ...(pending.context?.intent ? { intentId: pending.context.intent.recordId } : {}),
-      ...(pending.context?.approval ? { approvalId: pending.context.approval.recordId } : {})
-    });
-    return approvalPromise;
-  };
+      bindingSnapshotDigest,
+      createdAtMs: Date.now()
+    }),
+    appendGitAuditCheckpoint: (...args) => appendGitAuditCheckpoint(...args),
+    appendActionEvent: (...args) => appendActionEvent(...args)
+  });
+  const requestApproval = approvalSession.requestApproval;
+  approvalInterface?.on('line', (line) => {
+    approvalSession.handleLine(line);
+  });
   setRuntimePhase('STORAGE_CONFIGURATION');
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
@@ -2180,10 +1997,11 @@ async function runTask() {
             ?? (context?.argumentsDigest && gateApprovalDecisions.get(context.argumentsDigest));
           return entry?.requireApproval === true;
         },
-        requestBatchApproval: ({ batchId, batchDigest, items }) => requestApproval({
+        requestBatchApproval: ({ batchId, batchDigest, items, context }) => requestApproval({
           capability: CAPABILITIES.WRITE_FILE,
           request: { kernelBatchId: batchId, kernelBatchDigest: batchDigest, kernelBatchItems: items },
-          requireApproval: false
+          requireApproval: false,
+          context
         }),
         denylist: kernelEffectDenylist,
         audit: createKernelEffectAuditLog({ storagePath: kernelEffectAuditPath }),
@@ -2284,6 +2102,10 @@ async function runTask() {
         workspace,
         effectsDispatcher: kernelEffectsDispatcher,
         journal: effectJournal,
+        journalPath: kernelEffectJournalPath,
+        cellOpSinks,
+        onCellBegin: ({ cellId }) => approvalSession.reopenCell(cellId),
+        onCellTerminal: ({ cellId }) => approvalSession.cancelCell(cellId),
         onEmit: (type, payload) => emitEvent(type, payload),
         readonlyBridge: async (kind, payload) => {
           // Phase-1 readonly bridge: same ReadonlyWorkspace + SessionState (F2/I2).
@@ -5041,11 +4863,7 @@ async function runTask() {
       await creditBlameLedger.flush().catch(() => {});
       await modelEgressLedger.flush().catch(() => {});
       await Promise.resolve(pluginGovernance?.flush?.()).catch(() => {});
-      for (const pending of pendingApprovals.values()) {
-        clearTimeout(pending.timer);
-        pending.resolve(false);
-      }
-      pendingApprovals.clear();
+      approvalSession.failAllPending();
       approvalInterface?.close();
       if (approvalInterface) {
         process.stdin.unref?.();

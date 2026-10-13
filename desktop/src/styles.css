@@ -508,6 +508,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cell-code-preview, .cell-journal-path { margin: 8px 0 0; padding: 8px; overflow: auto; border-radius: 6px; background: #fff; color: inherit; font-size: 12px; white-space: pre-wrap; }
 .cell-approval-fields { margin: 8px 0 0; }
 .cell-fingerprint-note { margin: 6px 0 0; color: var(--text-soft); font-size: 12px; }
+.approval-card.approval-cancelled { border-color: #d4d4d8; background: #f4f4f5; }
+.approval-card.approval-cancelled .approval-title { color: #52525b; }
+.cell-exec-timeline { margin-top: 8px; }
+.cell-exec-timeline summary { cursor: pointer; font-size: 12px; font-weight: 650; }
+.cell-op-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cell-op { padding: 6px 8px; border-radius: 6px; background: #f8fafc; font-size: 12px; }
+.cell-op-bad { background: #fff1f2; color: #9f1239; }
+.cell-op-muted { background: #f4f4f5; color: #52525b; }
+.cell-op-unknown { background: #fffbeb; color: #92400e; }
+.cell-op-title { font-weight: 650; }
+.cell-op-meta { display: flex; gap: 8px; color: inherit; font-size: 11px; }
+.cell-op-output { margin: 6px 0 0; white-space: pre-wrap; font: 11px/1.4 Consolas, monospace; }
 .approval-title { display: flex; align-items: center; gap: 6px; color: #8d5700; font-size: 11px; }
 .approval-detail { margin-top: 7px; color: var(--text-soft); font: 10px/1.5 Consolas, monospace; overflow-wrap: anywhere; }
 .approval-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; color: var(--text-muted); font-size: 10px; }

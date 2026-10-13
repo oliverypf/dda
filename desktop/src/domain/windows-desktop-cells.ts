@@ -1,5 +1,6 @@
 import type {
   ApprovalReadModel,
+  CellExecRow,
   CellsAvailabilityReadModel,
   CellsSessionReadModel,
   TimelineItem
@@ -160,6 +161,140 @@ export const kernelExecCopyBranch = (flags: { windowsDesktop?: boolean; windowsU
   if (flags.windowsDesktop) return 'windows-desktop';
   if (flags.windowsUnsandboxed) return 'windows-cli';
   return 'linux';
+};
+
+export const approvalCardTitle = (approval: Pick<ApprovalReadModel, 'state' | 'leaseState' | 'executionOk' | 'leaseId'>): string => {
+  if (approval.state === 'REQUESTED') return '需要批准一次';
+  if (approval.state === 'EXPIRED') return '审批已过期';
+  if (approval.state === 'CANCELLED') return '已取消（cell 已结束）';
+  if (approval.leaseState === 'FAILED') return '授权不可继续使用 · 执行结果不确定';
+  if (approval.leaseState === 'CONSUMED') {
+    return '授权已使用 · ' + (approval.executionOk === true
+      ? '执行器报告完成，验证结果另见证据'
+      : approval.executionOk === false ? '执行器报告失败' : '执行结果未提供');
+  }
+  if (approval.leaseState === 'CLAIMED') return '执行器已领取授权';
+  if (approval.leaseId) return '已授权执行';
+  return '正在重新检查策略';
+};
+
+export const approvalStateFromResolved = (
+  payloadState: unknown,
+  current: ApprovalReadModel['state']
+): ApprovalReadModel['state'] =>
+  payloadState === 'APPROVED' || payloadState === 'DECLINED' || payloadState === 'CANCELLED' ? payloadState : current;
+
+/** Pending section stays REQUESTED-only. Status lists also show CANCELLED. Past list adds CANCELLED and DECLINED. */
+export const isPendingApprovalSection = (state: string): boolean => state === 'REQUESTED';
+export const isApprovalStatusList = (state: string): boolean =>
+  state === 'REQUESTED' || state === 'APPROVED' || state === 'EXPIRED' || state === 'CANCELLED';
+export const isPastApprovalList = (state: string): boolean =>
+  state === 'APPROVED' || state === 'EXPIRED' || state === 'CANCELLED' || state === 'DECLINED';
+
+const finishedRead = (row: CellExecRow): boolean =>
+  row.classification === 'read' && row.state !== 'RUNNING' && row.approvalWaiting !== true;
+
+/** Consecutive finished reads in one epoch collapse. Effect and approval-pending rows stay separate. */
+export const groupCellExecRows = (rows: CellExecRow[]): Array<{ kind: 'reads' | 'single'; rows: CellExecRow[] }> => {
+  const epochs: string[] = [];
+  const byEpoch = new Map<string, CellExecRow[]>();
+  for (const row of rows) {
+    if (!byEpoch.has(row.epoch)) epochs.push(row.epoch);
+    const list = byEpoch.get(row.epoch) ?? [];
+    list.push(row);
+    byEpoch.set(row.epoch, list);
+  }
+  const groups: Array<{ kind: 'reads' | 'single'; rows: CellExecRow[] }> = [];
+  for (const epoch of epochs) {
+    const list = (byEpoch.get(epoch) ?? []).slice().sort((a, b) => a.cellOpIndex - b.cellOpIndex);
+    let current: { kind: 'reads' | 'single'; rows: CellExecRow[] } | undefined;
+    for (const row of list) {
+      if (finishedRead(row) && current?.kind === 'reads') {
+        const prev = current.rows[current.rows.length - 1];
+        if (row.cellOpIndex === prev.cellOpIndex + 1) {
+          current.rows.push(row);
+          continue;
+        }
+      }
+      current = { kind: finishedRead(row) ? 'reads' : 'single', rows: [row] };
+      groups.push(current);
+    }
+  }
+  return groups.map((group) => group.kind === 'reads' && group.rows.length < 2
+    ? { kind: 'single', rows: group.rows }
+    : group);
+};
+
+export const cellOpElapsedMs = (row: CellExecRow, now: number): number => {
+  if (row.durationMs !== undefined && row.state !== 'RUNNING') return Math.max(0, row.durationMs);
+  const start = row.startedAtMs ?? now;
+  const wait = row.approvalWaitMs ?? 0;
+  if (row.approvalWaiting && row.approvalStartedAt !== undefined) {
+    return Math.max(0, row.approvalStartedAt - start - wait);
+  }
+  return Math.max(0, now - start - wait);
+};
+
+const ROW_STATE_LABEL: Record<string, string> = {
+  RUNNING: '进行中',
+  COMPLETED: '完成',
+  FAILED: '失败',
+  REFUSED: '已拒绝',
+  DECLINED: '已拒绝批准',
+  EXPIRED: '已过期',
+  UNKNOWN: '不确定',
+  CANCELLED: '已取消'
+};
+
+const rowClass = (state: string): string => {
+  if (state === 'FAILED' || state === 'REFUSED' || state === 'DECLINED') return 'cell-op cell-op-bad';
+  if (state === 'EXPIRED' || state === 'CANCELLED') return 'cell-op cell-op-muted';
+  if (state === 'UNKNOWN') return 'cell-op cell-op-unknown';
+  return 'cell-op';
+};
+
+const rowHtml = (row: CellExecRow, now: number): string => {
+  const elapsed = cellOpElapsedMs(row, now);
+  const journal = row.state === 'UNKNOWN'
+    ? `<button type="button" class="secondary-button" data-action="view-cell-journal">查看 journal</button>${row.journalPath ? `<pre class="cell-journal-path">${escapeHtml(row.journalPath)}</pre>` : ''}`
+    : '';
+  const output = row.output
+    ? `<pre class="cell-op-output">${escapeHtml(row.output)}</pre>`
+    : '';
+  return `<li class="${rowClass(row.state)}" data-state="${escapeHtml(row.state)}" data-epoch="${escapeHtml(row.epoch)}" data-tool-call-id="${escapeHtml(row.toolCallId)}">
+    <div class="cell-op-title">${escapeHtml(row.title)}</div>
+    <div class="cell-op-meta">
+      <span>${escapeHtml(ROW_STATE_LABEL[row.state] ?? row.state)}</span>
+      <time class="cell-op-timer" data-cell-op-timer="1" data-started-at="${row.startedAtMs ?? ''}" data-approval-wait-ms="${row.approvalWaitMs ?? 0}" data-approval-paused="${row.approvalWaiting === true ? 'true' : 'false'}" data-approval-started-at="${row.approvalStartedAt ?? ''}" data-duration-ms="${row.durationMs ?? ''}">${elapsed} ms</time>
+      ${row.truncated ? '<span>输出已截断</span>' : ''}
+    </div>
+    ${journal}
+    ${output}
+  </li>`;
+};
+
+export const cellExecTimelineHtml = (rows: CellExecRow[] | undefined, now = Date.now()): string => {
+  if (!rows?.length) return '';
+  const groups = groupCellExecRows(rows);
+  const items = groups.map((group) => {
+    if (group.kind === 'reads') {
+      return `<li class="cell-op cell-op-group" data-state="COMPLETED">读取 ${group.rows.length} 项 · ${group.rows.map((row) => escapeHtml(row.title)).join('、')}</li>`;
+    }
+    return rowHtml(group.rows[0], now);
+  }).join('');
+  return `<details class="cell-exec-timeline" open>
+    <summary>操作时间线 · ${rows.length}</summary>
+    <ol class="cell-op-list">${items}</ol>
+  </details>`;
+};
+
+/** Merge one row onto the cell stream card. Other card fields stay. */
+export const mergeCellOpRow = (item: TimelineItem | undefined, row: CellExecRow): CellExecRow[] => {
+  const rows = Array.isArray(item?.rows) ? item.rows.slice() : [];
+  const index = rows.findIndex((existing) => existing.epoch === row.epoch && existing.toolCallId === row.toolCallId);
+  if (index < 0) rows.push(row);
+  else rows[index] = { ...rows[index], ...row };
+  return rows;
 };
 
 export const projectCellsSession = (payload: {

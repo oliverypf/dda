@@ -16,6 +16,7 @@ export const CELL_MESSAGE_TYPES = Object.freeze({
   EXEC_RESULT: 'exec_result',
   HOST_REQUEST: 'host_request',
   HOST_RESPONSE: 'host_response',
+  OP_PROGRESS: 'op_progress',
   ERROR: 'error'
 });
 

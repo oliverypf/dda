@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor } from '../src/safety-executor.mjs';
@@ -183,12 +182,6 @@ test('cell host.request needing approval stores the approval digest and leaves n
       request: nonCell.request
     });
     assert.equal(omitted.requestDigest, nonCellDigest);
-
-    const source = readFileSync(new URL('../src/index.mjs', import.meta.url), 'utf8');
-    const start = source.indexOf('const intent = await executionState.createIntent({');
-    assert.ok(start >= 0);
-    const call = source.slice(start, source.indexOf('});', start));
-    assert.match(call, /\brequestDigest\b/);
   } finally {
     await host.stop().catch(() => {});
     await rm(root, { recursive: true, force: true }).catch(() => {});

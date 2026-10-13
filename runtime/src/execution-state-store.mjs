@@ -164,15 +164,20 @@ export class ExecutionStateStore {
     return this.list();
   }
 
-  async createIntent({ runId, capability, request = {}, snapshotDigest, policyVersion = 'runtime-safety-1', scope, bindingSnapshot, capabilitySnapshot, releaseChannel, executorIdentity, operationId } = {}) {
+  async createIntent({ runId, capability, request = {}, requestDigest, snapshotDigest, policyVersion = 'runtime-safety-1', scope, bindingSnapshot, capabilitySnapshot, releaseChannel, executorIdentity, operationId } = {}) {
     const normalizedRunId = safeId(runId, 160);
     const normalizedCapability = safeId(capability, 80);
     if (!normalizedRunId || !normalizedCapability) throw new Error('EXECUTION_INTENT_REQUIRED');
+    // Approval checks executionDigest(approvalSubject(...)). A cell host.request
+    // subject adds code, cellOpIndex, and hostRequest, so the caller passes that
+    // digest. Omitting it keeps digest({ capability, request }).
+    const boundRequestDigest = requestDigest === undefined ? digest({ capability, request }) : requestDigest;
+    if (!isDigest(boundRequestDigest)) throw new Error('EXECUTION_STATE_INVALID_REFERENCE');
     return this.#create('intent', {
       runId: normalizedRunId,
       capability: normalizedCapability,
       requestSummary: requestSummary(request),
-      requestDigest: digest({ capability, request }),
+      requestDigest: boundRequestDigest,
       ...(safeText(snapshotDigest, 128) ? { snapshotDigest: safeText(snapshotDigest, 128) } : {}),
       ...(scope !== undefined ? { scopeDigest: digestOptional(scope) } : {}),
       ...(bindingSnapshot !== undefined ? { bindingSnapshotDigest: digestOptional(bindingSnapshot) } : {}),

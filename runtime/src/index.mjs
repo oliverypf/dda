@@ -641,6 +641,7 @@ async function runTask() {
         runId,
         capability,
         request,
+        requestDigest,
         snapshotDigest: activeSnapshotDigest,
         scope: scopeSnapshot,
         operationId,

@@ -1548,7 +1548,14 @@ fn run_model_task_blocking(
     let runtime = runtime_entrypoint(&app)?;
     let _ = app.emit("context-sidecar-status", &local_context_status());
     let resource_dir = app.path().resource_dir().ok();
-    let mut command = runtime_command(&runtime, resource_dir.as_deref());
+    // The task child is the session-keep runtime the cells gate already assumes.
+    // Health and dashboard stay per-invoke and therefore stop at
+    // DESKTOP_SESSION_KEEP_REQUIRED. This does not add a second always-on process.
+    let mut command = runtime_command_for(
+        &runtime,
+        resource_dir.as_deref(),
+        TASK_RUNTIME_SPAWN_MODE,
+    );
     command
         .arg(runtime)
         .arg("task")
@@ -1637,6 +1644,8 @@ fn run_model_task_blocking(
                 format!("无法启动 Cordis runtime: {error}")
             })?;
         let pid = child.id();
+        // Reap-only. Assignment failure is not a cells disability.
+        bind_session_keep_reaper(pid);
         let child_stdin = child.stdin.take();
         *active_pid = Some(pid);
         if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
@@ -1662,8 +1671,7 @@ fn run_model_task_blocking(
                 if let Ok(mut heartbeat_seen) = state.active_runtime_heartbeat_seen.lock() {
                     *heartbeat_seen = false;
                 }
-                let _ = child.kill();
-                let _ = child.wait();
+                stop_session_keep_child(&mut child);
                 return Err("运行时状态不可用".to_string());
             }
         };
@@ -1691,8 +1699,7 @@ fn run_model_task_blocking(
             if let Ok(mut requested) = state.active_runtime_cancel_requested.lock() {
                 *requested = false;
             }
-            let _ = child.kill();
-            let _ = child.wait();
+            stop_session_keep_child(&mut child);
             return Err("Cordis runtime 已在启动前取消".to_string());
         }
         if let Ok(mut launching) = state.active_runtime_launching.lock() {
@@ -1819,6 +1826,9 @@ fn run_model_task_blocking(
         append_desktop_log(&format!("runtime 进程异常退出: {error}"));
         format!("Cordis runtime 进程异常退出: {error}")
     });
+    // Parent has exited. Closing the job reaps any cell-worker grandchildren
+    // still inside it. Cancel/watchdog may already have closed the handle.
+    let _ = close_session_keep_job();
     match &status {
         Ok(value) => append_desktop_log(&format!("runtime child wait status={value:?}")),
         Err(error) => append_desktop_log(&format!("runtime child wait error={error}")),
@@ -2191,9 +2201,13 @@ const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 enum DesktopSpawnMode {
     /// Fresh Node process. Must not inject resident or cells flags.
     PerInvoke,
-    /// Existing session-keep path. This round does not start a new always-on process.
+    /// The desktop task child. Sets `DDA_RESIDENT_KERNEL` and, when the
+    /// experimental toggle is on, the three cells variables. Not a second daemon.
     SessionKeep,
 }
+
+/// Production task spawn. Health, dashboard, and history stay `PerInvoke`.
+const TASK_RUNTIME_SPAWN_MODE: DesktopSpawnMode = DesktopSpawnMode::SessionKeep;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct DesktopSpawnEnvPlan {
@@ -2373,6 +2387,9 @@ fn apply_desktop_spawn_env(command: &mut Command, plan: &DesktopSpawnEnvPlan) {
     }
 }
 
+/// Node 24 is not vendored. 鹏飞 deferred frozen §8: use `resource_dir/node/node.exe`
+/// when that file is already present, otherwise PATH `node`, unless `DDA_NODE` is set.
+/// Cells still return `NODE_TOO_OLD` when the actual major is below 24.
 fn resolve_node_program(dda_node: Option<&std::ffi::OsStr>, resource_dir: Option<&Path>) -> std::ffi::OsString {
     if let Some(override_node) = dda_node {
         if !override_node.is_empty() {
@@ -2436,6 +2453,27 @@ fn close_session_keep_job() -> bool {
 
 /// Assign a session-keep child to a kill-on-close job. Create failure is not a
 /// cells disability; callers fall back to `taskkill /T`. Per-invoke never assigns.
+fn bind_session_keep_reaper(pid: u32) -> bool {
+    let assigned = try_assign_kill_on_job_close(pid, TASK_RUNTIME_SPAWN_MODE);
+    if assigned {
+        append_desktop_log(&format!("session-keep job assigned pid={pid}"));
+    } else {
+        append_desktop_log(&format!(
+            "session-keep job not assigned pid={pid}; reap falls back to taskkill /T"
+        ));
+    }
+    assigned
+}
+
+fn stop_session_keep_child(child: &mut std::process::Child) {
+    let pid = child.id();
+    if !close_session_keep_job() {
+        let _ = taskkill_tree(pid);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn try_assign_kill_on_job_close(pid: u32, mode: DesktopSpawnMode) -> bool {
     if mode != DesktopSpawnMode::SessionKeep || pid == 0 {
         return false;
@@ -2587,6 +2625,9 @@ mod windows_job {
     }
 }
 
+/// Short-lived queries (health, dashboard, history). Fresh health therefore
+/// stops at `NODE_TOO_OLD` or `DESKTOP_SESSION_KEEP_REQUIRED`. The task child
+/// uses `TASK_RUNTIME_SPAWN_MODE`.
 fn runtime_command(runtime: &Path, resource_dir: Option<&Path>) -> Command {
     runtime_command_for(runtime, resource_dir, DesktopSpawnMode::PerInvoke)
 }
@@ -3489,6 +3530,34 @@ mod tests {
             assert!(session_keep_off.remove.iter().any(|name| name == key));
         }
         assert!(session_keep_off.set.iter().all(|(key, _)| key != "DDA_KERNEL_EFFECT_JOURNAL"));
+        assert_eq!(TASK_RUNTIME_SPAWN_MODE, DesktopSpawnMode::SessionKeep);
+    }
+
+    #[test]
+    fn task_runtime_spawn_is_session_keep_and_queries_stay_per_invoke() {
+        let task = runtime_command_for(
+            Path::new("index.mjs"),
+            None,
+            TASK_RUNTIME_SPAWN_MODE,
+        );
+        let health = runtime_command(Path::new("index.mjs"), None);
+        let resident = |command: &Command, key: &str| {
+            command.get_envs().find(|(name, _)| *name == key).map(|(_, value)| {
+                value.map(|item| item.to_string_lossy().into_owned())
+            })
+        };
+        assert_eq!(
+            resident(&task, "DDA_RESIDENT_KERNEL"),
+            Some(Some("1".to_string()))
+        );
+        assert_eq!(resident(&task, "DDA_PLATFORM"), Some(Some("windows-desktop".to_string())));
+        assert_eq!(resident(&task, "DDA_KERNEL_SANDBOX"), Some(None));
+        assert_eq!(resident(&health, "DDA_RESIDENT_KERNEL"), None);
+        assert_eq!(
+            resident(&health, "DDA_PLATFORM"),
+            Some(Some("windows-desktop".to_string()))
+        );
+        assert_eq!(runtime_creation_flags(TASK_RUNTIME_SPAWN_MODE), runtime_creation_flags(DesktopSpawnMode::SessionKeep));
     }
 
     #[test]

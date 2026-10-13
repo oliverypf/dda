@@ -384,7 +384,7 @@ const settingsSections = {
   archive: { title: '已归档', description: '查看和恢复本机归档的项目与会话。归档只在列表中隐藏，不删除配置与历史。', icon: 'archive' },
   accessibility: { title: '无障碍', description: '查看键盘、字体、对比度和减少动画支持状态。', icon: 'settings' },
   diagnostics: { title: '开发诊断', description: '查看支持包、错误恢复和诊断入口。', icon: 'gauge' },
-  cells: { title: '实验性代码 cell', description: '实验性：代码 cell（无 OS 沙箱）。需要会话保持模式。没有 OS 沙箱选项。', icon: 'square-terminal' },
+  cells: { title: '实验性代码 cell', description: '实验性：代码 cell（无 OS 沙箱）。任务进程是会话保持路径；新鲜健康检查仍只显示步骤 1–2。没有 OS 沙箱选项。', icon: 'square-terminal' },
 };
 type SettingsSection = keyof typeof settingsSections;
 let settingsSection: SettingsSection = 'model';

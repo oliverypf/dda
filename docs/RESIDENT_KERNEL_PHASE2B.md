@@ -63,8 +63,17 @@ for that pair: unset `DDA_PLATFORM` stays on the generic path, and
 Desktop success still reports `WINDOWS_NO_OS_SANDBOX` with `sandbox.available`
 false. Resident attach for `win32` × `windows-desktop` needs
 `DDA_RESIDENT_KERNEL` and Node ≥ 24 only; it does not read cells flags.
-Per-invoke desktop spawns return `DESKTOP_SESSION_KEEP_REQUIRED` and do not
-start a worker. This round does not add an always-on resident process.
+The desktop **task** child is the session-keep spawn: it sets
+`DDA_RESIDENT_KERNEL=1`, injects the three cells variables only when
+`experimentalCodeCells` is on, and may be placed in a reap-only Job Object.
+Health, dashboard, and history stay per-invoke, so fresh health still stops at
+`NODE_TOO_OLD` or `DESKTOP_SESSION_KEEP_REQUIRED` and does not start a worker.
+There is no second always-on process.
+
+**Node 24 bundling is deferred** (鹏飞, vs frozen §8). The installer does not
+vendor a Node binary. `runtime_command` uses `resource_dir/node/node.exe` when
+that file is present, otherwise PATH `node`, unless `DDA_NODE` is set. A real
+major below 24 is still `NODE_TOO_OLD`.
 
 Journal defaults, when the platform is `windows-cli` or `windows-desktop` and
 no explicit journal path is set, are
@@ -77,11 +86,11 @@ A Windows Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` may reap an
 already-living session-keep runtime. It is not a sandbox. If the job cannot be
 created, cancel still uses `taskkill /T`. Tool copy for desktop cells is its
 own branch (`windows-desktop` / `DDA_KERNEL_WINDOWS_DESKTOP_CELLS`) and does not
-overwrite the `windows-cli` description.
-(callers key off boolean `available`). Phase-2a write effects stay refused on
-Windows. Phase-1 read kernel tools register the same surface as Linux (readonly
-bridge). Worker entrypoint is separate (`cell-worker-windows.mjs`); protocol
-`ready` only — no FS/net/exec canary.
+overwrite the `windows-cli` description. Callers key off boolean `available`.
+Phase-2a write effects stay refused on Windows. Phase-1 read kernel tools
+register the same surface as Linux (readonly bridge). Worker entrypoint is
+separate (`cell-worker-windows.mjs`); protocol `ready` only — no FS/net/exec
+canary.
 
 ## What landed
 

@@ -2080,12 +2080,9 @@ const timelineTechnicalDetails = (item: TimelineItem): string => {
 };
 
 const timelineItemHtml = (item: TimelineItem): string => {
-  // 工具调用显示：模仿 Codex 风格的清晰执行过程
-  // 识别条件：有 toolName 字段，或者 title 是"工具结果"，或者 evidenceKind 是 terminal
-  const isToolCall = item.toolName || item.title === '工具结果' || item.evidenceKind === 'terminal';
-  
-  if (isToolCall) {
-    const toolLabel = item.toolName ? toolDisplayLabel(item.toolName) : '执行操作';
+  // Codex-style tool cards: only when producer set toolName (no title/evidence heuristics).
+  if (item.toolName) {
+    const toolLabel = toolDisplayLabel(item.toolName);
     const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
     const isSuccess = item.status === 'COMPLETE';
     const isFailed = item.status === 'ERROR';
@@ -2098,11 +2095,10 @@ const timelineItemHtml = (item: TimelineItem): string => {
     } else if (item.body) {
       const bodyMatch = item.body.match(/[\\/]([^\\/]+\.[a-z0-9]+)/i);
       if (bodyMatch) targetInfo = bodyMatch[1];
-      else if (item.body.length < 80) targetInfo = item.body;
     }
     
     return `
-        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}"${item.toolName ? ` data-tool-name="${escapeHtml(item.toolName)}"` : ''}>
+        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(item.toolName)}">
           <div class="timeline-step-indicator">
             <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
           </div>
@@ -3930,14 +3926,17 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         body: `${humanizeCode(payload.stepId, '未命名步骤')} · ${statusDisplayLabel(payload.to ?? payload.status, '已更新')}`,
         status: 'COMPLETE'
       };
-    case 'ToolCallRequested':
+    case 'ToolCallRequested': {
+      const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
       return {
         ...common,
         kind: 'STATUS',
         title: '工具调用',
-        body: `正在${toolDisplayLabel(text(payload.toolName, text(payload.name, '受控工具'))).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`,
-        status: 'COMPLETE'
+        body: `正在${toolDisplayLabel(rawToolName).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`,
+        status: 'PENDING',
+        toolName: rawToolName
       };
+    }
     case 'ToolInvocationCompleted': {
       const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
       const toolName = toolDisplayLabel(rawToolName);

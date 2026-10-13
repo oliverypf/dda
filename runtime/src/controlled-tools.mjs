@@ -347,7 +347,7 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
       ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
       ...(ttlMs === undefined ? {} : { ttlMs })
     });
-    await onLeaseIssued?.({ capability, request, lease });
+    await onLeaseIssued?.({ capability, request, lease, context });
     return lease;
   };
   provider.canLease = capability => monitor?.mode === EXECUTION_MODES.CONTROLLED && approvedCapabilities.has(capability)
@@ -387,15 +387,15 @@ export const registerExecutorTools = (registry, executor, {
     try {
       lease = await getLease({ capability, request: input, context });
       if (typeof leaseProvider === 'function' && !lease) throw new SafetyError(SAFETY_ERROR_CODES.LEASE_REQUIRED);
-      await onLeaseStarted?.({ capability, request: input, lease });
+      await onLeaseStarted?.({ capability, request: input, lease, context });
       const result = await operation(lease);
-      await onLeaseConsumed?.({ capability, request: input, lease, result });
+      await onLeaseConsumed?.({ capability, request: input, lease, result, context });
       return result;
     } catch (error) {
       // Include provider and approval failures: a provider may have issued or
       // persisted a lease before a later callback failed.
       try {
-        await onLeaseFailed?.({ capability, request: input, lease, error });
+        await onLeaseFailed?.({ capability, request: input, lease, error, context });
       } catch {
         // Cleanup/reporting failures must not replace the original error. The next runtime reconciliation can still revoke the lease.
       }

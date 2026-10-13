@@ -72,15 +72,16 @@ import { evaluateDecisionTrace, exportLearningSample } from './decision-evaluati
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegistry } from './runtime-safety-monitor.mjs';
 import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
-import { resolveStoreFile } from './platform/paths.mjs';
+import { legacyRootKernelEffectJournalPath, resolveKernelEffectJournalPath, resolveKernelSessionPath, resolveStoreFile } from './platform/paths.mjs';
 import { isResidentKernelEnabled } from './kernel/feature.mjs';
 import {
   createKernelEffectAuditLog, createKernelEffectDenylist, createKernelEffectsDispatcher,
   isHiddenWhileKernelEffects, kernelEffectsAvailability, kernelEffectsRequested
 } from './kernel/effects.mjs';
-import { createEffectJournal } from './kernel/effect-journal.mjs';
+import { createEffectJournal, migrateLegacyWindowsCliJournal } from './kernel/effect-journal.mjs';
 import { getJournalAls, JOURNAL_BITS } from './kernel/journal-als.mjs';
-import { isCodeCellsEnabled, createCellHost, codeCellsAvailability } from './kernel/cell-host.mjs';
+import { isCodeCellsEnabled, isResidentSessionKeep, createCellHost, observeCodeCells } from './kernel/cell-host.mjs';
+import { approvalSubject, cellApprovalPresentation } from './kernel/cell-approval.mjs';
 import { registerKernelExecTool } from './kernel/kernel-tools.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
@@ -552,7 +553,10 @@ async function runTask() {
     const batchGranted = requireApproval !== true
       && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
       && approvalCallContext.kernelEffect.batchGrant.consume({ capability, request }) === true;
-    const requestDigest = executionDigest({ capability, request });
+    const requestDigest = executionDigest(approvalSubject({ capability, request, context: approvalCallContext }));
+    const cellPresentation = approvalCallContext?.cellApproval
+      ? cellApprovalPresentation(requestDigest, approvalCallContext.cellApproval)
+      : null;
     const approvalExpiresAt = Date.now() + APPROVAL_TTL_MS;
     const risk = providedRisk ?? (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
       ? 'HIGH'
@@ -575,6 +579,14 @@ async function runTask() {
             bytes: Number(item?.bytes) || 0, contentDigest: String(item?.contentDigest ?? '').slice(0, 80)
           }))
         }
+      } : {}),
+      ...(cellPresentation ? {
+        cellOpIndex: cellPresentation.cellOpIndex,
+        fingerprint: cellPresentation.fingerprint,
+        codePreview: cellPresentation.codePreview,
+        toolName: 'kernel.exec',
+        // Card badge reads worker READY fields only. cells_ready keeps NOT_A_SECURITY_SANDBOX.
+        ...(kernelExecBadge ?? {})
       } : {}),
       ...(typeof request?.host === 'string' ? {
         host: request.host.slice(0, 253),
@@ -1986,7 +1998,10 @@ async function runTask() {
   const pluginRoot = arg('--plugin-root', process.env.DDA_PLUGIN_ROOT ?? defaultPluginRoot());
   const kernelEffectDenylistPath = arg('--kernel-effect-denylist', process.env.DDA_KERNEL_EFFECT_DENYLIST) ?? resolveStoreFile('kernel-effect-denylist.json');
   const kernelEffectAuditPath = arg('--kernel-effect-audit', process.env.DDA_KERNEL_EFFECT_AUDIT) ?? resolveStoreFile('kernel-effect-audit.jsonl');
-  const kernelEffectJournalPath = arg('--kernel-effect-journal', process.env.DDA_KERNEL_EFFECT_JOURNAL) ?? resolveStoreFile('kernel-effect-journal.json');
+  const explicitKernelEffectJournal = arg('--kernel-effect-journal', process.env.DDA_KERNEL_EFFECT_JOURNAL);
+  const kernelEffectJournalPath = resolveKernelEffectJournalPath(process.env, explicitKernelEffectJournal);
+  const explicitKernelSessionStore = arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE);
+  const kernelSessionPath = resolveKernelSessionPath(process.env, explicitKernelSessionStore);
   const runtimeStorePaths = [
     ...(kernelEffectsRequested(process.env) ? [kernelEffectDenylistPath, kernelEffectAuditPath] : []),
     trajectoryPath,
@@ -2039,8 +2054,8 @@ async function runTask() {
     ...(leaseTtlMs === undefined ? {} : { ttlMs: leaseTtlMs }),
     requestApproval,
     gateDecisionFor,
-    onLeaseIssued: async ({ capability, request, lease }) => {
-      const context = approvalContexts.get(executionDigest({ capability, request }));
+    onLeaseIssued: async ({ capability, request, lease, context: leaseContext }) => {
+      const context = approvalContexts.get(executionDigest(approvalSubject({ capability, request, context: leaseContext })));
       if (!context?.intent) return;
       await executionState.transition(context.intent.recordId, 'EXECUTING');
       const persistedLease = await executionState.createLease({
@@ -2114,8 +2129,17 @@ async function runTask() {
   let kernelEffectsRequestedForRun = false;
   let effectJournal = null;
   let cellHost = null;
-  const cellsOrEffects = kernelEffectsRequested(process.env) || isCodeCellsEnabled(process.env);
+  let kernelExecBadge = null;
+  const windowsDesktopArm = process.platform === 'win32' && process.env.DDA_PLATFORM === 'windows-desktop';
+  const cellsOrEffects = kernelEffectsRequested(process.env) || isCodeCellsEnabled(process.env) || windowsDesktopArm;
   if (cellsOrEffects) {
+    if (!explicitKernelEffectJournal && process.env.DDA_PLATFORM === 'windows-cli' && kernelEffectJournalPath) {
+      await migrateLegacyWindowsCliJournal({
+        env: process.env,
+        legacyPath: legacyRootKernelEffectJournalPath(process.env),
+        destPath: kernelEffectJournalPath
+      });
+    }
     effectJournal = createEffectJournal({ storagePath: kernelEffectJournalPath });
     await effectJournal.load();
   }
@@ -2176,7 +2200,7 @@ async function runTask() {
       workspaceRoot,
       excludedPaths: workspaceExcludedPaths,
       sessionId: runId,
-      sessionStatePath: arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json'),
+      sessionStatePath: kernelSessionPath,
       env: process.env
     });
     emitEvent(residentKernel.attached ? 'kernel.attached' : 'kernel.unavailable', {
@@ -2205,25 +2229,53 @@ async function runTask() {
 
   // Phase-2b: rehydrate journal BEFORE first kernel/cell dispatch (F5/I11).
   if (effectJournal?.available && kernelEffectsDispatcher) {
-    await kernelEffectsDispatcher.rehydrateJournal();
+    const rehydrated = await kernelEffectsDispatcher.rehydrateJournal();
+    for (const item of rehydrated?.armed ?? []) {
+      emitEvent('kernel.journal_unknown', {
+        runId,
+        toolName: 'kernel.exec',
+        state: 'UNKNOWN',
+        title: '结果不确定（进程中断）',
+        effectId: item.effectId,
+        journalPath: kernelEffectJournalPath
+      });
+    }
   } else if (effectJournal?.available) {
-    await effectJournal.rehydrate();
+    const rehydrated = await effectJournal.rehydrate();
+    for (const item of rehydrated?.armed ?? []) {
+      emitEvent('kernel.journal_unknown', {
+        runId,
+        toolName: 'kernel.exec',
+        state: 'UNKNOWN',
+        title: '结果不确定（进程中断）',
+        effectId: item.effectId,
+        journalPath: kernelEffectJournalPath
+      });
+    }
   }
 
-  // Phase-2b code cells (default OFF). Gate solely via codeCellsAvailability
-  // (Linux: OS sandbox canary; Windows windows-cli: explicit unsandboxed confirm).
-  if (isCodeCellsEnabled(process.env)) {
-    const cellsAvailability = await codeCellsAvailability({
+  // Phase-2b code cells. Generic path still requires DDA_KERNEL_CODE_CELLS.
+  // win32 × windows-desktop calls availability even when that flag is unset
+  // (the desktop arm never returns CODE_CELLS_DISABLED). sessionKeep follows
+  // DDA_RESIDENT_KERNEL; CellHost.start receives the same sessionKeep/nodeVersion.
+  const evaluateCells = isCodeCellsEnabled(process.env) || windowsDesktopArm;
+  if (evaluateCells) {
+    const cellsAvailability = await observeCodeCells({
       env: process.env,
+      platform: process.platform,
+      nodeVersion: process.version,
       journalAvailable: effectJournal?.available === true,
-      residentAvailable: residentKernel?.attached === true
+      residentAttached: residentKernel?.attached === true
     });
+    const windowsDesktop = cellsAvailability.windowsDesktop === true;
+    const windowsUnsandboxed = !windowsDesktop && cellsAvailability.windowsUnsandboxed === true;
     if (cellsAvailability.available && residentKernel?.attached) {
-      const sessionStatePathForCells = arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json');
-      const windowsUnsandboxed = cellsAvailability.windowsUnsandboxed === true
-        || cellsAvailability.reason === 'WINDOWS_NO_OS_SANDBOX';
       cellHost = createCellHost({
         env: process.env,
+        platform: process.platform,
+        nodeVersion: process.version,
+        sessionKeep: isResidentSessionKeep(process.env),
+        residentAvailable: true,
         workspaceRoot,
         excludedPaths: workspaceExcludedPaths,
         sessionId: runId,
@@ -2248,30 +2300,39 @@ async function runTask() {
       });
       const started = await cellHost.start({
         dataDir: resolveStoreFile('.'),
-        sessionStatePath: sessionStatePathForCells,
+        sessionStatePath: kernelSessionPath,
         journalPath: kernelEffectJournalPath,
         coordinatorMode: 'A',
         nonSecretWorkspaceFile: undefined
       });
+      if (started.sandbox === 'none' && started.workerWarning === 'WINDOWS_NO_OS_SANDBOX') {
+        kernelExecBadge = { warning: 'WINDOWS_NO_OS_SANDBOX', sandbox: 'none' };
+      }
+      const windowsCells = windowsDesktop || windowsUnsandboxed || started.windowsUnsandboxed === true || started.windowsDesktop === true;
       emitEvent(started.ready ? 'kernel.cells_ready' : 'kernel.cells_unavailable', {
         runId,
         reason: started.reason ?? cellsAvailability.reason,
         backend: started.backend ?? null,
         sandboxAvailable: cellsAvailability.sandbox?.available === true,
-        ...(windowsUnsandboxed || started.windowsUnsandboxed ? {
-          windowsUnsandboxed: true,
+        source: 'live-session',
+        ...(started.sandbox ? { sandbox: started.sandbox } : {}),
+        ...(started.workerWarning ? { workerWarning: started.workerWarning } : {}),
+        ...(windowsCells ? {
+          ...(windowsUnsandboxed || started.windowsUnsandboxed ? { windowsUnsandboxed: true } : {}),
+          ...(windowsDesktop || started.windowsDesktop ? { windowsDesktop: true } : {}),
           warning: 'NOT_A_SECURITY_SANDBOX',
           detail: 'Windows cells run under user permissions (Prime-aligned); Node vm is not a security boundary.'
         } : {})
       });
       if (started.ready) {
-        registerKernelExecTool(toolRegistry, cellHost, { windowsUnsandboxed });
+        registerKernelExecTool(toolRegistry, cellHost, { windowsUnsandboxed, windowsDesktop });
       }
     } else {
       emitEvent('kernel.cells_unavailable', {
         runId,
         reason: cellsAvailability.reason,
-        sandboxAvailable: cellsAvailability.sandbox?.available === true
+        sandboxAvailable: cellsAvailability.sandbox?.available === true,
+        source: 'live-session'
       });
     }
   }
@@ -2300,7 +2361,7 @@ async function runTask() {
       // exposing a capability that is guaranteed to fail closed.
       ...(mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0 ? { networkAdapter } : {}),
       onLeaseStarted: async (event) => {
-        const context = approvalContexts.get(executionDigest({ capability: event.capability, request: event.request }));
+        const context = approvalContexts.get(executionDigest(approvalSubject({ capability: event.capability, request: event.request, context: event.context })));
         if (!context?.leaseRecordId || !context.intent) throw new Error('EXECUTION_LEASE_CONTEXT_MISSING');
         await executionState.claimLease(context.leaseRecordId, {
           requestDigest: context.intent.requestDigest,
@@ -2340,7 +2401,7 @@ async function runTask() {
         }
       },
       onLeaseConsumed: async (event) => {
-        const contextKey = executionDigest({ capability: event.capability, request: event.request });
+        const contextKey = executionDigest(approvalSubject({ capability: event.capability, request: event.request, context: event.context }));
         const context = approvalContexts.get(contextKey);
         if (!context?.leaseRecordId) return;
         const ok = event.result?.ok === true;
@@ -2422,7 +2483,7 @@ async function runTask() {
         emitEvent('lease.consumed', { leaseId: context.leaseRecordId, intentId: context.intent.recordId, capability: event.capability, ok });
       },
       onLeaseFailed: async (event) => {
-        const contextKey = executionDigest({ capability: event.capability, request: event.request });
+        const contextKey = executionDigest(approvalSubject({ capability: event.capability, request: event.request, context: event.context }));
         const context = approvalContexts.get(contextKey);
         if (!context) return;
         const message = event.error instanceof Error ? event.error.message : String(event.error ?? 'LEASE_EXECUTION_FAILED');
@@ -3576,6 +3637,7 @@ async function runTask() {
                 attempt,
                 round: call.round,
                 name: call.name,
+                ...(call.name === 'kernel.exec' ? { toolName: 'kernel.exec', ...(kernelExecBadge ?? {}) } : {}),
                 argumentsDigest: call.argumentsDigest,
                 decisionId: toolDecision.decisionId
               },
@@ -3648,6 +3710,10 @@ async function runTask() {
               ...(event.invocationAttempted === false && event.gateDecision === 'REQUEST_EVIDENCE'
                 ? { invocationAttempted: false, gateDecision: event.gateDecision } : {}),
               ...(event.name ? { name: event.name } : {}),
+              ...(event.name === 'kernel.exec' ? {
+                toolName: 'kernel.exec',
+                ...(kernelExecBadge ?? {})
+              } : {}),
               ...(event.text ? { text: event.text } : {}),
               ...(event.argumentsDigest ? { argumentsDigest: event.argumentsDigest } : {}),
               ...(event.outputDigest ? { outputDigest: event.outputDigest } : {}),
@@ -6765,7 +6831,28 @@ async function runHealth() {
       protocol: modelConfig.protocol,
       model: modelConfig.model
     },
-    plugins: manifests()
+    plugins: manifests(),
+    ...((process.platform === 'win32' && process.env.DDA_PLATFORM === 'windows-desktop') || isCodeCellsEnabled(process.env)
+      ? {
+          cellsAvailability: await (async () => {
+            const cells = await observeCodeCells({
+              env: process.env,
+              platform: process.platform,
+              nodeVersion: process.version,
+              // Fresh health is a per-invoke spawn: it does not attach a resident
+              // kernel. Desktop steps 3–5 are only visible on a live session-keep process.
+              residentAttached: false,
+              journalAvailable: false
+            });
+            return {
+              available: cells.available === true,
+              reason: cells.reason,
+              source: 'fresh-health',
+              sandboxAvailable: cells.sandbox?.available === true
+            };
+          })()
+        }
+      : {})
   };
 }
 

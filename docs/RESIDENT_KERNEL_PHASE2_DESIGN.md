@@ -78,10 +78,13 @@ exception (Prime-aligned) allows `kernel.exec` on native `win32` when all of
 `DDA_PLATFORM=windows-cli`, `DDA_KERNEL_CODE_CELLS=1`, and
 `DDA_KERNEL_WINDOWS_UNSANDBOXED=1` hold — **without** Job Object / AppContainer
 isolation. `sandbox.available` stays false; reason `WINDOWS_NO_OS_SANDBOX`.
-`windows-desktop` is refused. Phase-2a write effects stay on `isLinuxCliPlatform`
-and remain off on Windows. `windows-cli` is **not** added to
-`PORTABLE_CLI_PLATFORMS` / `isLinuxCliPlatform`. See
-[`RESIDENT_KERNEL_PHASE2B.md`](./RESIDENT_KERNEL_PHASE2B.md) Windows section.
+Phase-2a write effects stay on `isLinuxCliPlatform` and remain off on Windows.
+`windows-cli` and `windows-desktop` are **not** added to
+`PORTABLE_CLI_PLATFORMS` / `isLinuxCliPlatform`. A later amendment allows
+`win32` × `windows-desktop` cells only on an already-living session-keep
+runtime (`DDA_KERNEL_WINDOWS_DESKTOP_CELLS`), with the same unsandboxed reason
+and with journal files split by identity. Job Objects, when used, are reap-only.
+See [`RESIDENT_KERNEL_PHASE2B.md`](./RESIDENT_KERNEL_PHASE2B.md) Windows section.
 
 ---
 

@@ -30,6 +30,19 @@ import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
+import {
+  CELLS_CONFIRM_TEXT,
+  CELLS_RESET_TITLE,
+  CELLS_RUNNING_LABEL,
+  CELLS_UNKNOWN_TITLE,
+  approvalCellDetailsHtml,
+  cellsSettingsPanelHtml,
+  defaultDesktopCellsSettings,
+  projectCellsSession,
+  sandboxBadgeHtml,
+  sessionBannerHtml,
+  unknownJournalHtml
+} from './domain/windows-desktop-cells';
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
 import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
@@ -46,6 +59,7 @@ import {
   createInitialReadModel,
   setRunState,
   setRuntimeReady,
+  setCellsSession,
   setContextSidecarStatus,
   setDreamMaintenanceStatus,
   setExecutionMode,
@@ -370,9 +384,15 @@ const settingsSections = {
   archive: { title: '已归档', description: '查看和恢复本机归档的项目与会话。归档只在列表中隐藏，不删除配置与历史。', icon: 'archive' },
   accessibility: { title: '无障碍', description: '查看键盘、字体、对比度和减少动画支持状态。', icon: 'settings' },
   diagnostics: { title: '开发诊断', description: '查看支持包、错误恢复和诊断入口。', icon: 'gauge' },
+  cells: { title: '实验性代码 cell', description: '实验性：代码 cell（无 OS 沙箱）。需要会话保持模式。没有 OS 沙箱选项。', icon: 'square-terminal' },
 };
 type SettingsSection = keyof typeof settingsSections;
 let settingsSection: SettingsSection = 'model';
+let desktopCellsSettings = defaultDesktopCellsSettings();
+let desktopCellsSettingsLoaded = false;
+let desktopCellsSettingsLoading = false;
+let desktopCellsSettingsError = '';
+let desktopCellsSettingsPath = '';
 let settingsSearch = '';
 let settingsDraft: Record<string, string> | undefined;
 
@@ -677,6 +697,9 @@ const syncSettingsView = (): void => {
       grid.hidden = ![...grid.children].some((field) => !(field as HTMLElement).hidden);
     });
     panel.hidden = query ? fieldMatches === 0 : section !== settingsSection;
+    if (section === 'cells' && !panel.hidden && !desktopCellsSettingsLoaded && !desktopCellsSettingsLoading) {
+      void loadDesktopCellsSettings();
+    }
     if (!panel.hidden) matches++;
   });
   dialog.querySelectorAll<HTMLElement>('[data-action="settings-section"]').forEach((button) => {
@@ -695,6 +718,67 @@ const syncSettingsView = (): void => {
   if (empty) empty.hidden = !query || matches > 0;
 };
 
+
+const loadDesktopCellsSettings = async (): Promise<void> => {
+  if (desktopCellsSettingsLoading || desktopCellsSettingsLoaded) return;
+  desktopCellsSettingsLoading = true;
+  desktopCellsSettingsError = '';
+  render();
+  try {
+    const response = await desktopBridge.desktopSettings();
+    desktopCellsSettings = response
+      ? { experimentalCodeCells: response.experimentalCodeCells === true }
+      : defaultDesktopCellsSettings();
+    desktopCellsSettingsPath = response?.settingsPath ?? '';
+    desktopCellsSettingsLoaded = true;
+  } catch (error) {
+    desktopCellsSettingsError = compactError(error);
+  } finally {
+    desktopCellsSettingsLoading = false;
+    render();
+  }
+};
+
+const saveDesktopCellsSettings = async (experimentalCodeCells: boolean): Promise<void> => {
+  desktopCellsSettingsLoading = true;
+  desktopCellsSettingsError = '';
+  render();
+  try {
+    const response = await desktopBridge.saveDesktopSettings(experimentalCodeCells);
+    desktopCellsSettings = { experimentalCodeCells: response.experimentalCodeCells === true };
+    desktopCellsSettingsPath = response.settingsPath;
+    desktopCellsSettingsLoaded = true;
+  } catch (error) {
+    desktopCellsSettingsError = compactError(error);
+  } finally {
+    desktopCellsSettingsLoading = false;
+    render();
+  }
+};
+
+const confirmExperimentalCells = (): void => {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'approval-confirmation';
+  dialog.setAttribute('aria-labelledby', 'cells-confirm-title');
+  dialog.innerHTML = `
+    <h2 id="cells-confirm-title">确认开启实验性代码 cell</h2>
+    <p>${CELLS_CONFIRM_TEXT}</p>
+    <p>确认只发生这一次。之后每个会话只显示常驻横幅「无 OS 沙箱」，不再弹出确认。</p>
+    <div class="approval-confirmation-actions">
+      <button class="secondary-button" data-cells-confirm="back" autofocus>返回</button>
+      <button class="primary-action" data-cells-confirm="enable">确认开启</button>
+    </div>`;
+  const close = (): void => { dialog.close(); dialog.remove(); };
+  dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
+  dialog.addEventListener('click', (event) => {
+    const choice = (event.target as Element).closest<HTMLElement>('[data-cells-confirm]')?.dataset.cellsConfirm;
+    if (!choice) return;
+    close();
+    if (choice === 'enable') void saveDesktopCellsSettings(true);
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+};
 
 const escapeHtml = (value: string): string =>
   value
@@ -855,7 +939,14 @@ const renderSettingsModal = (): string => {
             ? `<div class="settings-message settings-message-error" role="alert">${escapeHtml(settingsError)}</div><button class="secondary-button" data-action="open-settings">重试读取</button>`
             : '<div class="settings-loading"><i data-lucide="loader-circle" class="spin"></i><span>正在读取模型配置…</span></div>'
           : `<form class="settings-form" data-form="model-settings" novalidate>
-              <div class="settings-panels">\r\n              ${renderSettingsReadOnlyPanel('connection')}\r\n              ${renderSettingsReadOnlyPanel('workspace')}\r\n              ${renderSettingsReadOnlyPanel('plugins')}\r\n              ${renderSettingsReadOnlyPanel('memory')}\r\n              ${renderSettingsReadOnlyPanel('storage')}\r\n              ${renderSettingsReadOnlyPanel('accessibility')}\r\n              ${renderSettingsReadOnlyPanel('diagnostics')}
+              <div class="settings-panels">\r\n              ${cellsSettingsPanelHtml({
+                settings: desktopCellsSettings,
+                fresh: model.runtime.cellsAvailability,
+                live: model.cellsSession,
+                loading: desktopCellsSettingsLoading,
+                error: desktopCellsSettingsError,
+                settingsPath: desktopCellsSettingsPath || undefined
+              })}\r\n              ${renderSettingsReadOnlyPanel('connection')}\r\n              ${renderSettingsReadOnlyPanel('workspace')}\r\n              ${renderSettingsReadOnlyPanel('plugins')}\r\n              ${renderSettingsReadOnlyPanel('memory')}\r\n              ${renderSettingsReadOnlyPanel('storage')}\r\n              ${renderSettingsReadOnlyPanel('accessibility')}\r\n              ${renderSettingsReadOnlyPanel('diagnostics')}
               <section class="settings-group" id="settings-panel-model" data-settings-panel="model" aria-label="模型配置">
               <h3>模型连接</h3><div class="settings-card">
               <div class="settings-grid">
@@ -1108,7 +1199,8 @@ const toolDisplayLabel = (value: unknown): string => {
     'test.execute': '运行测试',
     'network.request': '发送网络请求',
     'memory.search': '搜索记忆',
-    'memory.write': '保存记忆'
+    'memory.write': '保存记忆',
+    'kernel.exec': '代码 cell'
   };
   return labels[key] ?? humanizeCode(value, '受控工具');
 };
@@ -1911,6 +2003,7 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
   return `
     <article class="approval-card" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
+      ${approvalCellDetailsHtml(approval)}
       <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
       <div class="approval-meta">
         ${approval.risk ? `<span class="approval-risk approval-risk-${approval.risk.toLowerCase()}">${escapeHtml(riskDisplayLabel(approval.risk))}风险</span>` : ''}
@@ -2103,8 +2196,10 @@ const timelineItemHtml = (item: TimelineItem): string => {
             <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
           </div>
           <div class="timeline-step-content">
+            ${sandboxBadgeHtml(item)}
+            ${unknownJournalHtml(item)}
             <div class="timeline-step-header">
-              <strong class="timeline-step-title">${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}</strong>
+              <strong class="timeline-step-title">${item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}`}</strong>
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
               <time>${formatTime(item.createdAtMs)}</time>
             </div>
@@ -3213,7 +3308,15 @@ const refreshWorkspaceChrome = (): void => {
   }
   setTextIfChanged(app.querySelector<HTMLElement>('.composer-project'), workspaceTitle);
 };
+const syncCellsSessionBanner = (): void => {
+  const host = app.querySelector<HTMLElement>('[data-cells-session-banner-host]');
+  if (!host) return;
+  const html = sessionBannerHtml(model.cellsSession);
+  if (host.innerHTML !== html) host.innerHTML = html;
+};
+
 const renderLiveView = (): void => {
+  syncCellsSessionBanner();
   renderRunControls();
   refreshWorkspaceChrome();
   const container = app.querySelector<HTMLElement>('[data-live-workbench]');
@@ -3352,6 +3455,7 @@ const render = (): void => {
             <button class="icon-button context-toggle" data-action="toggle-context" title="${contextVisible ? '隐藏任务上下文' : '显示任务上下文'}" aria-label="${contextVisible ? '隐藏任务上下文' : '显示任务上下文'}" aria-expanded="${contextVisible}"><i data-lucide="panel-right"></i></button>
           </div>
         </header>
+        <div data-cells-session-banner-host>${sessionBannerHtml(model.cellsSession)}</div>
 
         <section class="run-strip" aria-live="polite">
           <div class="connection-status ${statusClass}"><span></span>${escapeHtml(model.connection.label)}</div>
@@ -4098,6 +4202,8 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
     status: failed ? 'ERROR' : isResult ? 'COMPLETE' : 'STREAMING',
     createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
     toolName: rawName || undefined,
+    ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
+    ...(typeof payload.sandbox === 'string' ? { sandbox: payload.sandbox } : {}),
     digest,
     evidenceKind: isResult ? 'terminal' : undefined,
     truncated: payload.truncated === true,
@@ -4252,6 +4358,12 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(typeof payload.port === 'number' ? { port: payload.port } : {}),
       ...(typeof payload.scheme === 'string' ? { scheme: payload.scheme } : {}),
       ...(typeof payload.method === 'string' ? { method: payload.method } : {}),
+      ...(typeof payload.cellOpIndex === 'number' ? { cellOpIndex: payload.cellOpIndex } : {}),
+      ...(typeof payload.fingerprint === 'string' ? { fingerprint: payload.fingerprint } : {}),
+      ...(typeof payload.codePreview === 'string' ? { codePreview: payload.codePreview } : {}),
+      ...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {}),
+      ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
+      ...(typeof payload.sandbox === 'string' ? { sandbox: payload.sandbox } : {}),
       state: 'REQUESTED',
       createdAtMs: event.emittedAtMs
     }));
@@ -4317,7 +4429,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     // non-streaming gateway fallback).  Do not create an empty timeline row;
     // runCordisTask will project the returned text once the final response is
     // available.  When a stream exists, this only flips its status to complete.
-    update(completeStreamingAgent(model, `${event.runId}-response`));
+    update(setCellsSession(completeStreamingAgent(model, `${event.runId}-response`), undefined));
     return;
   }
   if (event.kind === 'run.failed') {
@@ -4328,11 +4440,11 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     // cancellation has already been acknowledged. Preserve the user's
     // terminal cancellation state instead of regressing it to FAILED.
     if ((model.activeRun?.state as string | undefined) === 'CANCELLED') return;
-    update(appendErrorTimelineItem(
+    update(setCellsSession(appendErrorTimelineItem(
       cancelPendingApprovals(setRunState(appendVerificationChecks(model, payload.checks, event.runId), 'FAILED')),
       'Cordis runtime',
       runtimeFailureText(event)
-    ));
+    ), undefined));
     return;
   }
   if (event.kind === 'action_intent.created') {
@@ -4378,6 +4490,55 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       body: `已连接 ${typeof payload.provider === 'string' ? payload.provider : '默认服务'} · ${typeof payload.model === 'string' ? payload.model : '未指定模型'}`,
       status: 'COMPLETE'
     }));
+    return;
+  }
+  if (event.kind === 'kernel.cells_ready' || event.kind === 'kernel.cells_unavailable') {
+    const session = projectCellsSession({
+      source: typeof payload.source === 'string' ? payload.source : undefined,
+      reason: typeof payload.reason === 'string' ? payload.reason : undefined,
+      sandboxAvailable: typeof payload.sandboxAvailable === 'boolean' ? payload.sandboxAvailable : undefined,
+      available: event.kind === 'kernel.cells_ready'
+    });
+    if (session) update(setCellsSession(model, session));
+    return;
+  }
+  if (event.kind === 'kernel.cell_output' || event.kind === 'kernel.cell_status' || event.kind === 'kernel.cell_reset' || event.kind === 'kernel.journal_unknown') {
+    const cellItemId = typeof payload.itemId === 'string' && payload.itemId ? payload.itemId : `runtime-${eventKey}`;
+    const warning = typeof payload.warning === 'string' ? payload.warning : undefined;
+    const sandbox = typeof payload.sandbox === 'string' ? payload.sandbox : undefined;
+    const journalPath = typeof payload.journalPath === 'string' ? payload.journalPath : undefined;
+    const existing = model.timeline.find((item) => item.itemId === cellItemId);
+    const chunk = typeof payload.chunk === 'string' ? payload.chunk : '';
+    const reset = event.kind === 'kernel.cell_reset';
+    const unknown = event.kind === 'kernel.journal_unknown';
+    const started = event.kind === 'kernel.cell_status';
+    const title = reset ? CELLS_RESET_TITLE
+      : unknown ? (typeof payload.title === 'string' ? payload.title : CELLS_UNKNOWN_TITLE)
+      : started ? (typeof payload.label === 'string' ? payload.label : CELLS_RUNNING_LABEL)
+      : CELLS_RUNNING_LABEL;
+    const body = event.kind === 'kernel.cell_output'
+      ? `${existing?.body ?? ''}${chunk}`.slice(-8000)
+      : title;
+    const item: TimelineItem = {
+      itemId: cellItemId,
+      runId: event.runId,
+      eventId: event.eventId,
+      eventSequence: event.sequence,
+      kind: 'STATUS',
+      title,
+      body,
+      status: unknown || reset ? 'ERROR' : event.kind === 'kernel.cell_output' || started ? 'STREAMING' : 'COMPLETE',
+      createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
+      toolName: 'kernel.exec',
+      ...(warning ? { warning } : {}),
+      ...(sandbox ? { sandbox } : {}),
+      ...(journalPath ? { journalPath } : {}),
+      ...(started ? { cellState: 'STARTED' as const } : {}),
+      ...(unknown ? { cellState: 'UNKNOWN' as const } : {}),
+      ...(reset ? { cellState: 'RESET' as const } : {}),
+      truncated: body.length >= 8000
+    };
+    update(existing ? replaceTimelineItem(model, cellItemId, item) : appendTimelineItem(model, item));
     return;
   }
   if (event.kind === 'tool.call_requested' || event.kind === 'tool.result' || event.kind === 'workspace.snapshot') {
@@ -5412,6 +5573,24 @@ app.addEventListener('click', (event) => {
   }
   const actionElement = target?.closest<HTMLElement>('[data-action]');
   const action = actionElement?.dataset.action;
+  if (action === 'toggle-experimental-cells') {
+    const input = actionElement?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?? (actionElement instanceof HTMLInputElement ? actionElement : undefined);
+    if (!input || input.disabled) return;
+    const turningOn = input.checked;
+    if (turningOn) {
+      input.checked = desktopCellsSettings.experimentalCodeCells;
+      confirmExperimentalCells();
+    } else {
+      void saveDesktopCellsSettings(false);
+    }
+    return;
+  }
+  if (action === 'view-cell-journal') {
+    const path = actionElement?.closest('.timeline-cell-unknown')?.querySelector<HTMLElement>('.cell-journal-path');
+    path?.focus();
+    return;
+  }
   if (action === 'settings-section') {
     const section = actionElement?.dataset.section;
     if (section && Object.prototype.hasOwnProperty.call(settingsSections, section)) {

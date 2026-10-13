@@ -176,10 +176,21 @@ export const setRuntimeReady = (
     mode: snapshot ? 'LOCAL_RUNTIME' : 'MOCK',
     label: snapshot ? 'Windows 本地运行时已就绪' : 'Web 预览使用只读 Mock 运行时'
   },
+  // Fresh health replaces runtime, including cellsAvailability. cellsSession
+  // stays on the model so a per-invoke health check cannot erase a live session.
   runtime: snapshot ?? model.runtime,
   composer: snapshot?.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY'
     ? { ...model.composer, mode: 'READ_ONLY', placeholder: '描述需要检查或分析的任务' }
     : model.composer
+});
+
+export const setCellsSession = (
+  model: HarnessReadModel,
+  session: HarnessReadModel['cellsSession']
+): HarnessReadModel => ({
+  ...model,
+  projectionVersion: model.projectionVersion + 1,
+  cellsSession: session
 });
 
 export const setContextSidecarStatus = (

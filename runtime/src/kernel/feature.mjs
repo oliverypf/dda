@@ -53,21 +53,28 @@ export const detectKernelSandbox = (env = process.env, platform = process.platfo
  * may attach without an OS sandbox. `sandboxAvailable` stays false. The
  * `DDA_RESIDENT_KERNEL_SANDBOX` override must not light sandboxAvailable on
  * Windows and is not authorization for Windows cells.
+ *
+ * `win32` + raw `DDA_PLATFORM=windows-desktop` attaches on the same resident
+ * + Node ≥ 24 rule. This function does not read cells flags
+ * (`DDA_KERNEL_CODE_CELLS` / `DDA_KERNEL_WINDOWS_UNSANDBOXED` /
+ * `DDA_KERNEL_WINDOWS_DESKTOP_CELLS`).
  */
 export const residentKernelAvailability = (env = process.env, { platform = process.platform, nodeVersion = process.version } = {}) => {
   const enabled = isResidentKernelEnabled(env);
   const linuxCliIdentity = isLinuxCliPlatform(env);
   const windowsCliIdentity = env?.DDA_PLATFORM === 'windows-cli';
+  const windowsDesktopIdentity = env?.DDA_PLATFORM === 'windows-desktop';
   const supportedNode = isSupportedNodeVersion(nodeVersion);
 
-  // Windows attach path: win32 + windows-cli, no OS sandbox required.
-  if (enabled && supportedNode && platform === 'win32' && windowsCliIdentity) {
+  // Windows attach paths: resident + Node ≥ 24. No cells flags. No OS sandbox.
+  if (enabled && supportedNode && platform === 'win32' && (windowsCliIdentity || windowsDesktopIdentity)) {
     return {
       available: true,
       enabled,
       supportedNode,
       linuxCliIdentity: false,
-      windowsCliIdentity: true,
+      windowsCliIdentity,
+      windowsDesktopIdentity,
       sandboxAvailable: false,
       reason: 'AVAILABLE'
     };
@@ -88,6 +95,7 @@ export const residentKernelAvailability = (env = process.env, { platform = proce
     supportedNode,
     linuxCliIdentity,
     windowsCliIdentity: false,
+    windowsDesktopIdentity: false,
     sandboxAvailable: sandbox.available,
     reason
   };

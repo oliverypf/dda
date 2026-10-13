@@ -5,9 +5,11 @@ import { isLinuxCliPlatform } from '../platform/paths.mjs';
  *
  * Frozen MVP decisions encoded here:
  *  - default OFF: the kernel only runs when DDA_RESIDENT_KERNEL is truthy;
- *  - Linux-only: the subprocess sandbox boundary is only offered on Linux;
+ *  - Linux-only OS sandbox boundary (Phase-1 subprocess "sandbox" is Linux);
+ *  - Windows `windows-cli` may attach without OS sandbox (Phase-2b follow-on;
+ *    sandboxAvailable stays false; not authorization for cells alone);
  *  - Node >=24: the resident kernel must run on a modern runtime;
- *  - if the sandbox is unavailable, callers fall back to the discrete
+ *  - if the sandbox is unavailable on Linux, callers fall back to discrete
  *    read-only workspace tools instead of failing.
  */
 
@@ -44,15 +46,33 @@ export const detectKernelSandbox = (env = process.env, platform = process.platfo
 
 /**
  * Resolve the full availability decision. `available` is only true when the
- * feature is enabled, the platform identity is a portable Linux CLI host, the
- * Node runtime is new enough and the sandbox check passes. Every other outcome
- * carries a stable reason so the caller can log why it fell back to discrete
- * tools.
+ * feature is enabled, the platform identity matches, the Node runtime is new
+ * enough, and (on Linux) the Phase-1 sandbox check passes.
+ *
+ * Windows amendment (Phase-2b follow-on): `win32` + `DDA_PLATFORM=windows-cli`
+ * may attach without an OS sandbox. `sandboxAvailable` stays false. The
+ * `DDA_RESIDENT_KERNEL_SANDBOX` override must not light sandboxAvailable on
+ * Windows and is not authorization for Windows cells.
  */
 export const residentKernelAvailability = (env = process.env, { platform = process.platform, nodeVersion = process.version } = {}) => {
   const enabled = isResidentKernelEnabled(env);
   const linuxCliIdentity = isLinuxCliPlatform(env);
+  const windowsCliIdentity = env?.DDA_PLATFORM === 'windows-cli';
   const supportedNode = isSupportedNodeVersion(nodeVersion);
+
+  // Windows attach path: win32 + windows-cli, no OS sandbox required.
+  if (enabled && supportedNode && platform === 'win32' && windowsCliIdentity) {
+    return {
+      available: true,
+      enabled,
+      supportedNode,
+      linuxCliIdentity: false,
+      windowsCliIdentity: true,
+      sandboxAvailable: false,
+      reason: 'AVAILABLE'
+    };
+  }
+
   const sandbox = detectKernelSandbox(env, platform);
 
   let reason = 'AVAILABLE';
@@ -67,6 +87,7 @@ export const residentKernelAvailability = (env = process.env, { platform = proce
     enabled,
     supportedNode,
     linuxCliIdentity,
+    windowsCliIdentity: false,
     sandboxAvailable: sandbox.available,
     reason
   };
@@ -76,3 +97,5 @@ export const residentKernelAvailability = (env = process.env, { platform = proce
 /** Phase-2b flag names (default OFF). Imported by docs/tests; gating lives in cell-host/sandbox. */
 export const KERNEL_CODE_CELLS_FLAG = 'DDA_KERNEL_CODE_CELLS';
 export const KERNEL_SANDBOX_FLAG = 'DDA_KERNEL_SANDBOX';
+/** Win32-only explicit confirm for unsandboxed cells (Prime-aligned). Default OFF. */
+export const KERNEL_WINDOWS_UNSANDBOXED_FLAG = 'DDA_KERNEL_WINDOWS_UNSANDBOXED';

@@ -62,11 +62,11 @@ export const detectBwrap = async () => {
 /**
  * Resolve sandbox backend availability. No `none` tier — fail closed.
  */
-export const detectKernelOsSandbox = async (env = process.env) => {
+export const detectKernelOsSandbox = async (env = process.env, platform = process.platform) => {
   if (!isKernelSandboxEnabled(env)) {
     return { available: false, reason: 'SANDBOX_DISABLED', backend: null };
   }
-  if (process.platform !== 'linux') {
+  if (platform !== 'linux') {
     return { available: false, reason: 'NON_LINUX_PLATFORM', backend: null };
   }
   const native = loadSandboxNative();

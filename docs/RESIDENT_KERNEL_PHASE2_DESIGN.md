@@ -71,6 +71,18 @@ v3 设想的是 **code cell REPL**：`execute{code}`，在内核里跑代码，�
 - **Phase-2a（本稿 MVP）**：在现有 op 形态上，把写入 / 测试接进**宿主现有**的 lease/审批链（**shell/net 2a 拒，延后**）。副作用**由宿主执行，不经 worker**。所以 worker 的沙箱强度不在关键路径上，Linux 上现在就能做。
 - **Phase-2b（以后）**：真正的 code cell（Prime 的核心价值：一轮里跑多步逻辑、少走模型往返）。前提是 OS 沙箱。这一段才是加速的大头。
 
+### Amendment: Windows unsandboxed cells (Phase-2b follow-on)
+
+Linux cells **still require** an OS sandbox (bwrap fail-closed). A flagged Windows
+exception (Prime-aligned) allows `kernel.exec` on native `win32` when all of
+`DDA_PLATFORM=windows-cli`, `DDA_KERNEL_CODE_CELLS=1`, and
+`DDA_KERNEL_WINDOWS_UNSANDBOXED=1` hold — **without** Job Object / AppContainer
+isolation. `sandbox.available` stays false; reason `WINDOWS_NO_OS_SANDBOX`.
+`windows-desktop` is refused. Phase-2a write effects stay on `isLinuxCliPlatform`
+and remain off on Windows. `windows-cli` is **not** added to
+`PORTABLE_CLI_PLATFORMS` / `isLinuxCliPlatform`. See
+[`RESIDENT_KERNEL_PHASE2B.md`](./RESIDENT_KERNEL_PHASE2B.md) Windows section.
+
 ---
 
 ## 1. 目标 / 非目标

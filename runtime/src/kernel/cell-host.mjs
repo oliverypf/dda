@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { buildRuntimeEnv } from '../platform/environment-policy.mjs';
 import {
   detectKernelOsSandbox, writeSeccompFd, buildCanaryRequiredPaths, normalizeExcludedBodySet,
-  CANARY_BUDGET_MS, SHIM_PATH, ADDON_PATH, NATIVE_DIR, SANDBOX_ERROR_CODES
+  CANARY_BUDGET_MS, SHIM_PATH, ADDON_PATH, NATIVE_DIR, SANDBOX_ERROR_CODES, KERNEL_SANDBOX_FLAG
 } from './sandbox.mjs';
 import {
   CELL_PROTOCOL_VERSION, CELL_MESSAGE_TYPES, CELL_ERROR_CODES,
@@ -18,6 +18,7 @@ import { KERNEL_READ_OPS, KERNEL_BRIDGE_READ_KINDS } from './protocol.mjs';
 import { JOURNAL_BITS } from './journal-als.mjs';
 
 const DEFAULT_WORKER = fileURLToPath(new URL('./cell-worker.mjs', import.meta.url));
+const WINDOWS_WORKER = fileURLToPath(new URL('./cell-worker-windows.mjs', import.meta.url));
 const DEFAULT_CELL_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = CANARY_BUDGET_MS;
 
@@ -33,26 +34,70 @@ const READ_KIND_SET = new Set([...KERNEL_READ_OPS, ...KERNEL_BRIDGE_READ_KINDS])
  */
 export const KERNEL_CODE_CELLS_FLAG = 'DDA_KERNEL_CODE_CELLS';
 export const KERNEL_CELL_TIMEOUT_FLAG = 'DDA_KERNEL_CELL_TIMEOUT_MS';
+export const KERNEL_WINDOWS_UNSANDBOXED_FLAG = 'DDA_KERNEL_WINDOWS_UNSANDBOXED';
 
 const isTruthyFlag = (value) => typeof value === 'string' && ['1', 'true', 'on', 'yes', 'enabled'].includes(value.trim().toLowerCase());
 
 export const isCodeCellsEnabled = (env = process.env) => isTruthyFlag(env?.[KERNEL_CODE_CELLS_FLAG]);
+export const isWindowsUnsandboxedEnabled = (env = process.env) => isTruthyFlag(env?.[KERNEL_WINDOWS_UNSANDBOXED_FLAG]);
 
+/**
+ * Single cells gate. Callers key off boolean `available`, not reason === 'AVAILABLE'
+ * (Windows success reason is WINDOWS_NO_OS_SANDBOX). Inject `platform` for tests.
+ */
 export const codeCellsAvailability = async ({
   env = process.env,
+  platform = process.platform,
   journalAvailable = false,
   residentAvailable = false
 } = {}) => {
   if (!isCodeCellsEnabled(env)) return { available: false, reason: 'CODE_CELLS_DISABLED' };
   if (!residentAvailable) return { available: false, reason: 'KERNEL_NOT_ATTACHED' };
   if (!journalAvailable) return { available: false, reason: 'JOURNAL_UNAVAILABLE' };
-  const sandbox = await detectKernelOsSandbox(env);
-  if (!sandbox.available) return { available: false, reason: sandbox.reason ?? SANDBOX_ERROR_CODES.UNAVAILABLE, sandbox };
+
+  const identity = env?.DDA_PLATFORM;
+  // Identity × OS mismatches — before any sandbox probe.
+  if (identity === 'windows-cli' && platform !== 'win32') {
+    return { available: false, reason: 'PLATFORM_IDENTITY_MISMATCH' };
+  }
+  if (platform === 'win32' && identity !== 'windows-cli') {
+    return { available: false, reason: 'PLATFORM_IDENTITY_MISMATCH' };
+  }
+
+  if (platform === 'win32') {
+    if (isTruthyFlag(env?.[KERNEL_SANDBOX_FLAG])) {
+      return {
+        available: false,
+        reason: 'SANDBOX_UNSUPPORTED_ON_WINDOWS',
+        sandbox: { available: false, reason: 'NON_LINUX_PLATFORM', backend: null }
+      };
+    }
+    if (!isWindowsUnsandboxedEnabled(env)) {
+      return {
+        available: false,
+        reason: 'WINDOWS_UNSANDBOXED_REQUIRED',
+        sandbox: { available: false, reason: 'NON_LINUX_PLATFORM', backend: null }
+      };
+    }
+    return {
+      available: true,
+      reason: 'WINDOWS_NO_OS_SANDBOX',
+      sandbox: { available: false, reason: 'NON_LINUX_PLATFORM', backend: null },
+      windowsUnsandboxed: true
+    };
+  }
+
+  // Linux OS-sandbox path only (WINDOWS_UNSANDBOXED must be ignored here).
+  const sandbox = await detectKernelOsSandbox(env, platform);
+  if (!sandbox.available) {
+    return { available: false, reason: sandbox.reason ?? SANDBOX_ERROR_CODES.UNAVAILABLE, sandbox };
+  }
   return { available: true, reason: 'AVAILABLE', sandbox };
 };
 
 export class CellHost {
   #env;
+  #platform;
   #nodeBinary;
   #workerPath;
   #workspaceRoot;
@@ -82,6 +127,7 @@ export class CellHost {
 
   constructor({
     env = process.env,
+    platform = process.platform,
     nodeBinary = process.execPath,
     workerPath = DEFAULT_WORKER,
     workspaceRoot,
@@ -96,6 +142,7 @@ export class CellHost {
     onEmit = () => {}
   } = {}) {
     this.#env = env;
+    this.#platform = platform;
     this.#nodeBinary = nodeBinary;
     this.#workerPath = workerPath;
     this.#workspaceRoot = workspaceRoot;
@@ -132,12 +179,19 @@ export class CellHost {
 
     const availability = await codeCellsAvailability({
       env: this.#env,
+      platform: this.#platform,
       journalAvailable: this.#journal?.available === true,
       residentAvailable: true
     });
     if (!availability.available) {
       return { ready: false, reason: availability.reason };
     }
+
+    // Windows unsandboxed path: separate entrypoint, protocol ready only, no canary.
+    if (availability.windowsUnsandboxed === true || availability.reason === 'WINDOWS_NO_OS_SANDBOX') {
+      return this.#startUnsandboxedWindows(availability);
+    }
+
     const sandbox = availability.sandbox;
     this.#backend = sandbox.backend;
 
@@ -221,6 +275,58 @@ export class CellHost {
       return { ready: false, reason: 'LANDLOCK_INCOMPLETE' };
     }
 
+    this.#attachChildIo();
+
+    try {
+      await readyWait;
+      this.#ready = true;
+      return { ready: true, backend: this.#backend };
+    } catch (error) {
+      await this.stop().catch(() => {});
+      return { ready: false, reason: error?.code ?? error?.message ?? SANDBOX_ERROR_CODES.UNAVAILABLE };
+    }
+  }
+
+  /**
+   * Prime-aligned Windows cells: bare Node child, separate entrypoint, protocol
+   * ready only. NOT a security sandbox (sandbox.available stays false).
+   */
+  async #startUnsandboxedWindows(availability) {
+    this.#backend = null;
+    this.#framer = createCellFramer();
+    const readyWait = this.#waitReady(DEFAULT_READY_TIMEOUT_MS);
+    const runtimeEnv = {
+      ...buildRuntimeEnv(this.#env, { extraKeys: [] })
+    };
+    delete runtimeEnv.NODE_OPTIONS;
+
+    // Separate Windows entrypoint — never the Linux cell-worker with a skip-canary flag.
+    const workerPath = this.#workerPath === DEFAULT_WORKER ? WINDOWS_WORKER : this.#workerPath;
+    this.#child = spawn(this.#nodeBinary, [workerPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: runtimeEnv,
+      shell: false,
+      detached: false
+    });
+    this.#attachChildIo();
+
+    try {
+      await readyWait;
+      this.#ready = true;
+      return {
+        ready: true,
+        backend: null,
+        reason: availability.reason,
+        windowsUnsandboxed: true,
+        warning: 'NOT_A_SECURITY_SANDBOX'
+      };
+    } catch (error) {
+      await this.stop().catch(() => {});
+      return { ready: false, reason: error?.code ?? error?.message ?? SANDBOX_ERROR_CODES.UNAVAILABLE };
+    }
+  }
+
+  #attachChildIo() {
     this.#child.stdout.setEncoding('utf8');
     this.#child.stderr.setEncoding('utf8');
     this.#child.stdout.on('data', (chunk) => this.#onStdout(chunk));
@@ -232,15 +338,6 @@ export class CellHost {
       this.#failAllPending('WORKER_EXIT', { code, signal });
       this.#child = null;
     });
-
-    try {
-      await readyWait;
-      this.#ready = true;
-      return { ready: true, backend: this.#backend };
-    } catch (error) {
-      await this.stop().catch(() => {});
-      return { ready: false, reason: error?.code ?? error?.message ?? SANDBOX_ERROR_CODES.UNAVAILABLE };
-    }
   }
 
   #buildBwrapArgs({ seccompFd, nodeBinary, nodeArgs, privateTmp }) {

@@ -37,3 +37,19 @@ test('availability requires feature, Linux CLI identity, Node 24 and a sandbox',
   assert.equal(residentKernelAvailability({ DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'windows-desktop' }, { platform: 'linux', nodeVersion: 'v24.0.0' }).reason, 'NON_LINUX_PLATFORM_IDENTITY');
   assert.equal(residentKernelAvailability(base, { platform: 'darwin', nodeVersion: 'v24.0.0' }).reason, 'NON_LINUX_PLATFORM');
 });
+
+test('windows-cli on win32 may attach without OS sandbox; sandboxAvailable stays false', () => {
+  const avail = residentKernelAvailability(
+    { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'windows-cli' },
+    { platform: 'win32', nodeVersion: 'v24.0.0' }
+  );
+  assert.equal(avail.available, true);
+  assert.equal(avail.sandboxAvailable, false);
+  assert.equal(avail.reason, 'AVAILABLE');
+
+  const desktop = residentKernelAvailability(
+    { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'windows-desktop' },
+    { platform: 'win32', nodeVersion: 'v24.0.0' }
+  );
+  assert.equal(desktop.available, false);
+});

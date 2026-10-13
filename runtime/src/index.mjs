@@ -81,7 +81,6 @@ import {
 import { createEffectJournal } from './kernel/effect-journal.mjs';
 import { getJournalAls, JOURNAL_BITS } from './kernel/journal-als.mjs';
 import { isCodeCellsEnabled, createCellHost, codeCellsAvailability } from './kernel/cell-host.mjs';
-import { isKernelSandboxEnabled } from './kernel/sandbox.mjs';
 import { registerKernelExecTool } from './kernel/kernel-tools.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
 import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
@@ -2211,56 +2210,70 @@ async function runTask() {
     await effectJournal.rehydrate();
   }
 
-  // Phase-2b code cells (default OFF). Requires resident + sandbox canary + journal.
-  if (isCodeCellsEnabled(process.env) && isKernelSandboxEnabled(process.env) && residentKernel?.attached) {
-    const sessionStatePathForCells = arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json');
-    cellHost = createCellHost({
+  // Phase-2b code cells (default OFF). Gate solely via codeCellsAvailability
+  // (Linux: OS sandbox canary; Windows windows-cli: explicit unsandboxed confirm).
+  if (isCodeCellsEnabled(process.env)) {
+    const cellsAvailability = await codeCellsAvailability({
       env: process.env,
-      workspaceRoot,
-      excludedPaths: workspaceExcludedPaths,
-      sessionId: runId,
-      sessionStore: residentKernel.sessionStore,
-      workspace,
-      effectsDispatcher: kernelEffectsDispatcher,
-      journal: effectJournal,
-      onEmit: (type, payload) => emitEvent(type, payload),
-      readonlyBridge: async (kind, payload) => {
-        // Phase-1 readonly bridge: same ReadonlyWorkspace + SessionState (F2/I2).
-        if (kind === 'host.ping') return { ok: true, pong: true };
-        if (kind === 'host.capabilities') return { effects: kernelEffectsDispatcher?.availability?.kinds ?? [], cells: true };
-        if (!residentKernel?.kernel) throw Object.assign(new Error('KERNEL_NOT_ATTACHED'), { code: 'KERNEL_NOT_ATTACHED' });
-        if (kind === 'workspace.focus') {
-          return residentKernel.kernel.request('workspace.focus', payload ?? {});
+      journalAvailable: effectJournal?.available === true,
+      residentAvailable: residentKernel?.attached === true
+    });
+    if (cellsAvailability.available && residentKernel?.attached) {
+      const sessionStatePathForCells = arg('--kernel-session-store', process.env.DDA_KERNEL_SESSION_STORE) ?? resolveStoreFile('kernel-session.json');
+      const windowsUnsandboxed = cellsAvailability.windowsUnsandboxed === true
+        || cellsAvailability.reason === 'WINDOWS_NO_OS_SANDBOX';
+      cellHost = createCellHost({
+        env: process.env,
+        workspaceRoot,
+        excludedPaths: workspaceExcludedPaths,
+        sessionId: runId,
+        sessionStore: residentKernel.sessionStore,
+        workspace,
+        effectsDispatcher: kernelEffectsDispatcher,
+        journal: effectJournal,
+        onEmit: (type, payload) => emitEvent(type, payload),
+        readonlyBridge: async (kind, payload) => {
+          // Phase-1 readonly bridge: same ReadonlyWorkspace + SessionState (F2/I2).
+          if (kind === 'host.ping') return { ok: true, pong: true };
+          if (kind === 'host.capabilities') return { effects: kernelEffectsDispatcher?.availability?.kinds ?? [], cells: true };
+          if (!residentKernel?.kernel) throw Object.assign(new Error('KERNEL_NOT_ATTACHED'), { code: 'KERNEL_NOT_ATTACHED' });
+          if (kind === 'workspace.focus') {
+            return residentKernel.kernel.request('workspace.focus', payload ?? {});
+          }
+          if (kind.startsWith('workspace.') || kind.startsWith('session_state.')) {
+            return residentKernel.kernel.request(kind, payload ?? {});
+          }
+          throw Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
         }
-        if (kind.startsWith('workspace.') || kind.startsWith('session_state.')) {
-          return residentKernel.kernel.request(kind, payload ?? {});
-        }
-        throw Object.assign(new Error('KERNEL_SIDE_EFFECT_REFUSED'), { code: 'KERNEL_SIDE_EFFECT_REFUSED' });
+      });
+      const started = await cellHost.start({
+        dataDir: resolveStoreFile('.'),
+        sessionStatePath: sessionStatePathForCells,
+        journalPath: kernelEffectJournalPath,
+        coordinatorMode: 'A',
+        nonSecretWorkspaceFile: undefined
+      });
+      emitEvent(started.ready ? 'kernel.cells_ready' : 'kernel.cells_unavailable', {
+        runId,
+        reason: started.reason ?? cellsAvailability.reason,
+        backend: started.backend ?? null,
+        sandboxAvailable: cellsAvailability.sandbox?.available === true,
+        ...(windowsUnsandboxed || started.windowsUnsandboxed ? {
+          windowsUnsandboxed: true,
+          warning: 'NOT_A_SECURITY_SANDBOX',
+          detail: 'Windows cells run under user permissions (Prime-aligned); Node vm is not a security boundary.'
+        } : {})
+      });
+      if (started.ready) {
+        registerKernelExecTool(toolRegistry, cellHost, { windowsUnsandboxed });
       }
-    });
-    const started = await cellHost.start({
-      dataDir: resolveStoreFile('.'),
-      sessionStatePath: sessionStatePathForCells,
-      journalPath: kernelEffectJournalPath,
-      coordinatorMode: 'A',
-      nonSecretWorkspaceFile: undefined
-    });
-    emitEvent(started.ready ? 'kernel.cells_ready' : 'kernel.cells_unavailable', {
-      runId,
-      reason: started.reason,
-      backend: started.backend
-    });
-    if (started.ready) {
-      registerKernelExecTool(toolRegistry, cellHost);
+    } else {
+      emitEvent('kernel.cells_unavailable', {
+        runId,
+        reason: cellsAvailability.reason,
+        sandboxAvailable: cellsAvailability.sandbox?.available === true
+      });
     }
-  } else if (isCodeCellsEnabled(process.env)) {
-    emitEvent('kernel.cells_unavailable', {
-      runId,
-      reason: !isKernelSandboxEnabled(process.env) ? 'SANDBOX_DISABLED'
-        : !residentKernel?.attached ? 'KERNEL_NOT_ATTACHED'
-          : !effectJournal?.available ? 'JOURNAL_UNAVAILABLE'
-            : 'CELLS_GATED'
-    });
   }
   mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });
   await mcpHost.connectAndRegister(toolRegistry);

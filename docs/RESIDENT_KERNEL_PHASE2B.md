@@ -1,11 +1,14 @@
 # Resident kernel Phase-2b: crash journal + OS sandbox + code cells
 
-Status: implemented, **default OFF**, Linux CLI only. Frozen design:
-[`dda-prime-phase2b-design.md`](../../dda-prime-phase2b-design.md) (FROZEN F1–F12 + §5b–§5aj wins).
+Status: implemented, **default OFF**. Linux CLI = OS-sandboxed cells; Windows
+`windows-cli` = optional unsandboxed cells (Prime-aligned follow-on). Frozen
+design: [`dda-prime-phase2b-design.md`](../../dda-prime-phase2b-design.md)
+(FROZEN F1–F12 + §5b–§5aj wins) + Windows amendment in
+[`RESIDENT_KERNEL_PHASE2_DESIGN.md`](./RESIDENT_KERNEL_PHASE2_DESIGN.md).
 
-## Enable
+## Enable (Linux — OS sandbox)
 
-All of these must hold for cells; otherwise `kernel.exec` is not registered and
+All of these must hold for Linux cells; otherwise `kernel.exec` is not registered and
 `kernel.cells_unavailable` is emitted:
 
 | Variable | Value | Default |
@@ -30,6 +33,30 @@ Write-class `host.request` kinds still need the full Phase-2a effects gate
 (`DDA_KERNEL_EFFECTS` + CONTROLLED + lease). Empty effects ⇒ pure compute +
 readonly bridge only (`KERNEL_READ_OPS` + optional `host.ping` /
 `host.capabilities`).
+
+## Enable (Windows — unsandboxed, Prime-aligned)
+
+Native Windows has **no** bwrap / Job Object / AppContainer path in this release.
+Cells may still run under user permissions when every gate below holds. This is
+**not a security sandbox**; Node `vm` is also not a security boundary. Prefer
+Linux + bwrap when isolation matters.
+
+| Variable | Value | Default |
+|---|---|---|
+| `DDA_RESIDENT_KERNEL` | `1` | off |
+| `DDA_PLATFORM` | `windows-cli` (**reuse**; not folded into `PORTABLE_CLI_PLATFORMS` / `isLinuxCliPlatform`) | – |
+| OS | `win32` (paired with identity; mismatch → `PLATFORM_IDENTITY_MISMATCH`) | – |
+| `DDA_KERNEL_CODE_CELLS` | `1` | off |
+| `DDA_KERNEL_WINDOWS_UNSANDBOXED` | `1` (explicit confirm; CODE_CELLS alone is not enough) | off |
+| `DDA_KERNEL_SANDBOX` | must be **unset/off** — truthy → `SANDBOX_UNSUPPORTED_ON_WINDOWS` | off |
+| journal path writable | same as Linux | store path |
+
+Refused this round: `windows-desktop` / UI identity, macOS, Job Objects.
+`sandbox.available` stays **false**; success reason is `WINDOWS_NO_OS_SANDBOX`
+(callers key off boolean `available`). Phase-2a write effects stay refused on
+Windows. Phase-1 read kernel tools register the same surface as Linux (readonly
+bridge). Worker entrypoint is separate (`cell-worker-windows.mjs`); protocol
+`ready` only — no FS/net/exec canary.
 
 ## What landed
 

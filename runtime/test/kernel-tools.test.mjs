@@ -45,7 +45,8 @@ test('falls back on a non-Linux platform instead of failing', async () => {
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 's',
     env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
-    platform: 'darwin'
+    platform: 'darwin',
+    nodeVersion: 'v24.0.0'
   });
   assert.equal(handle.attached, false);
   assert.equal(handle.availability.reason, 'NON_LINUX_PLATFORM');
@@ -60,7 +61,8 @@ test('registers the kernel surface alongside the read-only fallback when availab
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 'sess', sessionStatePath: storagePath,
     env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
-    platform: 'linux'
+    platform: 'linux',
+    nodeVersion: 'v24.0.0'
   });
   try {
     assert.equal(handle.attached, true);
@@ -90,7 +92,8 @@ test('surfaces the side-effect refusal through the tool error code', async () =>
   const handle = await attachResidentKernel({
     registry, workspaceRoot: root, sessionId: 'sess2',
     env: { DDA_RESIDENT_KERNEL: '1', DDA_PLATFORM: 'linux-cli' },
-    platform: 'linux'
+    platform: 'linux',
+    nodeVersion: 'v24.0.0'
   });
   try {
     await assert.rejects(

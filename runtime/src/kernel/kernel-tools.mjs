@@ -297,13 +297,18 @@ export const attachResidentKernel = async ({
 /**
  * Register kernel.exec (Phase-2b code cells). readOnly:false — never Jev readonly
  * fast path; READ_ONLY mode must never run it (I8).
+ *
+ * Windows unsandboxed registration must NOT claim OS sandbox (Prime-aligned).
  */
-export const registerKernelExecTool = (registry, cellHost) => {
+export const registerKernelExecTool = (registry, cellHost, { windowsUnsandboxed = false } = {}) => {
   if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
   if (!cellHost || typeof cellHost.exec !== 'function') throw new Error('KERNEL_CELL_HOST_REQUIRED');
+  const description = windowsUnsandboxed
+    ? 'Run a JavaScript code cell in the unsandboxed Windows resident cell worker (Phase-2b follow-on, Prime-aligned). NOT a security sandbox — code runs with the host user permissions; Node vm is not a security boundary. Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_WINDOWS_UNSANDBOXED + DDA_PLATFORM=windows-cli).'
+    : 'Run a JavaScript code cell inside the OS-sandboxed resident cell worker (Phase-2b). Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_SANDBOX).';
   registry.register({
     name: 'kernel.exec',
-    description: 'Run a JavaScript code cell inside the OS-sandboxed resident cell worker (Phase-2b). Persistent vm context across cells. Side effects only via await host.request(kind, payload) which is host-gated. Pure compute is allowed even when DDA_KERNEL_EFFECTS is empty. Default OFF (DDA_KERNEL_CODE_CELLS + DDA_KERNEL_SANDBOX).',
+    description,
     inputSchema: {
       type: 'object',
       properties: {
@@ -313,7 +318,12 @@ export const registerKernelExecTool = (registry, cellHost) => {
       additionalProperties: false
     },
     readOnly: false,
-    metadata: { actionClass: 'SIDE_EFFECT', surface: 'resident-kernel-cell', kernelExec: true },
+    metadata: {
+      actionClass: 'SIDE_EFFECT',
+      surface: 'resident-kernel-cell',
+      kernelExec: true,
+      ...(windowsUnsandboxed ? { windowsUnsandboxed: true, notASecuritySandbox: true } : {})
+    },
     handler: async ({ code }, context) => {
       const result = await cellHost.exec({ code, cellId: context?.toolCallId ? `cell-${context.toolCallId}` : undefined });
       return {

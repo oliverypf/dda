@@ -5703,7 +5703,12 @@ app.addEventListener('click', (event) => {
       // so the replaced markup needs no handler rebinding.
       if (settingsSection === 'routing') {
         const panel = app.querySelector<HTMLElement>('#settings-panel-routing');
-        if (panel) panel.outerHTML = renderRoutingSettingsPanel();
+        if (panel) {
+          panel.outerHTML = renderRoutingSettingsPanel();
+          // Same icon hydration patchLiveRegion uses, scoped to the new panel.
+          const fresh = app.querySelector<HTMLElement>('#settings-panel-routing');
+          if (fresh) historyIcons(fresh);
+        }
       }
       syncSettingsView();
       const content = app.querySelector('.settings-main');

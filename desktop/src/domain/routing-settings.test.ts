@@ -165,6 +165,9 @@ describe('review fixes', () => {
     const partial = handler.indexOf("panel.outerHTML = renderRoutingSettingsPanel()");
     expect(partial).toBeGreaterThan(0);
     expect(partial).toBeLessThan(handler.indexOf('syncSettingsView()'));
+    const hydrate = handler.indexOf('historyIcons(fresh)');
+    expect(hydrate).toBeGreaterThan(partial);
+    expect(hydrate).toBeLessThan(handler.indexOf('syncSettingsView()'));
     expect(mainSource).not.toContain("title: '模型设置', body: pinMigrationNotice");
   });
   it('route failure attaches to the run own thread, not the viewed one', () => {

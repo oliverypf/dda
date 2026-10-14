@@ -4,7 +4,7 @@ import mainSource from '../main.ts?raw';
 import {
   LEGACY_PINNED_MODEL_KEY, decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection,
   migrateLegacyPinnedModel, planPinMigration, routeFailureNotice,
-  PIN_MIGRATION_NOTICE_KEY, routeFailureThread, storePinMigrationNotice, takePinMigrationNotice, threadRuntimeRunId
+  PIN_MIGRATION_NOTICE_KEY, createPinNoticeSession, routeFailureThread, storePinMigrationNotice, takePinMigrationNotice, threadRuntimeRunId
 } from './routing-settings';
 
 const node = (decisionId: string, runId: string, decisionType: string, updatedAtMs: number): RuntimeDecisionNode =>
@@ -136,6 +136,19 @@ describe('review fixes', () => {
     expect(takePinMigrationNotice(storage)).toBeUndefined();
     expect(mainSource).toContain('data-pin-migration-notice');
   });
+  it('pin notice survives re-renders while Settings is open, gone after close+reopen', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v); }, removeItem: (k: string) => { data.delete(k); } };
+    storePinMigrationNotice(storage, 'pin dropped');
+    const session = createPinNoticeSession(storage);
+    expect(session.forRender()).toBe('pin dropped');
+    expect(data.has(PIN_MIGRATION_NOTICE_KEY)).toBe(false);
+    expect(session.forRender()).toBe('pin dropped');
+    session.close();
+    expect(session.forRender()).toBeUndefined();
+    expect(mainSource).toContain('pinNoticeSession.close()');
+    expect(mainSource).not.toContain("title: '模型设置', body: pinMigrationNotice");
+  });
   it('route failure attaches to the run own thread, not the viewed one', () => {
     const map = new Map<string, string | undefined>([['r1', 't1']]);
     expect(routeFailureThread(map, 'r1')).toBe('t1');
@@ -146,7 +159,7 @@ describe('review fixes', () => {
   it('history thread uses its own runId, never recentRunIds fallback', () => {
     const decisions = [node('d', 'r-old', 'SELECT_ROUTE', 1)];
     expect(threadRuntimeRunId([{ runId: 'r-old', createdAtMs: 1 }, { runId: 'r-new', createdAtMs: 2 }], decisions)).toBe('r-old');
-    expect(threadRuntimeRunId([{ runId: 'r-new', createdAtMs: 2 }, {}], [])).toBe('r-new');
+    expect(threadRuntimeRunId([{ runId: 'r-new', createdAtMs: 2 }, {}], [])).toBeUndefined();
     expect(threadRuntimeRunId([{ createdAtMs: 1 }], decisions)).toBeUndefined();
     expect(mainSource).toContain('selectedThreadRuntimeRunId()');
     expect(mainSource).toContain('此会话没有路由记录');

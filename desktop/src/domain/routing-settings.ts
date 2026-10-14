@@ -110,8 +110,8 @@ export const takePinMigrationNotice = (storage: Pick<Storage, 'getItem' | 'remov
 };
 
 /**
- * Runtime runId for a selected (history) thread: the newest timeline item carrying a
- * runId, preferring runs that have a decision record. Never falls back to another
+ * Runtime runId for a selected (history) thread: the newest timeline run that has a
+ * decision record. Never falls back to another
  * thread's run; undefined means the 「在设置中查看」 button is disabled.
  */
 export const threadRuntimeRunId = (
@@ -120,9 +120,27 @@ export const threadRuntimeRunId = (
 ): string | undefined => {
   const items = (timeline ?? []).filter((item) => item.runId).slice().sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0));
   const known = new Set((decisions ?? []).map((node) => node.runId).filter(Boolean));
-  return (items.find((item) => known.has(item.runId)) ?? items[0])?.runId;
+  return items.find((item) => known.has(item.runId))?.runId;
 };
 
 /** Thread that owns a runtime run, recorded at run start / bridge result. Never the currently viewed thread. */
 export const routeFailureThread = (runThreads: ReadonlyMap<string, string | undefined>, runId: string): string | undefined =>
   runThreads.get(runId);
+
+
+/**
+ * Settings-scoped holder for the one-time pin notice. The first render while
+ * Settings is open takes it from storage (deleting it there) and keeps it in
+ * memory across re-renders; close() drops the memory copy so reopening is empty.
+ */
+export const createPinNoticeSession = (storage: Pick<Storage, 'getItem' | 'removeItem'>) => {
+  let notice: string | undefined;
+  return {
+    forRender: (): string | undefined => {
+      const taken = takePinMigrationNotice(storage);
+      if (taken) notice = taken;
+      return notice;
+    },
+    close: (): void => { notice = undefined; }
+  };
+};

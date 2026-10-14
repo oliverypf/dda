@@ -28,7 +28,7 @@ import TerminalSquare from 'lucide/dist/esm/icons/square-terminal.mjs';
 import UserRound from 'lucide/dist/esm/icons/user-round.mjs';
 import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
-import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, storePinMigrationNotice, takePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
+import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, createPinNoticeSession, storePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
 import {
@@ -369,7 +369,7 @@ let memoryEditError = '';
 // migrated once at startup (migrate-then-delete), see pinMigrationReady.
 let routeFailure: (RouteFailureNotice & { threadId?: string }) | undefined;
 let routingSettingsRunId: string | undefined;
-let pinMigrationNotice = '';
+const pinNoticeSession = createPinNoticeSession(localStorage);
 // runtime runId -> owning thread id (recorded at run start, completed by the bridge result).
 const runThreadIds = new Map<string, string | undefined>();
 let currentRunThreadId: string | undefined;
@@ -2010,7 +2010,7 @@ const renderRoutingSettingsPanel = (): string => {
   const recentRunIds = [...new Map(all.slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))
     .filter((node) => node.runId).map((node) => [node.runId!, node.updatedAtMs ?? 0])).keys()].slice(0, 8);
   const selectedRunId = routingSettingsRunId ?? (running ? undefined : activeRuntimeRunId) ?? recentRunIds[0];
-  if (!pinMigrationNotice) pinMigrationNotice = takePinMigrationNotice(localStorage) ?? '';
+  const pinMigrationNotice = pinNoticeSession.forRender() ?? '';
   const pinNoticeHtml = pinMigrationNotice ? `<div class="settings-card routing-pin-notice" role="status" data-pin-migration-notice>${escapeHtml(pinMigrationNotice)}</div>` : '';
   const decisions = decisionsForRun(all, selectedRunId);
   const usage = model.modelUsage;
@@ -5646,6 +5646,7 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
 function closeSettings(): void {
   if (settingsSaving) return;
   settingsVisible = false;
+  pinNoticeSession.close();
   settingsError = '';
   settingsSaved = false;
   render();
@@ -6308,9 +6309,8 @@ pinMigrationReady = desktopBridge.isNative()
     log: (message) => console.warn(message)
   }).then((result) => {
     if (result.notice) {
-      pinMigrationNotice = result.notice;
+      // Startup writes only to storage; Settings 「模型与路由」 shows it once.
       storePinMigrationNotice(localStorage, result.notice);
-      update(appendTimelineItem(model, { kind: 'STATUS', title: '模型设置', body: pinMigrationNotice, status: 'COMPLETE' }));
     }
   }).catch(() => undefined)
   : Promise.resolve();

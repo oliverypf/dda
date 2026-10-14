@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import {
   classifyCellHostKind, cellOpTitle, takeTailScalars, createCellExecTimeline, dispatchCellMessages,
-  CELL_OP_TAIL_BYTES
+  CELL_OP_PUSH_BYTES, CELL_OP_PUSH_INTERVAL_MS, CELL_OP_TAIL_BYTES
 } from '../src/kernel/cell-exec-timeline.mjs';
 import {
   createCellHost, KERNEL_WINDOWS_UNSANDBOXED_FLAG, KERNEL_WINDOWS_DESKTOP_CELLS_FLAG
@@ -283,10 +283,137 @@ test('stale epoch opens no row; malformed and gapped progress are dropped', asyn
 
 test('late op_progress after fast host_response stays on the completed row', async () => {
   const desktop = await runHost({ env: desktopEnv('late-progress'), mode: 'late-progress' });
-  const last = opRows(desktop.events).at(-1);
+  const deadline = Date.now() + 500;
+  let last = opRows(desktop.events).at(-1);
+  while (last?.output !== 'late-tail' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    last = opRows(desktop.events).at(-1);
+  }
   assert.equal(last.state, 'COMPLETED');
   assert.equal(last.kind, 'workspace.read');
   assert.equal(last.output, 'late-tail');
+});
+
+test('late op_progress on a terminal row uses the 100ms coalesced flush', () => {
+  const emitted = [];
+  const timers = [];
+  const timeline = createCellExecTimeline({
+    emit: (payload) => emitted.push({ ...payload.row }),
+    schedule: (fn, ms) => {
+      const timer = { fn, ms, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearSchedule: () => {}
+  });
+  const row = timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId: 'hr-1', toolCallId: 'c::hr-1',
+    cellOpIndex: 1, kind: 'workspace.read', classification: 'read', title: 'workspace.read'
+  });
+  assert.equal(emitted.length, 1);
+  assert.equal(timeline.noteSeq(row, 1), 'ok');
+  timeline.appendChunk(row, 'run');
+  assert.equal(emitted.length, 1);
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].ms, CELL_OP_PUSH_INTERVAL_MS);
+  timers[0].fn();
+  assert.equal(emitted.at(-1).output, 'run');
+  timeline.endFromResult(EPOCH, 'c::hr-1', { classification: 'read', envelopeOk: true });
+  assert.equal(emitted.at(-1).state, 'COMPLETED');
+  const afterFinish = emitted.length;
+  assert.equal(timeline.noteSeq(row, 2), 'ok');
+  timeline.appendChunk(row, 'a');
+  timeline.appendChunk(row, 'b');
+  timeline.appendChunk(row, 'c');
+  assert.equal(emitted.length, afterFinish);
+  assert.equal(timers.length, 2);
+  assert.equal(timers[1].ms, CELL_OP_PUSH_INTERVAL_MS);
+  assert.equal(timeline.rows()[0].output, 'runabc');
+  assert.equal(timeline.rows()[0].state, 'COMPLETED');
+  assert.equal(timeline.rows()[0].durationMs, emitted.at(-1).durationMs);
+  timers[1].fn();
+  assert.equal(emitted.length, afterFinish + 1);
+  assert.equal(emitted.at(-1).output, 'runabc');
+  assert.equal(emitted.at(-1).state, 'COMPLETED');
+  timeline.appendChunk(row, 'z'.repeat(CELL_OP_PUSH_BYTES));
+  assert.equal(emitted.length, afterFinish + 2);
+  assert.equal(emitted.at(-1).state, 'COMPLETED');
+  assert.equal(emitted.at(-1).output.endsWith('z'), true);
+  assert.equal(timers.length, 2);
+});
+
+test('readonly ok:false carries result.error.code onto the FAILED row', () => {
+  const timeline = createCellExecTimeline({
+    emit: () => {},
+    schedule: () => ({ unref() {} }),
+    clearSchedule: () => {}
+  });
+  timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId: 'hr-1', toolCallId: 'c::hr-1',
+    cellOpIndex: 1, kind: 'workspace.read', classification: 'read', title: 'workspace.read'
+  });
+  timeline.endFromResult(EPOCH, 'c::hr-1', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: 'KERNEL_OP_FAILED' } }
+  });
+  assert.equal(timeline.rows()[0].state, 'FAILED');
+  assert.equal(timeline.rows()[0].errorCode, 'KERNEL_OP_FAILED');
+
+  timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId: 'hr-2', toolCallId: 'c::hr-2',
+    cellOpIndex: 2, kind: 'session_state.get', classification: 'read', title: 'session_state.get'
+  });
+  timeline.endFromResult(EPOCH, 'c::hr-2', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false }
+  });
+  const missing = timeline.rows().find((row) => row.requestId === 'hr-2');
+  assert.equal(missing.state, 'FAILED');
+  assert.equal(missing.errorCode, undefined);
+});
+
+test('kernel result error codes are sanitized before they are stored', () => {
+  const timeline = createCellExecTimeline({
+    emit: () => {},
+    schedule: () => ({ unref() {} }),
+    clearSchedule: () => {}
+  });
+  const begin = (requestId, cellOpIndex) => timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId, toolCallId: `c::${requestId}`,
+    cellOpIndex, kind: 'workspace.read', classification: 'read', title: 'workspace.read'
+  });
+  begin('hr-1', 1);
+  timeline.endFromResult(EPOCH, 'c::hr-1', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: `KERNEL_OP_FAILED <injected>\n${'A'.repeat(80)}` } }
+  });
+  const noisy = timeline.rows().find((row) => row.requestId === 'hr-1');
+  const expected = `KERNEL_OP_FAILEDinjected${'A'.repeat(80)}`.slice(0, 64);
+  assert.equal(noisy.state, 'FAILED');
+  assert.equal(noisy.errorCode, expected);
+  assert.equal(noisy.errorCode.length, 64);
+  assert.match(noisy.errorCode, /^[A-Za-z0-9_.:-]+$/);
+
+  begin('hr-2', 2);
+  timeline.endFromResult(EPOCH, 'c::hr-2', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: 'ok.code:part_2-tail' } }
+  });
+  assert.equal(timeline.rows().find((row) => row.requestId === 'hr-2').errorCode, 'ok.code:part_2-tail');
+
+  begin('hr-3', 3);
+  timeline.endFromResult(EPOCH, 'c::hr-3', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: '< >!' } }
+  });
+  const emptied = timeline.rows().find((row) => row.requestId === 'hr-3');
+  assert.equal(emptied.state, 'FAILED');
+  assert.equal(emptied.errorCode, undefined);
 });
 
 test('readonly bridge error envelope finishes workspace and session_state rows as FAILED', async () => {
@@ -299,10 +426,10 @@ test('readonly bridge error envelope finishes workspace and session_state rows a
   for (const row of opRows(desktop.events)) byRequest.set(row.requestId, row);
   assert.equal(byRequest.get('hr-1').kind, 'workspace.read');
   assert.equal(byRequest.get('hr-1').state, 'FAILED');
-  assert.equal(byRequest.get('hr-1').errorCode, undefined);
+  assert.equal(byRequest.get('hr-1').errorCode, 'KERNEL_OP_FAILED');
   assert.equal(byRequest.get('hr-2').kind, 'session_state.get');
   assert.equal(byRequest.get('hr-2').state, 'FAILED');
-  assert.equal(byRequest.get('hr-2').errorCode, undefined);
+  assert.equal(byRequest.get('hr-2').errorCode, 'KERNEL_OP_FAILED');
 });
 
 test('exec_result does not end a row that already entered the bridge', async () => {

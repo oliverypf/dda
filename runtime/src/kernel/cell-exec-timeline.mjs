@@ -56,6 +56,15 @@ export const takeTailScalars = (text, maxBytes = CELL_OP_TAIL_BYTES) => {
 const errorCodeOf = (error) => (typeof error?.code === 'string' ? error.code
   : String(error?.message ?? '').split(':', 1)[0]);
 
+const ERROR_CODE_MAX_CHARS = 64;
+
+/** Row display code. Drop characters outside [A-Za-z0-9_.:-] and cap length. */
+const sanitizeErrorCode = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = value.replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, ERROR_CODE_MAX_CHARS);
+  return cleaned || undefined;
+};
+
 /**
  * Display-only row projector for a Windows desktop cell. Callers on
  * windows-cli and Linux do not construct it, so they emit no row events.
@@ -126,10 +135,12 @@ export const createCellExecTimeline = ({
     }
   };
 
-  const touch = (row, { immediate = false, bytes = 0 } = {}) => {
+  const touch = (row, { immediate = false, bytes = 0, coalesce = false } = {}) => {
     row.dirty = true;
     dirty = true;
-    if (immediate || row.state !== 'RUNNING') {
+    // Terminal rows normally flush immediately. Late op_progress opts into
+    // the same 100ms / 16KB coalescing used while the row is RUNNING.
+    if (!coalesce && (immediate || row.state !== 'RUNNING')) {
       flush();
       return;
     }
@@ -161,7 +172,8 @@ export const createCellExecTimeline = ({
     closeWait(row);
     const end = now();
     row.state = state;
-    if (extra.errorCode) row.errorCode = extra.errorCode;
+    const errorCode = sanitizeErrorCode(extra.errorCode);
+    if (errorCode) row.errorCode = errorCode;
     row.durationMs = Math.max(0, end - row.startedAtMs - row.approvalWaitMs);
     touch(row, { immediate: true });
     if (sinks && row.toolCallId) sinks.delete(row.toolCallId);
@@ -237,6 +249,8 @@ export const createCellExecTimeline = ({
     appendChunk(row, chunk) {
       // Fast host_response finishes the row before late op_progress arrives.
       // Keep those chunks in the 64KB tail and do not change a terminal state.
+      // A burst after the row is terminal must share the coalesced UI flush
+      // instead of emitting once per chunk.
       if (!row || row.acceptDeltas !== true) return;
       const sanitized = sanitizeOutput(chunk);
       const produced = Buffer.byteLength(sanitized, 'utf8');
@@ -245,7 +259,7 @@ export const createCellExecTimeline = ({
       const next = takeTailScalars(combined, CELL_OP_TAIL_BYTES);
       if (next.length !== combined.length || Buffer.byteLength(combined, 'utf8') > CELL_OP_TAIL_BYTES) row.truncated = true;
       row.output = next;
-      touch(row, { bytes: produced });
+      touch(row, { bytes: produced, coalesce: row.state !== 'RUNNING' });
     },
     noteSeq(row, seq) {
       if (!row || row.acceptDeltas !== true) return 'drop';
@@ -272,7 +286,10 @@ export const createCellExecTimeline = ({
       }
       if ((classification ?? row.classification) === 'read') {
         if (envelopeOk === true) finish(row, 'COMPLETED');
-        else finish(row, 'FAILED');
+        else {
+          const errorCode = typeof result?.error?.code === 'string' ? result.error.code : undefined;
+          finish(row, 'FAILED', { errorCode });
+        }
         return row;
       }
       if (result?.outcome === 'UNKNOWN' || UNCERTAIN_ERROR_CODES.has(result?.failed?.errorCode)) {

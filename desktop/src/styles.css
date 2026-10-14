@@ -900,9 +900,6 @@ svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .verification-check[data-status="PENDING"] { border-left: 3px solid #a46500; }
 .verification-check[data-status="COMPLETE"] { border-left: 3px solid #16804a; }
 
-.submit-receipt { display: grid; gap: 6px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow-wrap: anywhere; }
-.submit-receipt > span { color: var(--text-soft); }
-.submit-receipt > small { color: var(--text-muted); }
 
 .verification-evidence { display: grid; gap: 6px; margin-top: 10px; } .verification-evidence-list { display: flex; flex-wrap: wrap; gap: 6px; } .evidence-link { min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; color: #124f9f; background: var(--surface-subtle); font: inherit; text-align: left; overflow-wrap: anywhere; } .evidence-link-unresolved { color: var(--text-muted); overflow-wrap: anywhere; } .evidence-link:focus-visible { outline: 2px solid #6ca0f1; outline-offset: 2px; }
 

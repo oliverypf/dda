@@ -3390,8 +3390,8 @@ const renderLiveView = (): void => {
   patchLiveRegion(slot('heading'), [model.activeRun?.title, focusedRunId], () => `
     <div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1>${escapeHtml(model.activeRun?.title ?? 'Windows 只读工作台')}</h1>
       ${focusedRunId ? '<button class="secondary-button" data-action="clear-run-focus">清除运行筛选</button>' : ''}</div></div>`);
-  patchLiveRegion(slot('receipt'), [lastSubmitReceipt?.id, lastSubmitReceipt?.status], () => lastSubmitReceipt
-    ? `<div class="submit-receipt submit-receipt-${lastSubmitReceipt.status}"><strong>提交回执 ${escapeHtml(lastSubmitReceipt.id)}</strong><span>${lastSubmitReceipt.status === 'pending' ? '等待运行时确认' : lastSubmitReceipt.status === 'accepted' ? '已被接受' : lastSubmitReceipt.status === 'unconfirmed' ? '未收到运行时接受确认' : '已被拒绝'}</span><small>${escapeHtml(lastSubmitReceipt.prompt)}</small></div>` : '');
+  // The submit receipt card (cmd-… receipt) is no longer rendered; lastSubmitReceipt
+  // state is still tracked for acknowledgement bookkeeping and evidence.
   const lists = liveTimeline!;
   if (lists.source !== model.timeline || lists.focus !== focusedRunId || lists.expanded !== executionGroupExpanded) {
     const all = focusedRunId ? model.timeline.filter((item) => item.runId === focusedRunId) : model.timeline;
@@ -3532,7 +3532,6 @@ const render = (): void => {
               <div class="live-region" data-live-region="agents"></div>
               <div class="live-region" data-live-region="heading"></div>
               <div class="timeline">
-                <div class="live-region" data-live-region="receipt"></div>
                 <div data-live-human></div>
                 <details class="execution-group" data-execution-group hidden><summary></summary><div data-live-tools></div></details>
               </div>

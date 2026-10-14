@@ -161,6 +161,10 @@ describe('review fixes', () => {
     session.close();
     expect(session.forRender(true)).toBeUndefined();
     expect(mainSource).toContain("pinNoticeSession.forRender(settingsSection === 'routing')");
+    const handler = mainSource.slice(mainSource.indexOf("if (action === 'settings-section')"));
+    const partial = handler.indexOf("panel.outerHTML = renderRoutingSettingsPanel()");
+    expect(partial).toBeGreaterThan(0);
+    expect(partial).toBeLessThan(handler.indexOf('syncSettingsView()'));
     expect(mainSource).not.toContain("title: '模型设置', body: pinMigrationNotice");
   });
   it('route failure attaches to the run own thread, not the viewed one', () => {

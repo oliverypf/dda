@@ -5698,6 +5698,13 @@ app.addEventListener('click', (event) => {
       settingsSearch = '';
       const search = app.querySelector<HTMLInputElement>('.settings-search');
       if (search) search.value = '';
+      // Tab switches don't re-render; refresh just the routing panel so the
+      // one-time pin notice is taken and shown. Clicks are delegated on app,
+      // so the replaced markup needs no handler rebinding.
+      if (settingsSection === 'routing') {
+        const panel = app.querySelector<HTMLElement>('#settings-panel-routing');
+        if (panel) panel.outerHTML = renderRoutingSettingsPanel();
+      }
       syncSettingsView();
       const content = app.querySelector('.settings-main');
       if (content) content.scrollTop = 0;

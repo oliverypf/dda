@@ -481,8 +481,8 @@ try {
     await unverified.evaluate(verification => window.__executionTest.complete('Preserve this output', verification), verification);
     await unverified.waitForFunction(() => document.querySelector('.send-button')?.disabled === false);
     assert.match(await unverified.locator('.run-status').innerText(), /任务未完成/);
-    await unverified.locator('[data-execution-group] > summary').click();
-    await unverified.getByText('未达到验收条件', { exact: true }).waitFor();
+    // The failure reason is a conversation line now (no need to open the execution group).
+    await unverified.locator('.transcript').getByText('未达到验收条件', { exact: true }).first().waitFor();
     assert.match(await unverified.locator('.transcript').innerText(), /未达到验收条件/);
     assert.match(await unverified.locator('.transcript').innerText(), /Preserve this output/);
     await unverified.close();
@@ -499,40 +499,26 @@ try {
       { id: 'diff', status: 'SKIPPED', message: 'No diff check performed', evidence: [] }
     ]
   }));
-  const checkPanel = checksPage.locator('.verification-checks');
-  await checkPanel.waitFor();
-  assert.equal(await checkPanel.locator('.verification-check').count(), 4);
-  assert.match(await checkPanel.innerText(), /通过 · build/);
-  assert.match(await checkPanel.innerText(), /失败 · tests/);
-  assert.match(await checkPanel.innerText(), /未知状态 · goal/);
-  assert.match(await checkPanel.innerText(), /已跳过 · diff/);
-  assert.match(await checkPanel.innerText(), /Missing <coverage>/);
-  assert.match(await checkPanel.innerText(), /运行时未提供逐项检查时间和影响等级/);
-  assert.equal(await checkPanel.locator('[data-status="PENDING"]').count(), 2);
-  assert.equal(await checkPanel.locator('[data-action="focus-evidence"][data-evidence-ref="event:workspace-evidence-1"]').count(), 1);
-  assert.equal(await checkPanel.locator('[data-evidence-state="unresolved"]').count(), 4);
-  await checkPanel.locator('[data-action="focus-evidence"][data-evidence-ref="event:workspace-evidence-1"]').click();
-  await checksPage.waitForFunction(() => [...document.querySelectorAll('[data-item-id]')].some(node => node.textContent?.includes('工作区快照') && node.closest('[data-execution-group]')?.open === true));
-  const targetState = await checksPage.evaluate(() => { const node = [...document.querySelectorAll('[data-item-id]')].find(n => n.textContent?.includes('工作区快照')); return { itemId: node?.getAttribute('data-item-id'), open: Boolean(node?.querySelector('details[open]')), groupOpen: Boolean(node?.closest('[data-execution-group]')?.open) }; });
-  assert.ok(targetState.itemId, 'evidence target timeline row is rendered');
-  assert.equal(targetState.open, true, 'evidence click opens target details');
-  assert.equal(targetState.groupOpen, true, 'evidence click expands execution group');
-  assert.equal(await checkPanel.locator('coverage').count(), 0);
+  // 确定性验收检查 / 完成报告 panels are no longer rendered; the failed check and
+  // the 未达到验收条件 reason are shown as conversation lines instead.
+  await checksPage.locator('.transcript').getByText('未达到验收条件', { exact: true }).first().waitFor();
+  assert.equal(await checksPage.locator('.verification-checks, [data-task-verification]').count(), 0);
+  const checksTranscript = await checksPage.locator('.transcript').innerText();
+  assert.match(checksTranscript, /失败 · tests/);
+  assert.match(checksTranscript, /A test failed/);
+  assert.doesNotMatch(checksTranscript, /通过 · build|已跳过 · diff|确定性验收检查|完成报告/);
   assert.match(await checksPage.locator('.run-status').innerText(), /任务未完成/);
-  await checkPanel.scrollIntoViewIfNeeded();
-  await checksPage.screenshot({ path: resolve(output, 'verification-checks-desktop.png') });
+  await checksPage.screenshot({ path: resolve(output, 'verification-failure-line-desktop.png') });
   await checksPage.setViewportSize({ width: 390, height: 844 });
-  await checkPanel.scrollIntoViewIfNeeded();
-  assert.equal(await checkPanel.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-  await checksPage.screenshot({ path: resolve(output, 'verification-checks-mobile.png') });
+  await checksPage.screenshot({ path: resolve(output, 'verification-failure-line-mobile.png') });
   const closeContext = checksPage.locator('.mobile-context-close');
   if (await closeContext.isVisible()) await closeContext.click();
   await checksPage.locator('[data-action="new-task"]').click();
   const mobileChooser = checksPage.locator('.project-picker-card');
   if (await mobileChooser.count()) await mobileChooser.locator('.project-picker-none').click();
-  await checkPanel.waitFor({ state: 'detached' });
+  await checksPage.locator('.transcript').getByText('失败 · tests').waitFor({ state: 'detached' });
   await checksPage.close();
-  results.push({ name: 'per-check verifier report preserves all four statuses, safe text and evidence references, explicit missing metadata and new-task isolation' });
+  results.push({ name: 'verifier report panels are hidden; failed check and 未达到验收条件 reason stay visible as timeline lines; new-task isolation' });
   const failedReport = await fixture();
   await submit(failedReport);
   await failedReport.evaluate(() => window.__executionTest.fail([
@@ -540,18 +526,18 @@ try {
     { id: 'uncertain', status: 'UNRECOGNIZED', message: 'Status not understood', evidence: [null, 'event:valid'] },
     null
   ]));
-  await failedReport.locator('.verification-checks').waitFor();
   await failedReport.waitForFunction(() => document.querySelector('.send-button')?.disabled === false);
   assert.match(await failedReport.locator('.run-status').innerText(), /任务未完成/);
   assert.equal(await failedReport.locator('.submit-receipt').count(), 0, 'submit receipt card is not rendered');
-  assert.equal(await failedReport.locator('.verification-check').count(), 2);
-  assert.match(await failedReport.locator('.verification-checks').innerText(), /失败 · required-tests/);
-  assert.match(await failedReport.locator('.verification-checks').innerText(), /未知状态 · uncertain/);
-  assert.match(await failedReport.locator('.verification-checks').innerText(), /event:valid/);
-  await failedReport.locator('.verification-checks').scrollIntoViewIfNeeded();
+  assert.equal(await failedReport.locator('.verification-checks, [data-task-verification]').count(), 0);
+  const failedTranscript = await failedReport.locator('.transcript').innerText();
+  assert.match(failedTranscript, /失败 · required-tests/);
+  assert.match(failedTranscript, /Required tests failed/);
+  assert.match(failedTranscript, /Verifier rejected task/);
+  assert.doesNotMatch(failedTranscript, /未知状态 · uncertain/);
   await failedReport.screenshot({ path: resolve(output, 'failed-verification-report.png') });
   await failedReport.close();
-  results.push({ name: 'run.failed retains checks after failed bridge response; malformed entries are ignored and unsupported statuses remain unknown' });
+  results.push({ name: 'run.failed shows the failure reason and failed check as timeline lines; malformed and non-failing checks stay hidden' });
 
   const unacknowledged = await fixture();
   await unacknowledged.evaluate(() => { window.__executionTest.deferStart = true; });

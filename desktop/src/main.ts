@@ -29,6 +29,7 @@ import Waypoints from 'lucide/dist/esm/icons/waypoints.mjs';
 import UserRound from 'lucide/dist/esm/icons/user-round.mjs';
 import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
+import { VERIFICATION_FAILURE_REASON, isConversationTimelineItem } from './domain/timeline-visibility';
 import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, createPinNoticeSession, storePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
@@ -55,7 +56,7 @@ import {
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
 import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
-import type { ContinuousVerificationRecord, HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
+import type { HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
   ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
 import {
   appendTimelineItem,
@@ -1627,16 +1628,6 @@ const renderCouncilPanel = (): string => {
   return `<section class="context-section council-section" aria-label="多候选审议"><div class="section-heading"><div><span class="section-kicker">多候选审议</span><h3>多候选审议</h3></div><span class="context-count">${council.length} 条审议记录</span></div>${panelPurpose('当任务需要比较多个方案时，这里展示方案、审阅意见和选择结果。各阶段没有记录时会明确标注。')}<div class="council-grid">${section('Proposal', proposals, '暂无独立候选方案记录')}${section('Critique', critiques, '暂无结构化审阅记录')}${section('Judge', judges, '暂无候选比较记录', ranking)}${section('Probe', probes, '暂无探查记录')}</div><div class="runtime-line"><i data-lucide="shield-check"></i><span>这里只展示已记录的审议过程。未提供的信息会标为暂无记录。</span></div></section>`;
 };
 
-// The A-T distribution is the only evidence behind a continuous score, so it
-// is shown as bounded percentages next to the score it produced. The runtime
-// projection strips any prompt, output or reasoning text before it gets here.
-const formatDistribution = (distribution?: ContinuousVerificationRecord['leftDistribution']): string => {
-  if (!distribution || distribution.length === 0) return '';
-  return distribution
-    .filter((item) => Number.isFinite(item.probability) && item.probability >= 0.005)
-    .map((item) => `${item.token} ${(item.probability * 100).toFixed(1)}%`)
-    .join(' ');
-};
 // A process score always names the channel it came from, so the panel can show
 // why a verdict abstained (missing probability evidence, unbound provider, ...).
 const processSourceLabels: Record<string, string> = {
@@ -1669,111 +1660,13 @@ const appendVerificationChecks = (current: HarnessReadModel, checks: unknown, ru
   return next;
 };
 
-const verificationEvidenceRefs = (item: TimelineItem): string[] => {
-  const lines = item.body.split('\n');
-  const start = lines.findIndex(line => line === '证据引用：');
-  return start < 0 ? [] : lines.slice(start + 1).map(line => line.trim()).filter(Boolean);
-};
 const resolveEvidenceTarget = (ref: string): TimelineItem | undefined => {
   const value = ref.includes(':') ? ref.slice(ref.indexOf(':') + 1) : ref;
   return model.timeline.find(item => item.eventId === value || item.itemId === value || item.digest === ref || item.digest === value);
 };
-const renderVerificationEvidence = (item: TimelineItem): string => {
-  const refs = verificationEvidenceRefs(item);
-  if (!refs.length) return '<div class="verification-evidence"><strong>证据</strong><span data-evidence-state="unresolved">未提供可导航证据引用</span></div>';
-  return '<div class="verification-evidence"><strong>证据</strong><div class="verification-evidence-list">' + refs.map(ref => {
-    const target = resolveEvidenceTarget(ref);
-    return target ? '<button class="evidence-link" data-action="focus-evidence" data-evidence-ref="' + escapeHtml(ref) + '">' + escapeHtml(ref) + '</button>' : '<span class="evidence-link-unresolved" data-evidence-state="unresolved">' + escapeHtml(ref) + ' · 未解析</span>';
-  }).join('') + '</div></div>';
-};
-
-const renderFinalVerificationChecks = (): string => {
-  const checks = model.timeline.filter(item => item.evidenceKind === 'rule-verification-check' && item.runId === verificationRunId());
-  if (!checks.length) return '';
-  // Item-level checks stay collapsed until the reader opens them. The
-  // disclosure id is scoped by run id and backed by contextDisclosureState, so
-  // streaming refreshes and history replay restore the same choice without
-  // leaking one task's open state into another task.
-  const disclosureKey = `verification-checks:${verificationRunId() ?? 'no-run'}`;
-  return `<section class="verification-checks" aria-label="确定性验收检查">
-    <h2>确定性验收检查</h2>
-    <p>来源：运行时规则核对报告。历史记录显示报告事件时间；实时记录显示接收时间。运行时未提供逐项检查时间和影响等级。</p>
-    ${panelDetails(disclosureKey, `查看确定性验收检查（${checks.length} 项）`, `<div class="verification-check-list">${checks.map(item => `
-      <article class="verification-check" data-status="${item.status}">
-        <h3>${escapeHtml(item.title)}</h3>
-        <pre>${escapeHtml(item.body)}</pre>
-        ${renderVerificationEvidence(item)}
-        <small>报告时间：${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small>
-      </article>`).join('')}</div>`)}
-  </section>`;
-};
-
-const renderContinuousVerification = (): string => {
-  const records = (model.continuousVerification ?? []).slice(-12);
-  const samples = records.filter((record) => record.kind === 'CandidateVerificationSample');
-  const completed = records.filter((record) => record.kind === 'CandidateVerificationCompleted');
-  const process = model.processVerification;
-  const processDistribution = formatDistribution(process?.distribution);
-  const hasProcess = Boolean(process?.status) || typeof process?.score === 'number' || processDistribution !== '';
-  if (records.length === 0 && !hasProcess) return '';
-  // The process row is the only place a step-level score appears, and it is
-  // always the host-derived expectation rather than model-authored text.
-  const processRow = hasProcess
-    ? `<div class="runtime-line" data-verification-unknown="${process?.status === 'UNKNOWN' || process?.status === 'ABSTAIN' ? 'true' : ''}" data-process-verification="${escapeHtml(process?.status ?? 'ABSTAIN')}"><i data-lucide="shield-check"></i><span>执行过程检查：${escapeHtml(statusDisplayLabel(process?.status, '暂不判定'))} · 得分 ${typeof process?.score === 'number' ? process.score.toFixed(3) : '—'} · 波动 ${typeof process?.variance === 'number' ? process.variance.toFixed(4) : '—'}${processDistribution ? ` · 概率分布 ${escapeHtml(processDistribution)}` : ''}${process?.thresholds ? ` · 通过分 ${process.thresholds.passThreshold}，失败分 ${process.thresholds.failThreshold}` : ''}${processSourceLabel(process?.source) ? ` · 数据来源 ${escapeHtml(processSourceLabel(process?.source))}` : ''}</span></div>`
-    : '';
-  return `<section class="context-section continuous-verification-section" aria-label="质量检查">
-    <div class="section-heading"><div><span class="section-kicker">自动质量检查</span><h3>质量检查记录</h3></div><span class="context-count">${completed.length} 次检查 · ${records.length} 条记录</span></div>
-    ${panelPurpose('Agent 完成任务后，系统会自动检查结果是否符合要求。这里显示检查分数和详细记录。')}
-    ${processRow}
-    ${completed.map((record) => {
-      const ranking = (record.ranking ?? []).map((item) => `${item.candidateId ?? '?'} ${typeof item.score === 'number' ? item.score.toFixed(2) : '—'}`).join(' · ');
-      const config = record.config ? `检查 ${record.config.repetitions ?? '—'} 次 · 最多对比 ${record.config.maxComparisons ?? '—'} 个方案` : '';
-      const related = samples.filter((sample) => sample.stepId === record.stepId);
-      const sampleText = related.map((sample) => {
-        const leftDistribution = formatDistribution(sample.leftDistribution);
-        const rightDistribution = formatDistribution(sample.rightDistribution);
-        const left = `${sample.leftId ?? '?'}:${sample.leftScore?.toFixed(2) ?? '—'}±${sample.leftVariance?.toFixed(3) ?? '—'}${leftDistribution ? ` [${leftDistribution}]` : ''}`;
-        const right = `${sample.rightId ?? '?'}:${sample.rightScore?.toFixed(2) ?? '—'}±${sample.rightVariance?.toFixed(3) ?? '—'}${rightDistribution ? ` [${rightDistribution}]` : ''}`;
-        return `${left} vs ${right}`;
-      }).join('；');
-      return `<div class="governance-row" data-verification-event="${escapeHtml(record.eventId)}"><div class="governance-copy"><strong>${escapeHtml(record.stepId ?? '检查项')}</strong><span>${escapeHtml(config)}${ranking ? ` · 评分排名 ${escapeHtml(ranking)}` : ''}${sampleText ? ` · 对比记录 ${escapeHtml(sampleText)}` : ''}</span></div></div>`;
-    }).join('')}
-  </section>`;
-};
-
 const verificationRunId = (): string | undefined => historyView && !model.activeRun
   ? [...model.timeline].reverse().find(item => item.runId)?.runId
   : focusedRunId ?? activeRuntimeRunId ?? model.activeRun?.runId;
-
-const taskVerificationSummaries = (): TimelineItem[] => model.timeline.filter(item =>
-  item.runId === verificationRunId() && ['rule-verification-summary', 'semantic-verification-summary'].includes(item.evidenceKind ?? ''));
-
-const taskVerificationStatus = (): string | undefined => {
-  if (!historyView || model.activeRun) return model.processVerification?.status;
-  const latest = taskVerificationSummaries().filter(item => item.evidenceKind === 'rule-verification-summary').at(-1);
-  return latest ? latest.status === 'COMPLETE' ? 'PASS' : latest.status === 'ERROR' ? 'FAIL' : 'UNKNOWN' : undefined;
-};
-
-const renderTaskVerification = (): string => {
-  const history = Boolean(historyView && !model.activeRun);
-  const summaries = taskVerificationSummaries();
-  const checks = renderFinalVerificationChecks();
-  // Dashboard verification belongs to its own latest run, not necessarily
-  // the selected historical conversation. Use only replayed history here.
-  const continuous = history ? '' : renderContinuousVerification();
-  const empty = !summaries.length && !checks && !continuous;
-  const notice = historyView?.loading ? '正在读取此会话的验证记录…'
-    : historyView?.error ? `验证记录尚未读到：${historyView.error}`
-    : history && historyView?.hasMore ? '当前已加载记录中没有这次运行的验证报告，可加载更早记录继续查找。'
-    : running ? '任务尚未生成验证报告，结果产生后会显示在这里。' : '这次运行没有保存验证报告，无法展示检查明细。';
-  return `<section class="context-section task-verification-section" data-task-verification tabindex="-1" aria-label="任务完成报告">
-    <div class="section-heading"><div><span class="section-kicker">${history ? '当前会话最近一次运行' : '当前任务'}</span><h2>完成报告</h2></div></div>
-    ${summaries.map(item => `<article class="verification-check" data-status="${item.status}"><h3>${escapeHtml(item.title)}</h3><p class="timeline-body">${escapeHtml(item.body)}</p><small>${escapeHtml(new Date(item.createdAtMs).toLocaleString())}</small></article>`).join('')}
-    ${checks}${continuous}
-    ${empty ? `<p class="empty-note" role="status">${escapeHtml(notice)}</p>` : ''}
-    ${history && (historyView?.hasMore || historyView?.error) ? `<button class="secondary-button" data-action="history-older" ${historyView?.loading || historyView?.loadingOlder ? 'disabled' : ''}>${historyView?.loadingOlder ? '正在加载…' : historyView?.error ? '重试读取记录' : '加载更早验证记录'}</button>` : ''}
-  </section>`;
-};
 
 const renderComposerCache = (): string => {
   const usage = model.modelUsage;
@@ -2406,8 +2299,6 @@ const renderTaskValueSummary = (): string => {
   const terminal = !running && (!run || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED', 'PAUSED', 'PAUSED_UNSUPPORTED'].includes(run.state));
   const recoveryMode = threadRecoveryMode(thread);
   const resumable = recoveryMode === 'PLAN' || recoveryMode === 'PREPARATION';
-  const verification = taskVerificationStatus()
-    ?? (!historyView && model.continuousVerification?.length ? '已产生连续核验证据' : undefined);
   const usage = model.modelUsage;
   const egress = model.modelEgress;
   const tokenCount = usage && usage.status === 'REPORTED' && Number.isInteger(usage.inputTokens)
@@ -2427,13 +2318,12 @@ const renderTaskValueSummary = (): string => {
     : run ? runStateLabel(run.state) : thread?.state === 'PAUSED' ? '任务已暂停'
     : hasTask ? '已保存的任务' : '还没有开始任务';
   const nextStep = running ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
-    : failed ? '先查看完成报告和对话中的错误原因，再决定是否继续或重试。'
-    : completed ? '回答在中间的对话区。可以查看检查依据，或把结果保存为文件。'
+    : failed ? '先查看对话中的失败原因，再决定是否继续或重试。'
+    : completed ? '回答在中间的对话区。可以把结果保存为文件。'
     : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断，尚无完整计划。重新规划时可能需要补充原始目标。'
     : terminal && resumable ? '有已保存的任务进度，可以从上次中断的地方继续。'
-    : hasTask ? '可以查看已有回答和完成报告；要提出新需求，请在下方输入。'
+    : hasTask ? '可以查看已有回答；要提出新需求，请在下方输入。'
     : '在中间下方输入要完成的事情，例如“总结这个项目的功能”，然后发送。';
-  const verificationLabel = verification ? statusDisplayLabel(verification, '已记录') : historyView ? '当前记录中未找到报告' : '待验证';
   const stateTone = completed ? 'active' : failed ? 'failed' : 'pending';
   const budgetLabel = [
     taskBudget.maxTokens ? `${taskBudget.maxTokens.toLocaleString('zh-CN')} token` : 'token 未限额',
@@ -2458,7 +2348,6 @@ const renderTaskValueSummary = (): string => {
           </div>
           ${!hasTask && !running ? actionRow('focus-task-input', '输入任务需求', '告诉 Agent 你想得到什么结果', false, true) : ''}
           ${continueAction}
-          ${hasTask ? actionRow('view-verification', '查看完成报告', `检查是否通过、依据是什么 · ${verificationLabel}`, false, failed) : ''}
           ${retryAction}
           ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和完成报告（Markdown）' : '将回答和完成报告导出为 Markdown 文件', taskExportBusy) : ''}
           ${taskActionNotice ? `<div class="settings-message settings-message-success" role="status">${escapeHtml(taskActionNotice)}</div>` : ''}
@@ -2633,7 +2522,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     region.innerHTML = `<div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1 data-history-title></h1></div></div>
       <div data-history-status role="status"></div>
       <button class="secondary-button" data-action="history-older"><i data-lucide="history"></i><span>加载更早记录</span></button>
-      <div class="timeline" data-history-items></div><div data-history-verification></div>`;
+      <div class="timeline" data-history-items></div>`;
     historyIcons(region);
   }
   region.querySelector('[data-history-title]')!.textContent = model.threads.find((thread) => thread.id === view.threadId)?.title ?? '历史会话';
@@ -2648,10 +2537,11 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   older.hidden = !view.hasMore && !view.error;
   older.disabled = view.loading || view.loadingOlder;
   older.querySelector('span')!.textContent = view.loadingOlder ? '正在加载…' : view.error ? '重试加载' : '加载更早记录';
-  syncKeyedList(region.querySelector<HTMLElement>('[data-history-items]')!, timelineItems,
+  // History shows the same conversation items as the live view: lifecycle /
+  // audit STATUS rows (任务已创建、任务进度、已准备角色上下文 …) stay in the data
+  // but are not rendered.
+  syncKeyedList(region.querySelector<HTMLElement>('[data-history-items]')!, timelineItems.filter(isConversationTimelineItem),
     (item) => item.itemId, timelineItemHtml, historyIcons);
-  patchLiveRegion(region.querySelector('[data-history-verification]'),
-    [model.timeline, view.loading, view.loadingOlder, view.hasMore, view.error], renderTaskVerification);
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) {
     // Keep the editor usable while a directory read is in flight.  The send
@@ -3399,7 +3289,7 @@ const renderLiveView = (): void => {
     // Tool cards stay in the main conversation so a reader can follow the
     // active task without opening a secondary audit disclosure.  The group
     // below still contains the complete structured execution history.
-    lists.human.update(all.filter((item) => item.kind !== 'STATUS' && item.kind !== 'WORKSPACE' || Boolean(item.toolName)));
+    lists.human.update(all.filter(isConversationTimelineItem));
     const group = container.querySelector<HTMLDetailsElement>('[data-execution-group]')!;
     group.hidden = tools.length === 0;
     const activeToolCount = tools.filter((item) => Boolean(item.toolName)).length;
@@ -3411,7 +3301,6 @@ const renderLiveView = (): void => {
     else lists.tools.pause();
     lists.source = model.timeline; lists.focus = focusedRunId; lists.expanded = executionGroupExpanded;
   }
-  patchLiveRegion(slot('verification'), [model.continuousVerification, model.processVerification, model.timeline, verificationRunId(), running], renderTaskVerification);
   patchLiveRegion(app.querySelector('.connection-status'), [model.connection], () => `<span></span>${escapeHtml(model.connection.label)}`);
   const connection = app.querySelector<HTMLElement>('.connection-status');
   if (connection) connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
@@ -3535,7 +3424,6 @@ const render = (): void => {
                 <div data-live-human></div>
                 <details class="execution-group" data-execution-group hidden><summary></summary><div data-live-tools></div></details>
               </div>
-              <div class="live-region" data-live-region="verification"></div>
             </div>` : ''}
           </div>
         </section>
@@ -5595,6 +5483,7 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
       next = appendTimelineItem(next, {
         kind: 'STATUS',
         title: '未达到验收条件',
+        evidenceKind: VERIFICATION_FAILURE_REASON,
         body: [
           verification ? '验证结果 ' + verification.status : '运行时未提供验证结果',
           verification?.summary,
@@ -5914,10 +5803,6 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'set-task-budget') {
     configureTaskBudget();
-    return;
-  }
-  if (action === 'view-verification') {
-    focusTaskSection('[data-task-verification]');
     return;
   }
   if (action === 'focus-task-input') {

@@ -25,6 +25,7 @@ import Settings from 'lucide/dist/esm/icons/settings.mjs';
 import ShieldCheck from 'lucide/dist/esm/icons/shield-check.mjs';
 import Square from 'lucide/dist/esm/icons/square.mjs';
 import TerminalSquare from 'lucide/dist/esm/icons/square-terminal.mjs';
+import Waypoints from 'lucide/dist/esm/icons/waypoints.mjs';
 import UserRound from 'lucide/dist/esm/icons/user-round.mjs';
 import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
@@ -3629,7 +3630,9 @@ const render = (): void => {
       ShieldCheck,
       Square,
       TerminalSquare,
+      SquareTerminal: TerminalSquare,
       UserRound,
+      Waypoints,
       XCircle
     }
   });

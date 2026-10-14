@@ -115,7 +115,7 @@ export const cellsSettingsPanelHtml = (input: CellsSettingsPanelInput): string =
     <div class="settings-card">
       <label class="settings-field" data-action="toggle-experimental-cells">
         <span>${CELLS_TOGGLE_LABEL}<small>${CELLS_CONFIRM_TEXT}。${CELLS_SESSION_KEEP_HINT}。确认只在打开开关时出现一次。</small></span>
-        <input type="checkbox" ${checked} ${disabled} aria-describedby="cells-settings-hint">
+        <input type="checkbox" class="settings-switch" ${checked} ${disabled} aria-describedby="cells-settings-hint">
       </label>
       <div class="settings-field settings-field-readonly"><span>新鲜健康检查</span><output data-cells-fresh-health>${escapeHtml(cellsSourceCaption('fresh-health'))} · ${escapeHtml(freshReason)}</output></div>
       <div class="settings-field settings-field-readonly"><span>活着的会话</span><output data-cells-live-session>${escapeHtml(cellsSourceCaption('live-session'))} · ${escapeHtml(liveReason)}</output></div>

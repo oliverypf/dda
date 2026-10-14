@@ -126,10 +126,12 @@ export const createCellExecTimeline = ({
     }
   };
 
-  const touch = (row, { immediate = false, bytes = 0 } = {}) => {
+  const touch = (row, { immediate = false, bytes = 0, coalesce = false } = {}) => {
     row.dirty = true;
     dirty = true;
-    if (immediate || row.state !== 'RUNNING') {
+    // Terminal rows normally flush immediately. Late op_progress opts into
+    // the same 100ms / 16KB coalescing used while the row is RUNNING.
+    if (!coalesce && (immediate || row.state !== 'RUNNING')) {
       flush();
       return;
     }
@@ -237,6 +239,8 @@ export const createCellExecTimeline = ({
     appendChunk(row, chunk) {
       // Fast host_response finishes the row before late op_progress arrives.
       // Keep those chunks in the 64KB tail and do not change a terminal state.
+      // A burst after the row is terminal must share the coalesced UI flush
+      // instead of emitting once per chunk.
       if (!row || row.acceptDeltas !== true) return;
       const sanitized = sanitizeOutput(chunk);
       const produced = Buffer.byteLength(sanitized, 'utf8');
@@ -245,7 +249,7 @@ export const createCellExecTimeline = ({
       const next = takeTailScalars(combined, CELL_OP_TAIL_BYTES);
       if (next.length !== combined.length || Buffer.byteLength(combined, 'utf8') > CELL_OP_TAIL_BYTES) row.truncated = true;
       row.output = next;
-      touch(row, { bytes: produced });
+      touch(row, { bytes: produced, coalesce: row.state !== 'RUNNING' });
     },
     noteSeq(row, seq) {
       if (!row || row.acceptDeltas !== true) return 'drop';
@@ -272,7 +276,10 @@ export const createCellExecTimeline = ({
       }
       if ((classification ?? row.classification) === 'read') {
         if (envelopeOk === true) finish(row, 'COMPLETED');
-        else finish(row, 'FAILED');
+        else {
+          const errorCode = typeof result?.error?.code === 'string' ? result.error.code : undefined;
+          finish(row, 'FAILED', { errorCode });
+        }
         return row;
       }
       if (result?.outcome === 'UNKNOWN' || UNCERTAIN_ERROR_CODES.has(result?.failed?.errorCode)) {

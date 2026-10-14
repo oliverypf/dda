@@ -236,16 +236,16 @@ export const createApprovalSession = (deps) => {
     const cellPresentation = approvalCallContext?.cellApproval
       ? cellApprovalPresentation(requestDigest, approvalCallContext.cellApproval)
       : null;
-    const approvalExpiresAt = now() + ttlMs;
     const risk = providedRisk ?? (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.WRITE_FILE || capability === CAPABILITIES.NETWORK
       ? 'HIGH'
       : capability === CAPABILITIES.TEST ? 'MEDIUM' : 'LOW');
     const activeSnapshot = deps.activeSnapshotDigest?.();
+    // approvalExpiresAt is assigned after the per-cell FIFO gate admits.
+    // Queue wait must not consume the displayed TTL.
     const safeRequest = {
       capability,
       requestDigest,
       risk,
-      approvalExpiresAt,
       policyVersion: 'runtime-safety-1',
       scope: { snapshotDigest: activeSnapshot, capability },
       ...(typeof request?.command === 'string' ? { command: request.command.slice(0, 4096) } : {}),
@@ -346,6 +346,9 @@ export const createApprovalSession = (deps) => {
         gateHeld = true;
       }
       if (await checkpoint('gate')) return false;
+
+      const approvalExpiresAt = now() + ttlMs;
+      safeRequest.approvalExpiresAt = approvalExpiresAt;
 
       const operationId = `operation-${requestId}`;
       const bindingSnapshot = deps.bindingSnapshot();

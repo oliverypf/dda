@@ -154,9 +154,50 @@ test('seq gap stops later deltas and the tail ring truncates', () => {
   assert.equal(Buffer.byteLength(timeline.rows().find((item) => item.requestId === 'hr-2').output, 'utf8') <= CELL_OP_TAIL_BYTES, true);
 });
 
+test('late chunks after a terminal row stay in the 64KB tail without changing state', () => {
+  const emitted = [];
+  const sinks = new Map();
+  const timeline = createCellExecTimeline({
+    emit: (payload) => emitted.push(payload.row),
+    sinks,
+    schedule: (fn) => { fn(); return { unref() {} }; },
+    clearSchedule: () => {}
+  });
+  const row = timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId: 'hr-1', toolCallId: 'c::hr-1',
+    cellOpIndex: 1, kind: 'workspace.read', classification: 'read', title: 'workspace.read'
+  });
+  assert.equal(timeline.noteSeq(row, 1), 'ok');
+  timeline.appendChunk(row, 'early');
+  timeline.endFromResult(EPOCH, 'c::hr-1', { classification: 'read', envelopeOk: true });
+  assert.equal(sinks.has('c::hr-1'), false);
+  const finished = timeline.rows()[0];
+  assert.equal(finished.state, 'COMPLETED');
+  assert.equal(finished.output, 'early');
+  const durationMs = finished.durationMs;
+  assert.equal(timeline.noteSeq(row, 2), 'ok');
+  timeline.appendChunk(row, ' late');
+  const after = timeline.rows()[0];
+  assert.equal(after.state, 'COMPLETED');
+  assert.equal(after.output, 'early late');
+  assert.equal(after.durationMs, durationMs);
+  timeline.appendChunk(row, 'y'.repeat(CELL_OP_TAIL_BYTES));
+  const tail = timeline.rows()[0];
+  assert.equal(tail.state, 'COMPLETED');
+  assert.equal(tail.truncated, true);
+  assert.equal(Buffer.byteLength(tail.output, 'utf8') <= CELL_OP_TAIL_BYTES, true);
+  assert.equal(tail.output.endsWith('y'), true);
+  assert.equal(emitted.at(-1).state, 'COMPLETED');
+  assert.equal(emitted.at(-1).output, tail.output);
+  assert.equal(timeline.noteSeq(row, 4), 'gap');
+  timeline.appendChunk(row, 'dropped');
+  assert.equal(timeline.rows()[0].output.includes('dropped'), false);
+  assert.equal(timeline.rows()[0].state, 'COMPLETED');
+});
+
 const handles = (kind) => ['fs.write', 'fs.patch', 'test.run', 'fs.write_batch', 'shell.exec', 'net.fetch'].includes(kind);
 
-const runHost = async ({ env, platform = 'win32', mode, cellId = 'cell-1', dispatch, beforeStop } = {}) => {
+const runHost = async ({ env, platform = 'win32', mode, cellId = 'cell-1', dispatch, beforeStop, readonlyBridge } = {}) => {
   const events = [];
   const terminals = [];
   const host = createCellHost({
@@ -169,7 +210,7 @@ const runHost = async ({ env, platform = 'win32', mode, cellId = 'cell-1', dispa
     workerPath,
     cellTimeoutMs: 8_000,
     journalPath: 'C:\\journal.json',
-    readonlyBridge: async (kind, payload) => ({ kind, path: payload?.path ?? null }),
+    readonlyBridge: readonlyBridge ?? (async (kind, payload) => ({ kind, path: payload?.path ?? null })),
     effectsDispatcher: {
       handles,
       dispatch: dispatch ?? (async (call) => {
@@ -238,6 +279,30 @@ test('stale epoch opens no row; malformed and gapped progress are dropped', asyn
   assert.equal(version.events.some((event) => event.kind === 'kernel.cell_frame_error'), true);
   assert.equal(opRows(version.events).at(-1).state, 'COMPLETED');
   assert.equal(opRows(version.events).at(-1).kind, 'host.ping');
+});
+
+test('late op_progress after fast host_response stays on the completed row', async () => {
+  const desktop = await runHost({ env: desktopEnv('late-progress'), mode: 'late-progress' });
+  const last = opRows(desktop.events).at(-1);
+  assert.equal(last.state, 'COMPLETED');
+  assert.equal(last.kind, 'workspace.read');
+  assert.equal(last.output, 'late-tail');
+});
+
+test('readonly bridge error envelope finishes workspace and session_state rows as FAILED', async () => {
+  const desktop = await runHost({
+    env: desktopEnv('bridge-error'),
+    mode: 'bridge-error',
+    readonlyBridge: async () => ({ ok: false, error: { code: 'KERNEL_OP_FAILED' } })
+  });
+  const byRequest = new Map();
+  for (const row of opRows(desktop.events)) byRequest.set(row.requestId, row);
+  assert.equal(byRequest.get('hr-1').kind, 'workspace.read');
+  assert.equal(byRequest.get('hr-1').state, 'FAILED');
+  assert.equal(byRequest.get('hr-1').errorCode, undefined);
+  assert.equal(byRequest.get('hr-2').kind, 'session_state.get');
+  assert.equal(byRequest.get('hr-2').state, 'FAILED');
+  assert.equal(byRequest.get('hr-2').errorCode, undefined);
 });
 
 test('exec_result does not end a row that already entered the bridge', async () => {

@@ -14,7 +14,7 @@ const checks = {
   'S3-02-receipt': s.includes('lastSubmitReceipt') && s.includes('pending') && s.includes('accepted') && s.includes('rejected'),
   'S3-02-next-step': s.includes('runStateNextStep') && s.includes("QUARANTINED: '已隔离，需查看原因并处理治理状态后再发起新任务。'"),
   'S3-04-quarantine-terminal': s.includes("['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED']"),
-  'S3-03-route-panel': s.includes('renderRoutePanel') && s.includes('pinnedModel'),
+  'S3-03-route-settings': s.includes('renderRoutingSettingsPanel') && s.includes('renderRouteFailureNotice') && !s.includes('data-live-region="route"'),
   'S3-04-approval-workbench': s.includes('renderApprovalCard') && s.includes('workbench-approvals'),
   'S3-05-timeline-evidence': s.includes('timeline-details') && s.includes('evidenceKind'),
   'S3-05-terminal-panel': s.includes('renderEvidencePanel') && s.includes('evidence-panel'),

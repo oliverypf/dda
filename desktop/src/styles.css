@@ -903,3 +903,10 @@ svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .workspace-diff-column[data-diff-state="executed"] strong { color: var(--blue); }
 .workspace-diff-column[data-diff-state="verified"] strong { color: var(--green); }
 @media (max-width: 720px) { .workspace-diff-grid { grid-template-columns: 1fr; } }
+
+/* Exec-flow routing failure notice; details live in Settings 「模型与路由」. */
+.route-failure-notice { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin: 6px 0; border-radius: 6px; font-size: 13px; color: var(--danger, #b42318); background: color-mix(in srgb, currentColor 8%, transparent); }
+.route-failure-notice .link-button { margin-left: auto; background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.route-failure-notice .link-button:disabled { opacity: 0.55; cursor: default; text-decoration: none; }
+.routing-run-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.routing-run-list .active { outline: 2px solid currentColor; }

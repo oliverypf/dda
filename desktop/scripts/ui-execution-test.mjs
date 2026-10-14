@@ -562,6 +562,9 @@ try {
   await unacknowledged.evaluate(() => window.__executionTest.rejectBeforeStart());
   await unacknowledged.waitForFunction(() => document.querySelector('.send-button')?.disabled === false);
   assert.equal(await unacknowledged.locator('.submit-receipt').count(), 0, 'no receipt card after pre-acknowledgement failure');
+  const rejectError = unacknowledged.locator('.timeline-item.timeline-error[data-status="ERROR"]').filter({ hasText: 'Fixture transport failed before acknowledgement' });
+  await rejectError.waitFor();
+  assert.match(await rejectError.locator('.timeline-meta').innerText(), /Cordis runtime/);
   assert.doesNotMatch(await unacknowledged.locator('body').innerText(), /提交回执/);
   await unacknowledged.screenshot({ path: resolve(output, 'receipt-unconfirmed.png') });
   await unacknowledged.close();

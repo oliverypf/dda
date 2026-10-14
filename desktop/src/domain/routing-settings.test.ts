@@ -3,7 +3,8 @@ import type { RuntimeDecisionNode } from './models';
 import mainSource from '../main.ts?raw';
 import {
   LEGACY_PINNED_MODEL_KEY, decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection,
-  migrateLegacyPinnedModel, planPinMigration, routeFailureNotice
+  migrateLegacyPinnedModel, planPinMigration, routeFailureNotice,
+  PIN_MIGRATION_NOTICE_KEY, routeFailureThread, storePinMigrationNotice, takePinMigrationNotice, threadRuntimeRunId
 } from './routing-settings';
 
 const node = (decisionId: string, runId: string, decisionType: string, updatedAtMs: number): RuntimeDecisionNode =>
@@ -112,11 +113,42 @@ describe('legacy pinned model migration', () => {
   });
   it('save rejected: config unchanged, key deleted', async () => {
     const { storage, promise } = run('pinned', ['pinned'], async () => { throw new Error('MODEL_CONFIG_INVALID'); });
-    expect((await promise).plan).toBe('DELETE');
+    const result = await promise;
+    expect(result.plan).toBe('DELETE');
+    expect(result.notice).toContain('pinned');
+    expect(result.notice).toContain('current');
     expect(storage.data.has(LEGACY_PINNED_MODEL_KEY)).toBe(false);
   });
   it('plan table', () => {
     expect(planPinMigration(null, 'm', ['m'])).toBe('NONE');
     expect(planPinMigration('m', 'm', undefined)).toBe('DELETE');
+  });
+});
+
+describe('review fixes', () => {
+  it('pin notice persists until Settings shows it once', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v); }, removeItem: (k: string) => { data.delete(k); } };
+    storePinMigrationNotice(storage, undefined);
+    expect(data.has(PIN_MIGRATION_NOTICE_KEY)).toBe(false);
+    storePinMigrationNotice(storage, 'n');
+    expect(takePinMigrationNotice(storage)).toBe('n');
+    expect(takePinMigrationNotice(storage)).toBeUndefined();
+    expect(mainSource).toContain('data-pin-migration-notice');
+  });
+  it('route failure attaches to the run own thread, not the viewed one', () => {
+    const map = new Map<string, string | undefined>([['r1', 't1']]);
+    expect(routeFailureThread(map, 'r1')).toBe('t1');
+    expect(routeFailureThread(map, 'r2')).toBeUndefined();
+    expect(mainSource).not.toContain('threadId: model.activeThreadId } : undefined');
+    expect(mainSource).toContain('routeFailureThread(runThreadIds, event.runId)');
+  });
+  it('history thread uses its own runId, never recentRunIds fallback', () => {
+    const decisions = [node('d', 'r-old', 'SELECT_ROUTE', 1)];
+    expect(threadRuntimeRunId([{ runId: 'r-old', createdAtMs: 1 }, { runId: 'r-new', createdAtMs: 2 }], decisions)).toBe('r-old');
+    expect(threadRuntimeRunId([{ runId: 'r-new', createdAtMs: 2 }, {}], [])).toBe('r-new');
+    expect(threadRuntimeRunId([{ createdAtMs: 1 }], decisions)).toBeUndefined();
+    expect(mainSource).toContain('selectedThreadRuntimeRunId()');
+    expect(mainSource).toContain('此会话没有路由记录');
   });
 });

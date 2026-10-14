@@ -93,6 +93,36 @@ export const migrateLegacyPinnedModel = async <Config extends { model: string }>
     // Validation/I-O rejection: keep config.model unchanged, delete the key, log once.
     deps.storage.removeItem(LEGACY_PINNED_MODEL_KEY);
     deps.log?.(`legacy pinned model migration rejected: ${error instanceof Error ? error.message : String(error)}`);
-    return { plan: 'DELETE' };
+    return { plan: 'DELETE', notice: `之前固定的模型 ${value} 无法保存为全局默认模型，已改用设置里的模型 ${config.model}。` };
   }
 };
+
+/** One-time pin-migration notice, persisted until the Settings 「模型与路由」 section has shown it once. */
+export const PIN_MIGRATION_NOTICE_KEY = 'hmcodex.pinMigrationNotice';
+export const storePinMigrationNotice = (storage: Pick<Storage, 'setItem'>, notice: string | undefined): void => {
+  if (notice) storage.setItem(PIN_MIGRATION_NOTICE_KEY, notice);
+};
+export const takePinMigrationNotice = (storage: Pick<Storage, 'getItem' | 'removeItem'>): string | undefined => {
+  const notice = storage.getItem(PIN_MIGRATION_NOTICE_KEY);
+  if (notice === null) return undefined;
+  storage.removeItem(PIN_MIGRATION_NOTICE_KEY);
+  return notice || undefined;
+};
+
+/**
+ * Runtime runId for a selected (history) thread: the newest timeline item carrying a
+ * runId, preferring runs that have a decision record. Never falls back to another
+ * thread's run; undefined means the 「在设置中查看」 button is disabled.
+ */
+export const threadRuntimeRunId = (
+  timeline: readonly { runId?: string; createdAtMs?: number }[] | undefined,
+  decisions: readonly RuntimeDecisionNode[] | undefined
+): string | undefined => {
+  const items = (timeline ?? []).filter((item) => item.runId).slice().sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0));
+  const known = new Set((decisions ?? []).map((node) => node.runId).filter(Boolean));
+  return (items.find((item) => known.has(item.runId)) ?? items[0])?.runId;
+};
+
+/** Thread that owns a runtime run, recorded at run start / bridge result. Never the currently viewed thread. */
+export const routeFailureThread = (runThreads: ReadonlyMap<string, string | undefined>, runId: string): string | undefined =>
+  runThreads.get(runId);

@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import mainSource from '../main.ts?raw';
+// Vitest stubs CSS imports to ''; read the stylesheet from disk (no @types/node in this tsconfig).
+// @ts-ignore node builtin available under vitest
+import { readFileSync } from 'node:fs';
+
+const stylesSource: string = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 import { createInitialReadModel, setCellsSession, setRuntimeReady } from './store';
 import {
   CELLS_BADGE_TEXT,
@@ -123,6 +129,29 @@ describe('windows desktop code cells presentation', () => {
     expect(liveSessionReason('JOURNAL_UNAVAILABLE')).toBe(true);
     expect(liveSessionReason('WINDOWS_DESKTOP_CELLS_REQUIRED')).toBe(true);
     expect(liveSessionReason('NODE_TOO_OLD')).toBe(false);
+  });
+
+  it('experimental cells toggle renders as a compact native switch with confirm-once + keyboard', () => {
+    const off = cellsSettingsPanelHtml({ settings: { experimentalCodeCells: false } });
+    const on = cellsSettingsPanelHtml({ settings: { experimentalCodeCells: true } });
+    const disabled = cellsSettingsPanelHtml({ settings: { experimentalCodeCells: false }, fresh: { available: false, reason: 'NODE_TOO_OLD', source: 'fresh-health', sandboxAvailable: false } });
+    // Real checkbox inside the labelled field (accessible name from the label), same action.
+    expect(off).toMatch(/<label class="settings-field" data-action="toggle-experimental-cells">[\s\S]*<input type="checkbox" class="settings-switch"/);
+    expect(off).not.toContain('role="switch"');
+    expect(off).not.toMatch(/settings-switch"[^>]*checked/);
+    expect(on).toMatch(/settings-switch"\s+checked/);
+    expect(disabled).toMatch(/settings-switch"[^>]*disabled/);
+    // Scoped compact styling: 36x20 track, accent when on, disabled state; the global focus-visible ring still applies.
+    expect(stylesSource).toMatch(/\.settings-field input\.settings-switch \{[^}]*width: 36px;[^}]*height: 20px;/);
+    expect(stylesSource).toMatch(/\.settings-field input\.settings-switch:checked \{ background: var\(--blue\)/);
+    expect(stylesSource).toContain('.settings-field input.settings-switch:disabled');
+    expect(stylesSource).toContain('.settings-field input:focus-visible');
+    // Confirm-once on enable, save experimentalCodeCells on disable, unchanged.
+    const handler = mainSource.slice(mainSource.indexOf("if (action === 'toggle-experimental-cells')"));
+    expect(handler.slice(0, 600)).toContain('confirmExperimentalCells()');
+    expect(handler.slice(0, 600)).toContain('saveDesktopCellsSettings(false)');
+    // Enter toggles via the same click path (Space is native).
+    expect(mainSource).toMatch(/event\.key === 'Enter' && target instanceof HTMLInputElement && target\.classList\.contains\('settings-switch'\)[\s\S]{0,120}target\.click\(\)/);
   });
 
   it('keeps desktop and CLI tool-description branches independent', () => {

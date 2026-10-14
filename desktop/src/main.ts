@@ -5976,6 +5976,13 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   const target = event.target as HTMLElement;
+  // Native checkboxes toggle on Space only; let Enter toggle settings switches too
+  // (goes through the same click path, so confirm-once still applies).
+  if (event.key === 'Enter' && target instanceof HTMLInputElement && target.classList.contains('settings-switch') && !target.disabled) {
+    event.preventDefault();
+    target.click();
+    return;
+  }
   if (!(target instanceof HTMLTextAreaElement) || target.name !== 'prompt') return;
   const ctrlSubmit = localStorage.getItem('hmcodex.composerSubmit') === 'ctrl-enter';
   const submit = ctrlSubmit ? event.ctrlKey && event.key === 'Enter' : !event.ctrlKey && event.key === 'Enter';

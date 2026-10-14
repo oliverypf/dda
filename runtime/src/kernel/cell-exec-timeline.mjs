@@ -56,6 +56,15 @@ export const takeTailScalars = (text, maxBytes = CELL_OP_TAIL_BYTES) => {
 const errorCodeOf = (error) => (typeof error?.code === 'string' ? error.code
   : String(error?.message ?? '').split(':', 1)[0]);
 
+const ERROR_CODE_MAX_CHARS = 64;
+
+/** Row display code. Drop characters outside [A-Za-z0-9_.:-] and cap length. */
+const sanitizeErrorCode = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = value.replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, ERROR_CODE_MAX_CHARS);
+  return cleaned || undefined;
+};
+
 /**
  * Display-only row projector for a Windows desktop cell. Callers on
  * windows-cli and Linux do not construct it, so they emit no row events.
@@ -163,7 +172,8 @@ export const createCellExecTimeline = ({
     closeWait(row);
     const end = now();
     row.state = state;
-    if (extra.errorCode) row.errorCode = extra.errorCode;
+    const errorCode = sanitizeErrorCode(extra.errorCode);
+    if (errorCode) row.errorCode = errorCode;
     row.durationMs = Math.max(0, end - row.startedAtMs - row.approvalWaitMs);
     touch(row, { immediate: true });
     if (sinks && row.toolCallId) sinks.delete(row.toolCallId);

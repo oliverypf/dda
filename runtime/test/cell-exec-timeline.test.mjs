@@ -374,6 +374,48 @@ test('readonly ok:false carries result.error.code onto the FAILED row', () => {
   assert.equal(missing.errorCode, undefined);
 });
 
+test('kernel result error codes are sanitized before they are stored', () => {
+  const timeline = createCellExecTimeline({
+    emit: () => {},
+    schedule: () => ({ unref() {} }),
+    clearSchedule: () => {}
+  });
+  const begin = (requestId, cellOpIndex) => timeline.begin({
+    epoch: EPOCH, cellId: 'c', requestId, toolCallId: `c::${requestId}`,
+    cellOpIndex, kind: 'workspace.read', classification: 'read', title: 'workspace.read'
+  });
+  begin('hr-1', 1);
+  timeline.endFromResult(EPOCH, 'c::hr-1', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: `KERNEL_OP_FAILED <injected>\n${'A'.repeat(80)}` } }
+  });
+  const noisy = timeline.rows().find((row) => row.requestId === 'hr-1');
+  const expected = `KERNEL_OP_FAILEDinjected${'A'.repeat(80)}`.slice(0, 64);
+  assert.equal(noisy.state, 'FAILED');
+  assert.equal(noisy.errorCode, expected);
+  assert.equal(noisy.errorCode.length, 64);
+  assert.match(noisy.errorCode, /^[A-Za-z0-9_.:-]+$/);
+
+  begin('hr-2', 2);
+  timeline.endFromResult(EPOCH, 'c::hr-2', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: 'ok.code:part_2-tail' } }
+  });
+  assert.equal(timeline.rows().find((row) => row.requestId === 'hr-2').errorCode, 'ok.code:part_2-tail');
+
+  begin('hr-3', 3);
+  timeline.endFromResult(EPOCH, 'c::hr-3', {
+    classification: 'read',
+    envelopeOk: false,
+    result: { ok: false, error: { code: '< >!' } }
+  });
+  const emptied = timeline.rows().find((row) => row.requestId === 'hr-3');
+  assert.equal(emptied.state, 'FAILED');
+  assert.equal(emptied.errorCode, undefined);
+});
+
 test('readonly bridge error envelope finishes workspace and session_state rows as FAILED', async () => {
   const desktop = await runHost({
     env: desktopEnv('bridge-error'),

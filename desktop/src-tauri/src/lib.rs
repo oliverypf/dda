@@ -442,6 +442,57 @@ fn model_config() -> Result<ModelConfigResponse, String> {
     })
 }
 
+/// Read-only: model names the runtime config can actually route to (top-level
+/// `model` plus active `models[]` entries, narrowed by the executor allowList
+/// when one is set). Used by the desktop to vet a legacy pinned model before
+/// migrating it into the Settings default.
+fn configured_model_ids_from(document: &Value, primary: &str) -> Vec<String> {
+    let allow: Option<Vec<String>> = document
+        .pointer("/roleBindings/executor/allowList")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
+    let mut ids = vec![primary.to_string()];
+    if let Some(models) = document.get("models").and_then(Value::as_array) {
+        for entry in models {
+            let state = entry.get("state").and_then(Value::as_str).unwrap_or("ACTIVE");
+            if state == "DISABLED" || state == "QUARANTINED" {
+                continue;
+            }
+            let model_id = entry
+                .get("modelId")
+                .or_else(|| entry.get("id"))
+                .and_then(Value::as_str);
+            if let (Some(allow), Some(model_id)) = (&allow, model_id) {
+                if !allow.iter().any(|item| item == model_id) {
+                    continue;
+                }
+            }
+            for key in ["model", "modelId", "id"] {
+                if let Some(value) = entry.get(key).and_then(Value::as_str) {
+                    if !ids.iter().any(|id| id == value) {
+                        ids.push(value.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+#[tauri::command]
+fn configured_model_ids() -> Result<Vec<String>, String> {
+    let config_path = model_config_path()?;
+    let response = model_config()?;
+    if !config_path.is_file() {
+        return Ok(vec![response.config.model]);
+    }
+    let content = fs::read_to_string(&config_path)
+        .map_err(|error| format!("读取模型配置失败: {error}"))?;
+    let document = serde_json::from_str::<Value>(content.trim_start_matches('\u{feff}'))
+        .map_err(|_| "模型配置不是有效 JSON".to_string())?;
+    Ok(configured_model_ids_from(&document, &response.config.model))
+}
+
 #[tauri::command]
 fn save_model_config(config: ModelConfig) -> Result<ModelConfigResponse, String> {
     let config = normalize_legacy_model_alias(validate_model_config(config)?);
@@ -3037,6 +3088,7 @@ pub fn run() {
             runtime_snapshot,
             model_config,
             save_model_config,
+            configured_model_ids,
             runtime_process_status,
             context_sidecar_status,
             choose_workspace,
@@ -3171,6 +3223,22 @@ mod tests {
     }
     use std::io::Write;
     use tempfile::tempdir;
+
+    #[test]
+    fn configured_model_ids_respects_state_and_executor_allowlist() {
+        let document = serde_json::json!({
+            "model": "primary",
+            "models": [
+                { "modelId": "a", "model": "model-a" },
+                { "modelId": "b", "model": "model-b", "state": "DISABLED" },
+                { "modelId": "c", "model": "model-c" }
+            ],
+            "roleBindings": { "executor": { "allowList": ["a"] } }
+        });
+        assert_eq!(configured_model_ids_from(&document, "primary"), vec!["primary", "model-a", "a"]);
+        let open = serde_json::json!({ "models": [{ "modelId": "c", "model": "model-c" }] });
+        assert_eq!(configured_model_ids_from(&open, "primary"), vec!["primary", "model-c", "c"]);
+    }
 
     #[test]
     fn model_config_uses_runtime_json_field_names() {

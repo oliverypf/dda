@@ -76,6 +76,11 @@ export const desktopBridge = {
     return invoke<ModelConfigResponse>('model_config');
   },
 
+  async configuredModelIds(): Promise<string[] | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    return invoke<string[]>('configured_model_ids');
+  },
+
   async saveModelConfig(config: ModelConfig): Promise<ModelConfigResponse> {
     if (!isTauriRuntime()) throw new Error('Web 预览不支持保存模型配置');
     return invoke<ModelConfigResponse>('save_model_config', { config });

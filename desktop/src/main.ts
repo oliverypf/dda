@@ -28,6 +28,7 @@ import TerminalSquare from 'lucide/dist/esm/icons/square-terminal.mjs';
 import UserRound from 'lucide/dist/esm/icons/user-round.mjs';
 import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
+import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, createPinNoticeSession, storePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
 import {
@@ -363,7 +364,16 @@ interface MemoryEditState {
 }
 let memoryEditState: MemoryEditState | undefined;
 let memoryEditError = '';
-let pinnedModel: string | null = localStorage.getItem('hmcodex.pinnedModel') || null;
+// The legacy card select (localStorage 'hmcodex.pinnedModel') is gone: tasks
+// always use the Settings model and never pass a modelOverride. The key is
+// migrated once at startup (migrate-then-delete), see pinMigrationReady.
+let routeFailure: (RouteFailureNotice & { threadId?: string }) | undefined;
+let routingSettingsRunId: string | undefined;
+const pinNoticeSession = createPinNoticeSession(localStorage);
+// runtime runId -> owning thread id (recorded at run start, completed by the bridge result).
+const runThreadIds = new Map<string, string | undefined>();
+let currentRunThreadId: string | undefined;
+let pinMigrationReady: Promise<void> = Promise.resolve();
 interface TaskBudget {
   maxTokens?: number;
   maxToolRounds?: number;
@@ -402,6 +412,7 @@ let settingsConfig: ModelConfig | undefined;
 const settingsSections = {
   connection: { title: '连接与身份', description: '查看当前平台、runtime 健康和配置来源。敏感值只显示状态。', icon: 'heart-pulse' },
   model: { title: '角色与模型', description: '选择模型服务与连接方式。保存后从下一次任务开始生效。', icon: 'cpu' },
+  routing: { title: '模型与路由', description: '查看每次任务的路由决策、候选方案与未采用原因，以及累计缓存命中率和成本。', icon: 'list-tree' },
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
   workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
   plugins: { title: '插件', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
@@ -975,6 +986,7 @@ const renderSettingsModal = (): string => {
                 error: desktopCellsSettingsError,
                 settingsPath: desktopCellsSettingsPath || undefined
               })}\r\n              ${renderSettingsReadOnlyPanel('connection')}\r\n              ${renderSettingsReadOnlyPanel('workspace')}\r\n              ${renderSettingsReadOnlyPanel('plugins')}\r\n              ${renderSettingsReadOnlyPanel('memory')}\r\n              ${renderSettingsReadOnlyPanel('storage')}\r\n              ${renderSettingsReadOnlyPanel('accessibility')}\r\n              ${renderSettingsReadOnlyPanel('diagnostics')}
+              ${renderRoutingSettingsPanel()}
               <section class="settings-group" id="settings-panel-model" data-settings-panel="model" aria-label="模型配置">
               <h3>模型连接</h3><div class="settings-card">
               <div class="settings-grid">
@@ -1541,8 +1553,8 @@ const decisionOptionLabel = (node: RuntimeDecisionNode, option: RuntimeDecisionO
 // projected decisions and edges are the recorded parent/supersede links. A link
 // that points outside the visible window is still rendered so a partial view
 // never silently implies that a decision had no cause.
-const renderDecisionTrace = (): string => {
-  const allDecisions = model.decisions ?? [];
+const renderDecisionTrace = (source: readonly RuntimeDecisionNode[] = model.decisions ?? []): string => {
+  const allDecisions = [...source];
   const decisions = allDecisions
     .slice()
     .sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0))
@@ -1985,39 +1997,53 @@ const renderEvidencePanel = (): string => {
     </section>`;
 };
 
-const renderRoutePanel = (): string => {
+// Settings 「模型与路由」: read-only view over the existing dashboard projection
+// (decisions / modelEgress / modelUsage). Records for a run appear after the
+// post-run refreshDashboard; the in-flight run is not shown.
+// 「在设置中查看」 target: the live run when one is bound, otherwise the selected
+// thread's own runtime run. Never another task's run (no recentRunIds fallback).
+const selectedThreadRuntimeRunId = (): string | undefined =>
+  (!historyView && activeRuntimeRunId) ? activeRuntimeRunId : threadRuntimeRunId(model.timeline, model.decisions);
+
+const renderRoutingSettingsPanel = (): string => {
+  const all = model.decisions ?? [];
+  const recentRunIds = [...new Map(all.slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))
+    .filter((node) => node.runId).map((node) => [node.runId!, node.updatedAtMs ?? 0])).keys()].slice(0, 8);
+  const selectedRunId = routingSettingsRunId ?? (running ? undefined : activeRuntimeRunId) ?? recentRunIds[0];
+  const pinMigrationNotice = pinNoticeSession.forRender(settingsSection === 'routing') ?? '';
+  const pinNoticeHtml = pinMigrationNotice ? `<div class="settings-card routing-pin-notice" role="status" data-pin-migration-notice>${escapeHtml(pinMigrationNotice)}</div>` : '';
+  const decisions = decisionsForRun(all, selectedRunId);
+  const usage = model.modelUsage;
   const egress = model.modelEgress;
-  const decisions = (model.decisions ?? []).filter((node) => node.optionCount > 0).slice(0, 6);
-  const candidates = decisions.flatMap((node) => (node.options ?? []).map((option) => ({ node, option })));
-  const selected = candidates.filter(({ node, option }) => option.optionId === node.selectedOptionId).length;
-  const rejected = candidates.filter(({ node, option }) => option.optionId !== node.selectedOptionId && option.rejectionReasonCodes.length > 0).length;
-  const egressLines = egress ? Object.entries(egress.byCandidate ?? {}).map(([candidateId, bucket]) => `${humanizeCode(candidateId, '候选方案')} · 调用 ${bucket.calls} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
-  const roleLines = egress ? Object.entries(egress.byPhase ?? {}).map(([phase, bucket]) => `${phaseDisplayLabel(phase)} · 调用 ${bucket.calls} 次 · 失败 ${bucket.failures} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}`) : [];
-  if (candidates.length === 0 && !egress) return '';
-  return `
-    <section class="route-panel" aria-label="执行路线与候选">
-      <div class="route-heading">
-        <div><span class="eyebrow">执行路线</span><h2>模型选择与执行路径</h2></div>
-        <span class="route-count">比较 ${candidates.length} 个方案 · 采用 ${selected} 个 · 未采用 ${rejected} 个</span>
-        <label class="route-fixed-model" title="只影响新任务">模型偏好
-          <select data-action="pinned-model" ${model.runtime.model ? '' : 'disabled'}>
-            <option value="">自动选择</option>
-            ${model.runtime.model ? `<option value="${escapeHtml(model.runtime.model.model)}" ${pinnedModel === model.runtime.model.model ? 'selected' : ''}>${escapeHtml(model.runtime.model.model)}</option>` : ''}
-          </select>
-        </label>
-      </div>
-      <p class="route-explanation">系统先排除与任务或安全规则不匹配的方案，再继续执行保留下来的方案。</p>
-      ${egressLines.length === 0 ? '' : `<div class="route-egress"><strong>模型调用记录</strong>${egressLines.map((line) => `<div class="runtime-line"><i data-lucide="file"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
-      ${roleLines.length === 0 ? '' : `<div class="route-role"><strong>角色/阶段模型摘要</strong>${roleLines.map((line) => `<div class="runtime-line"><i data-lucide="cpu"></i><span>${escapeHtml(line)}</span></div>`).join('')}</div>`}
-      <details class="route-candidates">
-        <summary>查看候选方案与未采用原因</summary>
-        <div class="route-list">
-          ${candidates.map(({ node, option }) => `
-            <div class="runtime-line" data-route-option="${escapeHtml(option.optionId)}" title="${escapeHtml(decisionOptionTechnicalReason(option))}"><i data-lucide="list-tree"></i><span>${escapeHtml(decisionOptionLabel(node, option))}</span></div>
-          `).join('')}
-        </div>
-      </details>
-    </section>`;
+  const cacheRate = usage?.status === 'REPORTED' && usage.cacheHitRate !== null ? `${(usage.cacheHitRate * 100).toFixed(1)}%` : '未知';
+  const cost = egress?.totals?.expectedCost ?? '未知';
+  return `<section class="settings-group" id="settings-panel-routing" data-settings-panel="routing" aria-label="${escapeHtml(settingsSections.routing.title)}">
+    <h3>${escapeHtml(settingsSections.routing.title)}</h3>
+    ${pinNoticeHtml}
+    <div class="settings-card">
+      <div class="settings-field settings-field-readonly"><span>全局默认模型</span><output>${escapeHtml(settingsConfig?.model ?? model.runtime.model?.model ?? '未读取')}（在「角色与模型」中修改）</output></div>
+      <div class="settings-field settings-field-readonly" data-routing-metric="cache"><span>累计缓存命中率（全部任务）</span><output>${escapeHtml(cacheRate)}</output></div>
+      <div class="settings-field settings-field-readonly" data-routing-metric="cost"><span>累计预估成本（全部任务）</span><output>${escapeHtml(String(cost))}</output></div>
+      ${Object.entries(egress?.byPhase ?? {}).map(([phase, bucket]) => `<div class="settings-field settings-field-readonly" data-routing-phase="${escapeHtml(phase)}"><span>${escapeHtml(phaseDisplayLabel(phase))}（累计）</span><output>调用 ${bucket.calls} 次 · 失败 ${bucket.failures} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}</output></div>`).join('')}
+    </div>
+    ${recentRunIds.length === 0 ? '' : `<div class="settings-card routing-run-list">${recentRunIds.map((runId) => `<button type="button" class="secondary-button ${runId === selectedRunId ? 'active' : ''}" data-action="routing-select-run" data-run-id="${escapeHtml(runId)}">${escapeHtml(shortDigest(runId))}</button>`).join('')}</div>`}
+    <div class="settings-card" data-routing-run="${escapeHtml(selectedRunId ?? '')}">
+      ${!selectedRunId ? '<div class="empty-note">暂无路由记录。任务结束后刷新即可查看。</div>' : renderDecisionTrace(decisions)}
+    </div>
+    <p class="settings-hint">${escapeHtml(settingsSections.routing.description)} 执行中的任务在结束后才会出现在这里。</p>
+  </section>`;
+};
+
+// One-line exec-flow notice for a run that could not route. 「查看原因」 is only
+// enabled once the post-run dashboard read returned the SELECT_ROUTE record.
+const renderRouteFailureNotice = (): string => {
+  const notice = routeFailure;
+  if (!notice || notice.threadId !== model.activeThreadId) return '';
+  const linkReady = notice.linkable && hasRouteDecisionRecord(model.decisions, notice.runId);
+  const link = notice.linkable
+    ? `<button type="button" class="link-button" data-action="view-route-reason" data-run-id="${escapeHtml(notice.runId)}" ${linkReady ? '' : 'disabled aria-disabled="true" title="记录加载后可查看"'}>查看原因</button>`
+    : '';
+  return `<div class="route-failure-notice" role="status" data-route-failure="${notice.kind}"><i data-lucide="circle-alert"></i><span>${escapeHtml(notice.text)}</span>${link}</div>`;
 };
 
 const renderApprovalCard = (approval: ApprovalReadModel): string => {
@@ -2419,7 +2445,7 @@ const renderTaskValueSummary = (): string => {
     ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', recoveryMode === 'PREPARATION' ? '补齐目标后重新制定计划' : '使用已保存的进度继续执行', false, !failed)
     : '';
   const retryAction = failed && recoveryMode !== 'INVALID' && terminal
-    ? actionRow('retry-task', '重试任务 / 更换模型', '选择模型后重新尝试，缺少目标时会提示补充') : '';
+    ? actionRow('retry-task', '重试任务', '使用设置中的模型重新尝试，缺少目标时会提示补充') : '';
   const title = run?.title ?? (thread?.title && !/^Thread\s+[a-f\d]+$/i.test(thread.title) ? thread.title : undefined);
   return `<section class="context-section task-value-section" aria-label="当前任务与下一步">
           ${isThreadArchived(model.activeThreadId) ? `<div class="panel-next-step">此会话已归档。发送新消息或继续任务时会自动恢复。<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(model.activeThreadId!)}">恢复到列表</button></div>` : ''}
@@ -2540,7 +2566,7 @@ const renderContextContent = (): string => {
               </div>`).join('')}</div>`}
         </section>`, `${executionRecords.length} 条记录`)}
 
-        ${contextGroup('section:decisions', '为什么这样执行', '查看 Agent 选择步骤、模型和处理方式的依据。', renderDecisionTrace(), `${model.decisions.length} 条记录`)}
+        ${contextGroup('section:decisions', '为什么这样执行', '决策记录已移到设置「模型与路由」。', ((reasonRunId) => `<button type="button" class="governance-button" data-action="view-route-reason" data-run-id="${escapeHtml(reasonRunId ?? '')}" ${reasonRunId ? '' : 'disabled aria-disabled="true" title="此会话没有路由记录"'}>在设置中查看</button>`)(selectedThreadRuntimeRunId()), `${model.decisions.length} 条记录`)}
 
         ${contextGroup('section:council', '比较过哪些方案', '查看备选方案、审议意见和最终选择。', renderCouncilPanel())}
 
@@ -3352,9 +3378,8 @@ const renderLiveView = (): void => {
       tools: new LiveTimeline(container.querySelector('[data-live-tools]')!, timelineItemHtml, historyIcons, followLiveTranscript) };
   }
   const slot = (name: string) => container.querySelector<HTMLElement>(`[data-live-region="${name}"]`);
-  patchLiveRegion(slot('route'), [model.decisions, model.modelEgress, model.runtime.model, pinnedModel], renderRoutePanel);
+  patchLiveRegion(slot('route-notice'), [routeFailure, model.decisions, model.activeThreadId], renderRouteFailureNotice);
   patchLiveRegion(slot('evidence'), [model.timeline], renderEvidencePanel);
-  patchLiveRegion(slot('decisions'), [model.decisions], renderDecisionTrace);
   patchLiveRegion(slot('approvals'), [model.approvals, [...pendingApprovalResolutions].join(',')], () => {
     const approvals = model.approvals.filter((approval) => isApprovalStatusList(approval.state));
     return approvals.length ? `<section class="workbench-approvals" aria-label="审批与授权状态"><div class="transcript-heading"><h2>审批与授权状态</h2></div>${approvals.map(renderApprovalCard).join('')}</section>` : '';
@@ -3500,10 +3525,9 @@ const render = (): void => {
             ${activePage === 'runs' ? renderRunsPage() : activePage === 'diagnostics' ? renderDiagnosticsPage() : activePage === 'workspace' ? renderWorkspacePage() : activePage === 'memory' ? renderMemoryPage() : activePage === 'safety' ? renderSafetyPage() : activePage !== 'workbench' ? renderPageStatus(activePage) : ''}
             ${activePage === 'workbench' ? `
             <div data-live-workbench>
-              <div class="live-region" data-live-region="route"></div>
               <div class="live-region" data-live-region="evidence"></div>
-              <div class="live-region" data-live-region="decisions"></div>
               <div class="live-region" data-live-region="approvals"></div>
+              <div class="live-region" data-live-region="route-notice"></div>
               <div class="live-region" data-live-region="agents"></div>
               <div class="live-region" data-live-region="heading"></div>
               <div class="timeline">
@@ -4248,6 +4272,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     if (event.emittedAtMs < runtimeEventFloorMs) return;
     if (activeRuntimeRunId && activeRuntimeRunId !== event.runId) return;
     activeRuntimeRunId = event.runId;
+    runThreadIds.set(event.runId, currentRunThreadId);
   }
   if (!activeRuntimeRunId || event.runId !== activeRuntimeRunId) return;
   // The runtime emits a strictly increasing sequence per invocation. Ignore
@@ -4323,6 +4348,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     }));
     return;
   }
+  if (event.kind === 'route.selected' && isBlockedRouteSelection(payload)) return;
   if (event.kind === 'task.classified' || event.kind === 'task.prechecked' || event.kind === 'route.selected' || event.kind === 'role.contexts_allocated') {
     const title = event.kind === 'task.classified'
       ? '任务分类'
@@ -4460,6 +4486,8 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (event.kind === 'run.failed') {
     runtimeFailureEvents.add(event.runId);
     logRuntimeFailure(event, 'run.failed');
+    const notice = routeFailureNotice(event.runId, payload);
+    routeFailure = notice ? { ...notice, threadId: routeFailureThread(runThreadIds, event.runId) } : undefined;
     pendingApprovalResolutions.clear();
     // A killed runtime may flush a buffered failure event after the user
     // cancellation has already been acknowledged. Preserve the user's
@@ -5337,7 +5365,10 @@ const runMockTask = async (prompt: string): Promise<void> => {
   }
 };
 
-const runCordisTask = async (prompt: string, modelOverride?: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
+const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
+  if (running || workspaceChanging) return;
+  // The legacy pin must be migrated into the Settings model before any task.
+  await pinMigrationReady;
   if (running || workspaceChanging) return;
   if (prompt.trim().length > 8000) {
     composerPromptError = `需求共有 ${prompt.trim().length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
@@ -5393,6 +5424,7 @@ const runCordisTask = async (prompt: string, modelOverride?: string, extraOption
   taskProgressMessage = '正在启动本地任务进程…';
   runtimeStreamObserved = false;
   activeRuntimeRunId = undefined;
+  routeFailure = undefined;
   runtimeEventFloorMs = Date.now();
   lastRuntimeEventSequence = 0;
   // Event keys include runId, but clearing this bounded-lifetime set avoids
@@ -5440,7 +5472,16 @@ const runCordisTask = async (prompt: string, modelOverride?: string, extraOption
     Object.assign(taskOptions, workspaceThreadOptions(model));
     Object.assign(taskOptions, taskOptionsFromBudget(), extraOptions);
     if (model.activeThreadId && !taskOptions.threadId) update(setActiveThread(model, undefined));
-    const result = await desktopBridge.runModelTask(prompt, modelOverride ?? pinnedModel ?? undefined, taskOptions);
+    currentRunThreadId = typeof taskOptions.threadId === 'string' ? taskOptions.threadId : model.activeThreadId;
+    const result = await desktopBridge.runModelTask(prompt, undefined, taskOptions);
+    {
+      const resultThreadId = 'threadId' in result && typeof result.threadId === 'string' ? result.threadId : undefined;
+      if (result.runId && resultThreadId) {
+        runThreadIds.set(result.runId, resultThreadId);
+        const pending = routeFailure as (RouteFailureNotice & { threadId?: string }) | undefined;
+        if (pending?.runId === result.runId && !pending.threadId) routeFailure = { ...pending, threadId: resultThreadId };
+      }
+    }
     // A completed bridge promise may belong to a cancelled/replaced UI run.
     // Do not let that response rebind the new run's runtime identity.
     if (!isCurrentRunActive()) return;
@@ -5605,6 +5646,7 @@ const runCordisTask = async (prompt: string, modelOverride?: string, extraOption
 function closeSettings(): void {
   if (settingsSaving) return;
   settingsVisible = false;
+  pinNoticeSession.close();
   settingsError = '';
   settingsSaved = false;
   render();
@@ -5656,6 +5698,18 @@ app.addEventListener('click', (event) => {
       settingsSearch = '';
       const search = app.querySelector<HTMLInputElement>('.settings-search');
       if (search) search.value = '';
+      // Tab switches don't re-render; refresh just the routing panel so the
+      // one-time pin notice is taken and shown. Clicks are delegated on app,
+      // so the replaced markup needs no handler rebinding.
+      if (settingsSection === 'routing') {
+        const panel = app.querySelector<HTMLElement>('#settings-panel-routing');
+        if (panel) {
+          panel.outerHTML = renderRoutingSettingsPanel();
+          // Same icon hydration patchLiveRegion uses, scoped to the new panel.
+          const fresh = app.querySelector<HTMLElement>('#settings-panel-routing');
+          if (fresh) historyIcons(fresh);
+        }
+      }
       syncSettingsView();
       const content = app.querySelector('.settings-main');
       if (content) content.scrollTop = 0;
@@ -5810,7 +5864,6 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'memory-edit-cancel') { memoryEditState = undefined; memoryEditError = ''; render(); return; }
   if (action === 'runs-page') { const delta = Number(actionElement?.dataset.delta ?? 0); if (delta && runsPage + delta >= 1) runsPage += delta; render(); return; }
-    if (action === 'pinned-model') { pinnedModel = actionElement instanceof HTMLSelectElement ? actionElement.value || null : pinnedModel; if (pinnedModel) localStorage.setItem('hmcodex.pinnedModel', pinnedModel); else localStorage.removeItem('hmcodex.pinnedModel'); return; }
   if (action === 'run-recovery-check') void runRecoveryCheck();
   if (action === 'cancel-recovery-approval' || action === 'revoke-recovery-lease') { void runRecoveryRecordAction(actionElement!); return; }
   if (action === 'view-recovery-record') {
@@ -5823,6 +5876,18 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'export-data') void exportData(actionElement?.dataset.scope ?? 'all');
   if (action === 'open-workspace') void openWorkspace();
+  if (action === 'view-route-reason') {
+    if ((actionElement as HTMLButtonElement | null)?.disabled) return;
+    routingSettingsRunId = actionElement?.dataset.runId || undefined;
+    settingsSection = 'routing';
+    void openSettings();
+    return;
+  }
+  if (action === 'routing-select-run') {
+    routingSettingsRunId = actionElement?.dataset.runId || undefined;
+    render();
+    return;
+  }
   if (action === 'open-settings') void openSettings();
   if (action === 'close-settings' && !settingsSaving) {
     closeSettings();
@@ -5873,22 +5938,18 @@ app.addEventListener('click', (event) => {
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
     update(setActiveThread(model, threadId, true));
-    void (desktopBridge.isNative() ? runCordisTask(prompt, undefined, { threadId, resume: true }) : runMockTask(prompt));
+    void (desktopBridge.isNative() ? runCordisTask(prompt, { threadId, resume: true }) : runMockTask(prompt));
     return;
   }
   if (action === 'retry-task') {
     if (running || workspaceChanging) return;
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
-    const fallback = model.runtime.model?.model;
-    const requested = window.prompt('重试模型（留空使用当前模型；升级时填写已配置的模型名称）', pinnedModel ?? fallback ?? '');
-    if (requested === null) return;
-    const preferred = requested.trim() || undefined;
-    taskActionNotice = preferred ? `将使用 ${preferred} 重试任务。` : '将使用当前模型重试任务。';
+    taskActionNotice = '将使用设置中的模型重试任务。';
     render();
     const thread = model.threads.find((item) => item.id === model.activeThreadId);
     const resume = ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread));
-    void (desktopBridge.isNative() ? runCordisTask(prompt, preferred, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(prompt));
+    void (desktopBridge.isNative() ? runCordisTask(prompt, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(prompt));
     return;
   }
   if (action === 'cancel-run') {
@@ -6244,6 +6305,27 @@ historyStartupReady = (async () => {
   await Promise.all([refreshDashboard({ startup: true }), savedPageRequest]);
   await restoreSavedNavigation();
 })();
+
+// Legacy 'hmcodex.pinnedModel' migration: migrate-then-delete, vetted against
+// the configured model list. Never used as a per-task override.
+pinMigrationReady = desktopBridge.isNative()
+  ? migrateLegacyPinnedModel({
+    storage: localStorage,
+    loadConfig: async () => (await desktopBridge.modelConfig())?.config,
+    configuredModels: () => desktopBridge.configuredModelIds(),
+    saveConfig: async (config) => (await desktopBridge.saveModelConfig(config)).config,
+    refreshRuntime: async () => {
+      const snapshot = await desktopBridge.runtimeSnapshot();
+      if (snapshot) model = setRuntimeReady(model, snapshot);
+    },
+    log: (message) => console.warn(message)
+  }).then((result) => {
+    if (result.notice) {
+      // Startup writes only to storage; Settings 「模型与路由」 shows it once.
+      storePinMigrationNotice(localStorage, result.notice);
+    }
+  }).catch(() => undefined)
+  : Promise.resolve();
 
 runtimeHydrationReady = (async () => {
   try {

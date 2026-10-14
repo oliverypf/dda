@@ -147,6 +147,20 @@ describe('review fixes', () => {
     session.close();
     expect(session.forRender()).toBeUndefined();
     expect(mainSource).toContain('pinNoticeSession.close()');
+  });
+  it('pin notice is only taken when the 模型与路由 tab is visible', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v); }, removeItem: (k: string) => { data.delete(k); } };
+    storePinMigrationNotice(storage, 'pin dropped');
+    const session = createPinNoticeSession(storage);
+    expect(session.forRender(false)).toBeUndefined();
+    expect(data.get(PIN_MIGRATION_NOTICE_KEY)).toBe('pin dropped');
+    expect(session.forRender(true)).toBe('pin dropped');
+    expect(data.has(PIN_MIGRATION_NOTICE_KEY)).toBe(false);
+    expect(session.forRender(true)).toBe('pin dropped');
+    session.close();
+    expect(session.forRender(true)).toBeUndefined();
+    expect(mainSource).toContain("pinNoticeSession.forRender(settingsSection === 'routing')");
     expect(mainSource).not.toContain("title: '模型设置', body: pinMigrationNotice");
   });
   it('route failure attaches to the run own thread, not the viewed one', () => {

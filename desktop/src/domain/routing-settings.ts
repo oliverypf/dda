@@ -136,8 +136,9 @@ export const routeFailureThread = (runThreads: ReadonlyMap<string, string | unde
 export const createPinNoticeSession = (storage: Pick<Storage, 'getItem' | 'removeItem'>) => {
   let notice: string | undefined;
   return {
-    forRender: (): string | undefined => {
-      const taken = takePinMigrationNotice(storage);
+    /** Only takes from storage when the 「模型与路由」 tab is the visible one. */
+    forRender: (routingVisible = true): string | undefined => {
+      const taken = routingVisible ? takePinMigrationNotice(storage) : undefined;
       if (taken) notice = taken;
       return notice;
     },

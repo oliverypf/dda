@@ -2010,7 +2010,7 @@ const renderRoutingSettingsPanel = (): string => {
   const recentRunIds = [...new Map(all.slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))
     .filter((node) => node.runId).map((node) => [node.runId!, node.updatedAtMs ?? 0])).keys()].slice(0, 8);
   const selectedRunId = routingSettingsRunId ?? (running ? undefined : activeRuntimeRunId) ?? recentRunIds[0];
-  const pinMigrationNotice = pinNoticeSession.forRender() ?? '';
+  const pinMigrationNotice = pinNoticeSession.forRender(settingsSection === 'routing') ?? '';
   const pinNoticeHtml = pinMigrationNotice ? `<div class="settings-card routing-pin-notice" role="status" data-pin-migration-notice>${escapeHtml(pinMigrationNotice)}</div>` : '';
   const decisions = decisionsForRun(all, selectedRunId);
   const usage = model.modelUsage;

@@ -297,6 +297,50 @@ test('failed commit and outcome receipts do not advance visible decision state',
   assert.equal((await backing.list()).length, 3);
 });
 
+test('replays retained history beyond one run budget and can start a new run', async () => {
+  const history = [];
+  for (let index = 0; index < 4097; index += 1) {
+    // Generate genuine receipts and snapshots per independent run, avoiding
+    // quadratic whole-store validation while arranging this history fixture.
+    const backing = createHarnessEventStore();
+    const writer = new AgentDecisionTrace({ eventStore: backing });
+    const decision = await writer.propose(input({ runId: `history-${index}` }));
+    await writer.commit(decision.decisionId);
+    history.push(...await backing.list());
+  }
+  assert.equal(history.length, 8194);
+  const nextRun = createHarnessEventStore();
+  const reader = new AgentDecisionTrace({ eventStore: {
+    list: async () => history,
+    append: (request) => nextRun.append(request)
+  } });
+  await reader.load();
+  assert.equal(reader.list().length, 4097);
+  assert.equal(reader.listEvents().length, 8194);
+  const next = await reader.propose(input({ runId: 'new-run' }));
+  assert.equal(next.status, 'PROPOSED');
+
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-decision-history-'));
+  const storagePath = join(directory, 'decision-trace.json');
+  await writeFile(storagePath, JSON.stringify({
+    schemaVersion: '1.0', decisions: reader.list(),
+    outcomes: reader.listOutcomes(), events: reader.listEvents()
+  }));
+  const reopened = new AgentDecisionTrace({ storagePath });
+  await reopened.load();
+  assert.equal(reopened.listEvents().length, 8195);
+  assert.equal(reopened.get(next.decisionId).runId, 'new-run');
+});
+
+test('a single run still cannot exceed its event budget', async () => {
+  const trace = new AgentDecisionTrace({ maxDecisionsPerRun: 8193 });
+  for (let index = 0; index < 8192; index += 1) await trace.propose(input());
+  await assert.rejects(trace.propose(input()), /DECISION_EVENT_LIMIT/);
+  assert.equal(trace.listEvents().length, 8192);
+  const next = await trace.propose(input({ runId: 'another-run' }));
+  assert.equal(next.status, 'PROPOSED');
+});
+
 test('enforces commit-before-effect and same-run acyclic parent/revision references', async () => {
   const trace = new AgentDecisionTrace({ now: () => 200 });
   const first = await trace.propose(input());

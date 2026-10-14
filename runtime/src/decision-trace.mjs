@@ -18,6 +18,9 @@ const MAX_DECISIONS = 1000;
 const MAX_STORED_DECISIONS = 100000;
 const MAX_OUTCOMES = 4096;
 const MAX_EVENTS = 8192;
+// Retained events span many runs. Keep the per-run budget separate from the
+// historical ceiling, matching the durable harness store's event capacity.
+const MAX_STORED_EVENTS = 100000;
 const MAX_OPTIONS = 8;
 const MAX_EVIDENCE = 64;
 const MAX_TEXT = 2000;
@@ -415,7 +418,7 @@ export class AgentDecisionTrace {
     if (!isRecord(parsed) || parsed.schemaVersion !== DECISION_TRACE_SCHEMA_VERSION ||
         !Array.isArray(parsed.decisions) || parsed.decisions.length > MAX_STORED_DECISIONS ||
         !Array.isArray(parsed.outcomes) || parsed.outcomes.length > MAX_OUTCOMES ||
-        !Array.isArray(parsed.events) || parsed.events.length > MAX_EVENTS) fail('DECISION_STORE_INVALID');
+        !Array.isArray(parsed.events) || parsed.events.length > MAX_STORED_EVENTS) fail('DECISION_STORE_INVALID');
     for (const raw of parsed.decisions) {
       const record = validateStoredDecision(raw);
       if (this.#decisions.has(record.decisionId)) fail('DECISION_STORE_INVALID');
@@ -438,7 +441,7 @@ export class AgentDecisionTrace {
   }
 
   async #loadDurableEvents(events) {
-    if (!Array.isArray(events) || events.length > MAX_EVENTS) fail('DECISION_STORE_REPLAY_INVALID');
+    if (!Array.isArray(events) || events.length > MAX_STORED_EVENTS) fail('DECISION_STORE_REPLAY_INVALID');
     const ordered = events.slice().sort((left, right) => left.sequence - right.sequence || left.eventId.localeCompare(right.eventId));
     for (const durable of ordered) {
       const payload = durable?.payload;
@@ -630,7 +633,8 @@ export class AgentDecisionTrace {
   }
 
   async #appendEvent(kind, decision, payload, { outcome } = {}) {
-    if (this.#events.size >= MAX_EVENTS) fail('DECISION_EVENT_LIMIT');
+    if (this.#events.size >= MAX_STORED_EVENTS
+      || [...this.#events.values()].filter((event) => event.runId === decision.runId).length >= MAX_EVENTS) fail('DECISION_EVENT_LIMIT');
     const event = createEvent(kind, decision, payload, {
       eventId: `decision-event-${this.#idFactory()}`,
       atMs: this.#now()

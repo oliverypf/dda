@@ -62,6 +62,35 @@ test('profile projection reads from Harness when no JSON cache is configured', a
   assert.equal(profile.evidenceCount, 1);
 });
 
+test('legacy projections do not roll back newer durable versions to a stale cache', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-profile-replay-'));
+  const storagePath = join(directory, 'profiles.json');
+  const eventStore = createHarnessEventStore({ storagePath: join(directory, 'harness.db') });
+  const writer = new ProfileRegistry({ storagePath, eventStore });
+  await writer.recordEvidence(evidence({ evidenceId: 'first', runId: 'run-1' }));
+  await writer.flush();
+  const staleCache = await readFile(storagePath, 'utf8');
+  const legacyPayload = { ...writer.listProfiles()[0] };
+  delete legacyPayload.updatedAtMs;
+  await eventStore.append({
+    runId: 'run-1-legacy', aggregateType: 'Profile', aggregateId: legacyPayload.profileId,
+    kind: 'ProfileProjectionUpdated', payload: legacyPayload
+  });
+  await writer.recordEvidence(evidence({ evidenceId: 'second', runId: 'run-2' }));
+  await writer.flush();
+  const latest = writer.listProfiles()[0];
+  await writeFile(storagePath, staleCache);
+
+  const reader = new ProfileRegistry({ storagePath, eventStore });
+  await reader.load();
+  assert.deepEqual(reader.listProfiles(), [latest]);
+  assert.equal(reader.listEvidence().length, 1);
+  await reader.recordEvidence(evidence({ evidenceId: 'third', runId: 'run-3' }));
+  await reader.flush();
+  assert.equal(reader.listProfiles()[0].version, 3);
+  assert.equal((await eventStore.list({ runId: 'run-3' })).length, 2);
+});
+
 test('safety failure keeps a profile conservative and evidence is idempotent', async () => {
   const registry = new ProfileRegistry();
   const first = await registry.recordEvidence(evidence({ evidenceId: 'same', safety: 0.2 }));
@@ -71,6 +100,22 @@ test('safety failure keeps a profile conservative and evidence is idempotent', a
   assert.equal(profile.eligibility.eligible, false);
   assert.ok(profile.eligibility.reasonCodes.includes('SAFETY_BELOW_THRESHOLD'));
   await assert.rejects(registry.recordEvidence(evidence({ evidenceId: 'same', safety: 1 })), /PROFILE_EVIDENCE_ID_CONFLICT/);
+});
+
+test('a complete projection with an invalid digest cannot fall back to a valid cache', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-profile-integrity-'));
+  const storagePath = join(directory, 'profiles.json');
+  const writer = new ProfileRegistry({ storagePath });
+  await writer.recordEvidence(evidence());
+  await writer.flush();
+  const payload = writer.listProfiles()[0];
+  payload.stats.successCount += 1;
+  const eventStore = createHarnessEventStore();
+  await eventStore.append({
+    runId: 'tampered-run', aggregateType: 'Profile', aggregateId: payload.profileId,
+    kind: 'ProfileProjectionUpdated', payload
+  });
+  await assert.rejects(new ProfileRegistry({ storagePath, eventStore }).load(), /PROFILE_STORE_INVALID/);
 });
 
 test('persists and validates profile snapshots without sensitive fields', async () => {

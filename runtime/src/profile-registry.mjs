@@ -195,49 +195,56 @@ export class ProfileRegistry {
 
   async load() {
     if (this.#loaded) return;
+    const durableProfiles = new Map();
+    const finishLoad = () => {
+      for (const [key, record] of durableProfiles) {
+        const cached = this.#profiles.get(key);
+        if (!cached || record.version >= cached.version) this.#profiles.set(key, clone(record));
+      }
+      this.#loaded = true;
+    };
     if (this.#eventStore?.list) {
       let events;
       try { events = await this.#eventStore.list({ aggregateType: 'Profile' }); }
       catch { throw new Error('PROFILE_STORE_READ_FAILED'); }
-      let projected = false;
-      try {
-        for (const event of events) {
-          if (event.kind !== 'ProfileProjectionUpdated') continue;
-          projected = true;
-          const payload = event.payload;
-          const record = {
-            profileId: payload?.profileId,
-            kind: payload?.kind,
-            entityType: payload?.entityType,
-            entityId: payload?.entityId,
-            ...(payload?.capabilityId ? { capabilityId: payload.capabilityId } : {}),
-            version: payload?.version,
-            stats: payload?.stats,
-            eligibility: payload?.eligibility,
-            evidenceCount: payload?.evidenceCount,
-            updatedAtMs: payload?.updatedAtMs,
-            profileDigest: payload?.profileDigest
-          };
-          if (!validateProfile(record)) throw new Error('PROFILE_STORE_INVALID');
-          const key = profileKey(record);
-          const prior = this.#profiles.get(key);
-          if (!prior || record.version >= prior.version) this.#profiles.set(key, clone(record));
+      let needsLegacyCache = false;
+      for (const event of events) {
+        if (event.kind !== 'ProfileProjectionUpdated') continue;
+        const payload = event.payload;
+        const record = {
+          profileId: payload?.profileId,
+          kind: payload?.kind,
+          entityType: payload?.entityType,
+          entityId: payload?.entityId,
+          ...(payload?.capabilityId ? { capabilityId: payload.capabilityId } : {}),
+          version: payload?.version,
+          stats: payload?.stats,
+          eligibility: payload?.eligibility,
+          evidenceCount: payload?.evidenceCount,
+          updatedAtMs: payload?.updatedAtMs,
+          profileDigest: payload?.profileDigest
+        };
+        if (!validateProfile(record)) {
+          // Older projections omitted updatedAtMs. Read their complete JSON
+          // cache, but keep scanning: newer committed versions must survive
+          // the fallback or the next append can reuse a committed command ID.
+          if (record.updatedAtMs === undefined && this.#storagePath) {
+            needsLegacyCache = true;
+            continue;
+          }
+          throw new Error('PROFILE_STORE_INVALID');
         }
-      } catch (error) {
-        // 历史版本写入的投影事件可能缺少 updatedAtMs 等字段，无法通过完整性校验。
-        // 此时回退到文件存储（profiles.json 由同一注册表落盘，记录更完整），避免
-        // 单条旧事件永久阻塞所有任务启动。
-        if (error?.message !== 'PROFILE_STORE_INVALID' || !this.#storagePath) throw error;
-        this.#profiles.clear();
-        projected = false;
+        const key = profileKey(record);
+        const prior = durableProfiles.get(key);
+        if (!prior || record.version >= prior.version) durableProfiles.set(key, clone(record));
       }
-      if (projected) {
-        this.#loaded = true;
+      if (durableProfiles.size && !needsLegacyCache) {
+        finishLoad();
         return;
       }
     }
     if (!this.#storagePath) {
-      this.#loaded = true;
+      finishLoad();
       return;
     }
     let parsed;
@@ -248,7 +255,7 @@ export class ProfileRegistry {
       throw new Error('PROFILE_STORE_READ_FAILED');
     }
     if (parsed === undefined) {
-      this.#loaded = true;
+      finishLoad();
       return;
     }
     if (parsed?.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.profiles) ||
@@ -268,7 +275,7 @@ export class ProfileRegistry {
       evidenceIds.add(item.evidenceId);
       this.#evidence.set(item.evidenceId, clone(item));
     }
-    this.#loaded = true;
+    finishLoad();
   }
 
   async recordEvidence(input = {}) {

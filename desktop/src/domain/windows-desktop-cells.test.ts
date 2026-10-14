@@ -173,6 +173,11 @@ const row = (patch: Partial<CellExecRow> & Pick<CellExecRow, 'toolCallId' | 'cel
 });
 
 describe('windows desktop cell exec timeline presentation', () => {
+  it('titles a DECLINED card as 已拒绝', () => {
+    expect(approvalCardTitle({ state: 'DECLINED' })).toBe('已拒绝');
+    expect(approvalCardTitle({ state: 'DECLINED', leaseId: undefined })).toBe('已拒绝');
+  });
+
   it('titles a CANCELLED card and keeps approval buttons off that state', () => {
     expect(approvalCardTitle({ state: 'CANCELLED' })).toBe('已取消（cell 已结束）');
     expect(approvalCardTitle({ state: 'APPROVED', leaseId: undefined })).toBe('正在重新检查策略');

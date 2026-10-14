@@ -662,14 +662,18 @@ export class CellHost {
     try {
       if (classification === 'read') {
         // Phase-1 readonly bridge — same ReadonlyWorkspace / SessionState; no #15/effects.
-        // Reads are COMPLETED from the host_response envelope, not an inner ok/outcome.
+        // workspace.* and session_state.* pass through kernel.request and may
+        // return an error envelope. ok:false finishes the row as FAILED.
         if (typeof this.#readonlyBridge !== 'function') {
           throw Object.assign(new Error('READONLY_BRIDGE_UNAVAILABLE'), { code: 'READONLY_BRIDGE_UNAVAILABLE' });
         }
         timeline?.markEntered(epoch, toolCallId);
         try {
           const result = await this.#readonlyBridge(kind, message.payload);
-          timeline?.endFromResult(epoch, toolCallId, { classification: 'read', envelopeOk: true });
+          timeline?.endFromResult(epoch, toolCallId, {
+            classification: 'read',
+            envelopeOk: result?.ok !== false
+          });
           this.#send({
             v: CELL_PROTOCOL_VERSION,
             type: CELL_MESSAGE_TYPES.HOST_RESPONSE,

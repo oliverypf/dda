@@ -23,7 +23,7 @@ const waitFor = async (predicate, attempts = 50) => {
   assert.fail('timed out waiting for condition');
 };
 
-const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject } = {}) => {
+const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now } = {}) => {
   const events = [];
   const store = createExecutionStateStore();
   const real = createTaskRunCoordinator({ runId: 'run-cell-approval' });
@@ -49,6 +49,7 @@ const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject } = {}
     logger: { error() {} },
     emitEvent: (kind, payload) => events.push({ kind, payload }),
     approvalTtlMs: ttlMs,
+    ...(now ? { now } : {}),
     cellOpSinks,
     hooks,
     hasLiveApprover: () => live,
@@ -186,6 +187,51 @@ test('one pending approval per cell; the second card waits for approve, decline,
     }));
     assert.equal(await second, true);
   }
+});
+
+test('queued cell approval TTL starts when the gate admits, not when the waiter enqueues', async () => {
+  let clock = 1_000_000;
+  const ttlMs = 120_000;
+  const { session, events, store } = harness({ ttlMs, now: () => clock });
+  const first = session.requestApproval({
+    capability: CAPABILITIES.WRITE_FILE,
+    request: { path: 'a.txt' },
+    context: cellContext('cell-1', 1),
+    requireApproval: true
+  });
+  await waitFor(() => requested(events).length === 1);
+  const firstCard = requested(events)[0].payload;
+  assert.equal(firstCard.approvalExpiresAt, clock + ttlMs);
+
+  const second = session.requestApproval({
+    capability: CAPABILITIES.WRITE_FILE,
+    request: { path: 'b.txt' },
+    context: cellContext('cell-1', 2),
+    requireApproval: true
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(requested(events).length, 1);
+  const enqueuedAt = clock;
+  clock += ttlMs + 50_000;
+
+  session.handleLine(JSON.stringify({
+    type: 'approval_response', requestId: firstCard.requestId, approved: true, displayedDigest: firstCard.requestDigest
+  }));
+  assert.equal(await first, true);
+  await waitFor(() => requested(events).length === 2);
+  const secondCard = requested(events)[1].payload;
+  assert.equal(secondCard.approvalExpiresAt, clock + ttlMs);
+  assert.ok(secondCard.approvalExpiresAt > clock);
+  assert.notEqual(secondCard.approvalExpiresAt, enqueuedAt + ttlMs);
+  const secondApproval = store.list().filter((record) => record.recordType === 'approval')
+    .find((record) => record.expiresAt === secondCard.approvalExpiresAt);
+  assert.ok(secondApproval);
+  assert.equal(secondApproval.expiresAt, clock + ttlMs);
+
+  session.handleLine(JSON.stringify({
+    type: 'approval_response', requestId: secondCard.requestId, approved: true, displayedDigest: secondCard.requestDigest
+  }));
+  assert.equal(await second, true);
 });
 
 test('batchGranted items skip the gate and non-cell approvals do not wait', async () => {

@@ -167,6 +167,7 @@ export const approvalCardTitle = (approval: Pick<ApprovalReadModel, 'state' | 'l
   if (approval.state === 'REQUESTED') return '需要批准一次';
   if (approval.state === 'EXPIRED') return '审批已过期';
   if (approval.state === 'CANCELLED') return '已取消（cell 已结束）';
+  if (approval.state === 'DECLINED') return '已拒绝';
   if (approval.leaseState === 'FAILED') return '授权不可继续使用 · 执行结果不确定';
   if (approval.leaseState === 'CONSUMED') {
     return '授权已使用 · ' + (approval.executionOk === true

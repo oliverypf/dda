@@ -163,8 +163,8 @@ export const createCellExecTimeline = ({
     row.state = state;
     if (extra.errorCode) row.errorCode = extra.errorCode;
     row.durationMs = Math.max(0, end - row.startedAtMs - row.approvalWaitMs);
-    if (sinks && row.toolCallId) sinks.delete(row.toolCallId);
     touch(row, { immediate: true });
+    if (sinks && row.toolCallId) sinks.delete(row.toolCallId);
     return true;
   };
 
@@ -235,7 +235,9 @@ export const createCellExecTimeline = ({
       return undefined;
     },
     appendChunk(row, chunk) {
-      if (!row || row.acceptDeltas !== true || row.state !== 'RUNNING') return;
+      // Fast host_response finishes the row before late op_progress arrives.
+      // Keep those chunks in the 64KB tail and do not change a terminal state.
+      if (!row || row.acceptDeltas !== true) return;
       const sanitized = sanitizeOutput(chunk);
       const produced = Buffer.byteLength(sanitized, 'utf8');
       row.outputBytes += produced;

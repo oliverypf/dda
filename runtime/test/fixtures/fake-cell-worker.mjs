@@ -105,6 +105,35 @@ process.stdin.on('data', (chunk) => {
       setTimeout(() => process.exit(0), 10);
       continue;
     }
+    if (mode === 'late-progress') {
+      send({
+        type: 'host_request', requestId: 'hr-1', cellOpIndex: 1, cellId, epoch,
+        kind: 'workspace.read', payload: { path: 'a.txt' }
+      });
+      replyWhen('hr-1').then(() => {
+        send({ type: 'op_progress', epoch, requestId: 'hr-1', seq: 1, chunk: 'late-tail' });
+        finish();
+      });
+      continue;
+    }
+    if (mode === 'bridge-error') {
+      const kinds = [
+        ['workspace.read', { path: 'missing.txt' }],
+        ['session_state.get', { key: 'k' }]
+      ];
+      (async () => {
+        for (let index = 0; index < kinds.length; index += 1) {
+          const requestId = `hr-${index + 1}`;
+          send({
+            type: 'host_request', requestId, cellOpIndex: index + 1, cellId, epoch,
+            kind: kinds[index][0], payload: kinds[index][1]
+          });
+          await replyWhen(requestId);
+        }
+        finish();
+      })().catch(() => finish(false));
+      continue;
+    }
     if (mode === 'progress-gap') {
       send({
         type: 'host_request', requestId: 'hr-1', cellOpIndex: 1, cellId, epoch,

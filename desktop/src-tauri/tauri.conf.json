@@ -42,6 +42,8 @@
       }
     },
     "resources": {
+      "../../packages/harness-model/src": "packages/harness-model/src",
+      "../../packages/harness-model/package.json": "packages/harness-model/package.json",
       "../../runtime/src": "runtime/src",
       "../../runtime/node_modules": "runtime/node_modules",
       "../../runtime/package.json": "runtime/package.json",

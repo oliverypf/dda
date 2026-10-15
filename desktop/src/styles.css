@@ -813,13 +813,7 @@ svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .markdown-body hr { height: 0; margin: 18px 0; border: 0; border-top: 1px solid var(--border); }
 .markdown-body pre:focus-visible, .markdown-table-scroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .timeline-command { max-width: 100%; margin: 9px 0 0; padding: 9px 10px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text-soft); background: var(--surface-subtle); font: 11px/1.55 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.timeline-technical-details { margin-top: 8px; }
-.timeline-technical-details > summary { width: fit-content; color: var(--text-muted); font-size: 10px; cursor: pointer; }
-.timeline-technical-details > dl { display: grid; gap: 4px; margin: 7px 0 0; padding: 8px 10px; border-left: 2px solid var(--border-soft); color: var(--text-muted); font-size: 10px; }
-.timeline-technical-details > dl > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; }
-.timeline-technical-details dt, .timeline-technical-details dd { margin: 0; overflow-wrap: anywhere; }
-.timeline-technical-details dt { color: var(--text-soft); }
-.timeline-technical-details dd { font-family: Consolas, monospace; }
+.timeline-empty { margin: 12px 0; padding: 10px 12px; color: var(--text-muted); font-size: 13px; }
 .technical-label { display: block; margin: 7px 0 4px; color: var(--text-muted); font-size: 10px; }
 .live-region:empty { display: none; }
 .live-region, [data-live-workbench] { display: contents; }

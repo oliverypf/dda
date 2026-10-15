@@ -16,7 +16,8 @@ const checks = {
   'S3-04-quarantine-terminal': s.includes("['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED']"),
   'S3-03-route-settings': s.includes('renderRoutingSettingsPanel') && s.includes('renderRouteFailureNotice') && !s.includes('data-live-region="route"'),
   'S3-04-approval-workbench': s.includes('renderApprovalCard') && s.includes('workbench-approvals'),
-  'S3-05-timeline-evidence': s.includes('timeline-details') && s.includes('evidenceKind'),
+  // Timeline 「技术详情」 UI removed; eventId/sequence/digest stay on timeline items for export/audit.
+  'S3-05-timeline-evidence': s.includes('evidenceKind') && s.includes('eventId: event.eventId') && s.includes('eventSequence: event.sequence') && /digest:\s*typeof payload\.digest/.test(s),
   'S3-05-terminal-panel': s.includes('renderEvidencePanel') && s.includes('evidence-panel'),
   // The 完成报告/质量检查 panels (data-verification-unknown) were removed from the UI; UNKNOWN/ABSTAIN
   // verdicts still map to PENDING (never COMPLETE), and failures surface as a timeline reason line.

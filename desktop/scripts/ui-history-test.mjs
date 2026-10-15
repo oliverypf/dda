@@ -206,8 +206,10 @@ try {
     assert.ok(await page.locator('[data-history-status]').textContent());
     assert.equal(await page.locator('textarea[name="prompt"]').isDisabled(), true);
     await page.locator('[data-action="history-older"]').click();
-    await page.waitForFunction(() => document.querySelector('[data-history-items]').children.length === 0
-      || document.querySelector('[data-history-items]').children.length === 100);
+    await page.waitForFunction(() => {
+      const items = document.querySelectorAll('[data-history-items] .timeline-item').length;
+      return items === 0 || items === 100;
+    });
     await page.waitForFunction(() => document.querySelector('textarea[name="prompt"]')?.disabled === false);
     if (id === 'broken') {
       assert.equal(await page.locator('[data-history-items] .timeline-item').count(), 100);
@@ -221,6 +223,7 @@ try {
   results.push({ name: 'interrupted response is restored alongside the failure', pass: true });
   await choose(page, 'empty');
   assert.equal(await page.locator('[data-history-items] .timeline-item').count(), 0);
+  assert.match(await page.locator('[data-history-items]').innerText(), /此会话没有对话内容/);
   assert.equal(await page.locator('[data-action="history-older"]').isVisible(), false);
   results.push({ name: 'empty history, failed reads and invalid page identity recover correctly', pass: true });
 

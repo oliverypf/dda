@@ -55,7 +55,7 @@ import {
 } from './domain/windows-desktop-cells';
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
-import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
+import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, remapProjectArchiveIds, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
 import type { HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
   ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
 import {
@@ -524,25 +524,62 @@ const writeProjectArchive = (id: string, record: ProjectArchiveRecord | null): b
 };
 const projectArchiveBlocked = (id: string): boolean => Boolean(id) && (running || liveTaskRunning()) && currentProjectId() === id;
 const PROJECTLESS_ID = '__projectless__';
-let projectCatalog: ProjectBookmark[] = (() => {
+const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: string[]; lastId: string; changed: boolean; idRemap: Record<string, string> } => {
+  let raw: ProjectBookmark[] = [];
   try {
     const value = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) ?? '[]') as unknown;
-    if (!Array.isArray(value)) return [];
-    return value.filter((item): item is ProjectBookmark => Boolean(item) && typeof item === 'object'
-      && typeof (item as ProjectBookmark).id === 'string'
-      && typeof (item as ProjectBookmark).name === 'string'
-      && typeof (item as ProjectBookmark).path === 'string')
-      .map((item) => ({ ...item, paths: deduplicateWorkspaceRoots([item.path, ...(Array.isArray(item.paths) ? item.paths : [])]), lastUsedAtMs: Number(item.lastUsedAtMs) || 0 }));
-  } catch { return []; }
-})();
-const projectOrderIds: string[] = (() => {
+    if (Array.isArray(value)) {
+      raw = value.filter((item): item is ProjectBookmark => Boolean(item) && typeof item === 'object'
+        && typeof (item as ProjectBookmark).id === 'string'
+        && typeof (item as ProjectBookmark).name === 'string'
+        && typeof (item as ProjectBookmark).path === 'string');
+    }
+  } catch { raw = []; }
+  const { bookmarks, idRemap } = mergeProjectBookmarksByWorkspaceRoot(raw);
+  const remap = (id: string): string => idRemap[id] ?? id;
+  let orderIds: string[] = [];
   try {
     const value: unknown = JSON.parse(localStorage.getItem(PROJECT_ORDER_STORAGE_KEY) ?? 'null');
-    if (Array.isArray(value)) return [...new Set(value.filter((id): id is string => typeof id === 'string' && id !== PROJECTLESS_ID))];
+    if (Array.isArray(value)) {
+      orderIds = [...new Set(value
+        .filter((id): id is string => typeof id === 'string' && id !== PROJECTLESS_ID)
+        .map(remap))];
+    }
   } catch { /* fall back to the existing catalog order */ }
-  return projectCatalog.map((project) => project.id);
-})();
-let lastProjectId = localStorage.getItem(LAST_PROJECT_STORAGE_KEY) ?? '';
+  if (!orderIds.length) orderIds = bookmarks.map((project) => project.id);
+  let lastId = localStorage.getItem(LAST_PROJECT_STORAGE_KEY) ?? '';
+  if (lastId) lastId = remap(lastId);
+  if (lastId && !bookmarks.some((project) => project.id === lastId)) lastId = '';
+  const changed = bookmarks.length !== raw.length || Object.keys(idRemap).length > 0
+    || bookmarks.some((project, index) => {
+      const before = raw[index];
+      return !before || before.id !== project.id
+        || before.path !== project.path
+        || JSON.stringify(before.paths ?? []) !== JSON.stringify(project.paths)
+        || Number(before.lastUsedAtMs) !== Number(project.lastUsedAtMs);
+    });
+  return { catalog: bookmarks as ProjectBookmark[], orderIds, lastId, changed, idRemap };
+};
+const initialProjectCatalogState = loadProjectCatalogState();
+let projectCatalog: ProjectBookmark[] = initialProjectCatalogState.catalog;
+const projectOrderIds: string[] = initialProjectCatalogState.orderIds;
+let lastProjectId = initialProjectCatalogState.lastId;
+if (initialProjectCatalogState.changed) {
+  try { localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projectCatalog)); } catch { /* storage may be unavailable */ }
+  try { localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(projectOrderIds)); } catch { /* storage may be unavailable */ }
+  if (lastProjectId) {
+    try { localStorage.setItem(LAST_PROJECT_STORAGE_KEY, lastProjectId); } catch { /* storage may be unavailable */ }
+  }
+}
+{
+  const remapped = remapProjectArchiveIds(projectArchives, initialProjectCatalogState.idRemap);
+  if (remapped.changed) {
+    projectArchives = remapped.archives;
+    try { localStorage.setItem(PROJECT_ARCHIVE_STORAGE_KEY, JSON.stringify(projectArchives)); } catch { /* storage may be unavailable */ }
+  }
+}
+/** False until startup thread summary settles; avoids catalog-only then discovered flicker. */
+let projectThreadsSummaryReady = !desktopBridge.isNative();
 let projectPickerVisible = false;
 let projectPickerMode: 'new-task' | 'select-thread' = 'new-task';
 let projectPickerThreadId = '';
@@ -2175,6 +2212,14 @@ const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project
 const renderArchiveNotice = (): string => `${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" type="button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
 const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}`;
 const renderProjectThreadList = (): string => {
+  if (!projectThreadsSummaryReady) {
+    return `<div class="project-list-skeleton" role="status" aria-live="polite" aria-busy="true">
+      <div class="project-skeleton-row"><span class="project-skeleton-bar"></span></div>
+      <div class="project-skeleton-row"><span class="project-skeleton-bar short"></span></div>
+      <div class="project-skeleton-row"><span class="project-skeleton-bar"></span></div>
+      <span class="project-skeleton-label">正在加载项目…</span>
+    </div>`;
+  }
   const activeProjectId = currentProjectId();
   return projectGroups().map((group) => {
     const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId);
@@ -2192,7 +2237,7 @@ const renderProjectThreadList = (): string => {
   }).join('');
 };
 
-const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string }>();
+const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string; summaryReady: boolean }>();
 const updateThreadList = (): void => {
   patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNotice);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
@@ -2202,9 +2247,9 @@ const updateThreadList = (): void => {
   const previous = threadListInputs.get(list);
   const catalogKey = projectCatalog.map((project) => `${project.id}:${project.lastUsedAtMs}`).join('|');
   const expansionKey = projectExpansionKey();
-  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey) return;
+  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey && previous.summaryReady === projectThreadsSummaryReady) return;
   const scrollTop = list.scrollTop;
-  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey });
+  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey, summaryReady: projectThreadsSummaryReady });
   list.innerHTML = renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>';
   historyIcons(list);
   // Selecting a thread changes the active-row class and rebuilds this list.
@@ -6192,7 +6237,16 @@ historyStartupReady = (async () => {
   const savedPageRequest = savedPage
     ? loadInitialHistoryPage(savedPage).catch(() => undefined)
     : Promise.resolve(undefined);
-  await Promise.all([refreshDashboard({ startup: true }), savedPageRequest]);
+  try {
+    await Promise.all([refreshDashboard({ startup: true }), savedPageRequest]);
+  } finally {
+    // Finalize the project sidebar once (catalog + discovered together).
+    // Do this even when the dashboard read fails so the list is not stuck on skeleton.
+    if (!projectThreadsSummaryReady) {
+      projectThreadsSummaryReady = true;
+      updateThreadList();
+    }
+  }
   await restoreSavedNavigation();
 })();
 

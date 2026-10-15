@@ -10,7 +10,9 @@ import {
   emptyCatalogSession,
   failCatalogFetch,
   succeedCatalogFetch,
-  type CatalogSession
+  type CatalogSession,
+  catalogModelLabel,
+  modelMissingFromCatalog
 } from './provider-catalog-session';
 
 const seeded = (): CatalogSession => ({
@@ -77,10 +79,20 @@ describe('provider catalog settings surface', () => {
   const formStart = modal.indexOf('data-form="model-settings"');
   const formEnd = modal.indexOf('</form>');
 
-  it('places the catalog page outside the model connection form', () => {
+  it('keeps the catalog page outside the form and also exposes fetch on roles/models', () => {
     expect(formStart).toBeGreaterThan(-1);
     expect(modal.indexOf('renderProviderCatalogPanel()')).toBeGreaterThan(formEnd);
-    expect(modal.slice(formStart, formEnd)).not.toContain('获取可用模型');
+    const formHtml = modal.slice(formStart, formEnd);
+    expect(formHtml).toContain('renderRolesModelField(config)');
+    const rolesField = mainSource.slice(
+      mainSource.indexOf('function renderRolesModelField'),
+      mainSource.indexOf('function renderProviderCatalogPanel')
+    );
+    expect(rolesField).toContain('获取可用模型');
+    expect(rolesField).toContain('provider-catalog-model-options');
+    expect(rolesField).toContain('不在目录');
+    expect(rolesField).toContain('catalogModelLabel');
+    expect(rolesField).toContain('modelMissingFromCatalog');
     expect(panel).toContain('data-settings-panel="catalog"');
     expect(panel).toContain('获取可用模型');
     expect(panel).not.toContain('添加提供方');
@@ -89,6 +101,16 @@ describe('provider catalog settings surface', () => {
     expect(panel).not.toContain('打开配置文件');
     expect(mainSource).toContain('saveProviderModelCatalog');
     expect(mainSource).not.toContain('data-action="delete-catalog-model"');
+  });
+
+  it('labels catalog options with displayName else id and flags missing models', () => {
+    expect(catalogModelLabel({ id: 'a', displayName: 'Alpha' })).toBe('Alpha');
+    expect(catalogModelLabel({ id: 'a', displayName: '  ' })).toBe('a');
+    expect(catalogModelLabel({ id: 'a' })).toBe('a');
+    expect(modelMissingFromCatalog('a', [{ id: 'b' }], true)).toBe(true);
+    expect(modelMissingFromCatalog('a', [{ id: 'a' }], true)).toBe(false);
+    expect(modelMissingFromCatalog('a', [], false)).toBe(false);
+    expect(modelMissingFromCatalog('', [{ id: 'a' }], true)).toBe(false);
   });
 
   it('closes the catalog dialog on Escape without writing', () => {

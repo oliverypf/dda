@@ -87,9 +87,11 @@ import {
   applySavedCatalog,
   beginCatalogFetch,
   catalogConfirmWrite,
+  catalogModelLabel,
   dismissCatalogPicker,
   emptyCatalogSession,
   failCatalogFetch,
+  modelMissingFromCatalog,
   succeedCatalogFetch,
   type CatalogSession
 } from './domain/provider-catalog-session';
@@ -795,7 +797,7 @@ const syncSettingsView = (): void => {
     if (section === 'cells' && !panel.hidden && !desktopCellsSettingsLoaded && !desktopCellsSettingsLoading) {
       void loadDesktopCellsSettings();
     }
-    if (section === 'catalog' && !panel.hidden && !catalogLoaded && !catalogLoading) {
+    if ((section === 'catalog' || section === 'model') && !panel.hidden && !catalogLoaded && !catalogLoading) {
       void loadProviderCatalog();
     }
     if (!panel.hidden) matches++;
@@ -990,10 +992,27 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
     <p class="settings-hint">${escapeHtml(settingsSections[section].description)} 当前页面只展示状态；需要副作用的变更仍从对应流程进入并保留审计记录。</p>
   </section>`;
 }
+function renderRolesModelField(config: ModelConfig): string {
+  const modelValue = config.model ?? '';
+  const missing = modelMissingFromCatalog(modelValue, catalogSession.models, catalogLoaded);
+  const options = catalogSession.models
+    .map((entry) => `<option value="${escapeHtml(entry.id)}" label="${escapeHtml(catalogModelLabel(entry))}"></option>`)
+    .join('');
+  const fetchDisabled =
+    catalogSession.fetching ||
+    catalogSaving ||
+    settingsSaving ||
+    Boolean(catalogSession.picker) ||
+    !desktopBridge.isNative();
+  return `<label class="settings-field"><span>模型</span><input name="model" list="provider-catalog-model-options" value="${escapeHtml(modelValue)}" required maxlength="200" placeholder="例如 gpt-5.2-codex" autocomplete="off"><datalist id="provider-catalog-model-options">${options}</datalist>${missing ? '<small class="catalog-model-missing">不在目录</small>' : ''}</label>
+              <div class="settings-field catalog-fetch-field"><span>获取可用模型</span><button class="secondary-button" type="button" data-action="fetch-provider-models" ${fetchDisabled ? 'disabled' : ''}>${catalogSession.fetching ? '正在获取…' : '获取可用模型'}</button></div>
+              <p class="settings-hint">目录来自已保存的模型连接；改 Provider / URL 后先保存，选项才会换一家。获取可用模型只更新目录，不会改上方模型值。</p>`;
+}
+
 function renderProviderCatalogPanel(): string {
   const rows = catalogSession.models;
   const providerLabel = catalogSession.providerKey || '未能识别';
-  const fetchDisabled = catalogSession.fetching || catalogSaving || Boolean(catalogSession.picker) || !desktopBridge.isNative();
+  const fetchDisabled = catalogSession.fetching || catalogSaving || settingsSaving || Boolean(catalogSession.picker) || !desktopBridge.isNative();
   const rowHtml = rows.length
     ? rows.map((model) => `<div class="catalog-list-row"><strong>${escapeHtml(model.displayName || model.id)}</strong><code>${escapeHtml(model.id)}</code></div>`).join('')
     : '<div class="catalog-list-row catalog-list-empty"><span>这一家还没有模型目录。</span></div>';
@@ -1056,7 +1075,8 @@ function openCatalogPickerDialog(): void {
 }
 
 async function commitCatalogPicker(dialog: HTMLDialogElement): Promise<void> {
-  if (catalogSaving) return;
+  if (catalogSaving || settingsSaving) return;
+  
   const decision = catalogConfirmWrite(catalogSession, [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')].map((input) => input.value));
   if (decision.kind !== 'write') {
     cancelCatalogPicker();
@@ -1104,6 +1124,7 @@ async function loadProviderCatalog(): Promise<void> {
 }
 
 async function fetchProviderCatalog(): Promise<void> {
+  if (settingsSaving || catalogSaving) return;
   const decision = beginCatalogFetch(catalogSession);
   if (decision.kind === 'blocked') return;
   catalogSession = decision.session;
@@ -1181,7 +1202,7 @@ const renderSettingsModal = (): string => {
                 <label class="settings-field"><span>Provider</span><select name="provider" data-role="model-provider">${providerOptions.map(([value, label]) => `<option value="${value}" ${config.provider === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                 <label class="settings-field"><span>协议</span><select name="protocol" data-role="model-protocol">${protocolOptions.map(([value, label]) => `<option value="${value}" ${config.protocol === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
               </div>
-              <label class="settings-field"><span>模型</span><input name="model" value="${escapeHtml(config.model)}" required maxlength="200" placeholder="例如 gpt-5.2-codex"></label>
+              ${renderRolesModelField(config)}
               <label class="settings-field"><span>Base URL</span><input name="baseURL" value="${escapeHtml(config.baseURL ?? '')}" maxlength="2000" placeholder="例如 https://api.openai.com/v1"></label>
               <label class="settings-field"><span>完整 Endpoint（可选）</span><input name="endpoint" value="${escapeHtml(config.endpoint ?? '')}" maxlength="2000" placeholder="留空时由 Base URL 和协议生成"></label>
               <div class="settings-grid">
@@ -1233,7 +1254,7 @@ const renderSettingsModal = (): string => {
               ${settingsSaved ? '<div class="settings-message settings-message-success">配置已保存，下一次任务会使用新配置。</div>' : ''}
               <footer class="settings-actions">
                 <button class="secondary-button" type="button" data-action="close-settings">取消</button>
-                <button class="send-button" type="submit" ${settingsSaving || !desktopBridge.isNative() ? 'disabled' : ''}>${settingsSaving ? '保存中…' : '保存配置'}</button>
+                <button class="send-button" type="submit" ${settingsSaving || catalogSaving || catalogSession.fetching || Boolean(catalogSession.picker) || !desktopBridge.isNative() ? 'disabled' : ''}>${settingsSaving ? '保存中…' : '保存配置'}</button>
               </footer></div>
             </form>`}
         </div>
@@ -6289,7 +6310,7 @@ app.addEventListener('submit', (event) => {
   }
   if (form.matches('[data-form="model-settings"]')) {
     event.preventDefault();
-    if (settingsSaving || !desktopBridge.isNative()) return;
+    if (settingsSaving || catalogSaving || catalogSession.fetching || catalogSession.picker || !desktopBridge.isNative()) return;
     captureSettingsDraft();
     const invalid = form.querySelector<HTMLInputElement>(':invalid');
     if (invalid) {
@@ -6348,6 +6369,7 @@ app.addEventListener('submit', (event) => {
       removeCatalogPickerDialog();
       const snapshot = await desktopBridge.runtimeSnapshot();
       if (snapshot) model = setRuntimeReady(model, snapshot);
+      await loadProviderCatalog();
     }).catch((error) => {
       settingsError = compactError(error);
     }).finally(() => {

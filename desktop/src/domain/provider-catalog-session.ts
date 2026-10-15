@@ -141,3 +141,18 @@ export const applyCatalogSnapshot = (session: CatalogSession, snapshot: Provider
   notice: snapshot.warning ?? '',
   noticeTone: snapshot.warning ? 'error' : ''
 });
+
+export const catalogModelLabel = (model: CatalogModelEntry): string => {
+  const name = model.displayName?.trim();
+  return name || model.id;
+};
+
+export const modelMissingFromCatalog = (
+  modelId: string,
+  models: readonly CatalogModelEntry[],
+  catalogReady: boolean
+): boolean => {
+  const id = modelId.trim();
+  if (!catalogReady || !id) return false;
+  return !models.some((model) => model.id === id);
+};

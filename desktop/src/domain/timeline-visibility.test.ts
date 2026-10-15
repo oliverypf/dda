@@ -41,3 +41,28 @@ describe('audit panels removed from the UI', () => {
     expect(mainSource).toContain("evidenceKind: 'rule-verification-summary'");
   });
 });
+
+describe('timeline technical details hidden from the UI', () => {
+  it('no 技术详情 collapsible under timeline items', () => {
+    for (const gone of ['技术详情', 'timeline-technical-details', 'timelineTechnicalDetails', 'timeline-details']) {
+      expect(mainSource).not.toContain(gone);
+    }
+  });
+  it('keeps eventId / sequence / digest on timeline items for export and audit', () => {
+    expect(mainSource).toContain('eventId: event.eventId');
+    expect(mainSource).toContain('eventSequence: event.sequence');
+    expect(mainSource).toMatch(/digest:\s*typeof payload\.digest/);
+  });
+  it('empty filtered history shows a placeholder line', () => {
+    expect(mainSource).toContain('此会话没有对话内容');
+    expect(mainSource).toContain('data-history-empty');
+  });
+  it('export copy mentions 审计记录 instead of 完成报告', () => {
+    expect(mainSource).toContain('回答和审计记录');
+    expect(mainSource).not.toContain('回答和完成报告');
+  });
+  it('history incremental sync also filters conversation items', () => {
+    expect(mainSource).toContain('pageModel.timeline.filter(isConversationTimelineItem)');
+    expect(mainSource).toContain('mergedTimeline.filter(isConversationTimelineItem)');
+  });
+});

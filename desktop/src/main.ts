@@ -2100,22 +2100,6 @@ const timelineBodyDisplay = (item: TimelineItem): string => {
   return item.body;
 };
 
-const timelineTechnicalDetails = (item: TimelineItem): string => {
-  const rows: Array<[string, string | number | undefined]> = [
-    ['事件编号', item.eventId],
-    ['事件序号', item.eventSequence],
-    ['操作编号', item.operationId],
-    ['工具请求', item.toolCallId],
-    ['来源角色', item.sourceRole ? humanizeCode(item.sourceRole, '未标注') : undefined],
-    ['插件版本', item.pluginVersion],
-    ['输出摘要', item.digest ? shortDigest(item.digest) : undefined]
-  ];
-  const visible = rows.filter(([, value]) => value !== undefined && value !== null && String(value) !== '');
-  if (visible.length === 0 && !item.truncated && item.kind !== 'AGENT') return '';
-  if (visible.length === 0 && !item.truncated) return '<details class="timeline-details timeline-technical-details"><summary>技术详情</summary></details>';
-  return `<details class="timeline-details timeline-technical-details"><summary>技术详情</summary><dl>${visible.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}${item.truncated ? '<div><dt>输出状态</dt><dd>内容已截断或脱敏</dd></div>' : ''}</dl></details>`;
-};
-
 const timelineItemHtml = (item: TimelineItem): string => {
   // Codex-style tool cards: only when producer set toolName (no title/evidence heuristics).
   if (item.toolName) {
@@ -2153,7 +2137,6 @@ const timelineItemHtml = (item: TimelineItem): string => {
               <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
               <pre><code>${escapeHtml(item.commandText)}</code></pre>
             </details>` : ''}
-            ${timelineTechnicalDetails(item)}
           </div>
         </article>`;
   }
@@ -2172,7 +2155,6 @@ const timelineItemHtml = (item: TimelineItem): string => {
             </div>
             <div class="timeline-body${item.kind === 'AGENT' ? ' markdown-body' : ''}">${item.kind === 'AGENT' ? renderMarkdown(item.body) : escapeHtml(timelineBodyDisplay(item))}</div>
             ${item.commandText ? `<pre class="timeline-command"><code>${escapeHtml(item.commandText)}</code></pre>` : ''}
-            ${timelineTechnicalDetails(item)}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
         </article>`;
@@ -2349,7 +2331,7 @@ const renderTaskValueSummary = (): string => {
           ${!hasTask && !running ? actionRow('focus-task-input', '输入任务需求', '告诉 Agent 你想得到什么结果', false, true) : ''}
           ${continueAction}
           ${retryAction}
-          ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和完成报告（Markdown）' : '将回答和完成报告导出为 Markdown 文件', taskExportBusy) : ''}
+          ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和审计记录（Markdown）' : '将回答和审计记录导出为 Markdown 文件', taskExportBusy) : ''}
           ${taskActionNotice ? `<div class="settings-message settings-message-success" role="status">${escapeHtml(taskActionNotice)}</div>` : ''}
           ${taskExportNotice ? `<div class="settings-message ${taskExportNotice.error ? 'settings-message-error' : 'settings-message-success'}" role="status" aria-live="polite" data-task-export-notice>${escapeHtml(taskExportNotice.text)}</div>` : ''}
           ${panelDetails('task:options', '用量限制与执行依据', `
@@ -2539,9 +2521,23 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   older.querySelector('span')!.textContent = view.loadingOlder ? '正在加载…' : view.error ? '重试加载' : '加载更早记录';
   // History shows the same conversation items as the live view: lifecycle /
   // audit STATUS rows (任务已创建、任务进度、已准备角色上下文 …) stay in the data
-  // but are not rendered.
-  syncKeyedList(region.querySelector<HTMLElement>('[data-history-items]')!, timelineItems.filter(isConversationTimelineItem),
-    (item) => item.itemId, timelineItemHtml, historyIcons);
+  // but are not rendered. eventId / sequence / digest stay on the items for export and audit.
+  const historyItems = region.querySelector<HTMLElement>('[data-history-items]')!;
+  const visibleHistory = timelineItems.filter(isConversationTimelineItem);
+  syncKeyedList(historyItems, visibleHistory, (item) => item.itemId, timelineItemHtml, historyIcons);
+  const emptyHistory = historyItems.querySelector('[data-history-empty]');
+  if (visibleHistory.length === 0 && !view.loading) {
+    if (!emptyHistory) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'timeline-empty';
+      placeholder.dataset.historyEmpty = '';
+      placeholder.setAttribute('role', 'status');
+      placeholder.textContent = '此会话没有对话内容';
+      historyItems.append(placeholder);
+    }
+  } else {
+    emptyHistory?.remove();
+  }
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) {
     // Keep the editor usable while a directory read is in flight.  The send
@@ -5053,7 +5049,7 @@ const selectThread = async (threadId: string): Promise<void> => {
     model = { ...model, timeline: [] };
     renderHistoryView();
     await syncKeyedListIncrementally(
-      app.querySelector<HTMLElement>('[data-history-items]')!, pageModel.timeline,
+      app.querySelector<HTMLElement>('[data-history-items]')!, pageModel.timeline.filter(isConversationTimelineItem),
       (item) => item.itemId, timelineItemHtml, historyIcons,
       () => historyView !== view || historyRenderSerial !== renderSerial || running);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
@@ -5123,7 +5119,7 @@ const loadOlderHistory = async (): Promise<void> => {
     view.cursor = page.nextCursor;
     renderHistoryView();
     await syncKeyedListIncrementally(
-      app.querySelector<HTMLElement>('[data-history-items]')!, mergedTimeline,
+      app.querySelector<HTMLElement>('[data-history-items]')!, mergedTimeline.filter(isConversationTimelineItem),
       (item) => item.itemId, timelineItemHtml, historyIcons,
       () => historyView !== view || historyRenderSerial !== renderSerial || running);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialReadModel, setActiveThread, setThreads, setWorkspace } from './store';
-import { deduplicateWorkspaceRoots, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './workspace';
+import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './workspace';
 
 describe('workspace root identity and display', () => {
   it('deduplicates Windows spellings while retaining the first native path and distinct folders', () => {
@@ -43,5 +43,29 @@ describe('workspace thread options', () => {
     expect(workspaceThreadOptions(model)).toEqual({});
     expect(workspaceThreadOptions(setActiveThread(model, 'unknown', true))).toEqual({});
     expect(workspaceThreadOptions(setActiveThread(setThreads(createInitialReadModel(), [thread]), thread.id))).toEqual({});
+  });
+});
+
+describe('mergeProjectBookmarksByWorkspaceRoot', () => {
+  it('merges bookmarks that share a workspace root and remaps the dropped id', () => {
+    const { bookmarks, idRemap } = mergeProjectBookmarksByWorkspaceRoot([
+      { id: 'project:c:\\a', name: 'A', path: 'C:\\A', paths: [], lastUsedAtMs: 10 },
+      { id: 'project:dup', name: 'Dup', path: '\\\\?\\C:\\A', paths: ['c:/a/'], lastUsedAtMs: 20 },
+      { id: 'project:c:\\b', name: 'B', path: 'C:\\B', paths: [], lastUsedAtMs: 5 },
+    ]);
+    expect(bookmarks).toHaveLength(2);
+    expect(bookmarks[0]).toMatchObject({ id: 'project:c:\\a', name: 'A', lastUsedAtMs: 20 });
+    expect(deduplicateWorkspaceRoots(bookmarks[0]!.paths)).toEqual(expect.arrayContaining(['C:\\A']));
+    expect(bookmarks[1]!.id).toBe('project:c:\\b');
+    expect(idRemap).toEqual({ 'project:dup': 'project:c:\\a' });
+  });
+
+  it('keeps distinct workspace roots even when display leaf names match', () => {
+    const { bookmarks, idRemap } = mergeProjectBookmarksByWorkspaceRoot([
+      { id: 'one', name: 'hmCodex', path: 'C:\\work\\hmCodex', paths: [], lastUsedAtMs: 1 },
+      { id: 'two', name: 'hmCodex', path: 'D:\\other\\hmCodex', paths: [], lastUsedAtMs: 2 },
+    ]);
+    expect(bookmarks).toHaveLength(2);
+    expect(idRemap).toEqual({});
   });
 });

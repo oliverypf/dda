@@ -189,6 +189,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .project-section-toggle:hover { color: var(--text); }
 .project-section-toggle > svg { width: 13px; height: 13px; }
 .thread-list { display: grid; gap: 3px; min-height: 0; overflow-y: auto; }
+
+.project-list-skeleton { display: grid; gap: 8px; padding: 6px 8px 10px; }
+.project-skeleton-row { display: block; }
+.project-skeleton-bar {
+  display: block; height: 12px; width: 78%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-hover) 0%, var(--border-soft) 50%, var(--surface-hover) 100%);
+  background-size: 200% 100%; animation: project-skeleton-pulse 1.2s ease-in-out infinite;
+}
+.project-skeleton-bar.short { width: 54%; }
+.project-skeleton-label { color: var(--text-muted); font-size: 11px; }
+@keyframes project-skeleton-pulse {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
 .project-group { min-width: 0; }
 .project-header-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
 .project-header-row > .icon-button { flex: 0 0 auto; }

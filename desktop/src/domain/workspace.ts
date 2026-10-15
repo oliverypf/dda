@@ -25,6 +25,53 @@ export const deduplicateWorkspaceRoots = (paths: readonly string[]): string[] =>
   return [...roots.values()];
 };
 
+
+export type ProjectBookmarkLike = {
+  id: string;
+  name: string;
+  path: string;
+  paths?: readonly string[];
+  lastUsedAtMs?: number;
+};
+
+/** Merge catalog entries that share a workspace root (sameWorkspaceRoot). Keeps the first id. */
+export const mergeProjectBookmarksByWorkspaceRoot = <T extends ProjectBookmarkLike>(
+  bookmarks: readonly T[],
+): { bookmarks: T[]; idRemap: Record<string, string> } => {
+  const merged: T[] = [];
+  const idRemap: Record<string, string> = {};
+  for (const item of bookmarks) {
+    if (!item || typeof item.id !== 'string' || typeof item.name !== 'string' || typeof item.path !== 'string') continue;
+    const paths = deduplicateWorkspaceRoots([item.path, ...(Array.isArray(item.paths) ? item.paths : [])]);
+    if (!paths.length) continue;
+    const existing = merged.find((candidate) =>
+      deduplicateWorkspaceRoots([candidate.path, ...(Array.isArray(candidate.paths) ? candidate.paths : [])])
+        .some((left) => paths.some((right) => sameWorkspaceRoot(left, right))));
+    if (!existing) {
+      merged.push({
+        ...item,
+        path: paths[0]!,
+        paths,
+        lastUsedAtMs: Number(item.lastUsedAtMs) || 0,
+      } as T);
+      continue;
+    }
+    if (item.id !== existing.id) idRemap[item.id] = existing.id;
+    const nextPaths = deduplicateWorkspaceRoots([
+      existing.path,
+      ...(Array.isArray(existing.paths) ? existing.paths : []),
+      ...paths,
+    ]);
+    Object.assign(existing, {
+      name: existing.name.trim() || item.name.trim() || existing.name,
+      path: nextPaths[0] ?? existing.path,
+      paths: nextPaths,
+      lastUsedAtMs: Math.max(Number(existing.lastUsedAtMs) || 0, Number(item.lastUsedAtMs) || 0),
+    });
+  }
+  return { bookmarks: merged, idRemap };
+};
+
 export const workspaceRootForDisplay = (path: string): string => path
   .replace(/^\\\\\?\\UNC\\/iu, '\\\\')
   .replace(/^\\\\\?\\/u, '');

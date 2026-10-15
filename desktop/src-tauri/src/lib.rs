@@ -4,7 +4,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
@@ -136,6 +136,13 @@ impl Default for ModelConfig {
     fn default() -> Self {
         default_model_config()
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CatalogRemoteModel {
+    id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -503,6 +510,130 @@ fn save_model_config(config: ModelConfig) -> Result<ModelConfigResponse, String>
         config_path: config_path.to_string_lossy().to_string(),
         exists: true,
     })
+}
+
+fn redact_catalog_message(message: &str) -> String {
+    let lower = message.to_ascii_lowercase();
+    let credential_url = message.contains("://") && message.contains('@');
+    if lower.contains("authorization") || lower.contains("bearer ") || credential_url {
+        return "获取可用模型失败。".to_string();
+    }
+    message.chars().take(240).collect()
+}
+
+fn wait_child_output(mut child: std::process::Child, timeout: Duration) -> Result<std::process::Output, String> {
+    let started = Instant::now();
+    loop {
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("获取可用模型超时。".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|_| "模型目录命令失败。".to_string());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
+            Err(_) => return Err("模型目录命令失败。".to_string()),
+        }
+    }
+}
+
+/// Fetch and catalog writes go through the runtime catalog CLI. They do not
+/// call `save_model_config` / `persist_model_config`.
+fn run_catalog_cli(app: &AppHandle, command: &str, stdin_payload: Option<String>) -> Result<Value, String> {
+    let entry = runtime_entrypoint(app)?;
+    let cli = entry.with_file_name("provider-model-catalog-cli.mjs");
+    if !cli.is_file() {
+        return Err("找不到模型目录命令。".to_string());
+    }
+    let resource_dir = app.path().resource_dir().ok();
+    let mut command_process = runtime_command(&cli, resource_dir.as_deref());
+    if let Ok(config_path) = model_config_path() {
+        command_process.env("DDA_MODEL_CONFIG", &config_path);
+    }
+    command_process
+        .arg(&cli)
+        .arg(command)
+        .stdin(if stdin_payload.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = command_process
+        .spawn()
+        .map_err(|_| "无法启动模型目录命令。".to_string())?;
+    if let Some(payload) = stdin_payload {
+        if payload.len() > 256 * 1024 {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("模型目录校验失败，未写入。".to_string());
+        }
+        if let Some(mut stdin) = child.stdin.take() {
+            if stdin.write_all(payload.as_bytes()).is_err() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("模型目录命令失败。".to_string());
+            }
+        }
+    }
+    let output = wait_child_output(child, Duration::from_secs(35))?;
+    if !output.status.success() && output.stdout.is_empty() {
+        return Err("模型目录命令失败。".to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .rev()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or("");
+    let value = serde_json::from_str::<Value>(line).map_err(|_| "模型目录命令失败。".to_string())?;
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        let message = value
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("模型目录命令失败。");
+        return Err(redact_catalog_message(message));
+    }
+    if !output.status.success() {
+        return Err("模型目录命令失败。".to_string());
+    }
+    Ok(value)
+}
+
+#[tauri::command]
+async fn provider_model_catalog(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_catalog_cli(&app, "show", None))
+        .await
+        .map_err(|_| "读取模型目录失败。".to_string())?
+}
+
+#[tauri::command]
+async fn fetch_provider_models(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_catalog_cli(&app, "fetch", None))
+        .await
+        .map_err(|_| "获取可用模型失败。".to_string())?
+}
+
+#[tauri::command]
+async fn save_provider_model_catalog(
+    app: AppHandle,
+    provider_key: String,
+    checked_ids: Vec<String>,
+    remote: Vec<CatalogRemoteModel>,
+) -> Result<Value, String> {
+    if checked_ids.len() > 256 || remote.len() > 512 || provider_key.len() > 80 {
+        return Err("模型目录校验失败，未写入。".to_string());
+    }
+    let payload = serde_json::to_string(&serde_json::json!({
+        "providerKey": provider_key,
+        "checkedIds": checked_ids,
+        "remote": remote
+    }))
+    .map_err(|_| "模型目录校验失败，未写入。".to_string())?;
+    tauri::async_runtime::spawn_blocking(move || run_catalog_cli(&app, "save", Some(payload)))
+        .await
+        .map_err(|_| "模型目录写入失败，未修改配置。".to_string())?
 }
 
 fn persist_model_config(config_path: &Path, config: &ModelConfig) -> Result<(), String> {
@@ -3088,6 +3219,9 @@ pub fn run() {
             runtime_snapshot,
             model_config,
             save_model_config,
+            provider_model_catalog,
+            fetch_provider_models,
+            save_provider_model_catalog,
             configured_model_ids,
             runtime_process_status,
             context_sidecar_status,
@@ -3312,6 +3446,32 @@ mod tests {
         assert_eq!(saved["models"][0]["modelId"], "backup");
         assert_eq!(saved["roleBindings"]["executor"], "backup");
         assert!(saved.get("verifier").is_none());
+    }
+
+    #[test]
+    fn model_config_save_preserves_provider_model_catalogs() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("model-config.json");
+        fs::write(
+            &path,
+            r#"{"schemaVersion":"1.0","provider":"deepseek","protocol":"deepseek-harness","model":"deepseek-chat","baseURL":"https://api.deepseek.com","apiKeyEnv":"DEEPSEEK_API_KEY","headers":{"X-Tenant":"a"},"sessionHeader":"x-session","models":[{"modelId":"keep-me"}],"roleBindings":{"executor":"keep-me"},"providerModelCatalogs":[{"providerKey":"opencode-go","models":[{"id":"old","displayName":"Old"}]}]}"#,
+        )
+        .unwrap();
+        let mut config = default_model_config();
+        config.model = "changed-model".to_string();
+        persist_model_config(&path, &config).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["model"], "changed-model");
+        assert_eq!(saved["providerModelCatalogs"][0]["providerKey"], "opencode-go");
+        assert_eq!(saved["providerModelCatalogs"][0]["models"][0]["displayName"], "Old");
+        assert_eq!(saved["models"][0]["modelId"], "keep-me");
+        assert_eq!(saved["roleBindings"]["executor"], "keep-me");
+        assert_eq!(saved["headers"]["X-Tenant"], "a");
+        assert_eq!(redact_catalog_message("Bearer sk-secret"), "获取可用模型失败。");
+        assert_eq!(
+            redact_catalog_message("获取可用模型失败（HTTP 404）。"),
+            "获取可用模型失败（HTTP 404）。"
+        );
     }
 
     #[test]

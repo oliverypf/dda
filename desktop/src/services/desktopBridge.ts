@@ -26,6 +26,12 @@ import type {
   RuntimeTimelinePage
 } from '../domain/models';
 import type { ModelConfig, ModelConfigResponse } from '../domain/models';
+import {
+  PROVIDER_CATALOG_COMMANDS,
+  type ProviderCatalogFetchResult,
+  type ProviderCatalogSaveResult,
+  type ProviderCatalogSnapshot
+} from '../domain/provider-catalog-session';
 
 // Tauri injects the `isTauri` marker before the page scripts run.  Checking
 // the internal IPC object directly is tempting, but it is not a stable public
@@ -84,6 +90,21 @@ export const desktopBridge = {
   async saveModelConfig(config: ModelConfig): Promise<ModelConfigResponse> {
     if (!isTauriRuntime()) throw new Error('Web 预览不支持保存模型配置');
     return invoke<ModelConfigResponse>('save_model_config', { config });
+  },
+
+  async providerModelCatalog(): Promise<ProviderCatalogSnapshot | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    return invoke<ProviderCatalogSnapshot>(PROVIDER_CATALOG_COMMANDS.show);
+  },
+
+  async fetchProviderModels(): Promise<ProviderCatalogFetchResult> {
+    if (!isTauriRuntime()) throw new Error('Web 预览不支持获取可用模型');
+    return invoke<ProviderCatalogFetchResult>(PROVIDER_CATALOG_COMMANDS.fetch);
+  },
+
+  async saveProviderModelCatalog(payload: { providerKey: string; checkedIds: string[]; remote: Array<{ id: string; name?: string }> }): Promise<ProviderCatalogSaveResult> {
+    if (!isTauriRuntime()) throw new Error('Web 预览不支持保存模型目录');
+    return invoke<ProviderCatalogSaveResult>(PROVIDER_CATALOG_COMMANDS.save, payload);
   },
 
   async desktopSettings(): Promise<{ experimentalCodeCells: boolean; settingsPath: string } | undefined> {

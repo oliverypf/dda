@@ -82,6 +82,17 @@ import {
   upsertSubAgent
 } from './domain/store';
 import { desktopBridge, type ThreadEventPage } from './services/desktopBridge';
+import {
+  applyCatalogSnapshot,
+  applySavedCatalog,
+  beginCatalogFetch,
+  catalogConfirmWrite,
+  dismissCatalogPicker,
+  emptyCatalogSession,
+  failCatalogFetch,
+  succeedCatalogFetch,
+  type CatalogSession
+} from './domain/provider-catalog-session';
 import type { RuntimeEvent, WorkspaceGrant } from './domain/models';
 import { formatVerifierFormValues, parseVerifierFormValues } from './domain/verifier-config';
 import { syncKeyedList, syncKeyedListIncrementally, syncRegionContent } from './ui/keyed-list';
@@ -414,6 +425,7 @@ let settingsConfig: ModelConfig | undefined;
 const settingsSections = {
   connection: { title: '连接与身份', description: '查看当前平台、runtime 健康和配置来源。敏感值只显示状态。', icon: 'heart-pulse' },
   model: { title: '角色与模型', description: '选择模型服务与连接方式。保存后从下一次任务开始生效。', icon: 'cpu' },
+  catalog: { title: '模型目录', description: '查看当前模型连接这一家的模型目录，获取可用模型后勾选写入。', icon: 'database' },
   routing: { title: '模型与路由', description: '查看每次任务的路由决策、候选方案与未采用原因，以及累计缓存命中率和成本。', icon: 'list-tree' },
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
   workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
@@ -436,6 +448,11 @@ let desktopCellsSettingsError = '';
 let desktopCellsSettingsPath = '';
 let settingsSearch = '';
 let settingsDraft: Record<string, string> | undefined;
+let catalogSession: CatalogSession = emptyCatalogSession();
+let catalogLoaded = false;
+let catalogLoading = false;
+let catalogSaving = false;
+let catalogPickerDialog: HTMLDialogElement | undefined;
 
 interface ProjectBookmark {
   id: string;
@@ -778,6 +795,9 @@ const syncSettingsView = (): void => {
     if (section === 'cells' && !panel.hidden && !desktopCellsSettingsLoaded && !desktopCellsSettingsLoading) {
       void loadDesktopCellsSettings();
     }
+    if (section === 'catalog' && !panel.hidden && !catalogLoaded && !catalogLoading) {
+      void loadProviderCatalog();
+    }
     if (!panel.hidden) matches++;
   });
   dialog.querySelectorAll<HTMLElement>('[data-action="settings-section"]').forEach((button) => {
@@ -790,7 +810,7 @@ const syncSettingsView = (): void => {
   if (modelStack) {
     // 归档是本机列表数据：模型配置读取失败或尚未配置时也必须能进入。
     const modelPanels = [...modelStack.querySelectorAll<HTMLElement>('[data-settings-panel]')];
-    modelStack.hidden = query ? modelPanels.every((panel) => panel.hidden) : settingsSection === 'archive';
+    modelStack.hidden = query ? modelPanels.every((panel) => panel.hidden) : settingsSection === 'archive' || settingsSection === 'catalog';
   }
   const empty = dialog.querySelector<HTMLElement>('[data-settings-empty]');
   if (empty) empty.hidden = !query || matches > 0;
@@ -970,6 +990,135 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
     <p class="settings-hint">${escapeHtml(settingsSections[section].description)} 当前页面只展示状态；需要副作用的变更仍从对应流程进入并保留审计记录。</p>
   </section>`;
 }
+function renderProviderCatalogPanel(): string {
+  const rows = catalogSession.models;
+  const providerLabel = catalogSession.providerKey || '未能识别';
+  const fetchDisabled = catalogSession.fetching || catalogSaving || Boolean(catalogSession.picker) || !desktopBridge.isNative();
+  const rowHtml = rows.length
+    ? rows.map((model) => `<div class="catalog-list-row"><strong>${escapeHtml(model.displayName || model.id)}</strong><code>${escapeHtml(model.id)}</code></div>`).join('')
+    : '<div class="catalog-list-row catalog-list-empty"><span>这一家还没有模型目录。</span></div>';
+  const notice = catalogSession.notice
+    ? `<div class="settings-message ${catalogSession.noticeTone === 'success' ? 'settings-message-success' : 'settings-message-error'}" role="status">${escapeHtml(catalogSession.notice)}</div>`
+    : '';
+  return `<section class="settings-group" id="settings-panel-catalog" data-settings-panel="catalog" aria-label="${escapeHtml(settingsSections.catalog.title)}">
+    <h3>模型目录</h3>
+    <div class="settings-card">
+      <div class="settings-field settings-field-readonly"><span>当前提供方</span><output>${catalogLoading ? '正在读取…' : escapeHtml(providerLabel)}</output></div>
+      ${rowHtml}
+      <div class="settings-field catalog-fetch-field"><span>获取可用模型</span><button class="secondary-button" type="button" data-action="fetch-provider-models" ${fetchDisabled ? 'disabled' : ''}>${catalogSession.fetching ? '正在获取…' : '获取可用模型'}</button></div>
+    </div>
+    ${notice}
+    <p class="settings-hint">只拉取当前模型连接这一家。勾选确认后写入这一家的模型目录；取消或关闭不写入。已有显示名会保留。这里不会提交「模型连接」。</p>
+  </section>`;
+}
+
+function removeCatalogPickerDialog(): void {
+  catalogPickerDialog?.close();
+  catalogPickerDialog?.remove();
+  catalogPickerDialog = undefined;
+}
+
+function cancelCatalogPicker(): void {
+  if (catalogSaving) return;
+  catalogSession = dismissCatalogPicker(catalogSession);
+  removeCatalogPickerDialog();
+  render();
+}
+
+function openCatalogPickerDialog(): void {
+  if (catalogPickerDialog?.open || !catalogSession.picker) return;
+  const picker = catalogSession.picker;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'approval-confirmation catalog-picker';
+  dialog.setAttribute('aria-labelledby', 'catalog-picker-title');
+  const rows = picker.rows.map((row) => `<label class="catalog-picker-row"><input type="checkbox" value="${escapeHtml(row.id)}" ${row.checked ? 'checked' : ''}><span><strong>${escapeHtml(row.displayName)}</strong><code>${escapeHtml(row.id)}</code>${row.localOnly ? '<small>仅在本地目录</small>' : ''}</span></label>`).join('');
+  dialog.innerHTML = `
+    <h2 id="catalog-picker-title">获取可用模型</h2>
+    <p>勾选要写入「${escapeHtml(picker.providerKey)}」目录的模型。取消勾选并确认才会从目录移除该项。</p>
+    <div class="catalog-picker-list">${rows || '<p>这一家没有返回模型。</p>'}</div>
+    <p class="catalog-picker-error" role="alert" hidden></p>
+    <div class="approval-confirmation-actions">
+      <button class="secondary-button" type="button" data-catalog-picker="cancel" autofocus>取消</button>
+      <button class="primary-action" type="button" data-catalog-picker="confirm">确认</button>
+    </div>`;
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    cancelCatalogPicker();
+  });
+  dialog.addEventListener('click', (event) => {
+    const choice = (event.target as Element).closest<HTMLElement>('[data-catalog-picker]')?.dataset.catalogPicker;
+    if (choice === 'cancel') cancelCatalogPicker();
+    if (choice === 'confirm') void commitCatalogPicker(dialog);
+  });
+  catalogPickerDialog = dialog;
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+async function commitCatalogPicker(dialog: HTMLDialogElement): Promise<void> {
+  if (catalogSaving) return;
+  const decision = catalogConfirmWrite(catalogSession, [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')].map((input) => input.value));
+  if (decision.kind !== 'write') {
+    cancelCatalogPicker();
+    return;
+  }
+  catalogSaving = true;
+  dialog.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+  const errorNode = dialog.querySelector<HTMLElement>('.catalog-picker-error');
+  try {
+    const saved = await desktopBridge.saveProviderModelCatalog(decision.payload);
+    catalogSession = applySavedCatalog(catalogSession, saved.models);
+    catalogLoaded = true;
+    removeCatalogPickerDialog();
+  } catch (error) {
+    catalogSaving = false;
+    dialog.querySelectorAll('button').forEach((button) => { button.disabled = false; });
+    if (errorNode) {
+      errorNode.hidden = false;
+      errorNode.textContent = compactError(error);
+    }
+    return;
+  }
+  catalogSaving = false;
+  render();
+}
+
+async function loadProviderCatalog(): Promise<void> {
+  if (catalogLoading) return;
+  catalogLoading = true;
+  render();
+  try {
+    const snapshot = await desktopBridge.providerModelCatalog();
+    if (!snapshot) {
+      catalogSession = applyCatalogSnapshot(catalogSession, { ok: true, providerKey: '', models: [], warning: 'Web 预览不支持获取可用模型。' });
+    } else {
+      catalogSession = applyCatalogSnapshot(catalogSession, snapshot);
+    }
+    catalogLoaded = true;
+  } catch (error) {
+    catalogSession = { ...catalogSession, notice: compactError(error), noticeTone: 'error' };
+  } finally {
+    catalogLoading = false;
+    render();
+  }
+}
+
+async function fetchProviderCatalog(): Promise<void> {
+  const decision = beginCatalogFetch(catalogSession);
+  if (decision.kind === 'blocked') return;
+  catalogSession = decision.session;
+  render();
+  try {
+    const result = await desktopBridge.fetchProviderModels();
+    catalogSession = succeedCatalogFetch(catalogSession, result);
+    render();
+    openCatalogPickerDialog();
+  } catch (error) {
+    catalogSession = failCatalogFetch(catalogSession, compactError(error));
+    render();
+  }
+}
+
 const workspaceDisplayPath = (rootPath: string | undefined, rootLabel: string, currentPath: string): string => {
   const root = rootPath?.trim() || rootLabel;
   if (!currentPath) return root;
@@ -1088,6 +1237,7 @@ const renderSettingsModal = (): string => {
               </footer></div>
             </form>`}
         </div>
+        <div class="settings-form settings-catalog">${renderProviderCatalogPanel()}</div>
         <div class="settings-form settings-archive">${renderSettingsArchivePanel()}</div>
         <p class="settings-empty" data-settings-empty hidden>没有找到匹配的设置，请尝试“已归档”“模型”或“验证”。</p>
       </div></section>
@@ -1096,6 +1246,11 @@ const renderSettingsModal = (): string => {
 
 const openSettings = async (): Promise<void> => {
   if (settingsLoading || settingsSaving) return;
+  catalogSession = emptyCatalogSession();
+  catalogLoaded = false;
+  catalogLoading = false;
+  catalogSaving = false;
+  removeCatalogPickerDialog();
   settingsConfig = undefined;
   settingsDraft = undefined;
   settingsSearch = '';
@@ -5576,8 +5731,10 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
 };
 
 function closeSettings(): void {
-  if (settingsSaving) return;
+  if (settingsSaving || catalogSaving) return;
   settingsVisible = false;
+  catalogSession = dismissCatalogPicker(catalogSession);
+  removeCatalogPickerDialog();
   pinNoticeSession.close();
   settingsError = '';
   settingsSaved = false;
@@ -5621,6 +5778,10 @@ app.addEventListener('click', (event) => {
   if (action === 'view-cell-journal') {
     const path = actionElement?.closest('.timeline-cell-unknown')?.querySelector<HTMLElement>('.cell-journal-path');
     path?.focus();
+    return;
+  }
+  if (action === 'fetch-provider-models') {
+    void fetchProviderCatalog();
     return;
   }
   if (action === 'settings-section') {
@@ -6019,6 +6180,13 @@ app.addEventListener('input', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !catalogPickerDialog) return;
+  event.preventDefault();
+  event.stopPropagation();
+  cancelCatalogPicker();
+}, true);
+
+document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && projectEditDialog) {
     event.preventDefault();
     projectEditDialog = undefined;
@@ -6054,7 +6222,7 @@ document.addEventListener('keydown', (event) => {
       first?.focus();
     }
   }
-  if (event.key === 'Escape' && settingsVisible && !settingsSaving) {
+  if (event.key === 'Escape' && settingsVisible && !settingsSaving && !catalogSaving) {
     closeSettings();
   }
 });
@@ -6175,6 +6343,9 @@ app.addEventListener('submit', (event) => {
       settingsConfigPath = response.configPath;
       settingsDraft = undefined;
       settingsSaved = true;
+      catalogLoaded = false;
+      catalogSession = dismissCatalogPicker(catalogSession);
+      removeCatalogPickerDialog();
       const snapshot = await desktopBridge.runtimeSnapshot();
       if (snapshot) model = setRuntimeReady(model, snapshot);
     }).catch((error) => {

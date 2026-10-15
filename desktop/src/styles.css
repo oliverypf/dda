@@ -388,6 +388,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .settings-save-area { display: grid; gap: 14px; }
 .settings-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 .settings-actions .send-button, .settings-actions .secondary-button { width: auto; min-height: 38px; padding: 0 16px; }
+.catalog-list-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 12px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border-soft); }
+.catalog-list-row strong, .catalog-list-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-list-row code { color: var(--text-muted); font-size: 12px; }
+.catalog-list-empty { color: var(--text-muted); }
+.catalog-fetch-field .secondary-button { justify-self: end; width: auto; min-height: 36px; }
+.catalog-picker-list { display: grid; max-height: min(420px, 50vh); margin: 12px 0 16px; overflow: auto; }
+.catalog-picker-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.catalog-picker-row span { display: grid; gap: 2px; min-width: 0; }
+.catalog-picker-row code, .catalog-picker-row small { color: var(--text-muted); font-size: 12px; }
+.catalog-picker-error { margin: 0 0 12px; color: var(--red); }
 .settings-empty { padding: 44px 0; color: var(--text-soft); font-size: 14px; }
 
 .run-strip {

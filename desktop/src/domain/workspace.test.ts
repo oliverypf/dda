@@ -50,7 +50,7 @@ describe('mergeProjectBookmarksByWorkspaceRoot', () => {
   it('merges bookmarks that share a workspace root and remaps the dropped id', () => {
     const { bookmarks, idRemap } = mergeProjectBookmarksByWorkspaceRoot([
       { id: 'project:c:\\a', name: 'A', path: 'C:\\A', paths: [], lastUsedAtMs: 10 },
-      { id: 'project:dup', name: 'Dup', path: '\\?\C:\A', paths: ['c:/a/'], lastUsedAtMs: 20 },
+      { id: 'project:dup', name: 'Dup', path: '\\\\?\\C:\\A', paths: [], lastUsedAtMs: 20 },
       { id: 'project:c:\\b', name: 'B', path: 'C:\\B', paths: [], lastUsedAtMs: 5 },
     ]);
     expect(bookmarks).toHaveLength(2);

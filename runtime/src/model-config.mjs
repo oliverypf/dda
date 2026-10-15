@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { normalizeCustomInstructions } from './custom-instructions.mjs';
 import { normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
 import { createPlatformPaths } from './platform/paths.mjs';
+import { validateProviderModelCatalogs } from './provider-model-catalog.mjs';
 
 // The continuous-verifier budget and criteria are operator configuration, not
 // constants. They are validated by the same normaliser the verifier itself
@@ -87,7 +88,8 @@ const ALLOWED_KEYS = new Set([
   'models',
   'roleBindings',
   'verifier',
-  'decision'
+  'decision',
+  'providerModelCatalogs'
 ]);
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$/;
@@ -370,7 +372,8 @@ export const validateModelConfig = (input) => {
     }),
     ...(input.roleBindings === undefined ? {} : { roleBindings: validateRoleBindings(input.roleBindings) }),
     ...(input.verifier === undefined ? {} : { verifier: validateVerifierConfig(input.verifier) }),
-    ...(input.decision === undefined ? {} : { decision: validateDecisionConfig(input.decision) })
+    ...(input.decision === undefined ? {} : { decision: validateDecisionConfig(input.decision) }),
+    ...(input.providerModelCatalogs === undefined ? {} : { providerModelCatalogs: validateProviderModelCatalogs(input.providerModelCatalogs) })
   };
 };
 
@@ -498,7 +501,8 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     ...(Array.isArray(fileConfig.models) ? { models: clone(fileConfig.models) } : {}),
     ...(fileConfig.roleBindings ? { roleBindings: clone(fileConfig.roleBindings) } : {}),
     ...(fileConfig.verifier ? { verifier: clone(fileConfig.verifier) } : {}),
-    ...(fileConfig.decision ? { decision: clone(fileConfig.decision) } : {})
+    ...(fileConfig.decision ? { decision: clone(fileConfig.decision) } : {}),
+    ...(Array.isArray(fileConfig.providerModelCatalogs) ? { providerModelCatalogs: clone(fileConfig.providerModelCatalogs) } : {})
   };
   const resolved = validateModelConfig(candidate);
   if (isDeepSeek) resolved.protocol = 'deepseek-harness';

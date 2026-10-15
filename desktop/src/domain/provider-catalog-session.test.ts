@@ -90,9 +90,14 @@ describe('provider catalog settings surface', () => {
     );
     expect(rolesField).toContain('获取可用模型');
     expect(rolesField).toContain('provider-catalog-model-options');
+    expect(rolesField).toContain('data-catalog-model-combobox');
+    expect(rolesField).toContain('data-action="toggle-catalog-model-list"');
+    expect(rolesField).toContain('data-action="pick-catalog-model"');
     expect(rolesField).toContain('不在目录');
     expect(rolesField).toContain('catalogModelLabel');
     expect(rolesField).toContain('modelMissingFromCatalog');
+    expect(rolesField).not.toContain('<datalist');
+    expect(rolesField).not.toContain('list="provider-catalog-model-options"');
     expect(panel).toContain('data-settings-panel="catalog"');
     expect(panel).toContain('获取可用模型');
     expect(panel).not.toContain('添加提供方');
@@ -114,11 +119,12 @@ describe('provider catalog settings surface', () => {
   });
 
   it('closes the catalog dialog on Escape without writing', () => {
-    const capture = mainSource.indexOf("if (event.key !== 'Escape' || !catalogPickerDialog) return;");
+    const capture = mainSource.indexOf("if (event.key !== 'Escape') return;");
     expect(capture).toBeGreaterThan(-1);
     const captureEnd = mainSource.indexOf('}, true);', capture);
     const captureBlock = mainSource.slice(capture, captureEnd);
     expect(captureBlock).toContain('stopPropagation()');
+    expect(captureBlock).toContain('setCatalogModelListOpen(false)');
     expect(captureBlock).toContain('cancelCatalogPicker()');
     expect(captureBlock).not.toContain('saveProviderModelCatalog');
     expect(captureBlock).not.toContain('save_model_config');

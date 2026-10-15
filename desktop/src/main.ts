@@ -995,18 +995,70 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
 function renderRolesModelField(config: ModelConfig): string {
   const modelValue = config.model ?? '';
   const missing = modelMissingFromCatalog(modelValue, catalogSession.models, catalogLoaded);
-  const options = catalogSession.models
-    .map((entry) => `<option value="${escapeHtml(entry.id)}" label="${escapeHtml(catalogModelLabel(entry))}"></option>`)
-    .join('');
+  const listItems = catalogSession.models.length
+    ? catalogSession.models
+        .map((entry) => {
+          const label = catalogModelLabel(entry);
+          const showId = label !== entry.id;
+          return `<li role="option"><button type="button" class="catalog-model-option" data-action="pick-catalog-model" data-model-id="${escapeHtml(entry.id)}"><strong>${escapeHtml(label)}</strong>${showId ? `<code>${escapeHtml(entry.id)}</code>` : ''}</button></li>`;
+        })
+        .join('')
+    : '<li class="catalog-model-empty" role="presentation"><span>这一家还没有模型目录。</span></li>';
   const fetchDisabled =
     catalogSession.fetching ||
     catalogSaving ||
     settingsSaving ||
     Boolean(catalogSession.picker) ||
     !desktopBridge.isNative();
-  return `<label class="settings-field"><span>模型</span><input name="model" list="provider-catalog-model-options" value="${escapeHtml(modelValue)}" required maxlength="200" placeholder="例如 gpt-5.2-codex" autocomplete="off"><datalist id="provider-catalog-model-options">${options}</datalist>${missing ? '<small class="catalog-model-missing">不在目录</small>' : ''}</label>
+  return `<div class="settings-field catalog-model-field"><span>模型</span><div class="catalog-model-combobox" data-catalog-model-combobox>
+                <div class="catalog-model-control">
+                  <input name="model" value="${escapeHtml(modelValue)}" required maxlength="200" placeholder="例如 gpt-5.2-codex" autocomplete="off" data-role="catalog-model-input" aria-autocomplete="list" aria-controls="provider-catalog-model-options" aria-expanded="false">
+                  <button type="button" class="catalog-model-toggle" data-action="toggle-catalog-model-list" aria-label="打开模型目录" aria-controls="provider-catalog-model-options" aria-expanded="false"><i data-lucide="chevron-down"></i></button>
+                </div>
+                <ul id="provider-catalog-model-options" class="catalog-model-list" data-catalog-model-list hidden role="listbox">${listItems}</ul>
+                <small class="catalog-model-missing"${missing ? '' : ' hidden'}>不在目录</small>
+              </div></div>
               <div class="settings-field catalog-fetch-field"><span>获取可用模型</span><button class="secondary-button" type="button" data-action="fetch-provider-models" ${fetchDisabled ? 'disabled' : ''}>${catalogSession.fetching ? '正在获取…' : '获取可用模型'}</button></div>
-              <p class="settings-hint">目录来自已保存的模型连接；改 Provider / URL 后先保存，选项才会换一家。获取可用模型只更新目录，不会改上方模型值。</p>`;
+              <p class="settings-hint">目录来自已保存的模型连接；改 Provider / URL 后先保存，选项才会换一家。获取可用模型只更新目录，不会改上方模型值。点开箭头始终列出完整目录；也可手输。</p>`;
+}
+
+function catalogModelComboboxRoot(): HTMLElement | null {
+  return app?.querySelector<HTMLElement>('[data-catalog-model-combobox]') ?? null;
+}
+
+function setCatalogModelListOpen(open: boolean): void {
+  const root = catalogModelComboboxRoot();
+  if (!root) return;
+  const list = root.querySelector<HTMLElement>('[data-catalog-model-list]');
+  const input = root.querySelector<HTMLInputElement>('[data-role="catalog-model-input"]');
+  const toggle = root.querySelector<HTMLButtonElement>('[data-action="toggle-catalog-model-list"]');
+  if (!list) return;
+  list.hidden = !open;
+  const expanded = open ? 'true' : 'false';
+  input?.setAttribute('aria-expanded', expanded);
+  toggle?.setAttribute('aria-expanded', expanded);
+}
+
+function syncCatalogModelMissingHint(input?: HTMLInputElement | null): void {
+  const root = catalogModelComboboxRoot();
+  if (!root) return;
+  const field = input ?? root.querySelector<HTMLInputElement>('[data-role="catalog-model-input"]');
+  const hint = root.querySelector<HTMLElement>('.catalog-model-missing');
+  if (!field || !hint) return;
+  hint.hidden = !modelMissingFromCatalog(field.value, catalogSession.models, catalogLoaded);
+}
+
+function pickCatalogModel(modelId: string): void {
+  const root = catalogModelComboboxRoot();
+  const input = root?.querySelector<HTMLInputElement>('[data-role="catalog-model-input"]');
+  if (!input) return;
+  input.value = modelId;
+  syncCatalogModelMissingHint(input);
+  setCatalogModelListOpen(false);
+  captureSettingsDraft();
+  settingsSaved = false;
+  app?.querySelector('.settings-message-success')?.remove();
+  input.focus({ preventScroll: true });
 }
 
 function renderProviderCatalogPanel(): string {
@@ -5773,6 +5825,11 @@ app.addEventListener('pointerover', (event) => {
 
 app.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target : undefined;
+  const combobox = catalogModelComboboxRoot();
+  if (combobox && target && !combobox.contains(target)) {
+    const list = combobox.querySelector<HTMLElement>('[data-catalog-model-list]');
+    if (list && !list.hidden) setCatalogModelListOpen(false);
+  }
   if (target?.classList.contains('settings-backdrop') && !settingsSaving) {
     closeSettings();
     return;
@@ -5803,6 +5860,18 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'fetch-provider-models') {
     void fetchProviderCatalog();
+    return;
+  }
+  if (action === 'toggle-catalog-model-list') {
+    event.preventDefault();
+    const list = catalogModelComboboxRoot()?.querySelector<HTMLElement>('[data-catalog-model-list]');
+    setCatalogModelListOpen(Boolean(list?.hidden));
+    return;
+  }
+  if (action === 'pick-catalog-model') {
+    event.preventDefault();
+    const modelId = actionElement?.dataset.modelId ?? '';
+    if (modelId) pickCatalogModel(modelId);
     return;
   }
   if (action === 'settings-section') {
@@ -6193,6 +6262,9 @@ app.addEventListener('input', (event) => {
     memoryEditError = '';
     return;
   }
+  if (target.matches('[data-role="catalog-model-input"]')) {
+    syncCatalogModelMissingHint(target);
+  }
   if (target.closest('[data-form="model-settings"]')) {
     captureSettingsDraft();
     settingsSaved = false;
@@ -6201,7 +6273,15 @@ app.addEventListener('input', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || !catalogPickerDialog) return;
+  if (event.key !== 'Escape') return;
+  const list = catalogModelComboboxRoot()?.querySelector<HTMLElement>('[data-catalog-model-list]');
+  if (list && !list.hidden) {
+    event.preventDefault();
+    event.stopPropagation();
+    setCatalogModelListOpen(false);
+    return;
+  }
+  if (!catalogPickerDialog) return;
   event.preventDefault();
   event.stopPropagation();
   cancelCatalogPicker();

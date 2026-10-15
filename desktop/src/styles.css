@@ -393,6 +393,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .catalog-list-row code { color: var(--text-muted); font-size: 12px; }
 .catalog-list-empty { color: var(--text-muted); }
 .catalog-fetch-field .secondary-button { justify-self: end; width: auto; min-height: 36px; }
+.catalog-model-missing { color: var(--text-muted); margin-top: 6px; display: inline-block; }
 .catalog-picker-list { display: grid; max-height: min(420px, 50vh); margin: 12px 0 16px; overflow: auto; }
 .catalog-picker-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .catalog-picker-row span { display: grid; gap: 2px; min-width: 0; }

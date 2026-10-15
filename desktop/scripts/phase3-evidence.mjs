@@ -18,7 +18,9 @@ const checks = {
   'S3-04-approval-workbench': s.includes('renderApprovalCard') && s.includes('workbench-approvals'),
   'S3-05-timeline-evidence': s.includes('timeline-details') && s.includes('evidenceKind'),
   'S3-05-terminal-panel': s.includes('renderEvidencePanel') && s.includes('evidence-panel'),
-  'S3-05-verifier-unknown-not-success': s.includes("payload.status === 'UNKNOWN' || payload.status === 'ABSTAIN' ? 'PENDING'") && s.includes('data-verification-unknown'),
+  // The 完成报告/质量检查 panels (data-verification-unknown) were removed from the UI; UNKNOWN/ABSTAIN
+  // verdicts still map to PENDING (never COMPLETE), and failures surface as a timeline reason line.
+  'S3-05-verifier-unknown-not-success': s.includes("payload.status === 'FAIL' ? 'ERROR' : payload.status === 'PASS' ? 'COMPLETE' : 'PENDING'") && s.includes('evidenceKind: VERIFICATION_FAILURE_REASON'),
   'S3-06-runs-page': s.includes('renderRunsPage') && s.includes('runsPage') && s.includes('focus-run'),
   'S3-06-run-focus-persist': s.includes('hmcodex.focusedRunId') && s.includes("localStorage.getItem('hmcodex.focusedRunId')"),
   'S3-06-decision-dag-workbench': s.includes('renderDecisionTrace'),

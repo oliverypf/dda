@@ -677,10 +677,11 @@ const suite = async (client) => {
       assert((await text(client, 'body')).includes('工具执行完成'), 'upgraded tool completion rendered');
       return `FAILED -> retry strong-executor-fixture -> SUCCEEDED; ${after.strongCalls} strong calls; actual file evidence received`;
     });
-    await runTest('T14 任务价值摘要六项操作入口', async () => {
+    await runTest('T14 任务价值摘要五项操作入口', async () => {
       await waitFor(client, `Boolean(document.querySelector('.task-value-section'))`, { timeout: 30000, label: 'task value summary' });
-      const actions = ['continue-task', 'view-verification', 'set-task-budget', 'view-decisions', 'retry-task', 'export-task-result'];
+      const actions = ['continue-task', 'set-task-budget', 'view-decisions', 'retry-task', 'export-task-result'];
       for (const action of actions) assert(await exists(client, `[data-action="${action}"]`), `${action} action`);
+      assert(!(await exists(client, '[data-action="view-verification"]')), '查看完成报告 entry removed');
       assert((await text(client, '.task-value-section')).includes('任务预算'), 'budget summary');
 
       // Drive the budget prompts deterministically, then verify the saved
@@ -694,9 +695,6 @@ const suite = async (client) => {
       assert((await text(client, '.task-value-section')).includes('4 轮工具'), 'tool round budget rendered');
       assert((await text(client, '.task-value-section')).includes('费用 ≤ 0.25'), 'cost budget rendered');
 
-      assert((await click(client, '[data-action="view-verification"]')) === 'CLICKED', 'verification action');
-      await waitFor(client, `Boolean(document.querySelector('.context-panel'))`, { label: 'verification context' });
-      assert(!(await text(client, 'body')).includes('界面渲染出错'), 'no render error after verification action');
       assert((await click(client, '[data-action="view-decisions"]')) === 'CLICKED', 'decision action');
       await waitFor(client, `Boolean(document.querySelector('.context-panel'))`, { label: 'decision context' });
 

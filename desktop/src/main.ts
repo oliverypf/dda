@@ -55,7 +55,7 @@ import {
 } from './domain/windows-desktop-cells';
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
-import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
+import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, remapProjectArchiveIds, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
 import type { HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
   ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
 import {
@@ -524,7 +524,7 @@ const writeProjectArchive = (id: string, record: ProjectArchiveRecord | null): b
 };
 const projectArchiveBlocked = (id: string): boolean => Boolean(id) && (running || liveTaskRunning()) && currentProjectId() === id;
 const PROJECTLESS_ID = '__projectless__';
-const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: string[]; lastId: string; changed: boolean } => {
+const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: string[]; lastId: string; changed: boolean; idRemap: Record<string, string> } => {
   let raw: ProjectBookmark[] = [];
   try {
     const value = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) ?? '[]') as unknown;
@@ -558,7 +558,7 @@ const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: stri
         || JSON.stringify(before.paths ?? []) !== JSON.stringify(project.paths)
         || Number(before.lastUsedAtMs) !== Number(project.lastUsedAtMs);
     });
-  return { catalog: bookmarks as ProjectBookmark[], orderIds, lastId, changed };
+  return { catalog: bookmarks as ProjectBookmark[], orderIds, lastId, changed, idRemap };
 };
 const initialProjectCatalogState = loadProjectCatalogState();
 let projectCatalog: ProjectBookmark[] = initialProjectCatalogState.catalog;
@@ -569,6 +569,13 @@ if (initialProjectCatalogState.changed) {
   try { localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(projectOrderIds)); } catch { /* storage may be unavailable */ }
   if (lastProjectId) {
     try { localStorage.setItem(LAST_PROJECT_STORAGE_KEY, lastProjectId); } catch { /* storage may be unavailable */ }
+  }
+}
+{
+  const remapped = remapProjectArchiveIds(projectArchives, initialProjectCatalogState.idRemap);
+  if (remapped.changed) {
+    projectArchives = remapped.archives;
+    try { localStorage.setItem(PROJECT_ARCHIVE_STORAGE_KEY, JSON.stringify(projectArchives)); } catch { /* storage may be unavailable */ }
   }
 }
 /** False until startup thread summary settles; avoids catalog-only then discovered flicker. */

@@ -72,6 +72,37 @@ export const mergeProjectBookmarksByWorkspaceRoot = <T extends ProjectBookmarkLi
   return { bookmarks: merged, idRemap };
 };
 
+
+export type ProjectArchiveRecordLike = {
+  name: string;
+  path: string;
+  archivedAtMs: number;
+};
+
+/** Move archive rows from dropped bookmark ids onto the surviving id after catalog merge. */
+export const remapProjectArchiveIds = <T extends ProjectArchiveRecordLike>(
+  archives: Record<string, T>,
+  idRemap: Record<string, string>,
+): { archives: Record<string, T>; changed: boolean } => {
+  if (!idRemap || !Object.keys(idRemap).length) return { archives, changed: false };
+  const next: Record<string, T> = { ...archives };
+  let changed = false;
+  for (const [fromId, toId] of Object.entries(idRemap)) {
+    if (!fromId || !toId || fromId === toId) continue;
+    const from = next[fromId];
+    if (!from) continue;
+    const existing = next[toId];
+    if (!existing) next[toId] = from;
+    else if (from.archivedAtMs < existing.archivedAtMs) {
+      // Keep the earlier archive stamp; name/path prefer the survivor row.
+      next[toId] = { ...existing, archivedAtMs: from.archivedAtMs };
+    }
+    delete next[fromId];
+    changed = true;
+  }
+  return { archives: next, changed };
+};
+
 export const workspaceRootForDisplay = (path: string): string => path
   .replace(/^\\\\\?\\UNC\\/iu, '\\\\')
   .replace(/^\\\\\?\\/u, '');

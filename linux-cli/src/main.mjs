@@ -8,7 +8,7 @@ import { createPlatformPaths, directoryPermission, ensurePlatformDirs } from '..
 import { detectCliHost, releaseChannelForPolicy, resolvePlatformIdentity } from '../../runtime/src/platform/platform-identity.mjs';
 import { createProcessSupervisor, reclaimRecordedProcesses } from '../../runtime/src/platform/process-supervisor.mjs';
 import { describeApproval } from './approval.mjs';
-import { EXIT, errorResult, exitCodeForError, messageForCode } from './exit-codes.mjs';
+import { EXIT, errorResult, exitCodeForError, messageForCode, rebuildFailedTaskResult } from './exit-codes.mjs';
 import { migrateDataDirectory } from './migrate.mjs';
 import { parseCli } from './parse-args.mjs';
 import { classifyStatefulEvent } from './event-classification.mjs';
@@ -392,10 +392,7 @@ export async function main(argv, io = {}) {
         finalResult = event;
         if (format === 'jsonl' && parsed.command === 'task') {
           emitJson(event.ok === false
-            ? errorResult(typeof event.error === 'string' ? event.error : 'RUNTIME_ERROR', {
-                runId: event.runId,
-                ...(approvalDeclined ? { approval: 'DECLINED' } : {})
-              })
+            ? rebuildFailedTaskResult(event, { approvalDeclined })
             : event);
         }
       }

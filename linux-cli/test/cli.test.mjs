@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { buildRuntimeEnv } from '../../runtime/src/platform/environment-policy.mjs';
 import { listenOnFetchablePort } from '../../runtime/test/helpers/listen-loopback.mjs';
 import { approvalResponse } from '../src/approval.mjs';
@@ -123,7 +124,10 @@ test('support-info reports the linux platform and the selected data root', async
 
 test('read-only task arguments fail closed before a model call', async () => {
   const { env, root } = await isolatedEnv();
-  const missingPrompt = await run(['task', '--workspace', root, '--format', 'jsonl'], env);
+  // node --test may leave process.stdin open; pass an empty stream so READ_ONLY
+  // prompt resolution cannot hang waiting for EOF.
+  const emptyStdin = () => ({ stdin: Readable.from([]), approvalTTY: false });
+  const missingPrompt = await run(['task', '--workspace', root, '--format', 'jsonl'], env, emptyStdin());
   assert.equal(missingPrompt.code, 2);
   const missingWorkspace = await run(['task', '--prompt', '看看', '--workspace', join(root, 'missing'), '--format', 'jsonl'], env);
   assert.equal(missingWorkspace.code, 4);

@@ -62,3 +62,18 @@ export function errorResult(code, extras = {}) {
     error: { code, message: messageForCode(code) }
   };
 }
+
+/**
+ * Rebuild the final task JSONL line when runtime returned ok:false.
+ * Preserves harness (including harness.recovery.failureClass) so agents can
+ * attribute failures after the CLI normalizes error.code / approval.
+ */
+export function rebuildFailedTaskResult(event, { approvalDeclined = false } = {}) {
+  const code = typeof event?.error === 'string' ? event.error : 'RUNTIME_ERROR';
+  return errorResult(code, {
+    ...(event?.runId ? { runId: event.runId } : {}),
+    ...(approvalDeclined ? { approval: 'DECLINED' } : {}),
+    ...(event?.harness ? { harness: event.harness } : {})
+  });
+}
+

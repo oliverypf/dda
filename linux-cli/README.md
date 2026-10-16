@@ -121,6 +121,9 @@ dda support-info
 | Controlled | 必须 `--execution-mode CONTROLLED` 并配置租约环境变量（`DDA_LEASE_*`） |
 | Approvals | 不要加 `--yes` / `--approve` / 粘性自动批准（未知参数 → `UNKNOWN_ARGUMENT`，退出码 2）。代理用 `--approval-mode jsonl`（`approval_response` 匹配 `requestId` + `displayedDigest`）或 `deny` |
 | Timeouts | 退出码 1，错误 `TASK_RESULT_UNKNOWN`，写入 ledger；再跑 `dda recovery` |
+| Cancel / signal | SIGINT→130、SIGTERM→7；**没有**最终 `ok:false` JSONL。若未见到 `run.cancelled`，CLI 会在数据目录写 `CANCELLED` ledger（`SIGINT_NO_TERMINAL` / `SIGTERM_NO_TERMINAL`）。不要假设 cancel 有带 `error.code` 的结果行 |
+| Watch loop | 退出码 ≠ 0 时：有最终 `ok:false` → 解析该行；退出 **130/7** 且无最终 `ok:false` → `dda recovery` 看 `cliUnknownOutcomes` / cancelled ledger |
+| Failure class | **优先**读各表面的 harness `failureClass`（见下）。仅当缺失时才用 CLI 回退四类（`prompt`/`tool`/`policy`/`infra`） |
 
 受控模式必须显式写出，并且不能自动批准：
 
@@ -145,6 +148,58 @@ digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。
 
 当前限制：`CONTROLLED` 在 Linux 上映射到 Phase 1.5 受控通道 `WINDOWS_PHASE1_5_CONTROLLED`（受 lease、审批和审计约束的受控策略），不再继承 Phase 2 的 `WINDOWS_FULL_LOCAL` 全本地发布门；端到端审批测试只在 Linux 上跑过，Windows / 鸿蒙真机冒烟（on-device smoke）还没做——`%LOCALAPPDATA%` 布局、进程组清理、受控审批和鸿蒙 PC 上的 Node.js 24 都只在 Linux 上以平台注入的方式回归过。
 
+
+### 代理可观测性（JSONL / 失败归因 / 审计路径）
+
+#### Task JSONL 契约
+- 流式事件与最终结果行在已知时应带 `runId`。
+- 事件使用 runtime 已有的 `type`/`kind`（例如 `runtime_event` + `approval.requested` / `harness.progress` / `run.failed`）；本轮不改名。
+- 失败或拒绝时，CLI 重建的最终行带稳定 `error.code`（以及适用的退出码映射）。审批被拒时稳定信号是 **退出码 5** 与 `approval:"DECLINED"`；**不要**要求 `error.code` 一定是 `APPROVAL_*`（runtime 常留下原始消息字符串）。
+- 重建失败最终行时会保留 runtime 附带的 `harness`（含 `harness.recovery`），以便代理继续看到 `failureClass`。
+
+#### `failureClass` 表面路径（harness 优先，勿改名）
+| 表面 | 路径 |
+| --- | --- |
+| `harness.progress` 事件 | `payload.recovery.failureClass` |
+| `supervise status` | 顶层 `recovery.failureClass` |
+| runtime 最终结果 / CLI 重建的最终 JSONL | `harness.recovery.failureClass` |
+
+稳定 harness 类名（原样转发，不要映射成 `tool`/`policy`）：`TOOL_LOOP_LIMIT`、`APPROVAL_EXPIRED`、`WORKSPACE_HANDLER_REPEATED_FAILURE`。
+
+#### CLI 回退四类（仅当 `failureClass` 缺失）
+| Class | 来自（已有 CLI `error.code` / 退出） |
+| --- | --- |
+| `prompt` | `PROMPT_REQUIRED`；以及 prompt 解析相关的 `ARGUMENT_INVALID`（缺 prompt / `--prompt`+`--prompt-file` 冲突 / 空 `--prompt-file`）。**不含**缺 `--workspace`、坏 flag 或其他 `ARGUMENT_INVALID` |
+| `tool` | 经 `errorResult` 落到最终 CLI 结果的 tool/exec 失败码 |
+| `policy` | 退出 5 且 `approval:"DECLINED"`；`APPROVAL_UNAVAILABLE`；最终 `error.code` 为 `SAFETY_LEASE_*` 时 |
+| `infra` | `DEPENDENCY_ERROR`、超时→`TASK_RESULT_UNKNOWN`、`PROTOCOL_ERROR`、存储类 |
+
+不要把下列项塞进上表：harness `failureClass` 字符串本身；“模型拒绝且未用工具”；denylist；`TOOL_NOT_ALLOWED_IN_MODE`（那是 `tool.result` 的 `errorCode`，不是最终 CLI 码）。
+
+#### 审计 / support / recovery 路径
+平台数据根（可用 `--data-dir` / `DDA_DATA_DIR` 覆盖）：
+- Linux / 鸿蒙 CLI：`${XDG_DATA_HOME:-$HOME/.local/share}/hmcodex/`
+- Windows CLI：`%LOCALAPPDATA%\hmCodex`
+
+| 产物 | 位置 / 命令 |
+| --- | --- |
+| CLI unknown/cancel ledger | `<data-root>/cli-unknown-outcomes.json` |
+| `dda recovery` | 返回 runtime 对账结果，并附带 `cliUnknownOutcomes`（超时 UNKNOWN 与无终态 cancel 的 CANCELLED） |
+| `dda support-info` | 平台、路径、权限、模型摘要等（不含 API key） |
+| `dda support-bundle --output PATH` | 打包支持材料到指定路径 |
+
+超时：退出 1 + 最终 JSONL `TASK_RESULT_UNKNOWN`（`state:"UNKNOWN"`）并写 ledger。Cancel：无最终 `ok:false` 时靠 `dda recovery` → `cliUnknownOutcomes` 对账。
+
+#### 代理 harness 循环（扩现有，不另起入口）
+- 日常任务：内置 harness（`harness.progress`、写入摘要、recovery 检查）见仓库 `docs/DDA_TASK_HARNESS.md`。
+- 隔离循环：在与 `dda.cmd` / pack 相同的安装根执行：
+  ```bash
+  node <install-root>/runtime/src/index.mjs supervise prepare task.json
+  node <install-root>/runtime/src/index.mjs supervise run task.json attempt-1 prompt.txt
+  node <install-root>/runtime/src/index.mjs supervise status task.json attempt-1
+  ```
+  Pack 用户**不要**调用 `desktop/scripts/supervise-dda-task.mjs`（那是仓库 shim，不在 tar.gz 里）。本轮**没有** `dda supervise` CLI 透传。
+
 ## 退出码
 
 | 码 | 含义 |
@@ -168,13 +223,13 @@ digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。
 node --test linux-cli/test/*.test.mjs runtime/test/platform.test.mjs runtime/test/release-channel.test.mjs
 ```
 
-`linux-cli/test/controlled-approval.test.mjs` 用假模型服务端到端覆盖 deny、jsonl 批准、digest 不一致、stdin 结束、终端 y/n，以及通过 `bin/dda.mjs` 的 stdin 审批。`linux-cli/test/jev-opt-in.test.mjs` 覆盖 Jev 的显式开启规则。`linux-cli/test/node-check.test.mjs` 覆盖 Node >= 24 启动门。`linux-cli/test/contract-nits.test.mjs` 覆盖超时写入 `UNKNOWN` 记录并被 recovery 看到、以及未知状态事件的分类。`linux-cli/test/packaging.test.mjs` 在 Node 24 上冒烟验证打包产物解包后能跑 `--version` 和 `health`。
+`linux-cli/test/controlled-approval.test.mjs` 用假模型服务端到端覆盖 deny、jsonl 批准、digest 不一致、stdin 结束、终端 y/n，以及通过 `bin/dda.mjs` 的 stdin 审批。`linux-cli/test/jev-opt-in.test.mjs` 覆盖 Jev 的显式开启规则。`linux-cli/test/node-check.test.mjs` 覆盖 Node >= 24 启动门。`linux-cli/test/contract-nits.test.mjs` 覆盖超时写入 `UNKNOWN` 记录并被 recovery 看到、以及未知状态事件的分类。`linux-cli/test/packaging.test.mjs` 在 Node 24 上冒烟验证打包产物解包后能跑 `--version` 和 `health`。`linux-cli/test/observability.test.mjs` 覆盖失败最终行保留 `harness.recovery`（declined 路径）以及 harness.progress / supervise status 的 `failureClass` 形状。
 
 ## 超时与取消
 
-- CLI 超时不等于动作被取消：超时后输出 `TASK_RESULT_UNKNOWN`（`state: UNKNOWN`），并在数据目录写入 `cli-unknown-outcomes.json` 一条 `UNKNOWN` 记录。
+- CLI 超时不等于动作被取消：超时后输出最终 JSONL `TASK_RESULT_UNKNOWN`（`state: UNKNOWN`，退出码 1），并在数据目录写入 `cli-unknown-outcomes.json` 一条 `UNKNOWN` 记录。
 - `dda recovery` 会把这些 CLI 记录作为 `cliUnknownOutcomes` 字段一并返回，便于对账。
-- SIGINT/SIGTERM 中断后，如果 runtime 没来得及写取消终态，CLI 会补写一条 `CANCELLED` 记录，保证取消状态不被跳过。
+- SIGINT/SIGTERM 中断后：**不会**再发最终 `ok:false` JSONL（退出码 130 或 7）。如果 runtime 没来得及写取消终态，CLI 会补写一条 `CANCELLED` 记录（`SIGINT_NO_TERMINAL` / `SIGTERM_NO_TERMINAL`）。代理应跑 `dda recovery` 读 ledger，不要假设存在带 `error.code` 的 cancel 结果行。
 
 ## 还未做
 

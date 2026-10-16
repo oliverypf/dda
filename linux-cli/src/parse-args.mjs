@@ -1,5 +1,5 @@
 const VALUE_FLAGS = new Set([
-  '--format', '--config', '--data-dir', '--workspace', '--timeout-ms', '--prompt',
+  '--format', '--config', '--data-dir', '--workspace', '--timeout-ms', '--prompt', '--prompt-file',
   '--execution-mode', '--agent-mode', '--approval-mode', '--model', '--thread-id',
   '--title', '--tool', '--input', '--output', '--from', '--strategy'
 ]);

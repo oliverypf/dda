@@ -29,7 +29,15 @@ chmod +x linux-cli/bin/dda.mjs
 node linux-cli/bin/dda.mjs --version
 ```
 
-也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。Windows 可以使用 `linux-cli/bin/dda.cmd`。
+也可以把 `linux-cli/bin` 加入 `PATH`，之后直接运行 `dda`。
+
+**Windows 二进制路径（本轮不装 PATH）：** `%LOCALAPPDATA%\hmCodex` 是**数据目录**，不是 CLI 安装根。仓库或解包的 `dda-cli` 包里，Windows 用：
+
+```text
+<root>\linux-cli\bin\dda.cmd
+```
+
+（需要本机已有 `node` 在 PATH。）`<root>\bin\dda` 是 POSIX 启动脚本，Windows 代理不要用它。本轮桌面 NSIS **不会**把 `dda` 装进 PATH；可选地自行把 `<root>\linux-cli\bin` 加进用户 PATH，验收以文档化的 `dda.cmd` 路径为准。
 
 ### 自包含 tar.gz 起步件
 
@@ -89,6 +97,7 @@ Jev 需要每个部署显式开启，满足下面任一条件才算“已配置�
 ```bash
 dda health
 dda task --workspace /path/to/project --prompt "检查项目结构"
+dda task --workspace /path/to/project --prompt-file ./prompt.txt
 dda thread list
 dda thread get --thread-id THREAD_ID
 dda recovery
@@ -96,7 +105,22 @@ dda tools --workspace /path/to/project
 dda support-info
 ```
 
-默认 `--format` 在终端上是 `human`，在管道里是 `jsonl`。默认执行模式是 `READ_ONLY`。
+`--prompt` 与 `--prompt-file` 互斥。都没有时：在 `READ_ONLY` 或 `CONTROLLED --approval-mode deny` 且 stdin 非 TTY 时，从 stdin 读任务文案；`CONTROLLED --approval-mode jsonl` 时 stdin 留给审批，不能再当 prompt（非 TTY 下缺 prompt 返回 `ARGUMENT_INVALID`）。CLI 把文案作为 runtime 的 `--prompt` 参数转发，不会把任务文案写到 runtime 子进程的 stdin。
+
+默认 `--format` 跟随 **stderr** 是否为 TTY：有 TTY → `human`，否则 → `jsonl`。只管道 stdout、stderr 仍是终端时，默认仍是 `human`。显式 `--format` 优先。默认执行模式是 `READ_ONLY`。
+
+### 代理调用约定（最短）
+
+| 项 | 规则 |
+| --- | --- |
+| Binary | **Windows：** 仅当已把 `<root>\linux-cli\bin` 加进 PATH 时用 `dda`，否则用 `<root>\linux-cli\bin\dda.cmd`。**Linux 打包：** `<root>/bin/dda`。（没有 `hmcodex.cmd`；别名只是 npm `bin` 名。） |
+| cwd | 调用方自定；工作区始终靠 `--workspace`，不由 cwd 推断 |
+| Env | 只用 `DDA_*`（外加配置命名的 API key 环境变量）。`HMCODEX_*` 不再作别名 |
+| Format | 解析时传 `--format jsonl`。默认 jsonl 仅当 stderr 非 TTY。jsonl 模式下 task 的 stdout 每行一个 JSON 对象（事件，最后一行结果） |
+| Read-only default | 省略 `--execution-mode` → `READ_ONLY` |
+| Controlled | 必须 `--execution-mode CONTROLLED` 并配置租约环境变量（`DDA_LEASE_*`） |
+| Approvals | 不要加 `--yes` / `--approve` / 粘性自动批准（未知参数 → `UNKNOWN_ARGUMENT`，退出码 2）。代理用 `--approval-mode jsonl`（`approval_response` 匹配 `requestId` + `displayedDigest`）或 `deny` |
+| Timeouts | 退出码 1，错误 `TASK_RESULT_UNKNOWN`，写入 ledger；再跑 `dda recovery` |
 
 受控模式必须显式写出，并且不能自动批准：
 

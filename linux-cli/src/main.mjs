@@ -17,6 +17,7 @@ import { ledgerPath, readOutcomeLedger, recordUnknownOutcome } from './outcome-l
 import { humanEventLine, isRuntimeEvent } from './render.mjs';
 import { runRuntimeCommand } from './runtime-bridge.mjs';
 import { resolveWorkspace } from './workspace.mjs';
+import { readStdinText, resolveTaskPrompt } from './resolve-prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME_ENTRY = join(HERE, '../../runtime/src/index.mjs');
@@ -32,7 +33,7 @@ const HELP = `dda <command> [subcommand] [options]
 
 命令：
   health                         检查 runtime、配置和数据目录
-  task --workspace PATH --prompt TEXT
+  task --workspace PATH --prompt TEXT | --prompt-file PATH
   thread list|get|create|fork
   thread-events --thread-id ID
   recovery [--workspace PATH]
@@ -257,7 +258,6 @@ export async function main(argv, io = {}) {
       return reportError(error.code ?? 'WORKSPACE_NOT_FOUND');
     }
   }
-  if (parsed.command === 'task' && !parsed.options.prompt?.trim()) return reportError('PROMPT_REQUIRED');
   if (parsed.command === 'thread' && !THREAD_COMMANDS.has(parsed.subcommand ?? 'list')) return reportError('UNKNOWN_COMMAND');
   if ((parsed.command === 'thread' && ['get', 'fork'].includes(parsed.subcommand)) || parsed.command === 'thread-events') {
     if (!parsed.options.threadId) return reportError('ARGUMENT_INVALID');
@@ -265,13 +265,27 @@ export async function main(argv, io = {}) {
   if (parsed.command === 'support-bundle' && !parsed.options.output) return reportError('ARGUMENT_INVALID');
 
   let approvalMode;
-  if (parsed.command === 'task' && executionMode === 'CONTROLLED') {
-    approvalMode = parsed.options.approvalMode ?? (approvalTTY ? 'prompt' : undefined);
-    if (!approvalMode || (approvalMode === 'prompt' && !approvalTTY)) return reportError('APPROVAL_UNAVAILABLE');
-    // A mode that needs host input but has no reader would leave every
-    // request pending until it expires; fail early instead.
-    if (approvalMode === 'prompt' && typeof io.readApprovalLine !== 'function') return reportError('APPROVAL_UNAVAILABLE');
-    if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
+  let taskPrompt;
+  if (parsed.command === 'task') {
+    const stdinIsTTY = Boolean(stdin?.isTTY);
+    const resolved = await resolveTaskPrompt({
+      options: parsed.options,
+      executionMode,
+      approvalTTY,
+      stdin,
+      stdinIsTTY,
+      readStdin: io.readStdin ?? readStdinText
+    });
+    if (!resolved.ok) return reportError(resolved.code);
+    taskPrompt = resolved.prompt;
+    approvalMode = resolved.approvalMode;
+    if (executionMode === 'CONTROLLED') {
+      if (!approvalMode || (approvalMode === 'prompt' && !approvalTTY)) return reportError('APPROVAL_UNAVAILABLE');
+      // A mode that needs host input but has no reader would leave every
+      // request pending until it expires; fail early instead.
+      if (approvalMode === 'prompt' && typeof io.readApprovalLine !== 'function') return reportError('APPROVAL_UNAVAILABLE');
+      if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
+    }
   }
 
   const configPath = parsed.options.config ?? (env.DDA_MODEL_CONFIG?.trim() || undefined);
@@ -286,7 +300,8 @@ export async function main(argv, io = {}) {
   const runtimeArgs = [];
   if (parsed.subcommand && parsed.command === 'thread') runtimeArgs.push(parsed.subcommand);
   if (workspace) runtimeArgs.push('--workspace', workspace);
-  if (parsed.options.prompt) runtimeArgs.push('--prompt', parsed.options.prompt);
+  if (taskPrompt) runtimeArgs.push('--prompt', taskPrompt);
+  else if (parsed.options.prompt) runtimeArgs.push('--prompt', parsed.options.prompt);
   if (parsed.command === 'task') runtimeArgs.push('--execution-mode', executionMode, '--events', 'stdout');
   if (parsed.options.agentMode) runtimeArgs.push('--agent-mode', parsed.options.agentMode);
   if (parsed.options.model) runtimeArgs.push('--model', parsed.options.model);

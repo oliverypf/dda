@@ -189,7 +189,9 @@ test('T22 invalid stream retry env throws MODEL_RETRY_CONFIG_INVALID', async (t)
   });
 });
 
-test('T24 exit codes and recovery failureClass for MODEL_TRANSPORT', () => {
+// Helper / recovery shape (unit). Process exitCode coverage lives in
+// linux-cli/test/harness-fix2-process-exit.test.mjs (real bin/dda.mjs spawn).
+test('T24 helpers: exitCodeForError map + recovery failureClass for MODEL_TRANSPORT', () => {
   assert.equal(exitCodeForError('MODEL_TRANSPORT'), 1);
   assert.equal(exitCodeForError('MODEL_PROVIDER_REJECTED:401'), 3);
   assert.equal(exitCodeForError('MODEL_REQUEST_REJECTED:400'), 1);
@@ -203,7 +205,9 @@ test('T24 exit codes and recovery failureClass for MODEL_TRANSPORT', () => {
   assert.equal(rebuilt.harness.recovery.failureClass, 'MODEL_TRANSPORT');
 });
 
-test('T26 whitelist fields appear on stream_retry and AFTER_EFFECT events', async (t) => {
+// task-runner emits discardedTextChars on stream_retry; index.mjs whitelist
+// forwarding is asserted in linux-cli/test/harness-fix2-process-exit.test.mjs.
+test('T26 task-runner emits discardedTextChars on model.stream_retry', async (t) => {
   await withEnv(t, { DDA_MODEL_STREAM_RETRIES: 1, DDA_MODEL_STREAM_RETRY_DELAY_MS: 0 }, async () => {
     let attempts = 0;
     const { events } = await runWithProvider(t, async function* () {

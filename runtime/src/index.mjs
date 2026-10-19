@@ -350,7 +350,12 @@ const trajectoryErrorPayload = (error) => {
     ...(error?.stepErrorCode ? { stepErrorCode: String(error.stepErrorCode).slice(0, 120) } : {}),
     ...(error?.summary ? { summary: safeRuntimeMessage(error.summary) } : {}),
     ...(error?.nextAction ? { nextAction: String(error.nextAction).slice(0, 120) } : {}),
-    ...(Array.isArray(error?.checks) ? { checks: boundedVerificationChecks(error.checks) } : {})
+    ...(Array.isArray(error?.checks) ? { checks: boundedVerificationChecks(error.checks) } : {}),
+    ...(error?.transportPhase ? { transportPhase: String(error.transportPhase).slice(0, 16) } : {}),
+    ...(error?.transportCause ? { transportCause: String(error.transportCause).slice(0, 40) } : {}),
+    ...(error?.transportAttempts !== undefined ? { transportAttempts: error.transportAttempts } : {}),
+    ...(error?.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}),
+    ...(error?.toolCallEmitted !== undefined ? { toolCallEmitted: error.toolCallEmitted } : {})
   };
 };
 

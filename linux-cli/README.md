@@ -164,7 +164,7 @@ digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。
 | `supervise status` | 顶层 `recovery.failureClass` |
 | runtime 最终结果 / CLI 重建的最终 JSONL | `harness.recovery.failureClass` |
 
-稳定 harness 类名（原样转发，不要映射成 `tool`/`policy`）：`TOOL_LOOP_LIMIT`、`APPROVAL_EXPIRED`、`WORKSPACE_HANDLER_REPEATED_FAILURE`。
+稳定 harness 类名（原样转发，不要映射成 `tool`/`policy`）：`TOOL_LOOP_LIMIT`、`APPROVAL_EXPIRED`、`WORKSPACE_HANDLER_REPEATED_FAILURE`、`MODEL_TRANSPORT`。
 
 #### CLI 回退四类（仅当 `failureClass` 缺失）
 | Class | 来自（已有 CLI `error.code` / 退出） |
@@ -175,6 +175,15 @@ digest 不一致、JSON 无效或字段缺失都会作为拒绝回给 runtime。
 | `infra` | `DEPENDENCY_ERROR`、超时→`TASK_RESULT_UNKNOWN`、`PROTOCOL_ERROR`、存储类 |
 
 不要把下列项塞进上表：harness `failureClass` 字符串本身；“模型拒绝且未用工具”；denylist；`TOOL_NOT_ALLOWED_IN_MODE`（那是 `tool.result` 的 `errorCode`，不是最终 CLI 码）。
+
+#### 错误码对照表（harness 自带 `failureClass` 时优先；不扩展上表四类定义）
+| 错误码 | 退出码 | failureClass | 回退旁注（仅无 failureClass 时） |
+| --- | --- | --- | --- |
+| `MODEL_TRANSPORT` | 1 | `MODEL_TRANSPORT` | infra |
+| `MODEL_PROVIDER_REJECTED:<status>` | 3 | （无） | 靠退出码 3 区分 |
+| `MODEL_REQUEST_REJECTED` / `MODEL_REQUEST_REJECTED:<status>` | 1 | （无） | prompt（旁注） |
+| `MODEL_RETRY_CONFIG_INVALID` | 3 | （无） | 配置 |
+| `408` 归类为 `MODEL_TRANSPORT` | 1 | `MODEL_TRANSPORT` | infra |
 
 #### 审计 / support / recovery 路径
 平台数据根（可用 `--data-dir` / `DDA_DATA_DIR` 覆盖）：

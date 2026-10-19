@@ -13,28 +13,69 @@ const PROTOCOLS = Object.freeze(['responses', 'chat-completions']);
 const DEFAULT_RESPONSES_MODEL = 'gpt-4.1-mini';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
-const RETRYABLE_HTTP = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_HTTP = new Set([408, 429, 500, 502, 503, 504]);
+const PROVIDER_REJECTED_HTTP = new Set([401, 402, 403, 404]);
+
+const tagTransport = (error, phase, extra = {}) => {
+  if (error && typeof error === 'object') {
+    error.transportPhase = phase;
+    for (const [key, value] of Object.entries(extra)) {
+      if (value !== undefined) error[key] = value;
+    }
+  }
+  return error;
+};
+
+/** Map a settled HTTP status to the freeze §2.4 surface code (message string). */
+export const classifyModelHttpStatus = (status) => {
+  const code = Number(status);
+  if (PROVIDER_REJECTED_HTTP.has(code)) return `MODEL_PROVIDER_REJECTED:${code}`;
+  if (code === 408 || code === 429 || (code >= 500 && code <= 599)) return 'MODEL_TRANSPORT';
+  if (code >= 400 && code < 500) return `MODEL_REQUEST_REJECTED:${code}`;
+  return 'MODEL_TRANSPORT';
+};
+
 // Retry only before receiving a successful stream. Replaying a partial stream
 // could duplicate tool calls or output, so streaming errors still propagate.
-const fetchModelStream = async (endpoint, init, { retries, retryDelayMs }) => {
+// transportBudget.remaining is decremented only at this fetch() call site (NIT-2).
+const fetchModelStream = async (endpoint, init, { retries, retryDelayMs, transportBudget } = {}) => {
   for (let attempt = 0; ; attempt += 1) {
     init.signal?.throwIfAborted();
+    if (transportBudget) {
+      if (transportBudget.remaining <= 0) {
+        throw tagTransport(new Error('MODEL_TRANSPORT'), attempt === 0 ? 'CONNECT' : 'HTTP');
+      }
+      transportBudget.remaining -= 1;
+    }
     let response;
     try {
       response = await fetch(endpoint, init);
     } catch (error) {
-      if (init.signal?.aborted || error?.name === 'AbortError' || attempt >= retries
-        || !(error instanceof TypeError)) throw error;
+      if (init.signal?.aborted || error?.name === 'AbortError') throw error;
+      const canRetry = attempt < retries && error instanceof TypeError
+        && (!transportBudget || transportBudget.remaining > 0);
+      if (!canRetry) {
+        throw tagTransport(new Error('MODEL_TRANSPORT'), 'CONNECT', {
+          transportCause: String(error?.message ?? error).slice(0, 40),
+          transportAttempts: attempt + 1
+        });
+      }
     }
-    if (response && (!RETRYABLE_HTTP.has(response.status) || attempt >= retries)) return response;
-    const retryAfter = response?.headers.get('retry-after');
-    const retryAfterMs = retryAfter ? Math.max(0, Number.isFinite(Number(retryAfter))
-      ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
-    // A long quota wait belongs to the caller; do not ignore its Retry-After.
-    if (response && retryAfterMs > 30_000) return response;
-    await response?.body?.cancel().catch(() => {});
-    await delay(Math.max(retryDelayMs * 2 ** attempt, Number.isFinite(retryAfterMs) ? retryAfterMs : 0), undefined,
-      { signal: init.signal });
+    if (response) {
+      const retryAfter = response.headers.get('retry-after');
+      const retryAfterMs = retryAfter ? Math.max(0, Number.isFinite(Number(retryAfter))
+        ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
+      // A long quota wait belongs to the caller; do not ignore its Retry-After.
+      const giveUp = !RETRYABLE_HTTP.has(response.status) || attempt >= retries
+        || retryAfterMs > 30_000
+        || (transportBudget && transportBudget.remaining <= 0 && RETRYABLE_HTTP.has(response.status));
+      if (giveUp) return response;
+      await response.body?.cancel().catch(() => {});
+      await delay(Math.max(retryDelayMs * 2 ** attempt, Number.isFinite(retryAfterMs) ? retryAfterMs : 0), undefined,
+        { signal: init.signal });
+      continue;
+    }
+    await delay(retryDelayMs * 2 ** attempt, undefined, { signal: init.signal });
   }
 };
 
@@ -564,16 +605,27 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         },
         body: JSON.stringify(body),
         signal: request.signal
-      }, { retries, retryDelayMs });
+      }, { retries, retryDelayMs, transportBudget: request.transportBudget });
       if (!response.ok || !response.body) {
         const raw = await response.text().catch(() => '');
-        throw new Error(`MODEL_HTTP_ERROR:${failureMessage(response.status, parseJson(raw))}`);
+        const status = response.status;
+        // Provider detail stays out of Error.message so CLI error.code stays a stable code.
+        void failureMessage(status, parseJson(raw));
+        throw tagTransport(new Error(classifyModelHttpStatus(status)), 'HTTP', { httpStatus: status });
       }
       let finished = false;
       let usage;
       let pendingFinish;
       const toolState = protocol === 'responses' ? createResponsesToolState() : createChatToolState();
-      for await (const event of sseEvents(response.body)) {
+      let streamIter;
+      try {
+        streamIter = sseEvents(response.body);
+      } catch (error) {
+        if (request.signal?.aborted || error?.name === 'AbortError') throw error;
+        throw tagTransport(error instanceof Error ? error : new Error(String(error)), 'STREAM');
+      }
+      try {
+      for await (const event of streamIter) {
         if (event.data === '[DONE]') {
           if (!finished) {
             for (const toolCall of toolState.flush()) yield toolCall;
@@ -621,6 +673,11 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
         for (const toolCall of toolState.flush()) yield toolCall;
         if (usage) yield { type: 'usage', usage };
         yield pendingFinish ?? { type: 'finish', reason: { kind: toolState.size > 0 ? 'tool-calls' : 'stop' } };
+      }
+      } catch (error) {
+        if (request.signal?.aborted || error?.name === 'AbortError') throw error;
+        if (error?.transportPhase) throw error;
+        throw tagTransport(error instanceof Error ? error : new Error(String(error)), 'STREAM');
       }
     }
   });

@@ -41,6 +41,12 @@ const RECOVERY_ADVICE = Object.freeze({
     action: 'INSPECT_HANDLER_STATE',
     advice: 'The workspace handler failed repeatedly on the same operation. Inspect the handler/target state before retrying; the failing call did not succeed and its effect is unknown.',
     replayWrites: false
+  },
+  MODEL_TRANSPORT: {
+    class: 'MODEL_TRANSPORT',
+    action: 'RERUN_AFTER_CHECKING_WRITES',
+    advice: 'The model connection dropped after retries. Check writesApplied / writesAppliedUnverified before re-running; do not replay writes already recorded as applied.',
+    replayWrites: false
   }
 });
 export const FAILURE_CLASSES = Object.freeze(Object.keys(RECOVERY_ADVICE));
@@ -54,7 +60,8 @@ const RUN_FAILURE_CODES = Object.freeze({
   MAX_TOOL_ROUNDS: 'TOOL_LOOP_LIMIT',
   APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
   APPROVAL_TIMEOUT: 'APPROVAL_EXPIRED',
-  APPROVAL_DENIED: 'APPROVAL_EXPIRED'
+  APPROVAL_DENIED: 'APPROVAL_EXPIRED',
+  MODEL_TRANSPORT: 'MODEL_TRANSPORT'
 });
 
 // Consecutive failures on the same inspection tool before we treat the handler
@@ -70,7 +77,8 @@ function classifyRecovery(state) {
   const runtimeError = state.runtimeResult && state.runtimeResult.ok === false
     ? String(state.runtimeResult.error ?? '')
     : '';
-  const runtimeClass = RUN_FAILURE_CODES[runtimeError];
+  const runtimeCode = runtimeError.split(':', 1)[0];
+  const runtimeClass = RUN_FAILURE_CODES[runtimeCode] ?? RUN_FAILURE_CODES[runtimeError];
   if (runtimeClass) return recoveryAdvice(runtimeClass);
 
   // Repeated identical workspace-handler failures are recoverable guidance,

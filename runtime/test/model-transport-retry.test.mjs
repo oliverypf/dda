@@ -49,15 +49,31 @@ test('a disconnected request can retry but exhausted transient errors remain fai
   assert.equal(calls, 2);
   let failedCalls = 0;
   const failing = await setup(t, (_req, res) => { failedCalls++; res.writeHead(502); res.end('{}'); });
-  await assert.rejects(collect(failing), /MODEL_HTTP_ERROR:502/u);
+  await assert.rejects(collect(failing), (error) => {
+    assert.equal(error.message, 'MODEL_TRANSPORT');
+    assert.equal(error.transportPhase, 'HTTP');
+    assert.equal(error.httpStatus, 502);
+    return true;
+  });
   assert.equal(failedCalls, 3);
 });
 
 test('bad requests, authentication failures and long Retry-After do not retry', async t => {
+  const expected = {
+    400: 'MODEL_REQUEST_REJECTED:400',
+    401: 'MODEL_PROVIDER_REJECTED:401',
+    403: 'MODEL_PROVIDER_REJECTED:403',
+    429: 'MODEL_TRANSPORT'
+  };
   for (const status of [400, 401, 403, 429]) {
     let calls = 0;
     const provider = await setup(t, (_req, res) => { calls++; res.writeHead(status, status === 429 ? { 'retry-after': '120' } : {}); res.end('{}'); });
-    await assert.rejects(collect(provider), new RegExp(`MODEL_HTTP_ERROR:${status}`));
+    await assert.rejects(collect(provider), (error) => {
+      assert.equal(error.message, expected[status]);
+      assert.equal(error.transportPhase, 'HTTP');
+      assert.equal(error.httpStatus, status);
+      return true;
+    });
     assert.equal(calls, 1);
   }
 });

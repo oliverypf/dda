@@ -196,7 +196,7 @@ const actionDeferred = action => actionFailed(action)
 // Tool errors that the model can recover from by choosing another path or
 // another file. They are evidence of progress (the model learned the request
 // was invalid), not a hard failure that must terminate the plan step.
-const RECOVERABLE_TOOL_ERROR_CODES = new Set([
+export const RECOVERABLE_TOOL_ERROR_CODES = new Set([
   'TEST_CHECK_FAILED',
   'WORKSPACE_NOT_FOUND',
   'WORKSPACE_NOT_DIRECTORY',
@@ -208,13 +208,21 @@ const RECOVERABLE_TOOL_ERROR_CODES = new Set([
   'WORKSPACE_INVALID_PATH',
   'WORKSPACE_PATH_FORBIDDEN',
   'WORKSPACE_READ_LIMIT',
+  // focus locator probe misses (uniqueExcerptOffset) — recoverable, not handler crashes
+  'EXCERPT_NOT_FOUND',
+  'EXCERPT_AMBIGUOUS',
+  'EXCERPT_INVALID_LOCATOR',
   'TOOL_ARGUMENTS_INVALID',
   'TOOL_DUPLICATE_REQUEST'
 ]);
 const actionRecoverableFailure = (action) => {
   const value = normalizeAction(action);
   const code = typeof value.errorCode === 'string' ? value.errorCode : '';
-  return actionFailed(value) && RECOVERABLE_TOOL_ERROR_CODES.has(code);
+  return actionFailed(value) && (
+    RECOVERABLE_TOOL_ERROR_CODES.has(code)
+    || code.startsWith('WORKSPACE_')
+    || code.startsWith('EXCERPT_')
+  );
 };
 
 const actionPaths = (action) => {

@@ -12,6 +12,7 @@ import { recoveryContinuationText } from '../task-recovery-controller.mjs';
 import { proposedToolDecisionClaim, toolResultDecisionClaim } from '../decision/evidence-claim.mjs';
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
 import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
+import { RECOVERABLE_TOOL_ERROR_CODES } from '../rule-verifier.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const NON_RETRYABLE_MODEL_CODES = new Set(['context_length_exceeded', 'content_filter']);
@@ -58,6 +59,15 @@ const resolveMaxToolCallsPerRound = () => {
 };
 const MAX_TOOL_ARGUMENT_CHARS = 32 * 1024;
 const MAX_TOOL_RESULT_CHARS = 48 * 1024;
+
+
+// freeze-harness-t1-green-r1 §1.2: workspace probe misses must not hard-stop the run.
+const isRecoverableWorkspaceProbeError = (toolName, errorCode) => {
+  if (!['workspace.read', 'workspace.list', 'workspace.focus'].includes(toolName)) return false;
+  if (typeof errorCode !== 'string' || !errorCode) return false;
+  if (errorCode.startsWith('WORKSPACE_') || errorCode.startsWith('EXCERPT_')) return true;
+  return RECOVERABLE_TOOL_ERROR_CODES.has(errorCode);
+};
 
 const safeErrorCode = (error) => {
   const candidate = error?.code ?? (error instanceof Error ? error.message : undefined);
@@ -638,11 +648,16 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             } catch (error) {
               isError = true;
               const errorCode = safeErrorCode(error);
-              const failures = (failedToolRequests.get(requestKey) ?? 0) + 1;
-              failedToolRequests.set(requestKey, failures);
-              const kindKey = `${call.name}:${errorCode}`;
-              const kindFailures = (failedToolKinds.get(kindKey) ?? 0) + 1;
-              failedToolKinds.set(kindKey, kindFailures);
+              const recoverableProbe = isRecoverableWorkspaceProbeError(call.name, errorCode);
+              // Only non-recoverable failures count toward TOOL_REPEATED_FAILURE (§1.2).
+              let failures = failedToolRequests.get(requestKey) ?? 0;
+              let kindFailures = failedToolKinds.get(`${call.name}:${errorCode}`) ?? 0;
+              if (!recoverableProbe) {
+                failures += 1;
+                failedToolRequests.set(requestKey, failures);
+                kindFailures += 1;
+                failedToolKinds.set(`${call.name}:${errorCode}`, kindFailures);
+              }
               const originalPath = typeof rawArguments?.path === 'string' ? rawArguments.path.slice(0, 160) : '';
               const baseMessage = errorCode.includes('WORKSPACE_PATH_FORBIDDEN') || errorCode.includes('WORKSPACE_INVALID_PATH')
                 ? `Use a path relative to the authorized workspace; received ${originalPath || '<missing>'}.`
@@ -685,7 +700,9 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                   ...(Array.isArray(approvedCommands) ? { approvedCommands: [...approvedCommands] } : {}),
                   message: `${baseMessage} The command was rejected; do not repeat it unchanged or bypass the restriction. ${Array.isArray(approvedCommands) ? `Lease-approved executables: ${JSON.stringify(approvedCommands)}. ` : ''}Use workspace.list/workspace.read for inspection, or choose an approved executable with separate args and a workspace-relative cwd. Additional executor restrictions still apply; if none fits, report the missing capability.` };
               }
-              if ((failures >= 2 || kindFailures >= 3) && (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name))) {
+              if (!recoverableProbe
+                && (failures >= 2 || kindFailures >= 3)
+                && (['workspace.read', 'workspace.list', 'workspace.focus'].includes(call.name))) {
                 const rawPath = typeof rawArguments?.path === 'string' ? rawArguments.path.slice(0, 160) : '';
                 stopAfterResult = new Error(`TOOL_REPEATED_FAILURE:${call.name}:${errorCode}${rawPath ? ` path=${rawPath}` : ''}`);
               }

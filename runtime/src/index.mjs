@@ -7,6 +7,7 @@ import { readonlyRegistryObservation } from './decision/registry-observation.mjs
 import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
 import { canRetryVerificationOnly, verificationProviderFailure } from './decision/verification-retry.mjs';
 import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
+import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
@@ -3800,7 +3801,12 @@ async function runTask() {
           toolCallCount: result.toolCallCount,
           executionMode: mode,
           actions: result.actions,
-          previousActions
+          previousActions,
+          acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria,
+          acceptanceCommands: extractAcceptanceCommands({
+            prompt,
+            acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria
+          })
         });
         const behaviorEvidence = [
           ...(verification.checks ?? []).map((check, index) => ({
@@ -4496,6 +4502,16 @@ async function runTask() {
     };
     finalResult = result;
     finalVerification = verification;
+    // Freeze rule3 §1.1: writes / APPLIED_UNVERIFIED without harness-observed
+    // acceptance green must throw (not return {ok:false} → exit 0).
+    assertVerificationGate({
+      harness: harnessProgress.snapshot(),
+      actions: result.actions,
+      acceptanceCommands: extractAcceptanceCommands({
+        prompt,
+        acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria
+      })
+    });
     const verificationDecision = completedStepRuns.at(-1).verificationDecision ?? finalVerificationDecision;
     const recoveryRun = {
       ok: true,

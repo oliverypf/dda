@@ -47,6 +47,12 @@ const RECOVERY_ADVICE = Object.freeze({
     action: 'RERUN_AFTER_CHECKING_WRITES',
     advice: 'The model connection dropped after retries. Check writesApplied / writesAppliedUnverified before re-running; do not replay writes already recorded as applied.',
     replayWrites: false
+  },
+  VERIFICATION_REQUIRED: {
+    class: 'VERIFICATION_REQUIRED',
+    action: 'RUN_ACCEPTANCE_THEN_RERUN',
+    advice: 'Writes were applied (or left APPLIED_UNVERIFIED) but harness never observed the subject acceptance command succeed. Re-run the acceptance shell.execute (or test.execute) and do not claim success until harness records acceptance green; do not replay writes already recorded as applied.',
+    replayWrites: false
   }
 });
 export const FAILURE_CLASSES = Object.freeze(Object.keys(RECOVERY_ADVICE));
@@ -61,7 +67,8 @@ const RUN_FAILURE_CODES = Object.freeze({
   APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
   APPROVAL_TIMEOUT: 'APPROVAL_EXPIRED',
   APPROVAL_DENIED: 'APPROVAL_EXPIRED',
-  MODEL_TRANSPORT: 'MODEL_TRANSPORT'
+  MODEL_TRANSPORT: 'MODEL_TRANSPORT',
+  VERIFICATION_REQUIRED: 'VERIFICATION_REQUIRED'
 });
 
 // Consecutive failures on the same inspection tool before we treat the handler

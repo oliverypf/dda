@@ -30,7 +30,8 @@ const MESSAGES = Object.freeze({
   PROTOCOL_ERROR: 'runtime 输出不符合 JSONL 契约',
   PAUSED_UNSUPPORTED: 'runtime 发出无头 CLI 无法处理的暂停或状态事件',
   DEPENDENCY_ERROR: 'Node、runtime 或 provider 依赖不可用。Linux CLI 需要 Node.js 24 或更新版本',
-  MODEL_TRANSPORT: '模型连接中断，重试后仍未恢复'
+  MODEL_TRANSPORT: '模型连接中断，重试后仍未恢复',
+  VERIFICATION_REQUIRED: '已有写入但未观测到验收命令通过'
 });
 
 export function exitCodeForError(code) {
@@ -54,6 +55,7 @@ export function messageForCode(code) {
   if (text.startsWith('MODEL_PROVIDER_REJECTED')) return '模型服务拒绝了凭据或模型配置';
   if (text.startsWith('MODEL_REQUEST_REJECTED')) return '模型服务拒绝了这次请求内容';
   if (text.startsWith('MODEL_TRANSPORT')) return MESSAGES.MODEL_TRANSPORT;
+  if (text.startsWith('VERIFICATION_REQUIRED')) return MESSAGES.VERIFICATION_REQUIRED;
   if (text.startsWith('WORKSPACE_')) return '工作区不可用';
   if (text.startsWith('APPROVAL_')) return '审批未通过';
   return '命令没有完成';

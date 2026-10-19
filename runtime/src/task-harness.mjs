@@ -41,6 +41,12 @@ const RECOVERY_ADVICE = Object.freeze({
     action: 'INSPECT_HANDLER_STATE',
     advice: 'The workspace handler failed repeatedly on the same operation. Inspect the handler/target state before retrying; the failing call did not succeed and its effect is unknown.',
     replayWrites: false
+  },
+  MODEL_TRANSPORT: {
+    class: 'MODEL_TRANSPORT',
+    action: 'RERUN_AFTER_CHECKING_WRITES',
+    advice: 'The model connection dropped after retries. Check writesApplied / writesAppliedUnverified before re-running; do not replay writes already recorded as applied.',
+    replayWrites: false
   }
 });
 export const FAILURE_CLASSES = Object.freeze(Object.keys(RECOVERY_ADVICE));
@@ -54,7 +60,8 @@ const RUN_FAILURE_CODES = Object.freeze({
   MAX_TOOL_ROUNDS: 'TOOL_LOOP_LIMIT',
   APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
   APPROVAL_TIMEOUT: 'APPROVAL_EXPIRED',
-  APPROVAL_DENIED: 'APPROVAL_EXPIRED'
+  APPROVAL_DENIED: 'APPROVAL_EXPIRED',
+  MODEL_TRANSPORT: 'MODEL_TRANSPORT'
 });
 
 // Consecutive failures on the same inspection tool before we treat the handler
@@ -70,7 +77,8 @@ function classifyRecovery(state) {
   const runtimeError = state.runtimeResult && state.runtimeResult.ok === false
     ? String(state.runtimeResult.error ?? '')
     : '';
-  const runtimeClass = RUN_FAILURE_CODES[runtimeError];
+  const runtimeCode = runtimeError.split(':', 1)[0];
+  const runtimeClass = RUN_FAILURE_CODES[runtimeCode] ?? RUN_FAILURE_CODES[runtimeError];
   if (runtimeClass) return recoveryAdvice(runtimeClass);
 
   // Repeated identical workspace-handler failures are recoverable guidance,
@@ -88,6 +96,7 @@ function classifyRecovery(state) {
 
 export function createTaskProgress() {
   const state = { heartbeats: 0, toolResults: 0, inspectionsSinceWrite: 0, successfulWrites: 0,
+    writesApplied: 0, writesAppliedUnverified: 0, idempotentReplays: 0,
     latestActivity: null, runtimeResult: null, verification: null, errors: [], inspectionFailures: [] };
   return {
     observe(event) {
@@ -109,13 +118,24 @@ export function createTaskProgress() {
           && /^JEV_(?:HTTP_\d+|TIMEOUT|NETWORK|REQUEST_FAILED)$/.test(c.message ?? '')).map(c => c.message),
         ...(p.nextAction ? { nextAction: p.nextAction } : {})
       };
+      // writesApplied counts lease-consumed file.write successes (incl. kernel → file.write).
+      if (event.kind === 'lease.consumed' && p.capability === 'file.write' && p.ok === true) {
+        state.writesApplied++;
+        return;
+      }
       if (event.kind !== 'tool.result') return;
       state.toolResults++;
-      if (p.ok === true && writes.has(p.name)) { state.successfulWrites++; state.inspectionsSinceWrite = 0; }
+      if (p.ok === true && writes.has(p.name)) {
+        if (p.idempotentReplay === true) state.idempotentReplays++;
+        else { state.successfulWrites++; state.inspectionsSinceWrite = 0; }
+      }
       else if (p.ok === true && inspections.has(p.name)) state.inspectionsSinceWrite++;
       else if (p.ok === false) {
         state.errors.push({ name: p.name, errorCode: p.errorCode });
         state.errors = state.errors.slice(-32);
+        if (p.errorCode === 'TOOL_OUTPUT_AFTER_EFFECT' && writes.has(p.name)) {
+          state.writesAppliedUnverified++;
+        }
         // Track only consecutive failures of the same inspection handler so a
         // transient blip does not masquerade as a repeated handler failure.
         const last = state.inspectionFailures[state.inspectionFailures.length - 1];

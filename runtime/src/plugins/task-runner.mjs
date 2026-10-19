@@ -12,6 +12,30 @@ import { recoveryContinuationText } from '../task-recovery-controller.mjs';
 import { proposedToolDecisionClaim, toolResultDecisionClaim } from '../decision/evidence-claim.mjs';
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
 import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const NON_RETRYABLE_MODEL_CODES = new Set(['context_length_exceeded', 'content_filter']);
+
+const resolveIntEnv = (name, fallback, { min, max }) => {
+  const raw = process.env[name];
+  if (raw === undefined || String(raw).trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error('MODEL_RETRY_CONFIG_INVALID');
+  return value;
+};
+
+const resolveStreamRetryConfig = () => ({
+  streamRetries: resolveIntEnv('DDA_MODEL_STREAM_RETRIES', 2, { min: 0, max: 5 }),
+  streamRetryDelayMs: resolveIntEnv('DDA_MODEL_STREAM_RETRY_DELAY_MS', 1000, { min: 0, max: 10_000 }),
+  maxRequestsPerRound: resolveIntEnv('DDA_MODEL_MAX_REQUESTS_PER_ROUND', 4, { min: 1, max: 9 })
+});
+
+const normalizeModelFailureCode = (failure) => {
+  const raw = String(failure?.code ?? failure?.error?.code ?? failure?.type ?? '');
+  return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+};
+
+const isNonRetryableModelFailure = (failure) => NON_RETRYABLE_MODEL_CODES.has(normalizeModelFailureCode(failure));
 
 // 工具轮数上限可通过 DDA_MAX_TOOL_ROUNDS 调整（1-24），默认 8：
 // 只读分析大仓库时 4 轮往往不够，会直接触发 TOOL_LOOP_LIMIT。
@@ -348,57 +372,130 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
 
        const effectiveMaxToolRounds = resolveMaxToolRounds(maxToolRounds);
        const roundsLeft = (round) => effectiveMaxToolRounds === Infinity || round <= effectiveMaxToolRounds;
+      const { streamRetries, streamRetryDelayMs, maxRequestsPerRound } = resolveStreamRetryConfig();
       for (let round = 1; roundsLeft(round); round += 1) {
-        const callsByIndex = new Map();
+        const transportBudget = { remaining: maxRequestsPerRound };
+        let executedToolsThisRound = 0;
+        let callsByIndex = new Map();
         let turnText = '';
         let turnReasoning = '';
-        let failure;
-        for await (const chunk of provider.stream({ system, messages, tools, signal, cacheRole: 'executor', ...(maxTokens ? { maxTokens } : {}) })) {
-          if (chunk.type === 'text-delta') {
-            const textDelta = chunk.text ?? '';
-            turnText += textDelta;
-            await onEvent?.({ kind: 'model.text_delta', round, text: textDelta });
-          }
-          if (chunk.type === 'reasoning-delta') turnReasoning += chunk.text ?? '';
-          if (chunk.type === 'tool-call') {
-            callsByIndex.set(Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size, {
-              index: Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size,
-              id: chunk.id,
-              name: chunk.name,
-              arguments: chunk.arguments
-            });
+        let streamAttempt = 0;
+        for (; ; streamAttempt += 1) {
+          callsByIndex = new Map();
+          turnText = '';
+          turnReasoning = '';
+          let failure;
+          try {
+            for await (const chunk of provider.stream({
+              system, messages, tools, signal, cacheRole: 'executor',
+              transportBudget,
+              ...(maxTokens ? { maxTokens } : {})
+            })) {
+              if (chunk.type === 'text-delta') {
+                const textDelta = chunk.text ?? '';
+                turnText += textDelta;
+                await onEvent?.({ kind: 'model.text_delta', round, text: textDelta });
+              }
+              if (chunk.type === 'reasoning-delta') turnReasoning += chunk.text ?? '';
+              if (chunk.type === 'tool-call') {
+                callsByIndex.set(Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size, {
+                  index: Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size,
+                  id: chunk.id,
+                  name: chunk.name,
+                  arguments: chunk.arguments
+                });
+                await onEvent?.({
+                  kind: 'tool.call_delta',
+                  round,
+                  id: chunk.id,
+                  name: chunk.name,
+                  argumentsLength: typeof chunk.arguments === 'string' ? chunk.arguments.length : 0
+                });
+              }
+              if (chunk.type === 'tool-call-delta') {
+                const index = Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size;
+                const current = callsByIndex.get(index) ?? { index, id: chunk.id, name: '', arguments: '' };
+                callsByIndex.set(index, {
+                  ...current,
+                  id: chunk.id ?? current.id,
+                  name: chunk.name ?? current.name,
+                  arguments: `${current.arguments}${chunk.argumentsDelta ?? ''}`
+                });
+                await onEvent?.({
+                  kind: 'tool.call_delta',
+                  round,
+                  id: chunk.id ?? current.id,
+                  name: chunk.name ?? current.name,
+                  argumentsLength: typeof chunk.argumentsDelta === 'string' ? chunk.argumentsDelta.length : 0
+                });
+              }
+              if (chunk.type === 'block-end' && chunk.block?.type === 'tool-call') {
+                const index = Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size;
+                callsByIndex.set(index, { index, ...chunk.block });
+              }
+              // Q-r2-6: finish_reason "error" without failure is still an error.
+              if (chunk.type === 'finish' && chunk.reason?.kind === 'error') {
+                failure = chunk.reason.failure ?? { code: 'MODEL_STREAM_ERROR', message: '' };
+              }
+            }
+            if (failure) {
+              if (isNonRetryableModelFailure(failure)) {
+                throw Object.assign(new Error('MODEL_REQUEST_REJECTED'), {
+                  transportPhase: 'STREAM',
+                  failure
+                });
+              }
+              throw Object.assign(new Error(`MODEL_STREAM_ERROR:${failure.code ?? ''}:${failure.message ?? ''}`), {
+                transportPhase: 'STREAM',
+                failure
+              });
+            }
+            break; // stream completed without transport failure
+          } catch (error) {
+            if (signal?.aborted || error?.name === 'AbortError') throw error;
+            const phase = error?.transportPhase;
+            // CONNECT/HTTP are owned by the fetch layer — never wrap again at round level.
+            if (phase === 'CONNECT' || phase === 'HTTP') throw error;
+            if (String(error?.message ?? '').startsWith('MODEL_PROVIDER_REJECTED')
+              || String(error?.message ?? '').startsWith('MODEL_REQUEST_REJECTED')) throw error;
+            const streamPhase = phase === 'STREAM' || phase === undefined;
+            const canRetry = streamPhase
+              && executedToolsThisRound === 0
+              && !isNonRetryableModelFailure(error?.failure)
+              && streamAttempt < streamRetries
+              && transportBudget.remaining > 0;
+            if (!canRetry) {
+              if (streamPhase && (phase === 'STREAM' || /terminated|fetch failed|ECONN|UND_ERR|MODEL_STREAM_ERROR/i.test(String(error?.message ?? '')))) {
+                throw Object.assign(new Error('MODEL_TRANSPORT'), {
+                  transportPhase: 'STREAM',
+                  transportCause: String(error?.message ?? error).slice(0, 40),
+                  transportAttempts: streamAttempt + 1,
+                  cause: error
+                });
+              }
+              throw error;
+            }
+            const delayMs = streamRetryDelayMs <= 0
+              ? 0
+              : Math.min(8000, streamRetryDelayMs * (2 ** streamAttempt)) + Math.floor(Math.random() * 251);
             await onEvent?.({
-              kind: 'tool.call_delta',
+              kind: 'model.stream_retry',
               round,
-              id: chunk.id,
-              name: chunk.name,
-              argumentsLength: typeof chunk.arguments === 'string' ? chunk.arguments.length : 0
+              streamAttempt,
+              nextStreamAttempt: streamAttempt + 1,
+              maxStreamAttempts: streamRetries + 1,
+              requestsRemaining: transportBudget.remaining,
+              cause: String(error?.message ?? error).slice(0, 80),
+              delayMs,
+              discardedTextChars: turnText.length,
+              discardedReasoningChars: turnReasoning.length,
+              discardedToolCalls: callsByIndex.size
             });
+            if (delayMs > 0) await delay(delayMs, undefined, { signal });
+            // Discard this attempt's partial text/tool calls; do not write transcript.
+            continue;
           }
-          if (chunk.type === 'tool-call-delta') {
-            const index = Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size;
-            const current = callsByIndex.get(index) ?? { index, id: chunk.id, name: '', arguments: '' };
-            callsByIndex.set(index, {
-              ...current,
-              id: chunk.id ?? current.id,
-              name: chunk.name ?? current.name,
-              arguments: `${current.arguments}${chunk.argumentsDelta ?? ''}`
-            });
-            await onEvent?.({
-              kind: 'tool.call_delta',
-              round,
-              id: chunk.id ?? current.id,
-              name: chunk.name ?? current.name,
-              argumentsLength: typeof chunk.argumentsDelta === 'string' ? chunk.argumentsDelta.length : 0
-            });
-          }
-          if (chunk.type === 'block-end' && chunk.block?.type === 'tool-call') {
-            const index = Number.isInteger(chunk.index) ? chunk.index : callsByIndex.size;
-            callsByIndex.set(index, { index, ...chunk.block });
-          }
-          if (chunk.type === 'finish' && chunk.reason?.kind === 'error') failure = chunk.reason.failure;
         }
-        if (failure) throw new Error(`${failure.code}:${failure.message}`);
         const calls = collectToolCalls(callsByIndex);
         // 同一轮里模型有时会重复生成相同的 workspace.list/read 请求。保留所有
         // call id 以满足协议，但重复项不再访问文件系统。
@@ -510,6 +607,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 && typeof finalArguments.path === 'string' && observedFileDigests.has(pathKey(finalArguments.path))) {
                 finalArguments = { ...finalArguments, expectedDigest: observedFileDigests.get(pathKey(finalArguments.path)) };
               }
+              executedToolsThisRound += 1;
               output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: f9ArgumentsDigest(call.name, call.arguments), roundId });
               if (output?.path && output.ok !== false) {
                 const currentDigest = isWorkspaceContentTool(call.name) ? output.digest
@@ -564,6 +662,12 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 errorCode, nextAction: 'READ_CURRENT_FILE_AND_REPLAN',
                 message: 'The file changed since the observed source or approval request. This write was refused. Read the current file with workspace.focus/read, preserve the other edits and prepare a new small patch; do not repeat the stale write.'
               };
+              if (errorCode === 'TOOL_OUTPUT_AFTER_EFFECT') output = {
+                errorCode,
+                effectApplied: true,
+                nextAction: 'READ_CURRENT_FILE_DO_NOT_RESEND',
+                message: 'The write already landed, but the tool output failed validation. Read the current file; do not resend the same write or patch.'
+              };
               if (errorCode === 'SAFETY_COMMAND_NOT_ALLOWED' && ['test.execute', 'shell.execute'].includes(call.name)) {
                 const approvedCommands = definition?.metadata?.approvedCommands;
                 output = { ...output, nextAction: 'USE_APPROVED_COMMAND_OR_WORKSPACE_TOOL',
@@ -592,9 +696,14 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                   errorCode: typeof output?.errorCode === 'string' && output.errorCode ? output.errorCode : processFailureCode ?? safeErrorCode(output),
                   message: toolMessage || (processFailureCode ? `The process returned an unsuccessful result (exit code ${output.exitCode ?? 'unknown'}).` : typeof output?.errorCode === 'string' ? output.errorCode : 'TOOL_EXECUTION_FAILED'),
                   ...(typeof output?.mode === 'string' ? { mode: output.mode } : {}),
-                  ...(typeof output?.nextAction === 'string' ? { nextAction: output.nextAction } : {})
+                  ...(typeof output?.nextAction === 'string' ? { nextAction: output.nextAction } : {}),
+                  ...(output?.effectApplied === true ? { effectApplied: true } : {})
                 }
-              : { outputDigest: resultDigest, outputChars: JSON.stringify(output).length })
+              : {
+                  outputDigest: resultDigest,
+                  outputChars: JSON.stringify(output).length,
+                  ...(output?.idempotentReplay === true ? { idempotentReplay: true } : {})
+                })
           };
           if (!isError && isWorkspacePathTool(call.name)) {
             // Paths are intentionally excluded so repeatedly listing different

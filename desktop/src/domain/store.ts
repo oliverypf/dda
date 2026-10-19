@@ -489,6 +489,29 @@ export const completeStreamingAgent = (
   ? upsertStreamingAgent(model, itemId, '', true)
   : model;
 
+/** Trim only the failed stream attempt's tail from a still-STREAMING bubble (Fix 2 desktop). */
+export const discardStreamingTail = (
+  model: HarnessReadModel,
+  itemId: string,
+  chars: number
+): HarnessReadModel => {
+  if (!Number.isFinite(chars) || chars <= 0) return model;
+  const index = model.timeline.findIndex((item) => item.itemId === itemId);
+  if (index < 0) return model;
+  const current = model.timeline[index];
+  if (current.status !== 'STREAMING') return model;
+  const nextTimeline = model.timeline.slice();
+  nextTimeline[index] = {
+    ...current,
+    body: current.body.slice(0, Math.max(0, current.body.length - chars))
+  };
+  return {
+    ...model,
+    projectionVersion: model.projectionVersion + 1,
+    timeline: nextTimeline
+  };
+};
+
 export const setWorkspace = (
   model: HarnessReadModel,
   rootLabel: string,

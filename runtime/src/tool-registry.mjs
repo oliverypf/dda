@@ -71,6 +71,7 @@ export const TOOL_ERROR_CODES = Object.freeze({
   INVALID_INPUT: 'TOOL_INVALID_INPUT',
   INVALID_OUTPUT: 'TOOL_INVALID_OUTPUT',
   OUTPUT_TOO_LARGE: 'TOOL_OUTPUT_TOO_LARGE',
+  OUTPUT_AFTER_EFFECT: 'TOOL_OUTPUT_AFTER_EFFECT',
   HANDLER_FAILED: 'TOOL_HANDLER_FAILED'
 });
 
@@ -525,17 +526,22 @@ export class ToolRegistry {
         if (code) throw new ToolRegistryError(code, error.message.includes(':') ? error.message.slice(code.length + 1) : '');
         throw new ToolRegistryError(TOOL_ERROR_CODES.HANDLER_FAILED, 'handler failed', { name });
       }
-      if (!isJsonValue(value)) fail(TOOL_ERROR_CODES.INVALID_OUTPUT, 'output must be JSON data', { name });
+      const failAfterEffect = (code, message, details = {}) => {
+        if (tool.readOnly === false && (code === TOOL_ERROR_CODES.INVALID_OUTPUT || code === TOOL_ERROR_CODES.OUTPUT_TOO_LARGE)) {
+          fail(TOOL_ERROR_CODES.OUTPUT_AFTER_EFFECT, message, { name, cause: code, ...(details.path ? { path: details.path } : {}) });
+        }
+        fail(code, message, { name, ...details });
+      };
+      if (!isJsonValue(value)) failAfterEffect(TOOL_ERROR_CODES.INVALID_OUTPUT, 'output must be JSON data');
       let serialized;
       try {
         serialized = JSON.stringify(value);
       } catch {
-        fail(TOOL_ERROR_CODES.INVALID_OUTPUT, 'output is not serializable', { name });
+        failAfterEffect(TOOL_ERROR_CODES.INVALID_OUTPUT, 'output is not serializable');
       }
       const bytes = Buffer.byteLength(serialized, 'utf8');
       if (bytes > this.#maxOutputBytes || serialized.length > this.#maxOutputChars) {
-        fail(TOOL_ERROR_CODES.OUTPUT_TOO_LARGE, 'output exceeds configured limit', {
-          name,
+        failAfterEffect(TOOL_ERROR_CODES.OUTPUT_TOO_LARGE, 'output exceeds configured limit', {
           bytes,
           chars: serialized.length,
           maxBytes: this.#maxOutputBytes,
@@ -544,9 +550,19 @@ export class ToolRegistry {
       }
       if (tool.outputSchema) {
         const outputError = validateValue(value, tool.outputSchema, 'output');
-        if (outputError) fail(TOOL_ERROR_CODES.INVALID_OUTPUT, outputError, { name, path: outputError.split(' ')[0] });
+        if (outputError) failAfterEffect(TOOL_ERROR_CODES.INVALID_OUTPUT, outputError, { path: outputError.split(' ')[0] });
       }
-      const result = clone(value, TOOL_ERROR_CODES.INVALID_OUTPUT, 'output cannot be cloned');
+      let result;
+      try {
+        result = clone(value, TOOL_ERROR_CODES.INVALID_OUTPUT, 'output cannot be cloned');
+      } catch (error) {
+        if (error instanceof ToolRegistryError && tool.readOnly === false
+          && error.code === TOOL_ERROR_CODES.INVALID_OUTPUT) {
+          fail(TOOL_ERROR_CODES.OUTPUT_AFTER_EFFECT, error.message.includes(':') ? error.message.slice(error.code.length + 1) : error.message,
+            { name, cause: TOOL_ERROR_CODES.INVALID_OUTPUT });
+        }
+        throw error;
+      }
       if (this.#onInvocation) {
         const summary = Object.freeze({
           name,

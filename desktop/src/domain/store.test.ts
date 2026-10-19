@@ -16,6 +16,7 @@ import {
   setWorkspace,
   setWorkspaceFile,
   upsertStreamingAgent,
+  discardStreamingTail,
   upsertSubAgent
 } from './store';
 import type { RuntimeEvent } from './models';
@@ -110,6 +111,18 @@ describe('HarnessReadModel store', () => {
     expect(item?.runId).toBe('runtime-run');
     expect(item?.body).toBe('first second');
     expect(item?.status).toBe('COMPLETE');
+  });
+
+  it('discardStreamingTail keeps earlier rounds and ignores COMPLETE bubbles', () => {
+    let model = upsertStreamingAgent(createInitialReadModel(), 'run-response', '第一轮。', false, 'run');
+    model = upsertStreamingAgent(model, 'run-response', '半截失败', false, 'run');
+    model = discardStreamingTail(model, 'run-response', '半截失败'.length);
+    expect(model.timeline.find((entry) => entry.itemId === 'run-response')?.body).toBe('第一轮。');
+    model = upsertStreamingAgent(model, 'run-response', '第二轮。', true, 'run');
+    const before = model.timeline.find((entry) => entry.itemId === 'run-response')?.body;
+    model = discardStreamingTail(model, 'run-response', 3);
+    expect(model.timeline.find((entry) => entry.itemId === 'run-response')?.body).toBe(before);
+    expect(model.timeline.find((entry) => entry.itemId === 'run-response')?.status).toBe('COMPLETE');
   });
   it('resets a stale controlled selection on Phase 1 connection and rejects switching back', () => {
     const selected = setExecutionMode(createInitialReadModel(), 'CONTROLLED');

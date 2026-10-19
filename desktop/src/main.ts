@@ -79,7 +79,8 @@ import {
   setWorkspaceFile,
   upsertApproval,
   upsertStreamingAgent,
-  upsertSubAgent
+  upsertSubAgent,
+  discardStreamingTail
 } from './domain/store';
 import { desktopBridge, type ThreadEventPage } from './services/desktopBridge';
 import {
@@ -4533,6 +4534,14 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     runtimeStreamObserved = true;
     const streamId = `${event.runId}-response`;
     model = upsertStreamingAgent(model, streamId, typeof payload.text === 'string' ? payload.text : '', false, event.runId);
+    scheduleRender();
+    return;
+  }
+  if (event.kind === 'model.stream_retry') {
+    const chars = typeof payload.discardedTextChars === 'number' && Number.isFinite(payload.discardedTextChars)
+      ? payload.discardedTextChars
+      : 0;
+    model = discardStreamingTail(model, `${event.runId}-response`, chars);
     scheduleRender();
     return;
   }

@@ -350,7 +350,12 @@ const trajectoryErrorPayload = (error) => {
     ...(error?.stepErrorCode ? { stepErrorCode: String(error.stepErrorCode).slice(0, 120) } : {}),
     ...(error?.summary ? { summary: safeRuntimeMessage(error.summary) } : {}),
     ...(error?.nextAction ? { nextAction: String(error.nextAction).slice(0, 120) } : {}),
-    ...(Array.isArray(error?.checks) ? { checks: boundedVerificationChecks(error.checks) } : {})
+    ...(Array.isArray(error?.checks) ? { checks: boundedVerificationChecks(error.checks) } : {}),
+    ...(error?.transportPhase ? { transportPhase: String(error.transportPhase).slice(0, 16) } : {}),
+    ...(error?.transportCause ? { transportCause: String(error.transportCause).slice(0, 40) } : {}),
+    ...(error?.transportAttempts !== undefined ? { transportAttempts: error.transportAttempts } : {}),
+    ...(error?.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}),
+    ...(error?.toolCallEmitted !== undefined ? { toolCallEmitted: error.toolCallEmitted } : {})
   };
 };
 
@@ -3493,7 +3498,8 @@ async function runTask() {
             if (event.kind === 'tool.result') {
               const action = verificationActions.find((item) => item.id === event.id);
               if (action) {
-                action.state = event.ok === true ? 'SUCCEEDED' : 'FAILED';
+                action.state = event.ok === true ? 'SUCCEEDED'
+                  : (event.effectApplied === true ? 'APPLIED_UNVERIFIED' : 'FAILED');
                 if (event.invocationAttempted === false && event.gateDecision === 'REQUEST_EVIDENCE') {
                   action.invocationAttempted = false;
                   action.gateDecision = event.gateDecision;
@@ -3501,6 +3507,19 @@ async function runTask() {
                 if (event.ok === true && event.outputDigest) action.outputDigest = event.outputDigest;
                 if (event.ok !== true && event.errorCode) action.errorCode = event.errorCode;
                 if (event.ok !== true && event.message) action.errorMessage = String(event.message).slice(0, 640);
+                if (event.effectApplied === true) action.effectApplied = true;
+              }
+              if (event.effectApplied === true && ['file.write', 'file.patch'].includes(event.name)) {
+                await trajectory.append({
+                  runId,
+                  kind: 'TaskWriteEffectUnverified',
+                  payload: {
+                    name: event.name,
+                    ...(typeof event.errorCode === 'string' ? { errorCode: event.errorCode } : {}),
+                    ...(typeof event.nextAction === 'string' ? { nextAction: event.nextAction } : {})
+                  },
+                  sensitivity: 'INTERNAL'
+                });
               }
             }
             // Calls rejected before ToolRegistry.invoke (for example a
@@ -3526,6 +3545,10 @@ async function runTask() {
                 sensitivity: 'SECURITY_AUDIT'
               });
             }
+            if (event.kind === 'model.stream_retry' && typeof event.discardedTextChars === 'number'
+              && Number.isFinite(event.discardedTextChars) && event.discardedTextChars > 0) {
+              streamedResponseText = streamedResponseText.slice(0, Math.max(0, streamedResponseText.length - event.discardedTextChars));
+            }
             emitEvent(event.kind, {
               attempt,
               round: event.round,
@@ -3546,7 +3569,20 @@ async function runTask() {
               ...(event.errorCode ? { errorCode: event.errorCode } : {}),
               ...(event.message ? { message: String(event.message).slice(0, 640) } : {}),
               ...(event.mode ? { mode: String(event.mode).slice(0, 40) } : {}),
-              ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {})
+              ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {}),
+              ...(event.effectApplied === true ? { effectApplied: true } : {}),
+              ...(event.idempotentReplay === true ? { idempotentReplay: true } : {}),
+              ...(event.kind === 'model.stream_retry' ? {
+                ...(event.streamAttempt !== undefined ? { streamAttempt: event.streamAttempt } : {}),
+                ...(event.nextStreamAttempt !== undefined ? { nextStreamAttempt: event.nextStreamAttempt } : {}),
+                ...(event.maxStreamAttempts !== undefined ? { maxStreamAttempts: event.maxStreamAttempts } : {}),
+                ...(event.requestsRemaining !== undefined ? { requestsRemaining: event.requestsRemaining } : {}),
+                ...(event.cause ? { cause: String(event.cause).slice(0, 80) } : {}),
+                ...(event.delayMs !== undefined ? { delayMs: event.delayMs } : {}),
+                ...(event.discardedTextChars !== undefined ? { discardedTextChars: event.discardedTextChars } : {}),
+                ...(event.discardedReasoningChars !== undefined ? { discardedReasoningChars: event.discardedReasoningChars } : {}),
+                ...(event.discardedToolCalls !== undefined ? { discardedToolCalls: event.discardedToolCalls } : {})
+              } : {})
             });
             if (event.kind === 'tool.result') {
               emitEvent('harness.progress', harnessProgress.snapshot());

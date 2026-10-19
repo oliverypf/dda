@@ -88,6 +88,7 @@ function classifyRecovery(state) {
 
 export function createTaskProgress() {
   const state = { heartbeats: 0, toolResults: 0, inspectionsSinceWrite: 0, successfulWrites: 0,
+    writesApplied: 0, writesAppliedUnverified: 0, idempotentReplays: 0,
     latestActivity: null, runtimeResult: null, verification: null, errors: [], inspectionFailures: [] };
   return {
     observe(event) {
@@ -109,13 +110,24 @@ export function createTaskProgress() {
           && /^JEV_(?:HTTP_\d+|TIMEOUT|NETWORK|REQUEST_FAILED)$/.test(c.message ?? '')).map(c => c.message),
         ...(p.nextAction ? { nextAction: p.nextAction } : {})
       };
+      // writesApplied counts lease-consumed file.write successes (incl. kernel → file.write).
+      if (event.kind === 'lease.consumed' && p.capability === 'file.write' && p.ok === true) {
+        state.writesApplied++;
+        return;
+      }
       if (event.kind !== 'tool.result') return;
       state.toolResults++;
-      if (p.ok === true && writes.has(p.name)) { state.successfulWrites++; state.inspectionsSinceWrite = 0; }
+      if (p.ok === true && writes.has(p.name)) {
+        if (p.idempotentReplay === true) state.idempotentReplays++;
+        else { state.successfulWrites++; state.inspectionsSinceWrite = 0; }
+      }
       else if (p.ok === true && inspections.has(p.name)) state.inspectionsSinceWrite++;
       else if (p.ok === false) {
         state.errors.push({ name: p.name, errorCode: p.errorCode });
         state.errors = state.errors.slice(-32);
+        if (p.errorCode === 'TOOL_OUTPUT_AFTER_EFFECT' && writes.has(p.name)) {
+          state.writesAppliedUnverified++;
+        }
         // Track only consecutive failures of the same inspection handler so a
         // transient blip does not masquerade as a repeated handler failure.
         const last = state.inspectionFailures[state.inspectionFailures.length - 1];

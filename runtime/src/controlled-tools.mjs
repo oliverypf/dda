@@ -1,13 +1,42 @@
+import { createHash } from 'node:crypto';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, sep as pathSep } from 'node:path';
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
 import { applyTextPatch, MAX_PATCH_TEXT, MAX_PATCH_FILE_BYTES, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
 import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
+import { canonicalJson } from './model-tool-calls.mjs';
 
 const MAX_COMMAND_LENGTH = 4096;
 const MAX_ARGUMENTS = 128;
 const MAX_ARGUMENT_LENGTH = 4096;
 const MAX_PATH_LENGTH = 512;
+
 const MAX_FILE_CHARS = 1024 * 1024;
+
+/** Keep only top-level keys declared in schema.properties (Fix 1a). */
+export const pickDeclared = (value, schema) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const properties = schema?.properties;
+  if (!properties || typeof properties !== 'object') return value;
+  const picked = {};
+  for (const key of Object.keys(properties)) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) picked[key] = value[key];
+  }
+  return picked;
+};
+
+const APPLIED_WRITES_LIMIT = 64;
+const ledgerDigest = (value) => `sha256:${createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex')}`;
+const normalizeReplacements = (replacements) => (Array.isArray(replacements) ? replacements : []).map((item) => ({
+  oldText: item.oldText,
+  newText: item.newText,
+  expectedCount: item.expectedCount === undefined ? 1 : item.expectedCount
+}));
+const ledgerKey = (path, contentHash) => `${String(path).replaceAll('\\', '/')}\0${contentHash}`;
+const touchLedger = (ledger, key, entry) => {
+  if (ledger.has(key)) ledger.delete(key);
+  ledger.set(key, entry);
+  while (ledger.size > APPLIED_WRITES_LIMIT) ledger.delete(ledger.keys().next().value);
+};
 
 // Bound JSON-encoded UTF-8, including escaping, before returning a successful
 // write. A large preview must not turn an applied mutation into a tool error.
@@ -96,7 +125,8 @@ const writeOutputSchema = {
     bytesWritten: { type: 'integer', minimum: 0 },
     contentDigest: { type: 'string' },
     lease: { type: ['string', 'null'] },
-    state: { type: 'string', enum: ['OBSERVED'] }
+    state: { type: 'string', enum: ['OBSERVED'] },
+    idempotentReplay: { const: true }
   },
   required: ['ok', 'action', 'path', 'bytesWritten', 'contentDigest'],
   additionalProperties: false
@@ -148,7 +178,9 @@ const patchOutputSchema = {
     diffTruncated: { type: 'boolean' },
     bytesWritten: { type: 'integer', minimum: 0 },
     contentDigest: { type: 'string' },
-    lease: { type: ['string', 'null'] }
+    lease: { type: ['string', 'null'] },
+    state: { type: 'string', enum: ['OBSERVED'] },
+    idempotentReplay: { const: true }
   },
   required: ['ok', 'action', 'path', 'beforeDigest', 'afterDigest', 'diff', 'bytesWritten', 'contentDigest'],
   additionalProperties: false
@@ -374,6 +406,8 @@ export const registerExecutorTools = (registry, executor, {
   requireMethod(executor, 'shell');
   requireMethod(executor, 'writeFile');
   requireMethod(executor, 'test');
+  // Per-registry in-memory applied-write ledger (Fix 1c): path+content hash → digests.
+  const appliedWrites = new Map();
   const getLease = typeof leaseProvider === 'function' ? leaseProvider : () => undefined;
   const effectMetadata = capability => ({ actionClass: 'SIDE_EFFECT', capability,
     ...(typeof leaseProvider?.canLease === 'function' ? { available: leaseProvider.canLease(capability) } : {}) });
@@ -412,7 +446,10 @@ export const registerExecutorTools = (registry, executor, {
     outputSchema: processOutputSchema,
     readOnly: false,
     metadata: commandMetadata(CAPABILITIES.SHELL),
-    handler: async (input, context) => executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }), context)
+    handler: async (input, context) => pickDeclared(
+      await executeWithLease(CAPABILITIES.SHELL, input, (lease) => executor.shell(input, { lease }), context),
+      processOutputSchema
+    )
   });
   registry.register({
     name: 'file.write',
@@ -423,18 +460,48 @@ export const registerExecutorTools = (registry, executor, {
     metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
     handler: async (input, context) => {
       let request = input;
+      let currentDigest = null;
+      let resolvedPath = typeof input.path === 'string' ? input.path : '';
       if (workspace && typeof workspace.read === 'function') {
         let current;
-        try { current = (await workspace.read(input.path, 1)).digest; }
+        try { current = await workspace.read(input.path, 1); }
         catch (error) {
           if (!String(error.message).startsWith('WORKSPACE_NOT_FOUND:')) throw error;
           current = null;
         }
+        currentDigest = current?.digest ?? null;
+        resolvedPath = current?.path ?? input.path;
         const expected = typeof input.expectedDigest === 'string' ? input.expectedDigest.toLowerCase().replace(/^(?!sha256:)/, 'sha256:') : input.expectedDigest;
-        if (expected !== undefined && expected !== current) throw new TextPatchError('WRITE_STALE_DIGEST');
-        request = { ...input, expectedDigest: current };
+        if (expected !== undefined && expected !== currentDigest) throw new TextPatchError('WRITE_STALE_DIGEST');
+        request = { ...input, expectedDigest: currentDigest };
       }
-      return executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }), context);
+      const writeKey = ledgerKey(resolvedPath, ledgerDigest(String(input.content ?? '')));
+      const prior = appliedWrites.get(writeKey);
+      if (prior) {
+        touchLedger(appliedWrites, writeKey, prior);
+        if (currentDigest === prior.afterDigest) {
+          return pickDeclared({
+            ok: true,
+            action: 'write_file',
+            path: resolvedPath,
+            bytesWritten: 0,
+            contentDigest: prior.afterDigest,
+            lease: null,
+            state: 'OBSERVED',
+            idempotentReplay: true
+          }, writeOutputSchema);
+        }
+        if (currentDigest !== null && currentDigest !== prior.beforeDigest) {
+          throw new TextPatchError('WRITE_STALE_DIGEST');
+        }
+      }
+      const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }), context);
+      // Ledger write after lease consumed, before registry output validation (Fix 1c / B4).
+      touchLedger(appliedWrites, writeKey, {
+        beforeDigest: currentDigest,
+        afterDigest: writeResult.contentDigest
+      });
+      return pickDeclared(writeResult, writeOutputSchema);
     }
   });
   if (workspace && typeof workspace.read === 'function') {
@@ -470,19 +537,57 @@ export const registerExecutorTools = (registry, executor, {
       metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
       handler: async ({ path, expectedDigest, replacements }, context) => {
         const current = await readCompleteText(workspace, path, { maxBytes: MAX_PATCH_FILE_BYTES });
+        const normalized = normalizeReplacements(replacements);
+        const patchKey = ledgerKey(current.path, ledgerDigest(normalized));
+        const prior = appliedWrites.get(patchKey);
+        if (prior) {
+          touchLedger(appliedWrites, patchKey, prior);
+          if (current.digest === prior.afterDigest) {
+            return pickDeclared({
+              ok: true,
+              action: 'patch_file',
+              path: current.path,
+              beforeDigest: prior.beforeDigest,
+              afterDigest: prior.afterDigest,
+              diff: typeof prior.diff === 'string' ? prior.diff : '',
+              ...(prior.diffTruncated !== undefined ? { diffTruncated: prior.diffTruncated } : {}),
+              bytesWritten: 0,
+              contentDigest: prior.afterDigest,
+              lease: null,
+              state: 'OBSERVED',
+              idempotentReplay: true
+            }, patchOutputSchema);
+          }
+          if (current.digest !== prior.beforeDigest) throw new TextPatchError('PATCH_STALE_DIGEST');
+          // digest === beforeDigest: fall through and re-apply via the normal path.
+        }
         const content = applyTextPatch(current.content, replacements, expectedDigest);
+        const afterDigest = textDigest(content);
+        const preview = diffPreview(current.content, content, current.path);
         const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
           const latest = await workspace.read(current.path);
           if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');
           return executor.writeFile({ path: current.path, content, expectedDigest: current.digest }, { lease });
         }, context);
-        return {
-          ...writeResult,
-          action: 'patch_file',
+        // Ledger must be written even if registry later rejects the output (AFTER_EFFECT path).
+        touchLedger(appliedWrites, patchKey, {
           beforeDigest: current.digest,
-          afterDigest: textDigest(content),
-          ...diffPreview(current.content, content, current.path)
-        };
+          afterDigest,
+          diff: preview.diff,
+          diffTruncated: preview.diffTruncated
+        });
+        return pickDeclared({
+          ok: true,
+          action: 'patch_file',
+          path: current.path,
+          beforeDigest: current.digest,
+          afterDigest,
+          ...preview,
+          bytesWritten: writeResult.bytesWritten,
+          contentDigest: writeResult.contentDigest ?? afterDigest,
+          lease: writeResult.lease ?? null,
+          ...(writeResult.state === 'OBSERVED' ? { state: 'OBSERVED' } : {})
+        }, patchOutputSchema);
       }
     });
   }
@@ -494,7 +599,10 @@ export const registerExecutorTools = (registry, executor, {
     readOnly: false,
     metadata: { ...commandMetadata(CAPABILITIES.TEST),
       ...(executor instanceof RestrictedWindowsExecutor ? { processObservationPolicy: 'RESTRICTED_WINDOWS_NO_PRELOAD' } : {}) },
-    handler: async (input, context) => executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }), context)
+    handler: async (input, context) => pickDeclared(
+      await executeWithLease(CAPABILITIES.TEST, input, (lease) => executor.test(input, { lease }), context),
+      processOutputSchema
+    )
   });
   if (networkAdapter) {
     if (typeof networkAdapter.request !== 'function') throw new TypeError('EXECUTOR_NETWORK_ADAPTER_INVALID');
@@ -505,7 +613,10 @@ export const registerExecutorTools = (registry, executor, {
       outputSchema: networkOutputSchema,
       readOnly: false,
       metadata: effectMetadata(CAPABILITIES.NETWORK),
-      handler: async (input, context) => executeWithLease(CAPABILITIES.NETWORK, input, (lease) => networkAdapter.request(input, { lease }), context)
+      handler: async (input, context) => pickDeclared(
+        await executeWithLease(CAPABILITIES.NETWORK, input, (lease) => networkAdapter.request(input, { lease }), context),
+        networkOutputSchema
+      )
     });
   }
   return registry;

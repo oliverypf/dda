@@ -564,6 +564,12 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 errorCode, nextAction: 'READ_CURRENT_FILE_AND_REPLAN',
                 message: 'The file changed since the observed source or approval request. This write was refused. Read the current file with workspace.focus/read, preserve the other edits and prepare a new small patch; do not repeat the stale write.'
               };
+              if (errorCode === 'TOOL_OUTPUT_AFTER_EFFECT') output = {
+                errorCode,
+                effectApplied: true,
+                nextAction: 'READ_CURRENT_FILE_DO_NOT_RESEND',
+                message: 'The write already landed, but the tool output failed validation. Read the current file; do not resend the same write or patch.'
+              };
               if (errorCode === 'SAFETY_COMMAND_NOT_ALLOWED' && ['test.execute', 'shell.execute'].includes(call.name)) {
                 const approvedCommands = definition?.metadata?.approvedCommands;
                 output = { ...output, nextAction: 'USE_APPROVED_COMMAND_OR_WORKSPACE_TOOL',
@@ -592,9 +598,14 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                   errorCode: typeof output?.errorCode === 'string' && output.errorCode ? output.errorCode : processFailureCode ?? safeErrorCode(output),
                   message: toolMessage || (processFailureCode ? `The process returned an unsuccessful result (exit code ${output.exitCode ?? 'unknown'}).` : typeof output?.errorCode === 'string' ? output.errorCode : 'TOOL_EXECUTION_FAILED'),
                   ...(typeof output?.mode === 'string' ? { mode: output.mode } : {}),
-                  ...(typeof output?.nextAction === 'string' ? { nextAction: output.nextAction } : {})
+                  ...(typeof output?.nextAction === 'string' ? { nextAction: output.nextAction } : {}),
+                  ...(output?.effectApplied === true ? { effectApplied: true } : {})
                 }
-              : { outputDigest: resultDigest, outputChars: JSON.stringify(output).length })
+              : {
+                  outputDigest: resultDigest,
+                  outputChars: JSON.stringify(output).length,
+                  ...(output?.idempotentReplay === true ? { idempotentReplay: true } : {})
+                })
           };
           if (!isError && isWorkspacePathTool(call.name)) {
             // Paths are intentionally excluded so repeatedly listing different

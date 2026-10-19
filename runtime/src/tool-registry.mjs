@@ -518,11 +518,16 @@ export class ToolRegistry {
         value = await tool.handler(safeInput, context);
       } catch (error) {
         if (error instanceof ToolRegistryError) throw error;
-        const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
+        // Preserve structured probe/domain codes (WORKSPACE_*, EXCERPT_*, SAFETY_*, …).
+        // Collapsing them to TOOL_HANDLER_FAILED hid recoverable focus/path misses
+        // and let task-runner hard-stop on TOOL_REPEATED_FAILURE (freeze-harness-t1-green-r1 §1.1).
+        const fromCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
           ? error.code
-          : typeof error?.message === 'string' && /^(?:WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+(?::.*)?$/.test(error.message)
-            ? error.message.split(':', 1)[0]
-            : undefined;
+          : undefined;
+        const fromMessage = typeof error?.message === 'string'
+          ? error.message.match(/^([A-Z][A-Z0-9_]{1,96})(?::|$)/)?.[1]
+          : undefined;
+        const code = fromCode ?? fromMessage;
         if (code) throw new ToolRegistryError(code, error.message.includes(':') ? error.message.slice(code.length + 1) : '');
         throw new ToolRegistryError(TOOL_ERROR_CODES.HANDLER_FAILED, 'handler failed', { name });
       }

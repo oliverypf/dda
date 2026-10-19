@@ -8,6 +8,7 @@ import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
 import { canRetryVerificationOnly, verificationProviderFailure } from './decision/verification-retry.mjs';
 import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
+import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
@@ -4543,36 +4544,50 @@ async function runTask() {
       },
       sensitivity: 'SOURCE'
     });
-    await appendGitAuditCheckpoint('RUN_COMPLETED', { threadId: thread.id }, { sourceEventId: completedTrajectoryEvent.eventId });
+    // Freeze idempotency-r2 §1.1: after PASS+COMPLETE and durable TaskRunCompleted,
+    // telemetry conflicts must warn+skip — never flip the run to failed.
+    const postPassGate = isPostPassGateOpen({
+      verification,
+      taskRunCompleted: Boolean(completedTrajectoryEvent?.eventId)
+    });
+    const postPassWarn = (message) => logger.warn(message);
+    await softFailPostPassTelemetry(postPassGate, 'git-audit-run-completed', () =>
+      appendGitAuditCheckpoint('RUN_COMPLETED', { threadId: thread.id }, { sourceEventId: completedTrajectoryEvent.eventId }),
+    { warn: postPassWarn });
     for (const decisionId of decisionIds) {
-      await decisionTrace.linkOutcome(decisionId, {
-        outcomeId: decisionId === verificationDecision.decisionId ? `task-outcome-${runId}` : undefined,
-        status: 'SUCCEEDED',
-        sourceType: decisionId === verificationDecision.decisionId ? 'verifier' : 'coordinator',
-        sourceId: decisionId === verificationDecision.decisionId ? `verifier-${runId}` : `coordinator-${runId}`,
-        executionEventIds: decisionProducedEvents.get(decisionId) ?? [completedTrajectoryEvent.eventId],
-        verifierReportIds: decisionId === verificationDecision.decisionId
-          ? [finalVerificationEventId ?? completedTrajectoryEvent.eventId]
-          : [],
-        observedEffects: [],
-        safetyOutcomeCodes: ['NO_EXTERNAL_EFFECT']
-      });
+      await softFailPostPassTelemetry(postPassGate, `decision-linkOutcome:${decisionId}`, () =>
+        decisionTrace.linkOutcome(decisionId, {
+          outcomeId: decisionId === verificationDecision.decisionId ? `task-outcome-${runId}` : undefined,
+          status: 'SUCCEEDED',
+          sourceType: decisionId === verificationDecision.decisionId ? 'verifier' : 'coordinator',
+          sourceId: decisionId === verificationDecision.decisionId ? `verifier-${runId}` : `coordinator-${runId}`,
+          executionEventIds: decisionProducedEvents.get(decisionId) ?? [completedTrajectoryEvent.eventId],
+          verifierReportIds: decisionId === verificationDecision.decisionId
+            ? [finalVerificationEventId ?? completedTrajectoryEvent.eventId]
+            : [],
+          observedEffects: [],
+          safetyOutcomeCodes: ['NO_EXTERNAL_EFFECT']
+        }),
+      { warn: postPassWarn });
     }
-    const creditBlame = creditBlameLedger.hasDurableSink
-      ? await creditBlameLedger.recordDurably({
+    const creditBlame = await softFailPostPassTelemetry(postPassGate, 'credit-blame-record', async () => {
+      if (creditBlameLedger.hasDurableSink) {
+        return creditBlameLedger.recordDurably({
           decisions: decisionIds.map((decisionId) => decisionTrace.get(decisionId)).filter(Boolean),
-      outcome: {
-        outcomeId: `task-outcome-${runId}`,
-        status: 'SUCCEEDED',
-          executionEventIds: [completedTrajectoryEvent.eventId]
-        }
-      })
-      : creditBlameLedger.record({
-          decisions: decisionIds.map((decisionId) => decisionTrace.get(decisionId)).filter(Boolean),
-          outcome: { outcomeId: `task-outcome-${runId}`, status: 'SUCCEEDED', executionEventIds: [completedTrajectoryEvent.eventId] }
+          outcome: {
+            outcomeId: `task-outcome-${runId}`,
+            status: 'SUCCEEDED',
+            executionEventIds: [completedTrajectoryEvent.eventId]
+          }
         });
-    await creditBlameLedger.flush();
-    await profileRegistry.recordEvidence({
+      }
+      return creditBlameLedger.record({
+        decisions: decisionIds.map((decisionId) => decisionTrace.get(decisionId)).filter(Boolean),
+        outcome: { outcomeId: `task-outcome-${runId}`, status: 'SUCCEEDED', executionEventIds: [completedTrajectoryEvent.eventId] }
+      });
+    }, { warn: postPassWarn });
+    await softFailPostPassTelemetry(postPassGate, 'credit-blame-flush', () => creditBlameLedger.flush(), { warn: postPassWarn });
+    await softFailPostPassTelemetry(postPassGate, 'profile-capability', () => profileRegistry.recordEvidence({
       kind: 'CAPABILITY',
       entityType: 'model',
       entityId: `${currentModelIdentity.provider}/${currentModelIdentity.model}`,
@@ -4586,8 +4601,8 @@ async function runTask() {
       quality: verification.quality,
       safety: verification.safety,
       latencyMs: Math.max(0, Date.now() - runStartedAtMs)
-    });
-    await profileRegistry.recordEvidence({
+    }), { warn: postPassWarn });
+    await softFailPostPassTelemetry(postPassGate, 'profile-safety', () => profileRegistry.recordEvidence({
       kind: 'SAFETY',
       entityType: 'executor',
       entityId: executorDescriptor().id,
@@ -4599,7 +4614,7 @@ async function runTask() {
       outcome: 'SUCCEEDED',
       safety: verification.safety,
       latencyMs: Math.max(0, Date.now() - runStartedAtMs)
-    });
+    }), { warn: postPassWarn });
     const recordedOutcome = await recordTaskOutcome({
       runId,
       deploymentProposalIds: dynamicPluginResults.filter((plugin) => plugin.state === 'LOADED' && plugin.proposalId).map((plugin) => plugin.proposalId),

@@ -10,6 +10,12 @@ const canonical = (value) => Array.isArray(value)
 const digest = (value) => `sha256:${createHash('sha256').update(canonical(value), 'utf8').digest('hex')}`;
 const SAFE_STATUSES = new Set(['SUCCEEDED', 'PARTIAL', 'FAILED', 'CANCELLED', 'UNKNOWN']);
 
+/** Deterministic ms from identity — excludes Date.now() / random. */
+const stableCreatedAtMs = (identity) => {
+  const hex = createHash('sha256').update(canonical(identity), 'utf8').digest('hex').slice(0, 12);
+  return Number.parseInt(hex, 16) % 1e13;
+};
+
 const allocate = ({ decisions = [], outcome = {} } = {}) => {
   if (!Array.isArray(decisions) || !decisions.length) return [];
   const usable = decisions.filter((decision) => decision?.status === 'COMMITTED' && typeof decision.decisionId === 'string');
@@ -28,6 +34,36 @@ const allocate = ({ decisions = [], outcome = {} } = {}) => {
     evidenceRefs: Array.isArray(outcome.executionEventIds) ? outcome.executionEventIds.slice(0, 16) : [],
     allocationMethod: 'CAUSAL_EQUAL_SHARE'
   }));
+};
+
+const sourceDigestFor = ({ decisions, outcome }) => {
+  const records = allocate({ decisions, outcome });
+  return digest({
+    decisionIds: records.map((record) => record.decisionId),
+    outcomeId: outcome?.outcomeId,
+    status: outcome?.status
+  });
+};
+
+/** Build byte-stable allocation records for a given sourceDigest (freeze §1.2). */
+const stableRecordsFor = ({ decisions, outcome, sourceDigest }) => {
+  const allocations = allocate({ decisions, outcome });
+  return allocations.map((allocation) => {
+    const allocationId = `allocation-${digest({
+      sourceDigest,
+      decisionId: allocation.decisionId,
+      outcomeId: allocation.outcomeId ?? null
+    }).slice('sha256:'.length, 'sha256:'.length + 32)}`;
+    const createdAtMs = stableCreatedAtMs({
+      sourceDigest,
+      decisionId: allocation.decisionId,
+      outcomeId: allocation.outcomeId ?? null,
+      evidenceRefs: allocation.evidenceRefs
+    });
+    const record = { allocationId, ...allocation, createdAtMs };
+    record.allocationDigest = digest({ ...record, allocationDigest: undefined });
+    return record;
+  });
 };
 
 export class CreditBlameLedger {
@@ -94,16 +130,25 @@ export class CreditBlameLedger {
 
   async recordDurably({ decisions, outcome } = {}) {
     if (!this.#eventStore || typeof this.#eventStore.append !== 'function') throw new Error('HARNESS_EVENT_STORE_REQUIRED');
+    await this.load();
     const allocations = allocate({ decisions, outcome });
     if (!allocations.length) return [];
-    const records = allocations.map((allocation) => {
-      const record = { allocationId: 'allocation-' + this.#idFactory(), ...allocation, createdAtMs: Date.now() };
-      record.allocationDigest = digest({ ...record, allocationDigest: undefined });
-      return record;
+    const sourceDigest = digest({
+      decisionIds: allocations.map((record) => record.decisionId),
+      outcomeId: outcome?.outcomeId,
+      status: outcome?.status
     });
+    const records = stableRecordsFor({ decisions, outcome, sourceDigest });
+
+    // Idempotent hit in memory: same allocation ids already present — do not insert again.
+    const existingInMemory = records.map((record) => this.#records.get(record.allocationId)).filter(Boolean);
+    if (existingInMemory.length === records.length
+      && existingInMemory.every((record, index) => record.allocationDigest === records[index].allocationDigest)) {
+      return existingInMemory.map(clone);
+    }
+
     const runId = String(outcome?.runId ?? records[0].runId ?? 'credit-blame').slice(0, 240);
-    const sourceDigest = digest({ decisionIds: records.map((record) => record.decisionId), outcomeId: outcome?.outcomeId, status: outcome?.status });
-    await this.#eventStore.append({
+    const appendResult = await this.#eventStore.append({
       runId,
       aggregateType: 'CreditBlame',
       aggregateId: String(outcome?.outcomeId ?? sourceDigest).slice(0, 240),
@@ -112,6 +157,27 @@ export class CreditBlameLedger {
       payload: { outcomeId: outcome?.outcomeId, status: String(outcome?.status ?? 'UNKNOWN').toUpperCase(), sourceDigest, allocations: records.map((record) => clone(record)) },
       sensitivity: 'INTERNAL'
     });
+
+    // Store-level idempotent replay: adopt committed allocations; never insert a second set.
+    if (appendResult?.idempotent) {
+      const committed = appendResult.events?.[0]?.payload?.allocations;
+      if (Array.isArray(committed) && committed.length) {
+        for (const allocation of committed) {
+          if (allocation?.allocationId && !this.#records.has(allocation.allocationId)) {
+            this.#records.set(allocation.allocationId, clone(allocation));
+          }
+        }
+        this.#schedulePersist();
+        return committed.map(clone);
+      }
+      // Receipt without events — return stable records already computed (do not double-insert).
+      for (const record of records) {
+        if (!this.#records.has(record.allocationId)) this.#records.set(record.allocationId, record);
+      }
+      this.#schedulePersist();
+      return records.map(clone);
+    }
+
     for (const record of records) this.#records.set(record.allocationId, record);
     this.#schedulePersist();
     return records.map(clone);
@@ -119,14 +185,25 @@ export class CreditBlameLedger {
 
   record({ decisions, outcome } = {}) {
     const allocations = allocate({ decisions, outcome });
-    const records = allocations.map((allocation) => {
-      const record = { allocationId: `allocation-${this.#idFactory()}`, ...allocation, createdAtMs: Date.now() };
-      record.allocationDigest = digest({ ...record, allocationDigest: undefined });
-      this.#records.set(record.allocationId, record);
-      return clone(record);
+    if (!allocations.length) return [];
+    const sourceDigest = digest({
+      decisionIds: allocations.map((record) => record.decisionId),
+      outcomeId: outcome?.outcomeId,
+      status: outcome?.status
     });
-    if (records.length) this.#schedulePersist();
-    return records;
+    const records = stableRecordsFor({ decisions, outcome, sourceDigest });
+    const out = [];
+    for (const record of records) {
+      const existing = this.#records.get(record.allocationId);
+      if (existing) {
+        out.push(clone(existing));
+        continue;
+      }
+      this.#records.set(record.allocationId, record);
+      out.push(clone(record));
+    }
+    if (out.length) this.#schedulePersist();
+    return out;
   }
   list(runId) { return [...this.#records.values()].filter((record) => !runId || record.runId === runId).map(clone); }
   summarize(runId) {
@@ -146,3 +223,4 @@ export class CreditBlameLedger {
 
 export const createCreditBlameLedger = (options) => new CreditBlameLedger(options);
 export const allocateDecisionCreditBlame = allocate;
+export const creditBlameSourceDigest = sourceDigestFor;

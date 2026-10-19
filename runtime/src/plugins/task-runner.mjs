@@ -24,10 +24,10 @@ const resolveIntEnv = (name, fallback, { min, max }) => {
   return value;
 };
 
-const resolveStreamRetryConfig = () => ({
-  streamRetries: resolveIntEnv('DDA_MODEL_STREAM_RETRIES', 2, { min: 0, max: 5 }),
-  streamRetryDelayMs: resolveIntEnv('DDA_MODEL_STREAM_RETRY_DELAY_MS', 1000, { min: 0, max: 10_000 }),
-  maxRequestsPerRound: resolveIntEnv('DDA_MODEL_MAX_REQUESTS_PER_ROUND', 4, { min: 1, max: 9 })
+export const resolveStreamRetryConfig = () => ({
+  streamRetries: resolveIntEnv('DDA_MODEL_STREAM_RETRIES', 4, { min: 0, max: 8 }),
+  streamRetryDelayMs: resolveIntEnv('DDA_MODEL_STREAM_RETRY_DELAY_MS', 1500, { min: 0, max: 10_000 }),
+  maxRequestsPerRound: resolveIntEnv('DDA_MODEL_MAX_REQUESTS_PER_ROUND', 6, { min: 1, max: 12 })
 });
 
 const normalizeModelFailureCode = (failure) => {

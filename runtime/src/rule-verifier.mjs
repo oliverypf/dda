@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve } from 'node:path';
+import {
+  extractAcceptanceCommands,
+  hasAcceptanceGreen,
+  isAcceptanceShellAction,
+  isProcessNoiseFailure,
+  sameAcceptanceIntent
+} from './acceptance-match.mjs';
 
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED']);
 const REPORT_STATUSES = new Set(['PASS', 'FAIL', 'UNKNOWN', 'CONTINUE', 'STALLED', 'UNCERTAIN']);
@@ -332,6 +339,8 @@ export class RuleVerifier {
     testEvidence,
     testResult,
     testResults,
+    acceptanceCommands: acceptanceCommandsOption,
+    acceptanceCriteria,
     progress: requestedProgress,
     quality: requestedQuality,
     safety: requestedSafety,
@@ -400,7 +409,13 @@ export class RuleVerifier {
       if (goalProgress !== undefined && goalProgress < 1) signals.shouldContinue = true;
     }
 
+    const acceptanceCommands = extractAcceptanceCommands({
+      prompt,
+      acceptanceCriteria,
+      acceptanceCommands: acceptanceCommandsOption
+    });
     const normalizedActions = asArray(actions ?? actionTrace ?? actionHistory ?? trajectory ?? toolCalls).map(normalizeAction);
+    const acceptanceGreen = hasAcceptanceGreen(normalizedActions, acceptanceCommands);
     let actionProgress;
     if (!normalizedActions.length) {
       add(check('actions.progress', 'SKIPPED', '没有提供动作轨迹'));
@@ -409,18 +424,40 @@ export class RuleVerifier {
       const deferredIndexes = new Set(normalizedActions.flatMap((action, index) => actionDeferred(action) ? [index] : []));
       const attemptedActions = normalizedActions.filter((_, index) => !deferredIndexes.has(index));
       const attemptedCount = attemptedActions.length;
+      const noiseOpts = { acceptanceGreen, acceptanceCommands };
       // A later successful rerun resolves only the exact failed test command.
       // Keep both observations for audit; unrelated tests and hard errors do
       // not resolve it. Require the runner's argument digest and new evidence.
-      const resolvedTests = new Set(normalizedActions.flatMap((action, index) =>
-        actionFailed(action) && action.errorCode === 'TEST_CHECK_FAILED'
+      // Extended (rule3): acceptance shell.execute EXECUTOR_RESULT_FAILED is
+      // resolved by a later same-intent acceptance shell success.
+      const resolvedTests = new Set(normalizedActions.flatMap((action, index) => {
+        if (actionFailed(action) && action.errorCode === 'TEST_CHECK_FAILED'
           && action.name === 'test.execute' && typeof action.argumentsDigest === 'string'
           && normalizedActions.slice(index + 1).some(later => later.name === action.name
             && later.argumentsDigest === action.argumentsDigest && actionSucceeded(later)
-            && actionEvidence(later).length > 0) ? [index] : []));
-      const doneCount = normalizedActions.filter((action, index) => !deferredIndexes.has(index) && (actionSucceeded(action) || resolvedTests.has(index))).length;
-      const recoverableFailureCount = normalizedActions.filter((action, index) => actionRecoverableFailure(action) && !resolvedTests.has(index)).length;
-      const hardFailureIndexes = normalizedActions.flatMap((action, index) => !deferredIndexes.has(index) && actionFailed(action) && !actionRecoverableFailure(action) ? [index] : []);
+            && actionEvidence(later).length > 0)) return [index];
+        if (actionFailed(action) && action.name === 'shell.execute'
+          && action.errorCode === 'EXECUTOR_RESULT_FAILED'
+          && isAcceptanceShellAction(action, acceptanceCommands)
+          && normalizedActions.some((other, otherIndex) => otherIndex !== index
+            && other.name === 'shell.execute' && actionSucceeded(other)
+            && sameAcceptanceIntent(action, other)
+            && (actionEvidence(other).length > 0 || other.outputDigest || other.state === 'SUCCEEDED'))) {
+          // Later or earlier same-intent acceptance green resolves this red
+          // (freeze: 「至少一次」绿不被同命令后续红清掉).
+          return [index];
+        }
+        return [];
+      }));
+      const isNoiseAt = (action, index) => !resolvedTests.has(index)
+        && isProcessNoiseFailure(action, noiseOpts);
+      const doneCount = normalizedActions.filter((action, index) => !deferredIndexes.has(index)
+        && (actionSucceeded(action) || resolvedTests.has(index) || isNoiseAt(action, index))).length;
+      const recoverableFailureCount = normalizedActions.filter((action, index) =>
+        actionRecoverableFailure(action) && !resolvedTests.has(index) && !isNoiseAt(action, index)).length;
+      const hardFailureIndexes = normalizedActions.flatMap((action, index) =>
+        !deferredIndexes.has(index) && actionFailed(action) && !actionRecoverableFailure(action)
+        && !resolvedTests.has(index) && !isNoiseAt(action, index) ? [index] : []);
       const hardFailureCount = hardFailureIndexes.length;
       const hardFailureCodes = [...new Set(hardFailureIndexes.map((index) => normalizedActions[index].errorCode)
         .filter((code) => typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/u.test(code)))].slice(0, 4);
@@ -568,10 +605,19 @@ export class RuleVerifier {
       if (evaluated.status === 'UNKNOWN') signals.uncertain = true;
     }
 
+    // When harness observed acceptance green via shell.execute / test.execute and
+    // the caller did not supply a tests artifact, record PASS evidence.tests so
+    // verifier-visible acceptance is not SKIPPED (freeze rule3 §1.2).
+    const inferredTests = tests ?? test ?? testEvidence ?? testResult ?? testResults;
+    const testsArtifact = inferredTests !== undefined && inferredTests !== null
+      ? inferredTests
+      : (acceptanceGreen
+        ? { ok: true, exitCode: 0, source: 'harness-acceptance-observation' }
+        : undefined);
     const artifacts = [
       ['evidence.diff', diff ?? diffEvidence ?? diffResult],
       ['evidence.build', build ?? buildEvidence ?? buildResult],
-      ['evidence.tests', tests ?? test ?? testEvidence ?? testResult ?? testResults]
+      ['evidence.tests', testsArtifact]
     ];
     for (const [id, artifact] of artifacts) {
       const evaluated = evaluateArtifact(artifact, id.replace('evidence.', ''));

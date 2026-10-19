@@ -1,0 +1,224 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createRuleVerifier } from '../src/rule-verifier.mjs';
+import { createTaskProgress, FAILURE_CLASSES } from '../src/task-harness.mjs';
+import {
+  assertVerificationGate,
+  extractAcceptanceCommands,
+  hasAcceptanceGreen,
+  isProcessNoiseFailure,
+  normalizeCommandJoin
+} from '../src/acceptance-match.mjs';
+import { exitCodeForError, messageForCode, rebuildFailedTaskResult } from '../../linux-cli/src/exit-codes.mjs';
+
+const dig = (c) => `sha256:${c.repeat(64)}`;
+const ACCEPT = 'node node_modules/vitest/vitest.mjs run --configLoader native src/domain/windows-desktop-cells.test.ts';
+const PROMPT = `Fix the bug.\nThen run:\n  cd desktop && ${ACCEPT}\nIf tests fail, fix and re-run until green.`;
+
+const acceptanceShell = ({ state = 'SUCCEEDED', errorCode, command = 'node', args = ACCEPT.split(' ').slice(1), argumentsDigest = dig('a') } = {}) => ({
+  name: 'shell.execute',
+  state,
+  command,
+  args,
+  argumentsDigest,
+  ...(state === 'SUCCEEDED' ? { outputDigest: dig('o'), ok: true } : {}),
+  ...(errorCode ? { errorCode } : {}),
+  ...(state === 'FAILED' ? { ok: false } : {})
+});
+
+test('acceptance extract matches bench-style vitest prompt lines', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  assert.ok(cmds.length >= 1);
+  assert.ok(cmds.some((c) => c.includes('vitest') && c.includes('windows-desktop-cells.test.ts')));
+  assert.equal(
+    normalizeCommandJoin('node', ACCEPT.split(' ').slice(1)),
+    ACCEPT
+  );
+  assert.equal(hasAcceptanceGreen([acceptanceShell()], cmds), true);
+  assert.equal(hasAcceptanceGreen([acceptanceShell({ state: 'FAILED', errorCode: 'EXECUTOR_RESULT_FAILED' })], cmds), false);
+});
+
+test('T27 writesApplied≥1 without acceptance → VERIFICATION_REQUIRED throw + exit 1 + recovery class', () => {
+  assert.ok(FAILURE_CLASSES.includes('VERIFICATION_REQUIRED'));
+  assert.equal(exitCodeForError('VERIFICATION_REQUIRED'), 1);
+  assert.match(messageForCode('VERIFICATION_REQUIRED'), /验收/);
+
+  const progress = createTaskProgress();
+  progress.observe({ kind: 'lease.consumed', payload: { capability: 'file.write', ok: true } });
+  progress.observe({ ok: false, error: 'VERIFICATION_REQUIRED' });
+  assert.equal(progress.snapshot().recovery.failureClass, 'VERIFICATION_REQUIRED');
+  assert.equal(progress.snapshot().writesApplied, 1);
+
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const harness = { writesApplied: 1, writesAppliedUnverified: 0 };
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') }
+  ];
+  assert.throws(
+    () => assertVerificationGate({ harness, actions, acceptanceCommands: cmds }),
+    (error) => {
+      assert.equal(error.message, 'VERIFICATION_REQUIRED');
+      return true;
+    }
+  );
+  // Must be a throw path — callers must not paper this over with {ok:false}.
+  assert.equal(typeof assertVerificationGate({ harness: { writesApplied: 0 }, actions: [], acceptanceCommands: cmds }), 'undefined');
+
+  const rebuilt = rebuildFailedTaskResult({
+    error: 'VERIFICATION_REQUIRED',
+    harness: progress.snapshot()
+  });
+  assert.equal(rebuilt.ok, false);
+  assert.equal(rebuilt.error.code, 'VERIFICATION_REQUIRED');
+  assert.equal(rebuilt.harness.recovery.failureClass, 'VERIFICATION_REQUIRED');
+});
+
+test('T27b APPLIED_UNVERIFIED without acceptance also gates', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 0, writesAppliedUnverified: 0 },
+      actions: [{ name: 'file.patch', state: 'APPLIED_UNVERIFIED', errorCode: 'TOOL_OUTPUT_AFTER_EFFECT' }],
+      acceptanceCommands: cmds
+    }),
+    /VERIFICATION_REQUIRED/
+  );
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 0, writesAppliedUnverified: 1 },
+      actions: [],
+      acceptanceCommands: cmds
+    }),
+    /VERIFICATION_REQUIRED/
+  );
+});
+
+test('T28 acceptance green + unrelated shell FAIL + workspace.focus FAIL → actions.progress PASS (no PLAN_STEP_FAILED)', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    { name: 'workspace.focus', state: 'FAILED', errorCode: 'TOOL_HANDLER_FAILED', argumentsDigest: dig('f') },
+    acceptanceShell({ state: 'FAILED', errorCode: 'EXECUTOR_RESULT_FAILED', command: 'npm', args: ['install', 'left-pad'], argumentsDigest: dig('n') }),
+    acceptanceShell({ state: 'SUCCEEDED' })
+  ];
+  // Unrelated shell (npm install) is noise once acceptance is green; focus always noise.
+  assert.equal(isProcessNoiseFailure(actions[1], { acceptanceGreen: true, acceptanceCommands: cmds }), true);
+  assert.equal(isProcessNoiseFailure(actions[2], { acceptanceGreen: true, acceptanceCommands: cmds }), true);
+  assert.equal(isProcessNoiseFailure(actions[3], { acceptanceGreen: true, acceptanceCommands: cmds }), false);
+
+  const report = createRuleVerifier().verify({
+    prompt: PROMPT,
+    output: 'patched and verified',
+    workspace: { granted: true },
+    actions,
+    acceptanceCommands: cmds
+  });
+  assert.equal(report.status, 'PASS', JSON.stringify(report.checks?.map((c) => [c.id, c.status]), null, 0));
+  assert.equal(report.checks.find((c) => c.id === 'actions.progress')?.status, 'PASS');
+  assert.equal(report.checks.find((c) => c.id === 'evidence.tests')?.status, 'PASS');
+  assertVerificationGate({
+    harness: { writesApplied: 1, writesAppliedUnverified: 0 },
+    actions,
+    acceptanceCommands: cmds
+  });
+});
+
+test('T28b focus FAIL alone never hardFails actions.progress (Q-r3-2)', () => {
+  const report = createRuleVerifier().verify({
+    prompt: 'inspect only',
+    output: 'looked around',
+    workspace: { granted: true },
+    actions: [
+      { name: 'workspace.focus', state: 'FAILED', errorCode: 'TOOL_HANDLER_FAILED', argumentsDigest: dig('f') },
+      { name: 'workspace.read', state: 'SUCCEEDED', argumentsDigest: dig('r'), outputDigest: dig('o') }
+    ]
+  });
+  assert.notEqual(report.checks.find((c) => c.id === 'actions.progress')?.status, 'FAIL');
+  assert.ok(!report.failureCodes?.includes('ACTION_FAILED'));
+});
+
+test('T28c failed acceptance shell resolved by later same-intent success', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const failed = acceptanceShell({ state: 'FAILED', errorCode: 'EXECUTOR_RESULT_FAILED' });
+  const passed = acceptanceShell({ state: 'SUCCEEDED' });
+  const report = createRuleVerifier().verify({
+    prompt: PROMPT,
+    output: 're-ran acceptance',
+    workspace: { granted: true },
+    actions: [
+      { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+      failed,
+      passed
+    ],
+    acceptanceCommands: cmds
+  });
+  assert.equal(report.status, 'PASS');
+  assert.equal(report.checks.find((c) => c.id === 'actions.progress')?.status, 'PASS');
+});
+
+test('T29 write ok + acceptance never green → still fail (do not soft-pass)', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    acceptanceShell({
+      state: 'FAILED',
+      errorCode: 'EXECUTOR_RESULT_FAILED',
+      command: 'npm',
+      args: ['install'],
+      argumentsDigest: dig('n')
+    })
+  ];
+  // No acceptance green: unrelated shell remains a hard failure → actions.progress FAIL.
+  const report = createRuleVerifier().verify({
+    prompt: PROMPT,
+    output: 'wrote but did not verify',
+    workspace: { granted: true },
+    actions,
+    acceptanceCommands: cmds
+  });
+  assert.equal(report.status, 'FAIL');
+  assert.equal(report.checks.find((c) => c.id === 'actions.progress')?.status, 'FAIL');
+  // Gate also throws VERIFICATION_REQUIRED when somehow step PASS without green.
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [actions[0]],
+      acceptanceCommands: cmds
+    }),
+    (error) => error.message === 'VERIFICATION_REQUIRED'
+  );
+});
+
+test('T29b at-least-once green survives a later red of the same acceptance command', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    acceptanceShell({ state: 'SUCCEEDED' }),
+    acceptanceShell({ state: 'FAILED', errorCode: 'EXECUTOR_RESULT_FAILED', argumentsDigest: dig('b') })
+  ];
+  assert.equal(hasAcceptanceGreen(actions, cmds), true);
+  assertVerificationGate({
+    harness: { writesApplied: 1 },
+    actions,
+    acceptanceCommands: cmds
+  });
+});
+
+test('T30 no writes / no APPLIED_UNVERIFIED → §1.1 does not break existing success', () => {
+  const cmds = extractAcceptanceCommands({ prompt: 'say hello' });
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 0, writesAppliedUnverified: 0 },
+      actions: [{ name: 'workspace.read', state: 'SUCCEEDED', argumentsDigest: dig('r'), outputDigest: dig('o') }],
+      acceptanceCommands: cmds
+    }),
+    undefined
+  );
+  const report = createRuleVerifier().verify({
+    prompt: 'say hello',
+    output: 'hello',
+    workspace: { granted: true },
+    actions: [{ name: 'workspace.read', state: 'SUCCEEDED', argumentsDigest: dig('r'), outputDigest: dig('o') }]
+  });
+  assert.equal(report.status, 'PASS');
+});

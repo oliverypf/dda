@@ -536,13 +536,24 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               ? nodeProcessIntent(JSON.parse(call.arguments)) : undefined,
             requestSummary: (() => {
               const request = effectView.request;
+              // Plaintext command/args stay on the in-memory verification action so
+              // harness rule3 can match subject acceptance without digest compare.
+              const shellPlain = ['shell.execute', 'test.execute'].includes(call.name);
               return {
                 ...(effectView.kernelEffectKind ? { kernelEffectKind: effectView.kernelEffectKind } : {}),
                 ...(effectView.batchPaths ? { batchPaths: effectView.batchPaths } : {}),
                 ...(typeof request.path === 'string' ? { path: request.path } : {}),
                 ...(typeof request.cwd === 'string' ? { cwd: request.cwd } : {}),
-                ...(typeof request.command === 'string' ? { commandDigest: sha256Digest(request.command) } : {}),
-                ...(Array.isArray(request.args) ? { argsDigest: sha256Digest(JSON.stringify(request.args)) } : {})
+                ...(typeof request.command === 'string' ? {
+                  commandDigest: sha256Digest(request.command),
+                  ...(shellPlain ? { command: String(request.command).slice(0, 500) } : {})
+                } : {}),
+                ...(Array.isArray(request.args) ? {
+                  argsDigest: sha256Digest(JSON.stringify(request.args)),
+                  ...(shellPlain ? {
+                    args: request.args.map((part) => String(part).slice(0, 300)).slice(0, 64)
+                  } : {})
+                } : {})
               };
             })()
           });

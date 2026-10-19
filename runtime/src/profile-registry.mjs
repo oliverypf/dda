@@ -321,22 +321,70 @@ export class ProfileRegistry {
       return clone(existingEvidence);
     }
     if (this.#evidence.size >= MAX_EVIDENCE) throw new Error('PROFILE_EVIDENCE_FULL');
-    const nextProfile = this.#buildProfile(evidence);
-    if (this.#eventStore?.appendBatch) {
-      const evidencePayload = { evidenceId: evidence.evidenceId, profileId: nextProfile.profileId, kind, entityType, entityId, ...(capabilityId ? { capabilityId } : {}), runId, sourceType, sourceId, outcome, evidenceDigest: evidence.evidenceDigest };
-      const profilePayload = { profileId: nextProfile.profileId, kind: nextProfile.kind, entityType: nextProfile.entityType, entityId: nextProfile.entityId, ...(nextProfile.capabilityId ? { capabilityId: nextProfile.capabilityId } : {}), version: nextProfile.version, evidenceCount: nextProfile.evidenceCount, updatedAtMs: nextProfile.updatedAtMs, stats: nextProfile.stats, eligibility: nextProfile.eligibility, profileDigest: nextProfile.profileDigest };
-      await this.#eventStore.appendBatch([
-        { runId, aggregateType: 'ProfileEvidence', aggregateId: evidence.evidenceId, commandId: 'profile-evidence:' + evidence.evidenceId, kind: 'ProfileEvidenceRecorded', payload: evidencePayload, sensitivity: 'INTERNAL' },
-        { runId, aggregateType: 'Profile', aggregateId: nextProfile.profileId, commandId: 'profile-projection:' + nextProfile.profileId + ':' + nextProfile.version, kind: 'ProfileProjectionUpdated', payload: profilePayload, sensitivity: 'INTERNAL' }
-      ]);
-    } else if (this.#eventStore?.append) {
-      const evidencePayload = { evidenceId: evidence.evidenceId, profileId: nextProfile.profileId, kind, entityType, entityId, ...(capabilityId ? { capabilityId } : {}), runId, sourceType, sourceId, outcome, evidenceDigest: evidence.evidenceDigest };
-      await this.#appendCommitted({ runId, aggregateType: 'ProfileEvidence', aggregateId: evidence.evidenceId, commandId: 'profile-evidence:' + evidence.evidenceId, kind: 'ProfileEvidenceRecorded', payload: evidencePayload, sensitivity: 'INTERNAL' });
-      const profilePayload = { profileId: nextProfile.profileId, kind: nextProfile.kind, entityType: nextProfile.entityType, entityId: nextProfile.entityId, ...(nextProfile.capabilityId ? { capabilityId: nextProfile.capabilityId } : {}), version: nextProfile.version, evidenceCount: nextProfile.evidenceCount, updatedAtMs: nextProfile.updatedAtMs, stats: nextProfile.stats, eligibility: nextProfile.eligibility, profileDigest: nextProfile.profileDigest };
-      await this.#appendCommitted({ runId, aggregateType: 'Profile', aggregateId: nextProfile.profileId, commandId: 'profile-projection:' + nextProfile.profileId + ':' + nextProfile.version, kind: 'ProfileProjectionUpdated', payload: profilePayload, sensitivity: 'INTERNAL' });
+
+    // Cross-run path (freeze §1.2): max committed version + 1, retry on projection conflict.
+    // Pin updatedAtMs across retries so same-run logical replay keeps a stable payload.
+    const pinnedUpdatedAtMs = this.#now();
+    const key = profileKey(evidence);
+    let nextProfile;
+    let lastError;
+    const maxAttempts = this.#eventStore ? 8 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      nextProfile = await this.#buildProfileForCommit(evidence, { updatedAtMs: pinnedUpdatedAtMs });
+      const evidencePayload = {
+        evidenceId: evidence.evidenceId, profileId: nextProfile.profileId, kind, entityType, entityId,
+        ...(capabilityId ? { capabilityId } : {}), runId, sourceType, sourceId, outcome,
+        evidenceDigest: evidence.evidenceDigest
+      };
+      const profilePayload = {
+        profileId: nextProfile.profileId, kind: nextProfile.kind, entityType: nextProfile.entityType,
+        entityId: nextProfile.entityId,
+        ...(nextProfile.capabilityId ? { capabilityId: nextProfile.capabilityId } : {}),
+        version: nextProfile.version, evidenceCount: nextProfile.evidenceCount,
+        updatedAtMs: nextProfile.updatedAtMs, stats: nextProfile.stats,
+        eligibility: nextProfile.eligibility, profileDigest: nextProfile.profileDigest
+      };
+      const projectionCommandId = 'profile-projection:' + nextProfile.profileId + ':' + nextProfile.version;
+      try {
+        if (this.#eventStore?.appendBatch) {
+          await this.#eventStore.appendBatch([
+            {
+              runId, aggregateType: 'ProfileEvidence', aggregateId: evidence.evidenceId,
+              commandId: 'profile-evidence:' + evidence.evidenceId, kind: 'ProfileEvidenceRecorded',
+              payload: evidencePayload, sensitivity: 'INTERNAL'
+            },
+            {
+              runId, aggregateType: 'Profile', aggregateId: nextProfile.profileId,
+              commandId: projectionCommandId, kind: 'ProfileProjectionUpdated',
+              payload: profilePayload, sensitivity: 'INTERNAL'
+            }
+          ]);
+        } else if (this.#eventStore?.append) {
+          await this.#appendCommitted({
+            runId, aggregateType: 'ProfileEvidence', aggregateId: evidence.evidenceId,
+            commandId: 'profile-evidence:' + evidence.evidenceId, kind: 'ProfileEvidenceRecorded',
+            payload: evidencePayload, sensitivity: 'INTERNAL'
+          });
+          await this.#appendCommitted({
+            runId, aggregateType: 'Profile', aggregateId: nextProfile.profileId,
+            commandId: projectionCommandId, kind: 'ProfileProjectionUpdated',
+            payload: profilePayload, sensitivity: 'INTERNAL'
+          });
+        }
+        lastError = undefined;
+        break;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : String(error);
+        if (code !== 'HARNESS_COMMAND_IDEMPOTENCY_CONFLICT' && code !== 'HARNESS_STORE_CONCURRENT_CONFLICT') throw error;
+        lastError = error;
+        // Another writer took this version — refresh durable max and retry with max+1.
+        await this.#absorbDurableProfile(key, nextProfile.profileId);
+      }
     }
+    if (lastError) throw lastError;
+
     this.#evidence.set(evidence.evidenceId, evidence);
-    this.#profiles.set(profileKey(nextProfile), nextProfile);
+    this.#profiles.set(key, nextProfile);
     this.#schedulePersist();
     return clone(evidence);
   }
@@ -375,22 +423,83 @@ export class ProfileRegistry {
 
   async flush() { await this.#queue; }
 
-  #buildProfile(evidence) {
+  async #maxCommittedProfileVersion(profileId) {
+    let max = 0;
+    if (profileId && this.#eventStore?.list) {
+      try {
+        const events = await this.#eventStore.list({ aggregateType: 'Profile', aggregateId: profileId });
+        for (const event of events) {
+          if (event.kind !== 'ProfileProjectionUpdated') continue;
+          const version = event.payload?.version;
+          if (Number.isInteger(version) && version > max) max = version;
+        }
+      } catch {
+        // Fall through to in-memory max.
+      }
+    }
+    for (const record of this.#profiles.values()) {
+      if (record.profileId === profileId && Number.isInteger(record.version) && record.version > max) {
+        max = record.version;
+      }
+    }
+    return max;
+  }
+
+  async #absorbDurableProfile(key, profileId) {
+    if (!profileId || !this.#eventStore?.list) return;
+    try {
+      const events = await this.#eventStore.list({ aggregateType: 'Profile', aggregateId: profileId });
+      let best;
+      for (const event of events) {
+        if (event.kind !== 'ProfileProjectionUpdated') continue;
+        const payload = event.payload;
+        const record = {
+          profileId: payload?.profileId,
+          kind: payload?.kind,
+          entityType: payload?.entityType,
+          entityId: payload?.entityId,
+          ...(payload?.capabilityId ? { capabilityId: payload.capabilityId } : {}),
+          version: payload?.version,
+          stats: payload?.stats,
+          eligibility: payload?.eligibility,
+          evidenceCount: payload?.evidenceCount,
+          updatedAtMs: payload?.updatedAtMs,
+          profileDigest: payload?.profileDigest
+        };
+        if (!validateProfile(record)) continue;
+        if (!best || record.version >= best.version) best = record;
+      }
+      if (best) this.#profiles.set(key, clone(best));
+    } catch {
+      // Keep local prior; next attempt still queries maxCommitted.
+    }
+  }
+
+  async #buildProfileForCommit(evidence, { updatedAtMs } = {}) {
+    const key = profileKey(evidence);
+    const prior = this.#profiles.get(key);
+    const profileId = prior?.profileId ?? `profile-${this.#idFactory()}`;
+    const durableMax = await this.#maxCommittedProfileVersion(profileId);
+    const version = Math.max(prior?.version ?? 0, durableMax) + 1;
+    return this.#buildProfile(evidence, { profileId, version, updatedAtMs: updatedAtMs ?? this.#now() });
+  }
+
+  #buildProfile(evidence, { profileId, version, updatedAtMs } = {}) {
     const key = profileKey(evidence);
     const prior = this.#profiles.get(key);
     const items = [...this.#evidence.values(), evidence].filter((item) => profileKey(item) === key);
     const stats = aggregate(items);
     const next = {
-      profileId: prior?.profileId ?? `profile-${this.#idFactory()}`,
+      profileId: profileId ?? prior?.profileId ?? `profile-${this.#idFactory()}`,
       kind: evidence.kind,
       entityType: evidence.entityType,
       entityId: evidence.entityId,
       ...(evidence.capabilityId ? { capabilityId: evidence.capabilityId } : {}),
-      version: (prior?.version ?? 0) + 1,
+      version: version ?? (prior?.version ?? 0) + 1,
       stats,
       eligibility: eligibility(stats),
       evidenceCount: items.length,
-      updatedAtMs: this.#now()
+      updatedAtMs: updatedAtMs ?? this.#now()
     };
     next.profileDigest = digest(profileBase(next));
     return next;

@@ -14,6 +14,14 @@ import {
   recordActionGateBlockIncident,
   recordScopeViolationIncident
 } from './safety-incident.mjs';
+import {
+  applyIncidentToSafetyState,
+  applySafetyStateGate,
+  createSafetyStateStore,
+  isSafetyStateEnabled,
+  SAFETY_STATE_REQUIRE_APPROVAL,
+  SAFETY_STATE_DENY
+} from './safety-state.mjs';
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
@@ -314,6 +322,7 @@ const defaultFeedbackStore = () => resolveStoreFile('feedback.json');
 const defaultModelScenarioProfileStore = () => resolveStoreFile('model-scenario-profiles.json');
 const defaultDecisionTraceStore = () => resolveStoreFile('decision-trace.json');
 const defaultProfileStore = () => resolveStoreFile('profiles.json');
+const defaultSafetyStateStore = () => resolveStoreFile('safety-state.json');
 const defaultModelRegistryStore = () => resolveStoreFile('model-registry.json');
 const defaultCreditBlameStore = () => resolveStoreFile('credit-blame.json');
 const defaultModelEgressStore = () => resolveStoreFile('model-egress.json');
@@ -794,6 +803,11 @@ async function runTask() {
   const profileRegistry = createProfileRegistry({ storagePath: profilePath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('PROFILE_STORE_LOAD');
   await profileRegistry.load();
+  // S3: State(A,S,C,O) store (memory + persistent-json). DDA_SAFETY_STATE=0 disables read/write hooks.
+  const safetyStatePath = arg('--safety-state-store', process.env.DDA_SAFETY_STATE_STORE ?? scopedStorePath('safety-state.json', defaultSafetyStateStore));
+  const safetyStateStore = createSafetyStateStore({ storagePath: safetyStatePath });
+  setRuntimePhase('SAFETY_STATE_STORE_LOAD');
+  await safetyStateStore.load();
   const creditBlamePath = arg('--credit-blame-store', process.env.DDA_CREDIT_BLAME_STORE ?? scopedStorePath('credit-blame.json', defaultCreditBlameStore));
   const creditBlameLedger = createCreditBlameLedger({ storagePath: creditBlamePath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('CREDIT_BLAME_LOAD');
@@ -2293,13 +2307,30 @@ async function runTask() {
           // DDA_SAFETY_INCIDENT=0 disables. Does not change throw semantics.
           if (isSafetyIncidentEnabled()) {
             try {
-              await recordScopeViolationIncident({
+              const incidentResult = await recordScopeViolationIncident({
                 profileRegistry,
                 runId,
                 entityId: executorDescriptor().id,
                 capabilityPath: event.capability ? [String(event.capability)] : [],
                 executed: true
               });
+              // S3: after S2 demote path, also tighten State (soft-fail).
+              if (isSafetyStateEnabled() && incidentResult?.incident) {
+                try {
+                  await applyIncidentToSafetyState({
+                    incident: incidentResult.incident,
+                    stateStore: safetyStateStore,
+                    entityId: executorDescriptor().id,
+                    capabilityId: event.capability ? String(event.capability) : '*',
+                    taskClass: '*'
+                  });
+                } catch (stateErr) {
+                  emitEvent('safety.state_soft_fail', {
+                    reasonCode: 'SCOPE_VIOLATION',
+                    error: stateErr instanceof Error ? stateErr.message : String(stateErr)
+                  });
+                }
+              }
             } catch (incidentErr) {
               emitEvent('safety.incident_soft_fail', {
                 reasonCode: 'SCOPE_VIOLATION',
@@ -3443,7 +3474,7 @@ async function runTask() {
               safetyProfile,
               toolReadOnly
             });
-            const toolGate = safetyApplied.elevated
+            let toolGate = safetyApplied.elevated
               ? {
                 ...toolGateRaw,
                 decision: safetyApplied.decision,
@@ -3461,6 +3492,40 @@ async function runTask() {
                 reasonCode: toolGate.reasonCode
               });
             }
+            // S3: State gate hint after S1. Default ON; DDA_SAFETY_STATE=0 disables.
+            // Elevate only; never softens existing hard BLOCK.
+            const safetyStateEnabled = isSafetyStateEnabled();
+            let safetyStateApplied = { elevated: false, hint: 'NONE', state: undefined, reasonCode: undefined };
+            if (safetyStateEnabled) {
+              const stateRecord = safetyStateStore.getState({
+                entityId: executorDescriptor().id,
+                capabilityId: call.name ? String(call.name) : '*',
+                taskClass: '*'
+              });
+              safetyStateApplied = applySafetyStateGate({
+                gateDecision: toolGate,
+                stateRecord,
+                enabled: true
+              });
+              if (safetyStateApplied.elevated) {
+                const fromDecision = toolGate.decision;
+                toolGate = {
+                  ...toolGate,
+                  decision: safetyStateApplied.decision,
+                  reasonCode: safetyStateApplied.reasonCode
+                    ?? (safetyStateApplied.hint === 'DENY' ? SAFETY_STATE_DENY : SAFETY_STATE_REQUIRE_APPROVAL)
+                };
+                emitEvent('safety.state_gate_elevated', {
+                  id: call.id,
+                  name: call.name,
+                  state: safetyStateApplied.state,
+                  hint: safetyStateApplied.hint,
+                  from: fromDecision,
+                  to: toolGate.decision,
+                  reasonCode: toolGate.reasonCode
+                });
+              }
+            }
             const fastPathTaken = toolGate.reasonCode === READONLY_FAST_PATH_REASON && Boolean(fastPathDecision);
             if (fastPathTaken) emitEvent('jev.action_gate_skipped', { id: call.id, name: call.name, reasonCode: READONLY_FAST_PATH_REASON });
             // Persist a genuine mid-task REQUIRE_APPROVAL (a real Jev opinion,
@@ -3473,18 +3538,21 @@ async function runTask() {
             const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
               && toolGateRaw.source === 'jev'
               && toolGateRaw.fallbackUsed !== true;
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated)) {
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || safetyStateApplied.elevated)) {
               const gateEntry = {
                 requireApproval: true,
                 reasonCode: toolGate.reasonCode
-                  ?? (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')
+                  ?? (safetyStateApplied.elevated ? SAFETY_STATE_REQUIRE_APPROVAL
+                    : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL'))
               };
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
             }
             const safetyTelemetryCodes = [
               ...(safetyApplied.profileId ? [`SAFETY_PROFILE:${safetyApplied.profileId}`] : []),
-              ...safetyApplied.reasonCodes
+              ...safetyApplied.reasonCodes,
+              ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
+              ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : [])
             ];
             const toolDecision = await recordDecision({
               stepId: `${step.stepId}-tool-${attempt}-${call.id}`,
@@ -3496,9 +3564,11 @@ async function runTask() {
               operationId: `operation-${step.stepId}-${attempt}-${call.id}`,
               summary: fastPathTaken
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
-                : safetyApplied.elevated
-                  ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
-                  : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+                : safetyStateApplied.elevated
+                  ? `SAFETY state elevated action gate to ${toolGate.decision} for ${call.name}`
+                  : safetyApplied.elevated
+                    ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
+                    : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -3526,9 +3596,11 @@ async function runTask() {
               selectionCriteria: [
                 fastPathTaken
                   ? 'readonly-fast-path-rule'
-                  : safetyApplied.elevated
-                    ? 'safety-profile-action-gate'
-                    : 'evidence-backed-jev-action-gate'
+                  : safetyStateApplied.elevated
+                    ? 'safety-state-action-gate'
+                    : safetyApplied.elevated
+                      ? 'safety-profile-action-gate'
+                      : 'evidence-backed-jev-action-gate'
               ]
             });
             verificationActions.push({
@@ -3556,7 +3628,7 @@ async function runTask() {
             // Includes hardDecision BLOCK. DDA_SAFETY_INCIDENT=0 disables.
             if (toolGate.decision === 'BLOCK' && isSafetyIncidentEnabled()) {
               try {
-                await recordActionGateBlockIncident({
+                const incidentResult = await recordActionGateBlockIncident({
                   profileRegistry,
                   runId,
                   entityId: executorDescriptor().id,
@@ -3564,6 +3636,23 @@ async function runTask() {
                   capabilityPath: call.name ? [String(call.name)] : [],
                   phase: 'EXECUTE'
                 });
+                // S3: after S2 demote path, also tighten State (soft-fail).
+                if (isSafetyStateEnabled() && incidentResult?.incident) {
+                  try {
+                    await applyIncidentToSafetyState({
+                      incident: incidentResult.incident,
+                      stateStore: safetyStateStore,
+                      entityId: executorDescriptor().id,
+                      capabilityId: call.name ? String(call.name) : '*',
+                      taskClass: '*'
+                    });
+                  } catch (stateErr) {
+                    emitEvent('safety.state_soft_fail', {
+                      reasonCode: 'ACTION_GATE_BLOCK',
+                      error: stateErr instanceof Error ? stateErr.message : String(stateErr)
+                    });
+                  }
+                }
               } catch (incidentErr) {
                 emitEvent('safety.incident_soft_fail', {
                   reasonCode: 'ACTION_GATE_BLOCK',

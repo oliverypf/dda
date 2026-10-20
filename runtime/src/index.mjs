@@ -172,7 +172,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3558,6 +3558,21 @@ async function runTask() {
       initialActions: resumedActions,
       initialContext: resumedActions.length ? createRecoveryContext({ status: priorVerification?.status ?? 'UNKNOWN', summary: 'Resume remaining work with prior actual tool observations; completed file writes were checked against current source digests' },
         { previousActions: resumedActions }) : undefined,
+      agentMiss: {
+        getWriteCounts: () => {
+          const snap = harnessProgress.snapshot();
+          return {
+            writesApplied: Number(snap.writesApplied ?? 0),
+            successfulWrites: Number(snap.successfulWrites ?? 0)
+          };
+        },
+        onReplan: ({ writesApplied, failureCodes }) => {
+          emitEvent('harness.agent_miss_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : []
+          });
+        }
+      },
       execute: stageTimer.wrap('execution', async ({ attempt, recovery, previousActions = [] }) => {
         const verificationActions = [];
         const recoveryText = recovery
@@ -3580,6 +3595,9 @@ async function runTask() {
               recovery.failureCodes?.length ? `Failure codes: ${recovery.failureCodes.join(',')}.` : undefined,
               recovery.previousActionDigests?.length
                 ? `Previously attempted action digests: ${recovery.previousActionDigests.join(',')}. Do not repeat them unless new evidence is required.`
+                : undefined,
+              recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+                ? agentMissReplanHostNote()
                 : undefined,
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)

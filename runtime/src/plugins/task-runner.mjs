@@ -12,7 +12,7 @@ import { recoveryContinuationText } from '../task-recovery-controller.mjs';
 import { proposedToolDecisionClaim, toolResultDecisionClaim } from '../decision/evidence-claim.mjs';
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
 import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
-import { RECOVERABLE_TOOL_ERROR_CODES } from '../rule-verifier.mjs';
+import { RECOVERABLE_TOOL_ERROR_CODES, isRecoverableToolError } from '../rule-verifier.mjs';
 import {
   ACCEPTANCE_ALREADY_GREEN,
   extractAcceptanceCommands,
@@ -70,10 +70,16 @@ const MAX_TOOL_RESULT_CHARS = 48 * 1024;
 // freeze-harness-t1-green-r1 §1.2: workspace probe misses must not hard-stop the run.
 const isRecoverableWorkspaceProbeError = (toolName, errorCode) => {
   if (!['workspace.read', 'workspace.list', 'workspace.focus'].includes(toolName)) return false;
-  if (typeof errorCode !== 'string' || !errorCode) return false;
-  if (errorCode.startsWith('WORKSPACE_') || errorCode.startsWith('EXCERPT_')) return true;
-  return RECOVERABLE_TOOL_ERROR_CODES.has(errorCode);
+  return isRecoverableToolError(errorCode);
 };
+
+const EXCERPT_FOCUS_ERROR_CODES = new Set([
+  'EXCERPT_NOT_FOUND',
+  'EXCERPT_AMBIGUOUS',
+  'EXCERPT_INVALID_LOCATOR'
+]);
+const EXCERPT_FOCUS_NEXT_ACTION = 'RETRY_WITH_UNIQUE_LOCATOR_OR_LIST';
+const RECOVERABLE_PROBE_ROUND_BUDGET = 8;
 
 const safeErrorCode = (error) => {
   const candidate = error?.code ?? (error instanceof Error ? error.message : undefined);
@@ -381,6 +387,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const pathKey = path => process.platform === 'win32' ? path.replaceAll('\\', '/').toLowerCase() : path.replaceAll('\\', '/');
       const observedFileDigests = new Map((workspace.sections ?? []).map(section => [pathKey(section.path), section.digest]));
       let noNewWorkspaceEvidenceRounds = 0;
+      let recoverableProbeOnlyRounds = 0;
       let inspectionsSinceProgressCheckpoint = 0;
       // C1 §1.3: track shell.execute outcomes so post-green same-intent acceptance
       // re-runs are rejected with ACCEPTANCE_ALREADY_GREEN (not executed).
@@ -521,6 +528,9 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
         // call id 以满足协议，但重复项不再访问文件系统。
         const roundRequestCounts = new Map();
         let roundProducedNewWorkspaceEvidence = false;
+        let roundSuccessfulWorkspaceTools = 0;
+        let roundFailedWorkspaceTools = 0;
+        let roundNonRecoverableWorkspaceFailures = 0;
         text += turnText;
         reasoningChars += turnReasoning.length;
         if (!calls.length) {
@@ -724,6 +734,13 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                   lessonCount: lesson.count
                 };
               }
+              if (call.name === 'workspace.focus' && EXCERPT_FOCUS_ERROR_CODES.has(errorCode)) {
+                output = {
+                  ...output,
+                  nextAction: EXCERPT_FOCUS_NEXT_ACTION,
+                  message: `${baseMessage}${availablePaths} nextAction=${EXCERPT_FOCUS_NEXT_ACTION}: use a unique findText locator, or call workspace.list first then focus with a workspace-relative path; do not repeat the same ambiguous locator.`
+                };
+              }
               if (['WRITE_STALE_DIGEST', 'PATCH_STALE_DIGEST'].includes(errorCode)) output = {
                 errorCode, nextAction: 'READ_CURRENT_FILE_AND_REPLAN',
                 message: 'The file changed since the observed source or approval request. This write was refused. Read the current file with workspace.focus/read, preserve the other edits and prepare a new small patch; do not repeat the stale write.'
@@ -801,6 +818,19 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             }
           }
           if (!isError && (call.name === 'file.write' || call.name === 'file.patch')) inspectionsSinceProgressCheckpoint = 0;
+          if (isWorkspacePathTool(call.name)) {
+            if (isError) {
+              roundFailedWorkspaceTools += 1;
+              const ec = typeof output?.errorCode === 'string' && output.errorCode
+                ? output.errorCode
+                : 'TOOL_EXECUTION_FAILED';
+              if (!isRecoverableWorkspaceProbeError(call.name, ec)) {
+                roundNonRecoverableWorkspaceFailures += 1;
+              }
+            } else {
+              roundSuccessfulWorkspaceTools += 1;
+            }
+          }
           await onEvent?.(eventPayload);
           if ((!isError || processFailureCode) && typeof onToolResult === 'function') {
             const encoded = JSON.stringify(output);
@@ -829,12 +859,30 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
         }
         const workspaceEvidenceCalls = calls.filter((call) => isWorkspacePathTool(call.name));
         if (workspaceEvidenceCalls.length > 0 && workspaceEvidenceCalls.length === calls.length) {
-          noNewWorkspaceEvidenceRounds = roundProducedNewWorkspaceEvidence ? 0 : noNewWorkspaceEvidenceRounds + 1;
-          if (noNewWorkspaceEvidenceRounds >= 4) {
-            throw new Error('TOOL_NO_NEW_EVIDENCE:workspace tools repeated without a new directory entry or file window');
+          // freeze-harness-focus-agent-miss-r1 §1.1:
+          // recoverable-probe-only rounds (all failures EXCERPT_*/WORKSPACE_*, no ok) do not
+          // increment the 4-round TOOL_NO_NEW_EVIDENCE budget; vacuum (ok but same digest) still does.
+          const recoverableProbeOnlyRound = roundSuccessfulWorkspaceTools === 0
+            && roundFailedWorkspaceTools > 0
+            && roundNonRecoverableWorkspaceFailures === 0;
+          if (roundProducedNewWorkspaceEvidence) {
+            noNewWorkspaceEvidenceRounds = 0;
+            recoverableProbeOnlyRounds = 0;
+          } else if (recoverableProbeOnlyRound) {
+            recoverableProbeOnlyRounds += 1;
+            if (recoverableProbeOnlyRounds >= RECOVERABLE_PROBE_ROUND_BUDGET) {
+              throw new Error('TOOL_RECOVERABLE_PROBE_LOOP:workspace recoverable probes exhausted without progress');
+            }
+          } else {
+            recoverableProbeOnlyRounds = 0;
+            noNewWorkspaceEvidenceRounds += 1;
+            if (noNewWorkspaceEvidenceRounds >= 4) {
+              throw new Error('TOOL_NO_NEW_EVIDENCE:workspace tools repeated without a new directory entry or file window');
+            }
           }
         } else {
           noNewWorkspaceEvidenceRounds = 0;
+          recoverableProbeOnlyRounds = 0;
         }
       }
       throw new Error('TOOL_LOOP_LIMIT');

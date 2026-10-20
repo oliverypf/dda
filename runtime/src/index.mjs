@@ -9,6 +9,11 @@ import { canRetryVerificationOnly, verificationProviderFailure } from './decisio
 import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
 import { applySafetyProfileGate, SAFETY_PROFILE_REQUIRE_APPROVAL } from './safety-profile-gate.mjs';
+import {
+  isSafetyIncidentEnabled,
+  recordActionGateBlockIncident,
+  recordScopeViolationIncident
+} from './safety-incident.mjs';
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
@@ -2284,6 +2289,24 @@ async function runTask() {
           if (journalCtxScope?.bit && effectJournal?.available) {
             await effectJournal.recordFailed(journalCtxScope.effectId, { errorCode: 'SCOPE_VIOLATION' }).catch(() => {});
           }
+          // S2: executed SCOPE_VIOLATION → SEV1 Incident → SAFETY demote (soft-fail).
+          // DDA_SAFETY_INCIDENT=0 disables. Does not change throw semantics.
+          if (isSafetyIncidentEnabled()) {
+            try {
+              await recordScopeViolationIncident({
+                profileRegistry,
+                runId,
+                entityId: executorDescriptor().id,
+                capabilityPath: event.capability ? [String(event.capability)] : [],
+                executed: true
+              });
+            } catch (incidentErr) {
+              emitEvent('safety.incident_soft_fail', {
+                reasonCode: 'SCOPE_VIOLATION',
+                error: incidentErr instanceof Error ? incidentErr.message : String(incidentErr)
+              });
+            }
+          }
           const scopeErr = new Error('SCOPE_VIOLATION');
           scopeErr.code = 'SCOPE_VIOLATION';
           throw scopeErr;
@@ -3529,6 +3552,25 @@ async function runTask() {
               sensitivity: 'SECURITY_AUDIT'
             });
             linkDecisionEvent(toolDecision, toolCallRequestedEvent);
+            // S2: ACTION_GATE BLOCK → SEV2 Incident → SAFETY demote (soft-fail).
+            // Includes hardDecision BLOCK. DDA_SAFETY_INCIDENT=0 disables.
+            if (toolGate.decision === 'BLOCK' && isSafetyIncidentEnabled()) {
+              try {
+                await recordActionGateBlockIncident({
+                  profileRegistry,
+                  runId,
+                  entityId: executorDescriptor().id,
+                  decisionId: toolDecision.decisionId,
+                  capabilityPath: call.name ? [String(call.name)] : [],
+                  phase: 'EXECUTE'
+                });
+              } catch (incidentErr) {
+                emitEvent('safety.incident_soft_fail', {
+                  reasonCode: 'ACTION_GATE_BLOCK',
+                  error: incidentErr instanceof Error ? incidentErr.message : String(incidentErr)
+                });
+              }
+            }
             return {
               decision: toolGate.decision,
               allow: toolGate.decision !== 'BLOCK' && toolGate.decision !== 'REQUEST_EVIDENCE',

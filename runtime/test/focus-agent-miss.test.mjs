@@ -148,9 +148,10 @@ test('T-fm-2: four successful same-digest focus rounds still TOOL_NO_NEW_EVIDENC
       }),
       /TOOL_NO_NEW_EVIDENCE/
     );
-    // First success establishes digest; next 4 same-digest rounds trip the budget (≥4).
-    // Provider keeps calling; stop fires on the round that hits 4.
+    // First success establishes digest; 4 same-digest rounds trigger one vacuum escape,
+    // then another 4 trip TOOL_NO_NEW_EVIDENCE (focus-probe-escape-r1).
     assert.ok(events.filter((e) => e.kind === 'tool.result' && e.ok === true).length >= 4);
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 1);
   } finally {
     await root.fiber.dispose();
   }
@@ -209,9 +210,11 @@ test('T-fm-3: recoverable probe rounds hit TOOL_RECOVERABLE_PROBE_LOOP at budget
       /TOOL_RECOVERABLE_PROBE_LOOP/
     );
     const fails = events.filter((e) => e.kind === 'tool.result' && e.ok === false);
-    assert.equal(fails.length, 8);
+    // focus-probe-escape-r1: first budget hit escapes once; second exhaustion still throws.
+    assert.equal(fails.length, 16);
     assert.equal(fails.every((f) => f.errorCode === 'EXCERPT_NOT_FOUND'), true);
     assert.equal(fails.every((f) => f.nextAction === 'RETRY_WITH_UNIQUE_LOCATOR_OR_LIST'), true);
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 1);
   } finally {
     await root.fiber.dispose();
   }

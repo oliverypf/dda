@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
+  ACCEPTANCE_ALREADY_GREEN,
   extractAcceptanceCommands,
   hasAcceptanceGreen,
   isAcceptanceShellAction,
+  isPostGreenAcceptanceRerun,
   isProcessNoiseFailure,
   sameAcceptanceIntent
 } from './acceptance-match.mjs';
@@ -488,6 +490,12 @@ export class RuleVerifier {
       fingerprints.forEach((fingerprint, index) => {
         if (resolvedTests.has(index) || deferredIndexes.has(index)) return;
         const action = normalizedActions[index];
+        // C1 §1.3: same-intent acceptance re-run after green (or ACCEPTANCE_ALREADY_GREEN
+        // reject) must not create actions.duplicates FAIL / REPEATED_ACTION STALL.
+        if (action?.errorCode === ACCEPTANCE_ALREADY_GREEN
+          || isPostGreenAcceptanceRerun(action, normalizedActions, acceptanceCommands, index)) {
+          return;
+        }
         const actualOutput = actionSucceeded(action) && /^sha256:[0-9a-f]{64}$/u.test(action.outputDigest ?? '');
         // The same read before and after a write can verify both the repair
         // and preservation of untouched tests. A changed actual read digest

@@ -13,6 +13,11 @@ import { proposedToolDecisionClaim, toolResultDecisionClaim } from '../decision/
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
 import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
 import { RECOVERABLE_TOOL_ERROR_CODES } from '../rule-verifier.mjs';
+import {
+  ACCEPTANCE_ALREADY_GREEN,
+  extractAcceptanceCommands,
+  shouldBlockAcceptanceRerun
+} from '../acceptance-match.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const NON_RETRYABLE_MODEL_CODES = new Set(['context_length_exceeded', 'content_filter']);
@@ -376,6 +381,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const observedFileDigests = new Map((workspace.sections ?? []).map(section => [pathKey(section.path), section.digest]));
       let noNewWorkspaceEvidenceRounds = 0;
       let inspectionsSinceProgressCheckpoint = 0;
+      // C1 §1.3: track shell.execute outcomes so post-green same-intent acceptance
+      // re-runs are rejected with ACCEPTANCE_ALREADY_GREEN (not executed).
+      const acceptanceCommandsForGate = extractAcceptanceCommands({ prompt: boundedPrompt });
+      const observedShellActions = [];
       const canOfferImplementationCheckpoint = mode === 'CONTROLLED'
         && (tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write')
           || (toolDefinitions.get('kernel.host_request')?.readOnly === false));
@@ -611,7 +620,25 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 nextAction: 'RETRY_WITH_READ_ONLY_TOOL'
               };
             } else {
-            try {
+            // C1 §1.3 hard ban: after acceptance green, reject same-intent acceptance re-run.
+            if (call.name === 'shell.execute') {
+              const proposed = {
+                name: 'shell.execute',
+                command: typeof rawArguments?.command === 'string' ? rawArguments.command : undefined,
+                args: Array.isArray(rawArguments?.args) ? rawArguments.args : undefined,
+                argumentsDigest: f9ArgumentsDigest(call.name, call.arguments)
+              };
+              const gate = shouldBlockAcceptanceRerun(proposed, observedShellActions, acceptanceCommandsForGate);
+              if (gate.block) {
+                isError = true;
+                output = {
+                  errorCode: gate.errorCode ?? ACCEPTANCE_ALREADY_GREEN,
+                  message: gate.message ?? 'Acceptance already succeeded for this intent.',
+                  nextAction: 'STOP_ACCEPTANCE_COMPLETE'
+                };
+              }
+            }
+            if (!isError) try {
               let finalArguments = rawArguments;
               if (isWorkspacePathTool(call.name) && typeof rawArguments?.path === 'string') {
                 try {
@@ -708,6 +735,20 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               }
             }
             }
+          }
+          if (call.name === 'shell.execute') {
+            let parsedArgs = {};
+            try { parsedArgs = JSON.parse(call.arguments); } catch { parsedArgs = {}; }
+            observedShellActions.push({
+              name: 'shell.execute',
+              command: typeof parsedArgs?.command === 'string' ? parsedArgs.command : undefined,
+              args: Array.isArray(parsedArgs?.args) ? parsedArgs.args : undefined,
+              argumentsDigest: f9ArgumentsDigest(call.name, call.arguments),
+              ok: !isError,
+              state: isError ? 'FAILED' : 'SUCCEEDED',
+              ...(isError && typeof output?.errorCode === 'string' ? { errorCode: output.errorCode } : {}),
+              ...(!isError ? { outputDigest: sha256Digest(JSON.stringify(output)) } : {})
+            });
           }
           const resultDigest = sha256Digest(JSON.stringify(output));
           const toolMessage = typeof output?.message === 'string' ? safeErrorMessage(output.message, output.message) : '';

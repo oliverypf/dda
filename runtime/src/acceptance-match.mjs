@@ -1,8 +1,25 @@
 // Harness-side acceptance command recognition for rule3 verification gate.
 // Match is plaintext whitespace-normalized join of shell.execute {command,args[]}
 // against subject acceptance lines — never digest/hash compare (freeze rule3-r2).
+// C1: quote-strip flag values; recognize node --test; hard-ban same-intent
+// acceptance re-run after green (ACCEPTANCE_ALREADY_GREEN).
 
 const normalizeWs = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Strip paired quotes used to wrap shell flag values / tokens so
+ * `--test-name-pattern='^x'` ≡ `--test-name-pattern=^x`.
+ * Applied after whitespace normalize + stripCdPrefix (freeze C1 §1.1).
+ */
+export function stripShellQuotes(text) {
+  let s = normalizeWs(text);
+  if (!s) return s;
+  // Flag values: --flag='value' / --flag="value"
+  s = s.replace(/=(['"])([\s\S]*?)\1/gu, '=$2');
+  // Whole-token wrapping quotes (residual)
+  s = s.replace(/(^|\s)(['"])([^'"]*)\2(?=\s|$)/gu, '$1$3');
+  return normalizeWs(s);
+}
 
 /** Join command + args[] the way freeze §1.2 requires. */
 export function normalizeCommandJoin(command, args = []) {
@@ -15,12 +32,22 @@ export function normalizeCommandJoin(command, args = []) {
 /** Strip a leading `cd <dir> &&` so prompt lines compare to cwd-scoped shell.execute. */
 const stripCdPrefix = (text) => normalizeWs(text).replace(/^cd\s+\S+\s+&&\s+/iu, '');
 
+/** Canonical form for acceptance compare: ws → strip cd → strip quotes. */
+export function canonicalizeAcceptanceText(text) {
+  return stripShellQuotes(stripCdPrefix(text));
+}
+
 const SHELL_ACCEPTANCE_HINT = /\b(vitest|npx\b|npm\s+(?:test|run)\b|pnpm\s+(?:test|run)\b|yarn\s+test\b|pytest\b|cargo\s+test\b|go\s+test\b|node\s+\S*vitest|mocha\b|jest\b)\b/iu;
+
+/** Stable reject when acceptance already green and same intent re-submitted (C1 §1.3). */
+export const ACCEPTANCE_ALREADY_GREEN = 'ACCEPTANCE_ALREADY_GREEN';
 
 export function looksLikeAcceptanceCommand(line) {
   const text = normalizeWs(line);
   if (!text || text.length < 4) return false;
   if (SHELL_ACCEPTANCE_HINT.test(text)) return true;
+  // C1 §1.2: bare `node --test …` (optional name-pattern / path) counts like vitest
+  if (/\bnode\b/iu.test(text) && /--test\b/iu.test(text)) return true;
   if (/^cd\s+\S+\s+&&\s+\S+/iu.test(text)) return true;
   return false;
 }
@@ -53,6 +80,8 @@ export function extractAcceptanceCommands({
     if (!line) continue;
     line = line.replace(/^[-*•]\s+/, '').replace(/^\d+[.)]\s+/, '');
     line = line.replace(/^(?:then\s+)?run(?:\s+exactly)?:\s*/iu, '');
+    // Bench "Acceptance ONLY (cwd=…): <cmd>" so bare node --test lines extract
+    line = line.replace(/^acceptance\s+only\s*(?:\([^)]*\))?\s*:\s*/iu, '');
     line = line.replace(/^`([^`]+)`$/, '$1');
     if (looksLikeAcceptanceCommand(line)) fromPrompt.push(normalizeWs(line));
   }
@@ -60,15 +89,17 @@ export function extractAcceptanceCommands({
 }
 
 export function commandMatchesAcceptance(commandJoin, acceptanceCommands = []) {
-  const joined = normalizeWs(commandJoin);
+  const joined = canonicalizeAcceptanceText(commandJoin);
   if (!joined || !acceptanceCommands?.length) return false;
   for (const acceptance of acceptanceCommands) {
-    const full = normalizeWs(acceptance);
-    const core = stripCdPrefix(full);
-    if (!full && !core) continue;
-    if (joined === full || joined === core) return true;
+    const full = canonicalizeAcceptanceText(acceptance);
+    // full already had cd stripped inside canonicalize; keep unstripped-core path
+    // for substring against prompts that still mention cd in other forms.
+    const withCd = stripShellQuotes(normalizeWs(acceptance));
+    if (!full && !withCd) continue;
+    if (joined === full || joined === withCd) return true;
     // Substring either way: prompt may wrap `cd … && <join>` or extra flags.
-    if (full.includes(joined) || core.includes(joined) || joined.includes(core)) return true;
+    if (withCd.includes(joined) || full.includes(joined) || joined.includes(full)) return true;
   }
   return false;
 }
@@ -86,11 +117,11 @@ export function isAcceptanceShellAction(action, acceptanceCommands = []) {
   return commandMatchesAcceptance(shellCommandJoin(action), acceptanceCommands);
 }
 
-/** Same acceptance intent: equal normalized join, and/or same argumentsDigest. */
+/** Same acceptance intent: equal quote-stripped join, and/or same argumentsDigest. */
 export function sameAcceptanceIntent(a, b) {
   if (a?.name !== 'shell.execute' || b?.name !== 'shell.execute') return false;
-  const joinA = shellCommandJoin(a);
-  const joinB = shellCommandJoin(b);
+  const joinA = canonicalizeAcceptanceText(shellCommandJoin(a));
+  const joinB = canonicalizeAcceptanceText(shellCommandJoin(b));
   if (joinA && joinB && joinA === joinB) return true;
   if (typeof a?.argumentsDigest === 'string' && a.argumentsDigest
     && a.argumentsDigest === b?.argumentsDigest) return true;
@@ -127,11 +158,62 @@ function actionFailedLite(action) {
 }
 
 /**
+ * C1 §1.3 chosen behavior: Action-layer reject with stable
+ * ACCEPTANCE_ALREADY_GREEN when acceptance is already green and the proposed
+ * shell.execute shares sameAcceptanceIntent with a prior successful acceptance
+ * shell. Callers must not execute the tool; verifier treats this code as noise
+ * and excludes it from actions.duplicates FAIL (see rule-verifier).
+ */
+export function shouldBlockAcceptanceRerun(proposed, priorActions = [], acceptanceCommands = []) {
+  if (proposed?.name !== 'shell.execute') {
+    return { block: false };
+  }
+  const prior = Array.isArray(priorActions) ? priorActions : [];
+  if (!hasAcceptanceGreen(prior, acceptanceCommands)) {
+    return { block: false };
+  }
+  if (!isAcceptanceShellAction(proposed, acceptanceCommands)) {
+    return { block: false };
+  }
+  const matchedPriorGreen = prior.some((action) => (
+    isAcceptanceShellAction(action, acceptanceCommands)
+    && actionSucceededLite(action)
+    && sameAcceptanceIntent(action, proposed)
+  ));
+  if (!matchedPriorGreen) {
+    return { block: false };
+  }
+  return {
+    block: true,
+    errorCode: ACCEPTANCE_ALREADY_GREEN,
+    message: 'Acceptance already succeeded for this intent; do not re-run the same acceptance command.'
+  };
+}
+
+/**
+ * True when this action is a same-intent acceptance shell that appears after a
+ * prior successful acceptance of the same intent (re-run / reject residue).
+ */
+export function isPostGreenAcceptanceRerun(action, allActions = [], acceptanceCommands = [], index = -1) {
+  if (action?.name !== 'shell.execute') return false;
+  if (!isAcceptanceShellAction(action, acceptanceCommands)) return false;
+  const list = Array.isArray(allActions) ? allActions : [];
+  const before = index >= 0 ? list.slice(0, index) : list;
+  return before.some((prior) => (
+    isAcceptanceShellAction(prior, acceptanceCommands)
+    && actionSucceededLite(prior)
+    && sameAcceptanceIntent(prior, action)
+  ));
+}
+
+/**
  * Process noise (freeze §1.2 / Q-r3-2):
  * - workspace.focus failures ALWAYS (never alone → PLAN_STEP_FAILED; never acceptance)
  * - other non-acceptance shell.execute failures ONLY when acceptance is already green
+ * - C1: ACCEPTANCE_ALREADY_GREEN rejects are always noise (do not hard-fail progress)
  */
 export function isProcessNoiseFailure(action, { acceptanceGreen = false, acceptanceCommands = [] } = {}) {
+  if (action?.errorCode === ACCEPTANCE_ALREADY_GREEN) return true;
   if (!actionFailedLite(action)) return false;
   if (action?.name === 'workspace.focus') return true;
   if (acceptanceGreen && action?.name === 'shell.execute'
@@ -150,6 +232,7 @@ export function needsVerificationGate(harness = {}, actions = []) {
 /**
  * §1.1: writes / APPLIED_UNVERIFIED without acceptance green → throw (unadorned).
  * Does not replace an already-thrown MODEL_TRANSPORT (caller must not catch-and-rewrite).
+ * C1 does NOT relax this when writes exist and acceptance never went green.
  */
 export function assertVerificationGate({ harness, actions, acceptanceCommands } = {}) {
   if (!needsVerificationGate(harness, actions)) return;

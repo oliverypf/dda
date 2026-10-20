@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { createRuleVerifier } from '../src/rule-verifier.mjs';
 import { createTaskProgress, FAILURE_CLASSES } from '../src/task-harness.mjs';
 import {
+  ACCEPTANCE_ALREADY_GREEN,
   assertVerificationGate,
   extractAcceptanceCommands,
   hasAcceptanceGreen,
   isProcessNoiseFailure,
-  normalizeCommandJoin
+  looksLikeAcceptanceCommand,
+  normalizeCommandJoin,
+  shouldBlockAcceptanceRerun,
+  stripShellQuotes
 } from '../src/acceptance-match.mjs';
 import { exitCodeForError, messageForCode, rebuildFailedTaskResult } from '../../linux-cli/src/exit-codes.mjs';
 
@@ -221,4 +225,150 @@ test('T30 no writes / no APPLIED_UNVERIFIED → §1.1 does not break existing su
     actions: [{ name: 'workspace.read', state: 'SUCCEEDED', argumentsDigest: dig('r'), outputDigest: dig('o') }]
   });
   assert.equal(report.status, 'PASS');
+});
+
+
+// ——— C1 observation (freeze-harness-c1-observation-r1) ———
+
+const T2_PROMPT = `Fix linux-cli/src/exit-codes.mjs rebuildFailedTaskResult.
+
+Use file.patch. Then run:
+  cd linux-cli && node --test --test-name-pattern='^rebuildFailedTaskResult' test/observability.test.mjs
+Stop when green.
+
+Lease: only command name \`node\` is allowed (no npm, npx, bash, or sh).
+Acceptance ONLY (cwd=linux-cli): node --test --test-name-pattern='^rebuildFailedTaskResult' test/observability.test.mjs
+If node or the test file is missing: stop and report an environment issue; do NOT try to install dependencies.
+`;
+
+const t2UnquotedArgs = ['--test', '--test-name-pattern=^rebuildFailedTaskResult', 'test/observability.test.mjs'];
+
+test('T-c1-1 T2 quoted prompt cmd + unquoted shell args → hasAcceptanceGreen; gate ok with writes', () => {
+  assert.equal(
+    stripShellQuotes("--test-name-pattern='^rebuildFailedTaskResult'"),
+    '--test-name-pattern=^rebuildFailedTaskResult'
+  );
+  const cmds = extractAcceptanceCommands({ prompt: T2_PROMPT });
+  assert.ok(cmds.length >= 1, JSON.stringify(cmds));
+  assert.ok(
+    cmds.some((c) => c.includes('rebuildFailedTaskResult') && c.includes('node --test')),
+    JSON.stringify(cmds)
+  );
+  const join = normalizeCommandJoin('node', t2UnquotedArgs);
+  assert.match(join, /--test-name-pattern=\^rebuildFailedTaskResult/);
+  assert.doesNotMatch(join, /'/);
+  const greenShell = {
+    name: 'shell.execute',
+    command: 'node',
+    args: t2UnquotedArgs,
+    state: 'SUCCEEDED',
+    ok: true,
+    argumentsDigest: dig('t2a'),
+    outputDigest: dig('t2o')
+  };
+  assert.equal(hasAcceptanceGreen([greenShell], cmds), true);
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    greenShell
+  ];
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 1, writesAppliedUnverified: 0 },
+      actions,
+      acceptanceCommands: cmds
+    }),
+    undefined
+  );
+});
+
+test('T-c1-2 bare node --test is extractable; looksLikeAcceptanceCommand true', () => {
+  const bare = "node --test --test-name-pattern='^rebuildFailedTaskResult' test/observability.test.mjs";
+  assert.equal(looksLikeAcceptanceCommand(bare), true);
+  assert.equal(looksLikeAcceptanceCommand('node --test test/observability.test.mjs'), true);
+  const cmds = extractAcceptanceCommands({
+    prompt: `Acceptance ONLY (cwd=linux-cli): ${bare}\n`
+  });
+  assert.ok(cmds.some((c) => c.includes('node --test') && c.includes('rebuildFailedTaskResult')), JSON.stringify(cmds));
+  // Still recognize without Acceptance ONLY prefix
+  const cmds2 = extractAcceptanceCommands({ prompt: `${bare}\n` });
+  assert.ok(cmds2.some((c) => c.includes('node --test')), JSON.stringify(cmds2));
+});
+
+test('T-c1-3 after green, same intent → ACCEPTANCE_ALREADY_GREEN; no duplicates FAIL / no STALL', () => {
+  const cmds = extractAcceptanceCommands({ prompt: T2_PROMPT });
+  const green = {
+    name: 'shell.execute',
+    command: 'node',
+    args: t2UnquotedArgs,
+    state: 'SUCCEEDED',
+    ok: true,
+    argumentsDigest: dig('t2a'),
+    outputDigest: dig('t2o')
+  };
+  const proposed = {
+    name: 'shell.execute',
+    command: 'node',
+    args: t2UnquotedArgs,
+    argumentsDigest: dig('t2a')
+  };
+  const gate = shouldBlockAcceptanceRerun(proposed, [green], cmds);
+  assert.equal(gate.block, true);
+  assert.equal(gate.errorCode, ACCEPTANCE_ALREADY_GREEN);
+
+  const rejected = {
+    ...proposed,
+    state: 'FAILED',
+    ok: false,
+    errorCode: ACCEPTANCE_ALREADY_GREEN
+  };
+  assert.equal(
+    isProcessNoiseFailure(rejected, { acceptanceGreen: true, acceptanceCommands: cmds }),
+    true
+  );
+
+  // Verifier: write + green + same-intent reject must PASS without REPEATED_ACTION
+  const report = createRuleVerifier().verify({
+    prompt: T2_PROMPT,
+    output: 'fixed and verified once',
+    workspace: { granted: true },
+    actions: [
+      { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+      green,
+      rejected
+    ],
+    acceptanceCommands: cmds
+  });
+  assert.equal(report.status, 'PASS', JSON.stringify(report.checks?.map((c) => [c.id, c.status, c.message])));
+  assert.equal(report.checks.find((c) => c.id === 'actions.duplicates')?.status, 'PASS');
+  assert.notEqual(report.status, 'STALLED');
+  assert.ok(!report.failureCodes?.includes('REPEATED_ACTION'));
+  assert.equal(report.checks.find((c) => c.id === 'actions.progress')?.status, 'PASS');
+
+  // Also: successful re-execution of same intent after green (pre-gate residue) must not STALL
+  const greenAgain = { ...green, argumentsDigest: dig('t2a'), outputDigest: dig('t2o2') };
+  const report2 = createRuleVerifier().verify({
+    prompt: T2_PROMPT,
+    output: 're-ran by mistake',
+    workspace: { granted: true },
+    actions: [
+      { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+      green,
+      greenAgain
+    ],
+    acceptanceCommands: cmds
+  });
+  assert.equal(report2.checks.find((c) => c.id === 'actions.duplicates')?.status, 'PASS', JSON.stringify(report2.checks));
+  assert.ok(!report2.failureCodes?.includes('REPEATED_ACTION'));
+});
+
+test('T-c1-3b writes without green still VERIFICATION_REQUIRED (do not relax)', () => {
+  const cmds = extractAcceptanceCommands({ prompt: T2_PROMPT });
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [{ name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') }],
+      acceptanceCommands: cmds
+    }),
+    (error) => error.message === 'VERIFICATION_REQUIRED'
+  );
 });

@@ -7,6 +7,7 @@ import {
   assertVerificationGate,
   extractAcceptanceCommands,
   hasAcceptanceGreen,
+  hasAllAcceptanceCommandsGreen,
   isProcessNoiseFailure,
   looksLikeAcceptanceCommand,
   normalizeCommandJoin,
@@ -493,4 +494,63 @@ test('T-c2-4 writes + only bad shell, no green → still VERIFICATION_REQUIRED',
     acceptanceCommands: cmds
   });
   assert.notEqual(report.status, 'PASS');
+});
+
+
+// ——— C3 multi-acceptance all-green (freeze-harness-c3-complex-r1) ———
+
+test('T-c3-1 dual acceptance: only one green + writes → VERIFICATION_REQUIRED; both green → ok', () => {
+  const cmdA = 'node --test test/assemble.test.mjs';
+  const cmdB = 'node --test test/tag.test.mjs';
+  const cmds = [cmdA, cmdB];
+  const write = { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') };
+  const greenA = {
+    name: 'shell.execute',
+    command: 'node',
+    args: ['--test', 'test/assemble.test.mjs'],
+    state: 'SUCCEEDED',
+    ok: true,
+    argumentsDigest: dig('a'),
+    outputDigest: dig('oa')
+  };
+  const greenB = {
+    name: 'shell.execute',
+    command: 'node',
+    args: ['--test', 'test/tag.test.mjs'],
+    state: 'SUCCEEDED',
+    ok: true,
+    argumentsDigest: dig('b'),
+    outputDigest: dig('ob')
+  };
+
+  assert.equal(hasAllAcceptanceCommandsGreen([greenA], cmds), false);
+  assert.equal(hasAllAcceptanceCommandsGreen([greenA, greenB], cmds), true);
+  assert.equal(hasAcceptanceGreen([greenA], cmds), true); // any-green still true
+
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [write, greenA],
+      acceptanceCommands: cmds
+    }),
+    (error) => error.message === 'VERIFICATION_REQUIRED'
+  );
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [write, greenA, greenB],
+      acceptanceCommands: cmds
+    }),
+    undefined
+  );
+
+  // Single-cmd path unchanged: one green is enough
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [write, greenA],
+      acceptanceCommands: [cmdA]
+    }),
+    undefined
+  );
 });

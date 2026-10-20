@@ -12,10 +12,13 @@ export const RECOVERABLE_VERIFIER_STATUSES = Object.freeze(new Set([
 ]));
 
 /** Failure codes that may trigger one bounded agent-miss replan after writes landed. */
+export const JEV_EVIDENCE_REQUIRED = 'JEV_EVIDENCE_REQUIRED';
+
 export const AGENT_MISS_TRIGGER_CODES = Object.freeze(new Set([
   'ACTION_FAILED',
   'REPEATED_ACTION',
-  'JEV_BEHAVIOR_REJECTED'
+  'JEV_BEHAVIOR_REJECTED',
+  JEV_EVIDENCE_REQUIRED
 ]));
 
 const MAX_ATTEMPTS = 8;
@@ -36,9 +39,10 @@ export const isSoleHardDenyFailure = (failureCodes = []) => {
 };
 
 /**
- * freeze-harness-focus-agent-miss-r1 §1.2 / stalled-agent-miss-r1: one bounded
- * REPLAN after writes when verification FAIL|STALLED carries ACTION_FAILED /
- * REPEATED_ACTION / JEV_BEHAVIOR_REJECTED. Status gate lives at the caller.
+ * freeze-harness-focus/stalled/uncertain-agent-miss: one bounded REPLAN after
+ * writes when verification FAIL|STALLED|UNCERTAIN carries ACTION_FAILED /
+ * REPEATED_ACTION / JEV_BEHAVIOR_REJECTED / JEV_EVIDENCE_REQUIRED.
+ * Status gate lives at the caller.
  */
 export const isAgentMissReplanEligible = ({
   writesApplied = 0,
@@ -55,11 +59,43 @@ export const isAgentMissReplanEligible = ({
 };
 
 export const agentMissReplanHostNote = () => [
-  'HOST_AGENT_MISS_REPLAN: One bounded recovery after writes already landed (FAIL or STALLED with trigger codes).',
+  'HOST_AGENT_MISS_REPLAN: One bounded recovery after writes already landed (FAIL, STALLED, or UNCERTAIN with trigger codes).',
   'Stop repeating rejected command/fingerprint digests — especially after VERIFIER_STALLED / REPEATED_ACTION.',
+  'For UNCERTAIN / Jev evidence-gap (JEV_EVIDENCE_REQUIRED): workspace.focus/read to narrow locator, then apply a small new patch; ban idle churn.',
   'For PATCH_MATCH_COUNT or stale digests: workspace.focus/read the current file, then apply a small new patch; ban the same digest.',
   'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force.'
 ].join(' ');
+
+/**
+ * freeze-harness-uncertain-agent-miss-r1 §1.1: when Jev behavior elevates a
+ * deterministic PASS to UNCERTAIN (evidence gap), stamp JEV_EVIDENCE_REQUIRED
+ * into failureCodes. Never summary-only.
+ */
+export const stampJevEvidenceRequired = (verification, {
+  reasonCode,
+  evidenceIds = []
+} = {}) => {
+  const prior = Array.isArray(verification?.failureCodes) ? verification.failureCodes : [];
+  const failureCodes = [...new Set([
+    ...prior.map((code) => String(code ?? '')).filter(Boolean),
+    JEV_EVIDENCE_REQUIRED
+  ])];
+  return {
+    ...verification,
+    status: 'UNCERTAIN',
+    summary: 'Deterministic checks passed but Jev requires more evidence',
+    failureCodes,
+    checks: [
+      ...(verification?.checks ?? []),
+      {
+        id: 'jev-behavior-judge',
+        status: 'UNKNOWN',
+        message: reasonCode,
+        evidence: Array.isArray(evidenceIds) ? evidenceIds : []
+      }
+    ]
+  };
+};
 
 const clone = (value) => structuredClone(value);
 const boundedText = (value, max = 500) => String(value ?? '')
@@ -229,9 +265,9 @@ export const runVerifierRecovery = async ({
         stopReason: report.providerError ?? 'STOP_AND_REPORT' };
     }
 
-    // §1.2 / stalled-agent-miss-r1: write-backed AGENT_MISS FAIL|STALLED → one CONTINUE/REPLAN_STEP.
+    // §1.2 / uncertain-agent-miss-r1: write-backed AGENT_MISS FAIL|STALLED|UNCERTAIN → one CONTINUE/REPLAN_STEP.
     let agentMissJustFired = false;
-    if ((report.status === 'FAIL' || report.status === 'STALLED') && agentMiss && !agentMissReplanned) {
+    if ((report.status === 'FAIL' || report.status === 'STALLED' || report.status === 'UNCERTAIN') && agentMiss && !agentMissReplanned) {
       const counts = typeof agentMiss.getWriteCounts === 'function'
         ? (agentMiss.getWriteCounts() ?? {})
         : {};

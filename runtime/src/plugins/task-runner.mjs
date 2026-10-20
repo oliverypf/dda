@@ -80,6 +80,21 @@ const EXCERPT_FOCUS_ERROR_CODES = new Set([
 ]);
 const EXCERPT_FOCUS_NEXT_ACTION = 'RETRY_WITH_UNIQUE_LOCATOR_OR_LIST';
 const RECOVERABLE_PROBE_ROUND_BUDGET = 8;
+const NO_NEW_WORKSPACE_EVIDENCE_BUDGET = 4;
+// freeze-harness-focus-probe-escape-r1 §1.1 / §1.2: one-shot HOST escapes before kill.
+const HOST_FOCUS_VACUUM_ESCAPE = [
+  'HOST_FOCUS_VACUUM_ESCAPE: Stop repeating same-digest workspace.read/focus loops.',
+  'Call workspace.list, then use a workspace-relative path.',
+  'Next step must move toward a write or an acceptance tool; pure read/focus without new evidence is forbidden.',
+  'This grants no permissions and is not evidence of completion.'
+].join(' ');
+const HOST_FOCUS_PROBE_ESCAPE = [
+  'HOST_FOCUS_PROBE_ESCAPE: Do not repeat the same locator/fingerprint.',
+  'Call workspace.list → unique relative path → workspace.focus with a unique findText.',
+  'On EXCERPT_AMBIGUOUS, narrow the locator; after a writable target is found, prefer write.',
+  `nextAction=${EXCERPT_FOCUS_NEXT_ACTION}.`,
+  'This grants no permissions and is not evidence of completion.'
+].join(' ');
 
 const safeErrorCode = (error) => {
   const candidate = error?.code ?? (error instanceof Error ? error.message : undefined);
@@ -388,6 +403,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const observedFileDigests = new Map((workspace.sections ?? []).map(section => [pathKey(section.path), section.digest]));
       let noNewWorkspaceEvidenceRounds = 0;
       let recoverableProbeOnlyRounds = 0;
+      let focusVacuumEscapeUsed = false;
+      let focusProbeEscapeUsed = false;
+      let successfulWritesThisRun = 0;
+      const recentRecoverableProbeCodes = [];
       let inspectionsSinceProgressCheckpoint = 0;
       // C1 §1.3: track shell.execute outcomes so post-green same-intent acceptance
       // re-runs are rejected with ACCEPTANCE_ALREADY_GREEN (not executed).
@@ -817,7 +836,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               inspectionsSinceProgressCheckpoint++;
             }
           }
-          if (!isError && (call.name === 'file.write' || call.name === 'file.patch')) inspectionsSinceProgressCheckpoint = 0;
+          if (!isError && (call.name === 'file.write' || call.name === 'file.patch')) {
+            successfulWritesThisRun += 1;
+            inspectionsSinceProgressCheckpoint = 0;
+          }
           if (isWorkspacePathTool(call.name)) {
             if (isError) {
               roundFailedWorkspaceTools += 1;
@@ -826,6 +848,9 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 : 'TOOL_EXECUTION_FAILED';
               if (!isRecoverableWorkspaceProbeError(call.name, ec)) {
                 roundNonRecoverableWorkspaceFailures += 1;
+              } else {
+                recentRecoverableProbeCodes.push(ec);
+                if (recentRecoverableProbeCodes.length > 24) recentRecoverableProbeCodes.shift();
               }
             } else {
               roundSuccessfulWorkspaceTools += 1;
@@ -871,13 +896,47 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           } else if (recoverableProbeOnlyRound) {
             recoverableProbeOnlyRounds += 1;
             if (recoverableProbeOnlyRounds >= RECOVERABLE_PROBE_ROUND_BUDGET) {
-              throw new Error('TOOL_RECOVERABLE_PROBE_LOOP:workspace recoverable probes exhausted without progress');
+              // freeze-harness-focus-probe-escape-r1 §1.2: one-shot probe escape when writes=0.
+              if (successfulWritesThisRun === 0 && !focusProbeEscapeUsed) {
+                focusProbeEscapeUsed = true;
+                const priorRounds = recoverableProbeOnlyRounds;
+                recoverableProbeOnlyRounds = 0;
+                const recentCodes = recentRecoverableProbeCodes.slice(-12);
+                messages.push(createUserMessage({
+                  source: { kind: 'user' },
+                  content: [{ type: 'text', text: HOST_FOCUS_PROBE_ESCAPE }]
+                }));
+                await onEvent?.({
+                  kind: 'harness.focus_probe_escape',
+                  round,
+                  rounds: priorRounds,
+                  recentExcerptCodes: recentCodes
+                });
+              } else {
+                throw new Error('TOOL_RECOVERABLE_PROBE_LOOP:workspace recoverable probes exhausted without progress');
+              }
             }
           } else {
             recoverableProbeOnlyRounds = 0;
             noNewWorkspaceEvidenceRounds += 1;
-            if (noNewWorkspaceEvidenceRounds >= 4) {
-              throw new Error('TOOL_NO_NEW_EVIDENCE:workspace tools repeated without a new directory entry or file window');
+            if (noNewWorkspaceEvidenceRounds >= NO_NEW_WORKSPACE_EVIDENCE_BUDGET) {
+              // freeze-harness-focus-probe-escape-r1 §1.1: one-shot vacuum escape when writes=0.
+              if (successfulWritesThisRun === 0 && !focusVacuumEscapeUsed) {
+                focusVacuumEscapeUsed = true;
+                const priorRounds = noNewWorkspaceEvidenceRounds;
+                noNewWorkspaceEvidenceRounds = 0;
+                messages.push(createUserMessage({
+                  source: { kind: 'user' },
+                  content: [{ type: 'text', text: HOST_FOCUS_VACUUM_ESCAPE }]
+                }));
+                await onEvent?.({
+                  kind: 'harness.focus_vacuum_escape',
+                  round,
+                  rounds: priorRounds
+                });
+              } else {
+                throw new Error('TOOL_NO_NEW_EVIDENCE:workspace tools repeated without a new directory entry or file window');
+              }
             }
           }
         } else {

@@ -3566,10 +3566,11 @@ async function runTask() {
             successfulWrites: Number(snap.successfulWrites ?? 0)
           };
         },
-        onReplan: ({ writesApplied, failureCodes }) => {
+        onReplan: ({ writesApplied, failureCodes, status }) => {
           emitEvent('harness.agent_miss_replan', {
             writesApplied: Number(writesApplied ?? 0),
-            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : []
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            ...(status === 'FAIL' || status === 'STALLED' ? { status } : {})
           });
         }
       },

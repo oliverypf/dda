@@ -36,8 +36,9 @@ export const isSoleHardDenyFailure = (failureCodes = []) => {
 };
 
 /**
- * freeze-harness-focus-agent-miss-r1 §1.2: one bounded REPLAN after writes when
- * verification would STOP on ACTION_FAILED / REPEATED_ACTION / JEV_BEHAVIOR_REJECTED.
+ * freeze-harness-focus-agent-miss-r1 §1.2 / stalled-agent-miss-r1: one bounded
+ * REPLAN after writes when verification FAIL|STALLED carries ACTION_FAILED /
+ * REPEATED_ACTION / JEV_BEHAVIOR_REJECTED. Status gate lives at the caller.
  */
 export const isAgentMissReplanEligible = ({
   writesApplied = 0,
@@ -54,8 +55,8 @@ export const isAgentMissReplanEligible = ({
 };
 
 export const agentMissReplanHostNote = () => [
-  'HOST_AGENT_MISS_REPLAN: One bounded recovery after writes already landed.',
-  'Stop repeating rejected command/fingerprint digests.',
+  'HOST_AGENT_MISS_REPLAN: One bounded recovery after writes already landed (FAIL or STALLED with trigger codes).',
+  'Stop repeating rejected command/fingerprint digests — especially after VERIFIER_STALLED / REPEATED_ACTION.',
   'For PATCH_MATCH_COUNT or stale digests: workspace.focus/read the current file, then apply a small new patch; ban the same digest.',
   'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force.'
 ].join(' ');
@@ -228,9 +229,9 @@ export const runVerifierRecovery = async ({
         stopReason: report.providerError ?? 'STOP_AND_REPORT' };
     }
 
-    // §1.2: convert a write-backed AGENT_MISS FAIL into one CONTINUE/REPLAN_STEP.
+    // §1.2 / stalled-agent-miss-r1: write-backed AGENT_MISS FAIL|STALLED → one CONTINUE/REPLAN_STEP.
     let agentMissJustFired = false;
-    if (report.status === 'FAIL' && agentMiss && !agentMissReplanned) {
+    if ((report.status === 'FAIL' || report.status === 'STALLED') && agentMiss && !agentMissReplanned) {
       const counts = typeof agentMiss.getWriteCounts === 'function'
         ? (agentMiss.getWriteCounts() ?? {})
         : {};
@@ -242,16 +243,18 @@ export const runVerifierRecovery = async ({
       })) {
         agentMissReplanned = true;
         agentMissJustFired = true;
+        const originalStatus = report.status;
         const writesApplied = Number(counts.writesApplied ?? counts.successfulWrites ?? 0) || 0;
         await agentMiss.onReplan?.({
           writesApplied,
-          failureCodes: [...report.failureCodes]
+          failureCodes: [...report.failureCodes],
+          status: originalStatus
         });
         report = {
           ...report,
           status: 'CONTINUE',
           nextAction: 'REPLAN_STEP',
-          summary: boundedText(`agent-miss replan after writes: ${report.summary || 'verification FAIL'}`),
+          summary: boundedText(`agent-miss replan after writes: ${report.summary || `verification ${originalStatus}`}`),
           agentMissReplan: true
         };
         // Allow exactly one bonus execute even when maxAttempts was already reached.

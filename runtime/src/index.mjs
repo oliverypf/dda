@@ -8,6 +8,7 @@ import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
 import { canRetryVerificationOnly, verificationProviderFailure } from './decision/verification-retry.mjs';
 import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
+import { applySafetyProfileGate, SAFETY_PROFILE_REQUIRE_APPROVAL } from './safety-profile-gate.mjs';
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
@@ -3368,7 +3369,7 @@ async function runTask() {
             if (workspaceEvidence.length) await trajectory.append({ runId, kind: 'DecisionWorkspaceContextCollected',
               payload: { proposalId: call.id, name: call.name, context: workspaceEvidence.map(item => ({ evidenceId: item.id, digest: item.source })) },
               sensitivity: 'INTERNAL' });
-            const toolGate = await decisionEngine.decideActionGate({
+            const toolGateRaw = await decisionEngine.decideActionGate({
               signal: taskAbortController.signal,
               state: {
                 taskId: runId,
@@ -3404,6 +3405,39 @@ async function runTask() {
               },
               hardDecision: hardModeBlock ?? fastPathDecision
             });
+            // S1: SAFETY profile soft-tighten after decideActionGate. Default ON;
+            // DDA_SAFETY_PROFILE_GATE=0 disables. Never demotes; elevates only.
+            const safetyProfileGateEnabled = process.env.DDA_SAFETY_PROFILE_GATE !== '0';
+            const safetyProfile = safetyProfileGateEnabled
+              ? profileRegistry.getProfile({
+                kind: 'SAFETY',
+                entityType: 'executor',
+                entityId: executorDescriptor().id
+              })
+              : undefined;
+            const safetyApplied = applySafetyProfileGate({
+              gateDecision: toolGateRaw,
+              safetyProfile,
+              toolReadOnly
+            });
+            const toolGate = safetyApplied.elevated
+              ? {
+                ...toolGateRaw,
+                decision: safetyApplied.decision,
+                reasonCode: safetyApplied.reasonCode ?? SAFETY_PROFILE_REQUIRE_APPROVAL
+              }
+              : toolGateRaw;
+            if (safetyApplied.elevated) {
+              emitEvent('safety.profile_gate_elevated', {
+                id: call.id,
+                name: call.name,
+                profileId: safetyApplied.profileId,
+                reasonCodes: safetyApplied.reasonCodes,
+                from: toolGateRaw.decision,
+                to: toolGate.decision,
+                reasonCode: toolGate.reasonCode
+              });
+            }
             const fastPathTaken = toolGate.reasonCode === READONLY_FAST_PATH_REASON && Boolean(fastPathDecision);
             if (fastPathTaken) emitEvent('jev.action_gate_skipped', { id: call.id, name: call.name, reasonCode: READONLY_FAST_PATH_REASON });
             // Persist a genuine mid-task REQUIRE_APPROVAL (a real Jev opinion,
@@ -3411,11 +3445,24 @@ async function runTask() {
             // argument hash, so the lease provider and approval path can require
             // an explicit approval for exactly this proposed action. The rule
             // fallback keeps the operator's pre-task capability setup intact.
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && toolGate.source === 'jev' && toolGate.fallbackUsed !== true) {
-              const gateEntry = { requireApproval: true, reasonCode: toolGate.reasonCode ?? 'JEV_ACTION_GATE_REQUIRE_APPROVAL' };
+            // S1: SAFETY profile elevate must enter the same map — otherwise soft
+            // tighten is dead (today only source==='jev' was written).
+            const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
+              && toolGateRaw.source === 'jev'
+              && toolGateRaw.fallbackUsed !== true;
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated)) {
+              const gateEntry = {
+                requireApproval: true,
+                reasonCode: toolGate.reasonCode
+                  ?? (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')
+              };
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
             }
+            const safetyTelemetryCodes = [
+              ...(safetyApplied.profileId ? [`SAFETY_PROFILE:${safetyApplied.profileId}`] : []),
+              ...safetyApplied.reasonCodes
+            ];
             const toolDecision = await recordDecision({
               stepId: `${step.stepId}-tool-${attempt}-${call.id}`,
               role: 'executor',
@@ -3426,7 +3473,9 @@ async function runTask() {
               operationId: `operation-${step.stepId}-${attempt}-${call.id}`,
               summary: fastPathTaken
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
-                : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+                : safetyApplied.elevated
+                  ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
+                  : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -3450,8 +3499,14 @@ async function runTask() {
                 }
               ],
               selectedOptionId: toolGate.decision === 'ALLOW' ? `tool-${call.id}-selected` : `tool-${call.id}-no-tool`,
-              reasonCodes: [toolGate.reasonCode ?? 'JEV_ACTION_GATE'],
-              selectionCriteria: [fastPathTaken ? 'readonly-fast-path-rule' : 'evidence-backed-jev-action-gate']
+              reasonCodes: [toolGate.reasonCode ?? 'JEV_ACTION_GATE', ...safetyTelemetryCodes],
+              selectionCriteria: [
+                fastPathTaken
+                  ? 'readonly-fast-path-rule'
+                  : safetyApplied.elevated
+                    ? 'safety-profile-action-gate'
+                    : 'evidence-backed-jev-action-gate'
+              ]
             });
             verificationActions.push({
               id: call.id,

@@ -1,5 +1,6 @@
 const PRE_REGISTRY_REFUSALS = new Set(['TOOL_NOT_ALLOWED_IN_MODE', 'TOOL_DUPLICATE_REQUEST',
-  'TOOL_ACTION_REQUIRES_EVIDENCE', 'TOOL_ACTION_BLOCKED_BY_JEV']);
+  'TOOL_ACTION_REQUIRES_EVIDENCE', 'TOOL_ACTION_BLOCKED_BY_JEV',
+  'TOOL_INVALID_INPUT', 'TOOL_INVALID_INPUT_JSON']);
 const relativeMessage = value => typeof value === 'string' && /^[A-Za-z0-9_.\/ -]{1,160}$/u.test(value)
   && !value.startsWith('/') && !value.split('/').includes('..') ? value : '';
 

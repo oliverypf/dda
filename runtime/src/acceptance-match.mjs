@@ -42,6 +42,24 @@ const SHELL_ACCEPTANCE_HINT = /\b(vitest|npx\b|npm\s+(?:test|run)\b|pnpm\s+(?:te
 /** Stable reject when acceptance already green and same intent re-submitted (C1 §1.3). */
 export const ACCEPTANCE_ALREADY_GREEN = 'ACCEPTANCE_ALREADY_GREEN';
 
+/**
+ * C2 §1.1: schema precheck for shell.execute before registry/executor.
+ * command must be a non-empty string; otherwise do not invoke the handler.
+ */
+export function precheckShellExecuteInput(input = {}) {
+  const command = input?.command;
+  if (typeof command !== 'string' || command.trim() === '') {
+    return {
+      ok: false,
+      errorCode: 'TOOL_INVALID_INPUT',
+      message: 'input.command is required',
+      nextAction: 'FIX_ARGS'
+    };
+  }
+  return { ok: true };
+}
+
+
 export function looksLikeAcceptanceCommand(line) {
   const text = normalizeWs(line);
   if (!text || text.length < 4) return false;
@@ -214,6 +232,9 @@ export function isPostGreenAcceptanceRerun(action, allActions = [], acceptanceCo
  */
 export function isProcessNoiseFailure(action, { acceptanceGreen = false, acceptanceCommands = [] } = {}) {
   if (action?.errorCode === ACCEPTANCE_ALREADY_GREEN) return true;
+  // C2 §1.3: after acceptance green, TOOL_INVALID_INPUT(+_JSON) is always noise
+  if (acceptanceGreen && (action?.errorCode === 'TOOL_INVALID_INPUT'
+    || action?.errorCode === 'TOOL_INVALID_INPUT_JSON')) return true;
   if (!actionFailedLite(action)) return false;
   if (action?.name === 'workspace.focus') return true;
   if (acceptanceGreen && action?.name === 'shell.execute'

@@ -1,5 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
+import {
+  allocatePathWeighted,
+  isTrustDeepenEnabled,
+  normalizePathNodes,
+  CAUSAL_EQUAL_SHARE
+} from './trust-deepen.mjs';
 
 const clone = (value) => structuredClone(value);
 const canonical = (value) => Array.isArray(value)
@@ -16,7 +22,11 @@ const stableCreatedAtMs = (identity) => {
   return Number.parseInt(hex, 16) % 1e13;
 };
 
-const allocate = ({ decisions = [], outcome = {} } = {}) => {
+/**
+ * Equal-share allocator (legacy path / DDA_TRUST_DEEPEN=0).
+ * Kept byte-stable for regression when no path is supplied.
+ */
+const allocateEqualShare = ({ decisions = [], outcome = {} } = {}) => {
   if (!Array.isArray(decisions) || !decisions.length) return [];
   const usable = decisions.filter((decision) => decision?.status === 'COMMITTED' && typeof decision.decisionId === 'string');
   if (!usable.length) return [];
@@ -32,22 +42,65 @@ const allocate = ({ decisions = [], outcome = {} } = {}) => {
     credit: success ? weight : 0,
     blame: success ? 0 : weight,
     evidenceRefs: Array.isArray(outcome.executionEventIds) ? outcome.executionEventIds.slice(0, 16) : [],
-    allocationMethod: 'CAUSAL_EQUAL_SHARE'
+    allocationMethod: CAUSAL_EQUAL_SHARE
   }));
 };
 
-const sourceDigestFor = ({ decisions, outcome }) => {
-  const records = allocate({ decisions, outcome });
-  return digest({
-    decisionIds: records.map((record) => record.decisionId),
+/**
+ * Route: when Trust deepen ON and pathNodes/pathAnalysis provided → path-weighted;
+ * otherwise equal share. DDA_TRUST_DEEPEN=0 never PATH_WEIGHTED (freeze §1.3).
+ */
+const allocate = ({
+  decisions = [],
+  outcome = {},
+  pathNodes,
+  pathAnalysis,
+  highRiskSinks,
+  env = process.env
+} = {}) => {
+  const deepenOn = isTrustDeepenEnabled(env);
+  const nodes = deepenOn ? normalizePathNodes({ pathNodes, pathAnalysis }) : [];
+  if (deepenOn && nodes.length > 0) {
+    return allocatePathWeighted({
+      decisions,
+      outcome,
+      pathNodes: nodes,
+      pathAnalysis,
+      highRiskSinks
+    });
+  }
+  // deepen off OR no path → equal share (allocatePathWeighted also equal-shares
+  // when nodes empty; call equal-share directly so disabled path ignores path args)
+  return allocateEqualShare({ decisions, outcome });
+};
+
+/** Source digest includes allocationMethod + normalized pathNodes (freeze §1.2). */
+const sourceDigestPayload = ({ allocations, outcome, pathNodes }) => {
+  const method = allocations[0]?.allocationMethod ?? CAUSAL_EQUAL_SHARE;
+  const nodes = Array.isArray(pathNodes) ? pathNodes : [];
+  return {
+    decisionIds: allocations.map((record) => record.decisionId),
     outcomeId: outcome?.outcomeId,
-    status: outcome?.status
-  });
+    status: outcome?.status,
+    allocationMethod: method,
+    pathNodes: nodes
+  };
+};
+
+const resolveNodesForDigest = ({ pathNodes, pathAnalysis, env = process.env } = {}) => {
+  if (!isTrustDeepenEnabled(env)) return [];
+  return normalizePathNodes({ pathNodes, pathAnalysis });
+};
+
+const sourceDigestFor = ({ decisions, outcome, pathNodes, pathAnalysis, highRiskSinks, env } = {}) => {
+  const records = allocate({ decisions, outcome, pathNodes, pathAnalysis, highRiskSinks, env });
+  const nodes = resolveNodesForDigest({ pathNodes, pathAnalysis, env });
+  return digest(sourceDigestPayload({ allocations: records, outcome, pathNodes: nodes }));
 };
 
 /** Build byte-stable allocation records for a given sourceDigest (freeze §1.2). */
-const stableRecordsFor = ({ decisions, outcome, sourceDigest }) => {
-  const allocations = allocate({ decisions, outcome });
+const stableRecordsFor = ({ decisions, outcome, sourceDigest, pathNodes, pathAnalysis, highRiskSinks, env }) => {
+  const allocations = allocate({ decisions, outcome, pathNodes, pathAnalysis, highRiskSinks, env });
   return allocations.map((allocation) => {
     const allocationId = `allocation-${digest({
       sourceDigest,
@@ -128,17 +181,15 @@ export class CreditBlameLedger {
   }
   get hasDurableSink() { return Boolean(this.#eventStore && typeof this.#eventStore.append === 'function'); }
 
-  async recordDurably({ decisions, outcome } = {}) {
+  async recordDurably({ decisions, outcome, pathNodes, pathAnalysis, highRiskSinks } = {}) {
     if (!this.#eventStore || typeof this.#eventStore.append !== 'function') throw new Error('HARNESS_EVENT_STORE_REQUIRED');
     await this.load();
-    const allocations = allocate({ decisions, outcome });
+    const allocOpts = { decisions, outcome, pathNodes, pathAnalysis, highRiskSinks };
+    const allocations = allocate(allocOpts);
     if (!allocations.length) return [];
-    const sourceDigest = digest({
-      decisionIds: allocations.map((record) => record.decisionId),
-      outcomeId: outcome?.outcomeId,
-      status: outcome?.status
-    });
-    const records = stableRecordsFor({ decisions, outcome, sourceDigest });
+    const nodes = resolveNodesForDigest({ pathNodes, pathAnalysis });
+    const sourceDigest = digest(sourceDigestPayload({ allocations, outcome, pathNodes: nodes }));
+    const records = stableRecordsFor({ ...allocOpts, sourceDigest });
 
     // Idempotent hit in memory: same allocation ids already present — do not insert again.
     const existingInMemory = records.map((record) => this.#records.get(record.allocationId)).filter(Boolean);
@@ -154,7 +205,7 @@ export class CreditBlameLedger {
       aggregateId: String(outcome?.outcomeId ?? sourceDigest).slice(0, 240),
       commandId: 'credit-blame:' + sourceDigest,
       kind: 'CreditBlameRecorded',
-      payload: { outcomeId: outcome?.outcomeId, status: String(outcome?.status ?? 'UNKNOWN').toUpperCase(), sourceDigest, allocations: records.map((record) => clone(record)) },
+      payload: { outcomeId: outcome?.outcomeId, status: String(outcome?.status ?? 'UNKNOWN').toUpperCase(), sourceDigest, allocationMethod: allocations[0]?.allocationMethod, pathNodes: nodes, allocations: records.map((record) => clone(record)) },
       sensitivity: 'INTERNAL'
     });
 
@@ -183,15 +234,13 @@ export class CreditBlameLedger {
     return records.map(clone);
   }
 
-  record({ decisions, outcome } = {}) {
-    const allocations = allocate({ decisions, outcome });
+  record({ decisions, outcome, pathNodes, pathAnalysis, highRiskSinks } = {}) {
+    const allocOpts = { decisions, outcome, pathNodes, pathAnalysis, highRiskSinks };
+    const allocations = allocate(allocOpts);
     if (!allocations.length) return [];
-    const sourceDigest = digest({
-      decisionIds: allocations.map((record) => record.decisionId),
-      outcomeId: outcome?.outcomeId,
-      status: outcome?.status
-    });
-    const records = stableRecordsFor({ decisions, outcome, sourceDigest });
+    const nodes = resolveNodesForDigest({ pathNodes, pathAnalysis });
+    const sourceDigest = digest(sourceDigestPayload({ allocations, outcome, pathNodes: nodes }));
+    const records = stableRecordsFor({ ...allocOpts, sourceDigest });
     const out = [];
     for (const record of records) {
       const existing = this.#records.get(record.allocationId);

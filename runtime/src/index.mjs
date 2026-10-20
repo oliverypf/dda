@@ -22,6 +22,13 @@ import {
   SAFETY_STATE_REQUIRE_APPROVAL,
   SAFETY_STATE_DENY
 } from './safety-state.mjs';
+import {
+  applySafetySpectrumGate,
+  isKernelSandboxAvailable,
+  isSafetySpectrumEnabled,
+  SAFETY_STATE_LIMIT,
+  SAFETY_STATE_QUARANTINE
+} from './safety-spectrum-gate.mjs';
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
@@ -2104,6 +2111,8 @@ async function runTask() {
   // win32 × windows-desktop calls availability even when that flag is unset
   // (the desktop arm never returns CODE_CELLS_DISABLED). sessionKeep follows
   // DDA_RESIDENT_KERNEL; CellHost.start receives the same sessionKeep/nodeVersion.
+  // S4: capture sandbox probe for spectrum gate (SANDBOX control only when real).
+  let kernelSandboxAvailable = false;
   const evaluateCells = isCodeCellsEnabled(process.env) || windowsDesktopArm;
   if (evaluateCells) {
     const cellsAvailability = await observeCodeCells({
@@ -2115,6 +2124,9 @@ async function runTask() {
     });
     const windowsDesktop = cellsAvailability.windowsDesktop === true;
     const windowsUnsandboxed = !windowsDesktop && cellsAvailability.windowsUnsandboxed === true;
+    // S4: real kernel sandbox probe (DDA_KERNEL_SANDBOX + observeCodeCells detect).
+    kernelSandboxAvailable = isKernelSandboxAvailable(process.env)
+      && cellsAvailability.sandbox?.available === true;
     if (cellsAvailability.available && residentKernel?.attached) {
       cellHost = createCellHost({
         env: process.env,
@@ -3492,36 +3504,82 @@ async function runTask() {
                 reasonCode: toolGate.reasonCode
               });
             }
-            // S3: State gate hint after S1. Default ON; DDA_SAFETY_STATE=0 disables.
-            // Elevate only; never softens existing hard BLOCK.
+            // S3/S4: State gate after S1. Spectrum (default ON) maps MONITOR→LIMIT,
+            // SANDBOX→approval+control, QUARANTINE reason split. DDA_SAFETY_SPECTRUM=0
+            // falls back to S3 applySafetyStateGate. DDA_SAFETY_STATE=0 disables both.
+            // Elevate only; never softens existing hard BLOCK; never auto-spawns bwrap.
             const safetyStateEnabled = isSafetyStateEnabled();
-            let safetyStateApplied = { elevated: false, hint: 'NONE', state: undefined, reasonCode: undefined };
+            const safetySpectrumEnabled = isSafetySpectrumEnabled();
+            let safetyStateApplied = {
+              elevated: false,
+              hint: 'NONE',
+              state: undefined,
+              reasonCode: undefined,
+              softOutcome: 'NONE',
+              requiredControls: []
+            };
             if (safetyStateEnabled) {
               const stateRecord = safetyStateStore.getState({
                 entityId: executorDescriptor().id,
                 capabilityId: call.name ? String(call.name) : '*',
                 taskClass: '*'
               });
-              safetyStateApplied = applySafetyStateGate({
-                gateDecision: toolGate,
-                stateRecord,
-                enabled: true
-              });
+              if (safetySpectrumEnabled) {
+                safetyStateApplied = applySafetySpectrumGate({
+                  gateDecision: toolGate,
+                  stateRecord,
+                  sandboxAvailable: kernelSandboxAvailable,
+                  enabled: true
+                });
+              } else {
+                const s3 = applySafetyStateGate({
+                  gateDecision: toolGate,
+                  stateRecord,
+                  enabled: true
+                });
+                safetyStateApplied = {
+                  ...s3,
+                  softOutcome: 'NONE',
+                  requiredControls: []
+                };
+              }
               if (safetyStateApplied.elevated) {
                 const fromDecision = toolGate.decision;
                 toolGate = {
                   ...toolGate,
                   decision: safetyStateApplied.decision,
                   reasonCode: safetyStateApplied.reasonCode
-                    ?? (safetyStateApplied.hint === 'DENY' ? SAFETY_STATE_DENY : SAFETY_STATE_REQUIRE_APPROVAL)
+                    ?? (safetyStateApplied.softOutcome === 'QUARANTINE' ? SAFETY_STATE_QUARANTINE
+                      : (safetyStateApplied.softOutcome === 'DENY' || safetyStateApplied.hint === 'DENY'
+                        ? SAFETY_STATE_DENY
+                        : (safetyStateApplied.softOutcome === 'LIMIT' ? SAFETY_STATE_LIMIT
+                          : SAFETY_STATE_REQUIRE_APPROVAL)))
                 };
                 emitEvent('safety.state_gate_elevated', {
                   id: call.id,
                   name: call.name,
                   state: safetyStateApplied.state,
                   hint: safetyStateApplied.hint,
+                  softOutcome: safetyStateApplied.softOutcome,
+                  requiredControls: safetyStateApplied.requiredControls ?? [],
                   from: fromDecision,
                   to: toolGate.decision,
+                  reasonCode: toolGate.reasonCode,
+                  spectrum: safetySpectrumEnabled
+                });
+              } else if (
+                safetySpectrumEnabled
+                && (safetyStateApplied.softOutcome !== 'NONE'
+                  || (safetyStateApplied.requiredControls?.length ?? 0) > 0)
+              ) {
+                // Telemetry for LIMIT / controls when decision was not raised.
+                emitEvent('safety.spectrum_soft_outcome', {
+                  id: call.id,
+                  name: call.name,
+                  state: safetyStateApplied.state,
+                  softOutcome: safetyStateApplied.softOutcome,
+                  requiredControls: safetyStateApplied.requiredControls ?? [],
+                  decision: toolGate.decision,
                   reasonCode: toolGate.reasonCode
                 });
               }
@@ -3552,7 +3610,11 @@ async function runTask() {
               ...(safetyApplied.profileId ? [`SAFETY_PROFILE:${safetyApplied.profileId}`] : []),
               ...safetyApplied.reasonCodes,
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
-              ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : [])
+              ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : []),
+              ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
+                ? [`SAFETY_SOFT:${safetyStateApplied.softOutcome}`]
+                : []),
+              ...((safetyStateApplied.requiredControls ?? []).map((c) => `SAFETY_CONTROL:${c}`))
             ];
             const toolDecision = await recordDecision({
               stepId: `${step.stepId}-tool-${attempt}-${call.id}`,
@@ -3597,7 +3659,9 @@ async function runTask() {
                 fastPathTaken
                   ? 'readonly-fast-path-rule'
                   : safetyStateApplied.elevated
-                    ? 'safety-state-action-gate'
+                    ? (safetySpectrumEnabled && safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
+                      ? 'safety-spectrum-action-gate'
+                      : 'safety-state-action-gate')
                     : safetyApplied.elevated
                       ? 'safety-profile-action-gate'
                       : 'evidence-backed-jev-action-gate'
@@ -3619,7 +3683,10 @@ async function runTask() {
                 name: call.name,
                 ...(call.name === 'kernel.exec' ? { toolName: 'kernel.exec', ...(kernelExecBadge ?? {}) } : {}),
                 argumentsDigest: call.argumentsDigest,
-                decisionId: toolDecision.decisionId
+                decisionId: toolDecision.decisionId,
+                // S4 spectrum telemetry (LIMIT/SANDBOX/QUARANTINE soft layer).
+                softOutcome: safetyStateApplied.softOutcome ?? 'NONE',
+                requiredControls: safetyStateApplied.requiredControls ?? []
               },
               sensitivity: 'SECURITY_AUDIT'
             });

@@ -325,7 +325,8 @@ export async function recordActionGateBlockIncident({
     events: [event],
     profileTargets: [{ kind: 'SAFETY', entityType: 'executor', entityId: entityId ?? 'executor' }]
   });
-  return applyIncidentToSafetyProfile({ incident, events: [event], profileRegistry, now });
+  const result = await applyIncidentToSafetyProfile({ incident, events: [event], profileRegistry, now });
+  return { ...result, events: [event] };
 }
 
 /**
@@ -357,5 +358,6 @@ export async function recordScopeViolationIncident({
     events: [event],
     profileTargets: [{ kind: 'SAFETY', entityType: 'executor', entityId: entityId ?? 'executor' }]
   });
-  return applyIncidentToSafetyProfile({ incident, events: [event], profileRegistry, now });
+  const result = await applyIncidentToSafetyProfile({ incident, events: [event], profileRegistry, now });
+  return { ...result, events: [event] };
 }

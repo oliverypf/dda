@@ -29,6 +29,15 @@ import {
   SAFETY_STATE_LIMIT,
   SAFETY_STATE_QUARANTINE
 } from './safety-spectrum-gate.mjs';
+import {
+  createSafetyPolicyControlStore,
+  createSafetyPolicyStore,
+  effectiveStateFloor,
+  isSafetyPolicyEnabled,
+  proposePolicyFromIncident,
+  raiseStateRecordToPolicyFloor,
+  storeProposedPolicy
+} from './safety-policy.mjs';
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
@@ -330,6 +339,8 @@ const defaultModelScenarioProfileStore = () => resolveStoreFile('model-scenario-
 const defaultDecisionTraceStore = () => resolveStoreFile('decision-trace.json');
 const defaultProfileStore = () => resolveStoreFile('profiles.json');
 const defaultSafetyStateStore = () => resolveStoreFile('safety-state.json');
+const defaultSafetyPolicyStore = () => resolveStoreFile('safety-policy.json');
+const defaultSafetyPolicyControlStore = () => resolveStoreFile('safety-policy-control.json');
 const defaultModelRegistryStore = () => resolveStoreFile('model-registry.json');
 const defaultCreditBlameStore = () => resolveStoreFile('credit-blame.json');
 const defaultModelEgressStore = () => resolveStoreFile('model-egress.json');
@@ -815,6 +826,14 @@ async function runTask() {
   const safetyStateStore = createSafetyStateStore({ storagePath: safetyStatePath });
   setRuntimePhase('SAFETY_STATE_STORE_LOAD');
   await safetyStateStore.load();
+  // S5: Incident→Policy store + control kill switch. DDA_SAFETY_POLICY=0 disables read/write hooks.
+  const safetyPolicyPath = arg('--safety-policy-store', process.env.DDA_SAFETY_POLICY_STORE ?? scopedStorePath('safety-policy.json', defaultSafetyPolicyStore));
+  const safetyPolicyStore = createSafetyPolicyStore({ storagePath: safetyPolicyPath });
+  const safetyPolicyControlPath = arg('--safety-policy-control-store', process.env.DDA_SAFETY_POLICY_CONTROL_STORE ?? scopedStorePath('safety-policy-control.json', defaultSafetyPolicyControlStore));
+  const safetyPolicyControlStore = createSafetyPolicyControlStore({ storagePath: safetyPolicyControlPath });
+  setRuntimePhase('SAFETY_POLICY_STORE_LOAD');
+  await safetyPolicyStore.load();
+  await safetyPolicyControlStore.load();
   const creditBlamePath = arg('--credit-blame-store', process.env.DDA_CREDIT_BLAME_STORE ?? scopedStorePath('credit-blame.json', defaultCreditBlameStore));
   const creditBlameLedger = createCreditBlameLedger({ storagePath: creditBlamePath, eventStore: trajectory.harnessEventStore });
   setRuntimePhase('CREDIT_BLAME_LOAD');
@@ -2343,6 +2362,38 @@ async function runTask() {
                   });
                 }
               }
+              // S5: optional propose Candidate after S2 soft-fail success (never auto-Active).
+              if (isSafetyPolicyEnabled() && incidentResult?.incident) {
+                try {
+                  const proposed = proposePolicyFromIncident({
+                    incident: incidentResult.incident,
+                    events: incidentResult.events,
+                    match: {
+                      entityId: executorDescriptor().id,
+                      capabilityId: event.capability ? String(event.capability) : '*',
+                      taskClass: '*'
+                    }
+                  });
+                  if (proposed.ok) {
+                    const stored = await storeProposedPolicy({
+                      policyStore: safetyPolicyStore,
+                      proposeResult: proposed
+                    });
+                    emitEvent('safety.policy_proposed', {
+                      reasonCode: 'SCOPE_VIOLATION',
+                      policyId: stored.policy?.policyId,
+                      status: stored.policy?.status,
+                      stateFloor: stored.policy?.effect?.stateFloor,
+                      code: stored.code
+                    });
+                  }
+                } catch (policyErr) {
+                  emitEvent('safety.policy_soft_fail', {
+                    reasonCode: 'SCOPE_VIOLATION',
+                    error: policyErr instanceof Error ? policyErr.message : String(policyErr)
+                  });
+                }
+              }
             } catch (incidentErr) {
               emitEvent('safety.incident_soft_fail', {
                 reasonCode: 'SCOPE_VIOLATION',
@@ -3519,11 +3570,44 @@ async function runTask() {
               requiredControls: []
             };
             if (safetyStateEnabled) {
-              const stateRecord = safetyStateStore.getState({
+              let stateRecord = safetyStateStore.getState({
                 entityId: executorDescriptor().id,
                 capabilityId: call.name ? String(call.name) : '*',
                 taskClass: '*'
               });
+              // S5: Active Policy stateFloor raises read-path state before spectrum.
+              // Never demotes; never exempts hard BLOCK (spectrum preserves BLOCK).
+              const safetyPolicyEnabled = isSafetyPolicyEnabled();
+              if (safetyPolicyEnabled) {
+                try {
+                  const floor = effectiveStateFloor({
+                    match: {
+                      entityId: executorDescriptor().id,
+                      capabilityId: call.name ? String(call.name) : '*',
+                      taskClass: '*'
+                    },
+                    policyStore: safetyPolicyStore
+                  });
+                  if (floor) {
+                    const priorState = stateRecord.state;
+                    stateRecord = raiseStateRecordToPolicyFloor(stateRecord, floor);
+                    if (stateRecord.policyFloorApplied) {
+                      emitEvent('safety.policy_floor_raised', {
+                        id: call.id,
+                        name: call.name,
+                        floor,
+                        from: priorState,
+                        to: stateRecord.state
+                      });
+                    }
+                  }
+                } catch (policyFloorErr) {
+                  emitEvent('safety.policy_soft_fail', {
+                    reasonCode: 'POLICY_FLOOR_READ',
+                    error: policyFloorErr instanceof Error ? policyFloorErr.message : String(policyFloorErr)
+                  });
+                }
+              }
               if (safetySpectrumEnabled) {
                 safetyStateApplied = applySafetySpectrumGate({
                   gateDecision: toolGate,
@@ -3717,6 +3801,38 @@ async function runTask() {
                     emitEvent('safety.state_soft_fail', {
                       reasonCode: 'ACTION_GATE_BLOCK',
                       error: stateErr instanceof Error ? stateErr.message : String(stateErr)
+                    });
+                  }
+                }
+                // S5: optional propose Candidate after S2 soft-fail success (never auto-Active).
+                if (isSafetyPolicyEnabled() && incidentResult?.incident) {
+                  try {
+                    const proposed = proposePolicyFromIncident({
+                      incident: incidentResult.incident,
+                      events: incidentResult.events,
+                      match: {
+                        entityId: executorDescriptor().id,
+                        capabilityId: call.name ? String(call.name) : '*',
+                        taskClass: '*'
+                      }
+                    });
+                    if (proposed.ok) {
+                      const stored = await storeProposedPolicy({
+                        policyStore: safetyPolicyStore,
+                        proposeResult: proposed
+                      });
+                      emitEvent('safety.policy_proposed', {
+                        reasonCode: 'ACTION_GATE_BLOCK',
+                        policyId: stored.policy?.policyId,
+                        status: stored.policy?.status,
+                        stateFloor: stored.policy?.effect?.stateFloor,
+                        code: stored.code
+                      });
+                    }
+                  } catch (policyErr) {
+                    emitEvent('safety.policy_soft_fail', {
+                      reasonCode: 'ACTION_GATE_BLOCK',
+                      error: policyErr instanceof Error ? policyErr.message : String(policyErr)
                     });
                   }
                 }

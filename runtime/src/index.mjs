@@ -45,6 +45,21 @@ import { readonlyResumeObservations } from './decision/readonly-resume-observati
 import { createStageTimer } from './decision/jev-metrics.mjs';
 import { READONLY_FAST_PATH_REASON, readonlyFastPathDecision } from './decision/readonly-fast-path.mjs';
 import { councilForTier, planTierCandidates, planTierInactiveReason } from './decision/plan-tier.mjs';
+import {
+  TOPOLOGY_PLAN_THEN_EXECUTE,
+  TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+  TOPOLOGY_DIRECT_EXECUTE,
+  isComplexTask,
+  selectTopologyCandidates,
+  resolveTopologySelection,
+  upgradeTopologyAfterFailure,
+  resolveTopologyBudgets,
+  createTopologyBudgetCounters,
+  assertTopologyBudget,
+  commitTopologyBudgetIncrement,
+  shouldDeliberateForTopology,
+  isBudgetedTopology
+} from './execution-topology.mjs';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
@@ -1172,6 +1187,12 @@ async function runTask() {
   // Speed MVP measurement: wall-clock per stage. Additive output only.
   const stageTimer = createStageTimer();
   let planTierSelection;
+  // Diagnose-topology knife: SELECT_TOPOLOGY + budgets (freeze-diagnose-topology-r1).
+  let topologySelection;
+  let selectedTopology;
+  let topologyBudgetCounters = createTopologyBudgetCounters();
+  const topologyBudgets = resolveTopologyBudgets();
+  let acceptanceFailureEvidence = false;
   let streamedResponseText = "";
   let plannerTurn;
   let plannerPlan;
@@ -2835,40 +2856,101 @@ async function runTask() {
       let shouldDeliberate = !restoredResumePlan
         && (plannerPlan.steps.length > 2 || ['modify', 'test'].includes(taskClass));
       if (planTierSelection?.tier) shouldDeliberate = councilForTier(planTierSelection.tier, shouldDeliberate);
-      if (!restoredResumePlan && decisionEngine?.enabled && decisionConfig?.topologyEnabled === true) {
-        const topologyCandidates = [
-          { candidateId: 'DIRECT_EXECUTE', modelId: 'DIRECT_EXECUTE', status: 'SUCCEEDED', expectedCost: 1, expectedLatencyMs: 1 },
-          { candidateId: 'DELIBERATE_THEN_EXECUTE', modelId: 'DELIBERATE_THEN_EXECUTE', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 100 },
-          ...(taskClass === 'diagnose' ? [{ candidateId: 'DIAGNOSE_PROBE_RECOVER', modelId: 'DIAGNOSE_PROBE_RECOVER', status: 'SUCCEEDED', expectedCost: 2, expectedLatencyMs: 120 }] : [])
-        ];
-        const topologySelection = await decisionEngine.selectCandidates({
-          state: {
-            taskId: runId,
-            goal: prompt,
-            currentStep: 'topology-selection',
-            action: { kind: 'SELECT_TOPOLOGY', summary: 'Choose the bounded plan execution topology' },
-            observation: { status: 'PLAN_READY' },
-            evidence: [{ id: `plan-topology-${runId}`, type: 'plan', claim: `Plan has ${plannerPlan.steps.length} steps`, source: plannerPlan.planDigest }]
-          },
-          candidates: topologyCandidates
+      // Diagnose-topology (freeze-diagnose-topology-r1): when topologyEnabled,
+      // Rule fallback selects PLAN_THEN_EXECUTE for complex tasks without
+      // requiring Jev. DIAGNOSE_PROBE_RECOVER only after failure evidence.
+      if (!restoredResumePlan && decisionConfig?.topologyEnabled === true) {
+        const topologyAcceptanceCommands = extractAcceptanceCommands({ prompt });
+        const topologyHint = arg('--topology-hint', process.env.DDA_TOPOLOGY_HINT ?? '');
+        const complexTask = isComplexTask({
+          acceptanceCommands: topologyAcceptanceCommands,
+          topologyHint,
+          acceptanceFailureEvidence
         });
-        if (topologySelection.source === 'jev') {
-          shouldDeliberate = topologySelection.selectedCandidateId === 'DELIBERATE_THEN_EXECUTE';
-          await recordDecision({
-            stepId: 'topology-selection',
-            role: 'decision-engine',
-            roleContextId: `${runId}-decision-engine`,
-            decisionType: 'SELECT_TOPOLOGY',
-            actionKind: 'TOPOLOGY',
-            parentDecisionIds: [plannerDecision?.decisionId ?? allocationDecision.decisionId],
-            summary: `Jev selected ${topologySelection.selectedCandidateId}`,
-            outputRefs: [`topology-${runId}`],
-            options: topologyCandidates.map(({ candidateId: optionId }) => ({ optionId, actionKind: 'TOPOLOGY', summary: optionId, requiredCapabilityIds: [], evidenceRefs: [], riskCodes: [], rejectionReasonCodes: optionId === topologySelection.selectedCandidateId ? [] : ['NOT_SELECTED_BY_JEV'] })),
-            selectedOptionId: topologySelection.selectedCandidateId,
-            reasonCodes: ['JEV_DECISION'],
-            selectionCriteria: ['bounded-plan-topology']
+        const failureEvidence = {
+          acceptanceFailureEvidence,
+          verificationFailed: acceptanceFailureEvidence
+        };
+        const candidateIds = selectTopologyCandidates({
+          topologyEnabled: true,
+          complex: complexTask,
+          failureEvidence
+        });
+        const topologyCandidates = candidateIds.map((id, index) => ({
+          candidateId: id,
+          modelId: id,
+          status: 'SUCCEEDED',
+          expectedCost: id === TOPOLOGY_DIRECT_EXECUTE ? 1 : 2,
+          expectedLatencyMs: id === TOPOLOGY_DIRECT_EXECUTE ? 1 : (id === TOPOLOGY_DIAGNOSE_PROBE_RECOVER ? 120 : 100)
+        }));
+        let jevSelectedId;
+        let jevSource;
+        if (decisionEngine?.enabled === true && topologyCandidates.length) {
+          const jevPick = await decisionEngine.selectCandidates({
+            state: {
+              taskId: runId,
+              goal: prompt,
+              currentStep: 'topology-selection',
+              action: { kind: 'SELECT_TOPOLOGY', summary: 'Choose the bounded plan execution topology' },
+              observation: {
+                status: 'PLAN_READY',
+                complex: complexTask,
+                acceptanceCommandCount: topologyAcceptanceCommands.length,
+                acceptanceFailureEvidence
+              },
+              evidence: [{ id: `plan-topology-${runId}`, type: 'plan', claim: `Plan has ${plannerPlan.steps.length} steps`, source: plannerPlan.planDigest }]
+            },
+            candidates: topologyCandidates
           });
+          if (jevPick.source === 'jev') {
+            jevSource = 'jev';
+            jevSelectedId = jevPick.selectedCandidateId;
+          }
         }
+        const resolved = resolveTopologySelection({
+          topologyEnabled: true,
+          complex: complexTask,
+          failureEvidence,
+          jevSelectedId,
+          jevSource
+        });
+        selectedTopology = resolved.topology;
+        topologySelection = {
+          topology: selectedTopology,
+          source: resolved.source,
+          reasonCodes: resolved.reasonCodes,
+          complex: complexTask,
+          candidates: candidateIds,
+          budgets: topologyBudgets,
+          ...(resolved.rejectedJev ? { rejectedJev: resolved.rejectedJev } : {})
+        };
+        const deliberate = shouldDeliberateForTopology(selectedTopology);
+        if (deliberate !== undefined) shouldDeliberate = deliberate;
+        await recordDecision({
+          stepId: 'topology-selection',
+          role: 'decision-engine',
+          roleContextId: `${runId}-decision-engine`,
+          decisionType: 'SELECT_TOPOLOGY',
+          actionKind: 'TOPOLOGY',
+          parentDecisionIds: [plannerDecision?.decisionId ?? allocationDecision.decisionId],
+          summary: resolved.source === 'jev'
+            ? `Jev selected ${selectedTopology}`
+            : `Rule selected ${selectedTopology} (topologyEnabled Rule fallback)`,
+          outputRefs: [`topology-${runId}`],
+          options: topologyCandidates.map(({ candidateId: optionId }) => ({
+            optionId,
+            actionKind: 'TOPOLOGY',
+            summary: optionId,
+            requiredCapabilityIds: [],
+            evidenceRefs: [],
+            riskCodes: optionId === TOPOLOGY_DIAGNOSE_PROBE_RECOVER ? ['DIAGNOSE_PATH'] : [],
+            rejectionReasonCodes: optionId === selectedTopology ? [] : ['NOT_SELECTED']
+          })),
+          selectedOptionId: selectedTopology,
+          reasonCodes: resolved.reasonCodes,
+          selectionCriteria: ['bounded-plan-topology', ...(complexTask ? ['complex-default-plan-then-execute'] : [])]
+        });
+        emitEvent('topology.selected', topologySelection);
       }
       if (shouldDeliberate) {
         const councilContexts = allocatedRoles.filter((context) => context.role.startsWith('council-'));
@@ -3466,6 +3548,36 @@ async function runTask() {
                   reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE', decisionType: 'ACTION_GATE'
                 }
               : undefined;
+            // Diagnose-topology budgets (writes/tools/probes). Never exempts hard BLOCK/lease.
+            let topologyBudgetPending;
+            let topologyBudgetBlock;
+            if (decisionConfig?.topologyEnabled === true && isBudgetedTopology(selectedTopology)) {
+              const budgetAssert = assertTopologyBudget({
+                topologyEnabled: true,
+                topology: selectedTopology,
+                counters: topologyBudgetCounters,
+                budgets: topologyBudgets,
+                toolName: call.name,
+                toolReadOnly,
+                hardBlocked: Boolean(hardModeBlock),
+                hardDecision: hardModeBlock
+              });
+              if (budgetAssert.preservedHardBlock) {
+                // keep hardModeBlock; do not invent a softer path
+              } else if (budgetAssert.blocked) {
+                topologyBudgetBlock = budgetAssert.decision;
+                emitEvent('topology.budget_blocked', {
+                  name: call.name,
+                  topology: selectedTopology,
+                  reasonCode: budgetAssert.reasonCode,
+                  reasonCodes: budgetAssert.reasonCodes,
+                  counters: topologyBudgetCounters,
+                  budgets: topologyBudgets
+                });
+              } else {
+                topologyBudgetPending = budgetAssert.pendingIncrement;
+              }
+            }
             // DDA_JEV_READONLY_FAST_PATH (default OFF): strict allowlist of
             // in-workspace read-only inspection tools skips the Jev
             // round-trip and Jev-only evidence collection. kernel.session_*,
@@ -3522,7 +3634,7 @@ async function runTask() {
                 toolReadOnly,
                 action: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}), stepId: step.stepId, attempt }
               },
-              hardDecision: hardModeBlock ?? fastPathDecision
+              hardDecision: hardModeBlock ?? topologyBudgetBlock ?? fastPathDecision
             });
             // S1: SAFETY profile soft-tighten after decideActionGate. Default ON;
             // DDA_SAFETY_PROFILE_GATE=0 disables. Never demotes; elevates only.
@@ -3845,13 +3957,26 @@ async function runTask() {
                 });
               }
             }
+            const toolAllowed = toolGate.decision !== 'BLOCK' && toolGate.decision !== 'REQUEST_EVIDENCE';
+            if (toolAllowed && topologyBudgetPending) {
+              topologyBudgetCounters = commitTopologyBudgetIncrement(topologyBudgetCounters, topologyBudgetPending);
+            }
+            // Surface topology budget reason when that was the blocking decision.
+            const budgetBlocked = Boolean(topologyBudgetBlock) && toolGate.decision === 'BLOCK'
+              && (toolGate.reasonCode === topologyBudgetBlock.reasonCode
+                || String(toolGate.reasonCode ?? '').startsWith('TOPOLOGY_BUDGET_'));
             return {
               decision: toolGate.decision,
-              allow: toolGate.decision !== 'BLOCK' && toolGate.decision !== 'REQUEST_EVIDENCE',
+              allow: toolAllowed,
               ...(toolGate.decision === 'BLOCK' || toolGate.decision === 'REQUEST_EVIDENCE' ? {
-                errorCode: toolGate.decision === 'BLOCK' ? 'TOOL_ACTION_BLOCKED_BY_JEV' : 'TOOL_ACTION_REQUIRES_EVIDENCE',
-                message: `Jev ${toolGate.decision.toLowerCase()} this tool action: ${toolGate.reasonCode ?? 'evidence required'}`,
-                nextAction: 'COLLECT_EVIDENCE'
+                errorCode: budgetBlocked
+                  ? topologyBudgetBlock.reasonCode
+                  : (toolGate.decision === 'BLOCK' ? 'TOOL_ACTION_BLOCKED_BY_JEV' : 'TOOL_ACTION_REQUIRES_EVIDENCE'),
+                message: budgetBlocked
+                  ? `Topology budget blocked this tool action: ${topologyBudgetBlock.reasonCode}`
+                  : `Jev ${toolGate.decision.toLowerCase()} this tool action: ${toolGate.reasonCode ?? 'evidence required'}`,
+                nextAction: budgetBlocked ? 'STOP_OR_PATCH' : 'COLLECT_EVIDENCE',
+                ...(budgetBlocked ? { reasonCodes: [topologyBudgetBlock.reasonCode] } : {})
               } : {})
             };
           },
@@ -4471,6 +4596,58 @@ async function runTask() {
         return verification;
       }),
       diagnose: stageTimer.wrap('recovery', async ({ attempt, report, previousActions }) => {
+        // Topology upgrade: verification/acceptance failure unlocks DIAGNOSE_PROBE_RECOVER.
+        if (decisionConfig?.topologyEnabled === true) {
+          acceptanceFailureEvidence = true;
+          const prior = selectedTopology;
+          selectedTopology = upgradeTopologyAfterFailure({
+            topologyEnabled: true,
+            currentTopology: selectedTopology ?? TOPOLOGY_PLAN_THEN_EXECUTE,
+            failureEvidence: {
+              acceptanceFailureEvidence: true,
+              verificationFailed: true,
+              recoveryPointsDiagnose: true
+            }
+          });
+          if (selectedTopology !== prior) {
+            topologySelection = {
+              ...(topologySelection ?? {}),
+              topology: selectedTopology,
+              source: 'rule',
+              reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
+              upgradedFrom: prior,
+              budgets: topologyBudgets
+            };
+            emitEvent('topology.upgraded', {
+              from: prior,
+              to: selectedTopology,
+              attempt,
+              failureCodes: report.failureCodes ?? []
+            });
+            await recordDecision({
+              stepId: `topology-upgrade-${attempt}`,
+              role: 'decision-engine',
+              roleContextId: `${runId}-decision-engine`,
+              decisionType: 'SELECT_TOPOLOGY',
+              actionKind: 'TOPOLOGY',
+              parentDecisionIds: [finalVerificationDecision?.decisionId ?? allocationDecision.decisionId],
+              summary: `Upgraded topology ${prior ?? 'none'} → ${selectedTopology} after failure classification`,
+              outputRefs: [`topology-upgrade-${runId}-${attempt}`],
+              options: [{
+                optionId: selectedTopology,
+                actionKind: 'TOPOLOGY',
+                summary: selectedTopology,
+                requiredCapabilityIds: [],
+                evidenceRefs: [],
+                riskCodes: ['DIAGNOSE_PATH'],
+                rejectionReasonCodes: []
+              }],
+              selectedOptionId: selectedTopology,
+              reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
+              selectionCriteria: ['failure-classification-diagnose-upgrade']
+            });
+          }
+        }
         await saveThreadCheckpoint('DIAGNOSING', {
           blockers: report.failureCodes ?? [],
           pendingActions: ['diagnose verifier result before recovery'],
@@ -5142,7 +5319,13 @@ async function runTask() {
         metrics: {
           jev: decisionEngine?.metrics?.() ?? { byKind: {}, totals: {} },
           stages: stageTimer.summary(),
-          ...(planTierSelection ? { planTier: planTierSelection } : {})
+          ...(planTierSelection ? { planTier: planTierSelection } : {}),
+          ...(topologySelection ? {
+            topology: {
+              ...topologySelection,
+              counters: topologyBudgetCounters
+            }
+          } : {})
         }
       },
       profiles: {

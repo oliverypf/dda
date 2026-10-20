@@ -18,6 +18,14 @@ import {
   TRUST_X_REQUIRE_APPROVAL
 } from './trust-x.mjs';
 import {
+  analyzeCapabilityPath,
+  applyCapabilityPathGate,
+  capabilityPathTelemetry,
+  isCapabilityPathEnabled,
+  CAPABILITY_PATH_DENY,
+  CAPABILITY_PATH_REQUIRE_APPROVAL
+} from './capability-path.mjs';
+import {
   isSafetyIncidentEnabled,
   recordActionGateBlockIncident,
   recordScopeViolationIncident
@@ -3744,6 +3752,66 @@ async function runTask() {
                 });
               }
             }
+            // Capability Path: Declared→Effective closure after Trust(X), before S4 spectrum.
+            // Soft tighten on high-risk sinks reached by implication edges; never exempts hard BLOCK/lease.
+            // DDA_CAPABILITY_PATH=0 disables (default ON).
+            const capabilityPathEnabled = isCapabilityPathEnabled();
+            let capabilityPathApplied = {
+              elevated: false,
+              decision: toolGate.decision,
+              reasonCode: toolGate.reasonCode,
+              hint: 'NONE',
+              analysis: undefined
+            };
+            let capabilityPathTelem = undefined;
+            if (capabilityPathEnabled) {
+              try {
+                const capabilityPathAnalysis = analyzeCapabilityPath({
+                  toolName: call.name ? String(call.name) : '',
+                  declaredCapabilities: approvedCapabilities
+                });
+                capabilityPathTelem = capabilityPathTelemetry(capabilityPathAnalysis);
+                capabilityPathApplied = applyCapabilityPathGate({
+                  gateDecision: toolGate,
+                  analysis: capabilityPathAnalysis,
+                  enabled: true,
+                  toolReadOnly
+                });
+                if (capabilityPathApplied.elevated) {
+                  const fromDecision = toolGate.decision;
+                  toolGate = {
+                    ...toolGate,
+                    decision: capabilityPathApplied.decision,
+                    reasonCode: capabilityPathApplied.reasonCode
+                      ?? (capabilityPathApplied.decision === 'BLOCK'
+                        ? CAPABILITY_PATH_DENY
+                        : CAPABILITY_PATH_REQUIRE_APPROVAL)
+                  };
+                  emitEvent('capability.path_gate_elevated', {
+                    id: call.id,
+                    name: call.name,
+                    from: fromDecision,
+                    to: toolGate.decision,
+                    reasonCode: toolGate.reasonCode,
+                    hint: capabilityPathApplied.hint,
+                    capabilityPath: capabilityPathTelem
+                  });
+                } else if (capabilityPathTelem?.expandsBeyondDeclared) {
+                  emitEvent('capability.path_observed', {
+                    id: call.id,
+                    name: call.name,
+                    decision: toolGate.decision,
+                    hint: capabilityPathApplied.hint,
+                    capabilityPath: capabilityPathTelem
+                  });
+                }
+              } catch (capabilityPathErr) {
+                emitEvent('capability.path_soft_fail', {
+                  reasonCode: 'CAPABILITY_PATH_RESOLVE',
+                  error: capabilityPathErr instanceof Error ? capabilityPathErr.message : String(capabilityPathErr)
+                });
+              }
+            }
             // S3/S4: State gate after S1. Spectrum (default ON) maps MONITOR→LIMIT,
             // SANDBOX→approval+control, QUARANTINE reason split. DDA_SAFETY_SPECTRUM=0
             // falls back to S3 applySafetyStateGate. DDA_SAFETY_STATE=0 disables both.
@@ -3869,13 +3937,14 @@ async function runTask() {
             const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
               && toolGateRaw.source === 'jev'
               && toolGateRaw.fallbackUsed !== true;
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || safetyStateApplied.elevated)) {
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || capabilityPathApplied.elevated || safetyStateApplied.elevated)) {
               const gateEntry = {
                 requireApproval: true,
                 reasonCode: toolGate.reasonCode
                   ?? (safetyStateApplied.elevated ? SAFETY_STATE_REQUIRE_APPROVAL
-                    : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
-                      : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')))
+                    : (capabilityPathApplied.elevated ? CAPABILITY_PATH_REQUIRE_APPROVAL
+                      : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
+                        : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL'))))
               };
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
@@ -3889,6 +3958,15 @@ async function runTask() {
                 : []),
               ...(trustXApplied.elevated && trustXApplied.reasonCode ? [trustXApplied.reasonCode] : []),
               ...((trustXApplied.requiredControls ?? []).map((c) => `TRUST_X_CONTROL:${c}`)),
+              ...(capabilityPathApplied.elevated && capabilityPathApplied.reasonCode
+                ? [capabilityPathApplied.reasonCode]
+                : []),
+              ...(capabilityPathTelem?.expandsBeyondDeclared
+                ? [`CAPABILITY_PATH_EXPANDS`, `CAPABILITY_PATH_LEN:${capabilityPathTelem.pathLen}`]
+                : []),
+              ...(Array.isArray(capabilityPathTelem?.highRiskSinks)
+                ? capabilityPathTelem.highRiskSinks.slice(0, 8).map((s) => `CAPABILITY_SINK:${s}`)
+                : []),
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
               ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : []),
               ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
@@ -3908,11 +3986,13 @@ async function runTask() {
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
                 : safetyStateApplied.elevated
                   ? `SAFETY state elevated action gate to ${toolGate.decision} for ${call.name}`
-                  : trustXApplied.elevated
-                    ? `Trust(X) elevated action gate to ${toolGate.decision} for ${call.name}`
-                    : safetyApplied.elevated
-                      ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
-                      : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+                  : capabilityPathApplied.elevated
+                    ? `Capability Path elevated action gate to ${toolGate.decision} for ${call.name}`
+                    : trustXApplied.elevated
+                      ? `Trust(X) elevated action gate to ${toolGate.decision} for ${call.name}`
+                      : safetyApplied.elevated
+                        ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
+                        : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -3944,9 +4024,11 @@ async function runTask() {
                     ? (safetySpectrumEnabled && safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
                       ? 'safety-spectrum-action-gate'
                       : 'safety-state-action-gate')
-                    : safetyApplied.elevated
-                      ? 'safety-profile-action-gate'
-                      : 'evidence-backed-jev-action-gate'
+                    : capabilityPathApplied.elevated
+                      ? 'capability-path-action-gate'
+                      : safetyApplied.elevated
+                        ? 'safety-profile-action-gate'
+                        : 'evidence-backed-jev-action-gate'
               ]
             });
             verificationActions.push({
@@ -3968,7 +4050,9 @@ async function runTask() {
                 decisionId: toolDecision.decisionId,
                 // S4 spectrum telemetry (LIMIT/SANDBOX/QUARANTINE soft layer).
                 softOutcome: safetyStateApplied.softOutcome ?? 'NONE',
-                requiredControls: safetyStateApplied.requiredControls ?? []
+                requiredControls: safetyStateApplied.requiredControls ?? [],
+                // Capability Path Declared→Effective (freeze-capability-path-r1).
+                ...(capabilityPathTelem ? { capabilityPath: capabilityPathTelem } : {})
               },
               sensitivity: 'SECURITY_AUDIT'
             });

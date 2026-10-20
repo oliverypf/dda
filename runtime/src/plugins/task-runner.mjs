@@ -16,6 +16,7 @@ import { RECOVERABLE_TOOL_ERROR_CODES } from '../rule-verifier.mjs';
 import {
   ACCEPTANCE_ALREADY_GREEN,
   extractAcceptanceCommands,
+  precheckShellExecuteInput,
   shouldBlockAcceptanceRerun
 } from '../acceptance-match.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -620,8 +621,20 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 nextAction: 'RETRY_WITH_READ_ONLY_TOOL'
               };
             } else {
+            // C2 §1.1: schema precheck — missing/non-string/empty command never hits executor.
+            if (call.name === 'shell.execute' && !isError) {
+              const schema = precheckShellExecuteInput(rawArguments);
+              if (!schema.ok) {
+                isError = true;
+                output = {
+                  errorCode: schema.errorCode ?? 'TOOL_INVALID_INPUT',
+                  message: schema.message ?? 'input.command is required',
+                  nextAction: schema.nextAction ?? 'FIX_ARGS'
+                };
+              }
+            }
             // C1 §1.3 hard ban: after acceptance green, reject same-intent acceptance re-run.
-            if (call.name === 'shell.execute') {
+            if (call.name === 'shell.execute' && !isError) {
               const proposed = {
                 name: 'shell.execute',
                 command: typeof rawArguments?.command === 'string' ? rawArguments.command : undefined,

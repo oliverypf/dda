@@ -10,9 +10,11 @@ import {
   isProcessNoiseFailure,
   looksLikeAcceptanceCommand,
   normalizeCommandJoin,
+  precheckShellExecuteInput,
   shouldBlockAcceptanceRerun,
   stripShellQuotes
 } from '../src/acceptance-match.mjs';
+import { RECOVERABLE_TOOL_ERROR_CODES } from '../src/rule-verifier.mjs';
 import { exitCodeForError, messageForCode, rebuildFailedTaskResult } from '../../linux-cli/src/exit-codes.mjs';
 
 const dig = (c) => `sha256:${c.repeat(64)}`;
@@ -371,4 +373,124 @@ test('T-c1-3b writes without green still VERIFICATION_REQUIRED (do not relax)', 
     }),
     (error) => error.message === 'VERIFICATION_REQUIRED'
   );
+});
+
+
+// ——— C2 bounded recovery (freeze-harness-c2-bounded-recovery-r1) ———
+
+test('T-c2-1 missing command → precheck TOOL_INVALID_INPUT; does not look like success', () => {
+  for (const input of [{}, { command: null }, { command: 12 }, { command: '' }, { command: '   ' }]) {
+    const result = precheckShellExecuteInput(input);
+    assert.equal(result.ok, false, JSON.stringify(input));
+    assert.equal(result.errorCode, 'TOOL_INVALID_INPUT');
+    assert.equal(result.nextAction, 'FIX_ARGS');
+    assert.match(result.message, /command/i);
+  }
+  assert.equal(precheckShellExecuteInput({ command: 'node' }).ok, true);
+  assert.equal(precheckShellExecuteInput({ command: 'node', args: ['--test'] }).ok, true);
+});
+
+test('T-c2-2 TOOL_INVALID_INPUT is recoverable; progress not hard FAIL without green', () => {
+  assert.equal(RECOVERABLE_TOOL_ERROR_CODES.has('TOOL_INVALID_INPUT'), true);
+  assert.equal(RECOVERABLE_TOOL_ERROR_CODES.has('TOOL_INVALID_INPUT_JSON'), true);
+  const report = createRuleVerifier().verify({
+    prompt: 'inspect',
+    output: 'tried a bad shell then will fix args',
+    workspace: { granted: true },
+    actions: [
+      { name: 'workspace.read', state: 'SUCCEEDED', argumentsDigest: dig('r'), outputDigest: dig('o') },
+      {
+        name: 'shell.execute',
+        state: 'FAILED',
+        ok: false,
+        errorCode: 'TOOL_INVALID_INPUT',
+        argumentsDigest: dig('bad')
+      }
+    ]
+  });
+  assert.notEqual(report.checks.find((c) => c.id === 'actions.progress')?.status, 'FAIL');
+  assert.ok(!report.failureCodes?.includes('ACTION_FAILED'), JSON.stringify(report.failureCodes));
+  // Recoverable → UNKNOWN/CONTINUE-ish, not hard FAIL on progress
+  assert.ok(['UNKNOWN', 'PASS', 'SKIPPED'].includes(report.checks.find((c) => c.id === 'actions.progress')?.status));
+});
+
+test('T-c2-3 writes + acceptance green + 1× TOOL_INVALID_INPUT → verifier PASS', () => {
+  const cmds = extractAcceptanceCommands({ prompt: T2_PROMPT });
+  const green = {
+    name: 'shell.execute',
+    command: 'node',
+    args: t2UnquotedArgs,
+    state: 'SUCCEEDED',
+    ok: true,
+    argumentsDigest: dig('t2a'),
+    outputDigest: dig('t2o')
+  };
+  const bad = {
+    name: 'shell.execute',
+    state: 'FAILED',
+    ok: false,
+    errorCode: 'TOOL_INVALID_INPUT',
+    argumentsDigest: dig('bad'),
+    nextAction: 'FIX_ARGS'
+  };
+  assert.equal(
+    isProcessNoiseFailure(bad, { acceptanceGreen: true, acceptanceCommands: cmds }),
+    true
+  );
+  const report = createRuleVerifier().verify({
+    prompt: T2_PROMPT,
+    output: 'fixed, verified, then a bad shell',
+    workspace: { granted: true },
+    actions: [
+      { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+      green,
+      bad
+    ],
+    acceptanceCommands: cmds
+  });
+  assert.equal(report.status, 'PASS', JSON.stringify(report.checks?.map((c) => [c.id, c.status, c.message])));
+  assert.equal(report.checks.find((c) => c.id === 'actions.progress')?.status, 'PASS');
+  assert.ok(!report.failureCodes?.includes('ACTION_FAILED'));
+  assert.ok(!report.failureCodes?.includes('REPEATED_ACTION'));
+  assertVerificationGate({
+    harness: { writesApplied: 1 },
+    actions: [
+      { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+      green,
+      bad
+    ],
+    acceptanceCommands: cmds
+  });
+});
+
+test('T-c2-4 writes + only bad shell, no green → still VERIFICATION_REQUIRED', () => {
+  const cmds = extractAcceptanceCommands({ prompt: T2_PROMPT });
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    {
+      name: 'shell.execute',
+      state: 'FAILED',
+      ok: false,
+      errorCode: 'TOOL_INVALID_INPUT',
+      argumentsDigest: dig('bad')
+    }
+  ];
+  assert.equal(hasAcceptanceGreen(actions, cmds), false);
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions,
+      acceptanceCommands: cmds
+    }),
+    (error) => error.message === 'VERIFICATION_REQUIRED'
+  );
+  // Verifier must not soft-pass the whole run as if acceptance succeeded
+  const report = createRuleVerifier().verify({
+    prompt: T2_PROMPT,
+    output: 'wrote but never verified',
+    workspace: { granted: true },
+    actions,
+    acceptanceCommands: cmds
+  });
+  assert.notEqual(report.status, 'PASS');
 });

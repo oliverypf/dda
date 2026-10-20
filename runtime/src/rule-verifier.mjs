@@ -215,7 +215,10 @@ export const RECOVERABLE_TOOL_ERROR_CODES = new Set([
   'EXCERPT_AMBIGUOUS',
   'EXCERPT_INVALID_LOCATOR',
   'TOOL_ARGUMENTS_INVALID',
-  'TOOL_DUPLICATE_REQUEST'
+  'TOOL_DUPLICATE_REQUEST',
+  // C2: schema precheck / bad args — recoverable, not ACTION_FAILED hard kill
+  'TOOL_INVALID_INPUT',
+  'TOOL_INVALID_INPUT_JSON'
 ]);
 const actionRecoverableFailure = (action) => {
   const value = normalizeAction(action);

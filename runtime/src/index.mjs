@@ -26,6 +26,17 @@ import {
   CAPABILITY_PATH_REQUIRE_APPROVAL
 } from './capability-path.mjs';
 import {
+  applyRiskVectorGate,
+  combineTrajectoryRisk,
+  hintRank,
+  isRiskVectorEnabled,
+  riskVectorGateHint,
+  riskVectorTelemetry,
+  scoreRiskVector,
+  RISK_VECTOR_DENY,
+  RISK_VECTOR_REQUIRE_APPROVAL
+} from './risk-vector.mjs';
+import {
   isSafetyIncidentEnabled,
   recordActionGateBlockIncident,
   recordScopeViolationIncident
@@ -549,6 +560,8 @@ async function runTask() {
   // rule fallback) is what forces an explicit approval; the operator's pre-task
   // capability setup still governs the non-risky path.
   const gateApprovalDecisions = new Map();
+  // Risk Vector (freeze-risk-vector-r1): per-run step vectors for trajectory combine.
+  const riskVectors = [];
   // Verifier-uncertain re-approval: when a verifier verdict (Rule or Jev
   // VERIFY_BEHAVIOR) leaves an attempt UNCERTAIN or STALLED, the run does not
   // simply record the status and continue. This run-level flag makes the lease
@@ -3764,9 +3777,10 @@ async function runTask() {
               analysis: undefined
             };
             let capabilityPathTelem = undefined;
+            let capabilityPathAnalysis = undefined;
             if (capabilityPathEnabled) {
               try {
-                const capabilityPathAnalysis = analyzeCapabilityPath({
+                capabilityPathAnalysis = analyzeCapabilityPath({
                   toolName: call.name ? String(call.name) : '',
                   declaredCapabilities: approvedCapabilities
                 });
@@ -3809,6 +3823,89 @@ async function runTask() {
                 emitEvent('capability.path_soft_fail', {
                   reasonCode: 'CAPABILITY_PATH_RESOLVE',
                   error: capabilityPathErr instanceof Error ? capabilityPathErr.message : String(capabilityPathErr)
+                });
+              }
+            }
+            // Risk Vector: ten-dim + trajectory soft gate after Capability Path, before S4 spectrum.
+            // Soft tighten only; never exempts hard BLOCK / lease. DDA_RISK_VECTOR=0 disables (default ON).
+            const riskVectorEnabled = isRiskVectorEnabled();
+            let riskVectorApplied = {
+              elevated: false,
+              decision: toolGate.decision,
+              reasonCode: toolGate.reasonCode,
+              hint: 'NONE',
+              vector: undefined
+            };
+            let riskVectorTelem = undefined;
+            if (riskVectorEnabled) {
+              try {
+                const priorVector = riskVectors.length > 0 ? riskVectors[riskVectors.length - 1] : undefined;
+                const stepVector = scoreRiskVector({
+                  toolName: call.name ? String(call.name) : '',
+                  pathAnalysis: capabilityPathAnalysis,
+                  runStats: {
+                    toolCount: (Array.isArray(previousActions) ? previousActions.length : 0)
+                      + (Array.isArray(verificationActions) ? verificationActions.length : 0)
+                      + riskVectors.length,
+                    fanout: 1,
+                    goal: typeof prompt === 'string' ? prompt : undefined
+                  },
+                  toolArgs: call.requestSummary && typeof call.requestSummary === 'object'
+                    ? call.requestSummary
+                    : undefined,
+                  priorVector
+                });
+                riskVectors.push(stepVector);
+                const combined = combineTrajectoryRisk(riskVectors);
+                const stepHint = riskVectorGateHint(stepVector);
+                const comboHint = riskVectorGateHint(combined);
+                const useCombined = hintRank(comboHint) > hintRank(stepHint);
+                const gateVector = useCombined
+                  ? { ...combined, toolName: stepVector.toolName }
+                  : stepVector;
+                const effectiveHint = useCombined ? comboHint : stepHint;
+                riskVectorTelem = riskVectorTelemetry(gateVector, { stepCount: combined.stepCount });
+                riskVectorApplied = applyRiskVectorGate({
+                  gateDecision: toolGate,
+                  vector: gateVector,
+                  hint: effectiveHint,
+                  enabled: true,
+                  toolReadOnly
+                });
+                if (riskVectorApplied.elevated) {
+                  const fromDecision = toolGate.decision;
+                  toolGate = {
+                    ...toolGate,
+                    decision: riskVectorApplied.decision,
+                    reasonCode: riskVectorApplied.reasonCode
+                      ?? (riskVectorApplied.decision === 'BLOCK'
+                        ? RISK_VECTOR_DENY
+                        : RISK_VECTOR_REQUIRE_APPROVAL)
+                  };
+                  emitEvent('risk.vector_gate_elevated', {
+                    id: call.id,
+                    name: call.name,
+                    from: fromDecision,
+                    to: toolGate.decision,
+                    reasonCode: toolGate.reasonCode,
+                    hint: riskVectorApplied.hint,
+                    riskVector: riskVectorTelem,
+                    combined: useCombined
+                  });
+                } else if (riskVectorTelem && (riskVectorTelem.score >= 0.25 || useCombined)) {
+                  emitEvent('risk.vector_observed', {
+                    id: call.id,
+                    name: call.name,
+                    decision: toolGate.decision,
+                    hint: riskVectorApplied.hint,
+                    riskVector: riskVectorTelem,
+                    combined: useCombined
+                  });
+                }
+              } catch (riskVectorErr) {
+                emitEvent('risk.vector_soft_fail', {
+                  reasonCode: 'RISK_VECTOR_RESOLVE',
+                  error: riskVectorErr instanceof Error ? riskVectorErr.message : String(riskVectorErr)
                 });
               }
             }
@@ -3937,14 +4034,15 @@ async function runTask() {
             const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
               && toolGateRaw.source === 'jev'
               && toolGateRaw.fallbackUsed !== true;
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || capabilityPathApplied.elevated || safetyStateApplied.elevated)) {
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || capabilityPathApplied.elevated || riskVectorApplied.elevated || safetyStateApplied.elevated)) {
               const gateEntry = {
                 requireApproval: true,
                 reasonCode: toolGate.reasonCode
                   ?? (safetyStateApplied.elevated ? SAFETY_STATE_REQUIRE_APPROVAL
-                    : (capabilityPathApplied.elevated ? CAPABILITY_PATH_REQUIRE_APPROVAL
-                      : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
-                        : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL'))))
+                    : (riskVectorApplied.elevated ? RISK_VECTOR_REQUIRE_APPROVAL
+                      : (capabilityPathApplied.elevated ? CAPABILITY_PATH_REQUIRE_APPROVAL
+                        : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
+                          : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')))))
               };
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
@@ -3967,6 +4065,12 @@ async function runTask() {
               ...(Array.isArray(capabilityPathTelem?.highRiskSinks)
                 ? capabilityPathTelem.highRiskSinks.slice(0, 8).map((s) => `CAPABILITY_SINK:${s}`)
                 : []),
+              ...(riskVectorApplied.elevated && riskVectorApplied.reasonCode
+                ? [riskVectorApplied.reasonCode]
+                : []),
+              ...(riskVectorTelem
+                ? [`RISK_VECTOR_SCORE:${riskVectorTelem.score}`, `RISK_VECTOR_STEPS:${riskVectorTelem.stepCount}`]
+                : []),
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
               ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : []),
               ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
@@ -3986,13 +4090,15 @@ async function runTask() {
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
                 : safetyStateApplied.elevated
                   ? `SAFETY state elevated action gate to ${toolGate.decision} for ${call.name}`
-                  : capabilityPathApplied.elevated
-                    ? `Capability Path elevated action gate to ${toolGate.decision} for ${call.name}`
-                    : trustXApplied.elevated
-                      ? `Trust(X) elevated action gate to ${toolGate.decision} for ${call.name}`
-                      : safetyApplied.elevated
-                        ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
-                        : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+                  : riskVectorApplied.elevated
+                    ? `Risk Vector elevated action gate to ${toolGate.decision} for ${call.name}`
+                    : capabilityPathApplied.elevated
+                      ? `Capability Path elevated action gate to ${toolGate.decision} for ${call.name}`
+                      : trustXApplied.elevated
+                        ? `Trust(X) elevated action gate to ${toolGate.decision} for ${call.name}`
+                        : safetyApplied.elevated
+                          ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
+                          : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [
@@ -4024,11 +4130,13 @@ async function runTask() {
                     ? (safetySpectrumEnabled && safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
                       ? 'safety-spectrum-action-gate'
                       : 'safety-state-action-gate')
-                    : capabilityPathApplied.elevated
-                      ? 'capability-path-action-gate'
-                      : safetyApplied.elevated
-                        ? 'safety-profile-action-gate'
-                        : 'evidence-backed-jev-action-gate'
+                    : riskVectorApplied.elevated
+                      ? 'risk-vector-action-gate'
+                      : capabilityPathApplied.elevated
+                        ? 'capability-path-action-gate'
+                        : safetyApplied.elevated
+                          ? 'safety-profile-action-gate'
+                          : 'evidence-backed-jev-action-gate'
               ]
             });
             verificationActions.push({
@@ -4052,7 +4160,9 @@ async function runTask() {
                 softOutcome: safetyStateApplied.softOutcome ?? 'NONE',
                 requiredControls: safetyStateApplied.requiredControls ?? [],
                 // Capability Path Declared→Effective (freeze-capability-path-r1).
-                ...(capabilityPathTelem ? { capabilityPath: capabilityPathTelem } : {})
+                ...(capabilityPathTelem ? { capabilityPath: capabilityPathTelem } : {}),
+                // Risk Vector ten-dim + trajectory (freeze-risk-vector-r1).
+                ...(riskVectorTelem ? { riskVector: riskVectorTelem } : {})
               },
               sensitivity: 'SECURITY_AUDIT'
             });

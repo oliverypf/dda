@@ -37,6 +37,15 @@ import {
   RISK_VECTOR_REQUIRE_APPROVAL
 } from './risk-vector.mjs';
 import {
+  applyBehaviorPosteriorToTrust,
+  behaviorPosteriorKey,
+  createBehaviorPosteriorStore,
+  isTrustDeepenEnabled,
+  normalizePathNodes,
+  resolveBehaviorPosterior,
+  updateBehaviorPosterior
+} from './trust-deepen.mjs';
+import {
   isSafetyIncidentEnabled,
   recordActionGateBlockIncident,
   recordScopeViolationIncident
@@ -562,6 +571,66 @@ async function runTask() {
   const gateApprovalDecisions = new Map();
   // Risk Vector (freeze-risk-vector-r1): per-run step vectors for trajectory combine.
   const riskVectors = [];
+  // Trust deepen (freeze-trust-deepen-r1): α/β behavior posterior + Path-weighted blame.
+  // DDA_TRUST_DEEPEN=0 disables (default ON). Soft-fail; never exempts hardDecision/lease.
+  const behaviorPosteriorStore = createBehaviorPosteriorStore();
+  const runPathNodes = [];
+  const runHighRiskSinks = new Set();
+  const absorbPathAnalysis = (analysis) => {
+    if (!analysis || typeof analysis !== 'object') return;
+    for (const n of normalizePathNodes({ pathAnalysis: analysis })) {
+      if (!runPathNodes.includes(n)) runPathNodes.push(n);
+    }
+    for (const s of (Array.isArray(analysis.highRiskSinks) ? analysis.highRiskSinks : [])) {
+      if (typeof s === 'string' && s) runHighRiskSinks.add(s);
+    }
+  };
+  const recordBehaviorFailureFromIncident = (incident, entityId) => {
+    if (!isTrustDeepenEnabled()) return;
+    if (!incident || incident.status !== 'ATTRIBUTED') return;
+    try {
+      const eid = entityId ?? executorDescriptor().id;
+      const caps = Array.isArray(incident.capabilityPath) ? incident.capabilityPath : [];
+      const targets = Array.isArray(incident.profileTargets) && incident.profileTargets.length
+        ? incident.profileTargets
+        : [{ entityType: 'executor', entityId: eid }];
+      for (const t of targets) {
+        const key = behaviorPosteriorKey({
+          entityType: t.entityType ?? 'executor',
+          entityId: t.entityId ?? eid,
+          capabilityId: caps[0]
+        });
+        updateBehaviorPosterior({
+          key,
+          success: false,
+          incidentId: incident.incidentId,
+          sourceId: incident.incidentId,
+          store: behaviorPosteriorStore
+        });
+      }
+      // Also capability-scoped keys for each path node (soft; capped).
+      for (const cap of caps.slice(0, 8)) {
+        if (typeof cap !== 'string' || !cap.trim()) continue;
+        const key = behaviorPosteriorKey({
+          entityType: 'executor',
+          entityId: eid,
+          capabilityId: cap.trim()
+        });
+        updateBehaviorPosterior({
+          key,
+          success: false,
+          incidentId: `${incident.incidentId}:${cap.trim()}`,
+          sourceId: `${incident.incidentId}:${cap.trim()}`,
+          store: behaviorPosteriorStore
+        });
+      }
+    } catch (err) {
+      emitEvent('trust.deepen_soft_fail', {
+        reasonCode: 'INCIDENT_POSTERIOR',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  };
   // Verifier-uncertain re-approval: when a verifier verdict (Rule or Jev
   // VERIFY_BEHAVIOR) leaves an attempt UNCERTAIN or STALLED, the run does not
   // simply record the status and continue. This run-level flag makes the lease
@@ -2397,6 +2466,10 @@ async function runTask() {
                 capabilityPath: event.capability ? [String(event.capability)] : [],
                 executed: true
               });
+              // Trust deepen: ATTRIBUTED incident → α/β failure update (soft-fail).
+              if (incidentResult?.incident) {
+                recordBehaviorFailureFromIncident(incidentResult.incident, executorDescriptor().id);
+              }
               // S3: after S2 demote path, also tighten State (soft-fail).
               if (isSafetyStateEnabled() && incidentResult?.incident) {
                 try {
@@ -3711,7 +3784,7 @@ async function runTask() {
             };
             if (trustXEnabled) {
               try {
-                const trustX = resolveTrustX({
+                let trustX = resolveTrustX({
                   actor: executorDescriptor().id,
                   capabilityId: call.name ? String(call.name) : '*',
                   taskClass: '*',
@@ -3719,6 +3792,28 @@ async function runTask() {
                   stateStore: typeof safetyStateStore !== 'undefined' ? safetyStateStore : undefined,
                   profileRegistry
                 });
+                // Trust deepen: inject α/β posterior into Trust(X) before apply (elevate-only).
+                // Prefer capability-scoped key, fall back to actor-level. DDA_TRUST_DEEPEN=0 skips.
+                if (isTrustDeepenEnabled()) {
+                  try {
+                    const actorId = executorDescriptor().id;
+                    const capId = call.name ? String(call.name) : undefined;
+                    const capKey = capId
+                      ? behaviorPosteriorKey({ entityType: 'executor', entityId: actorId, capabilityId: capId })
+                      : null;
+                    const actorKey = behaviorPosteriorKey({ entityType: 'executor', entityId: actorId });
+                    const posterior = (capKey && resolveBehaviorPosterior(capKey, behaviorPosteriorStore))
+                      || resolveBehaviorPosterior(actorKey, behaviorPosteriorStore);
+                    if (posterior) {
+                      trustX = applyBehaviorPosteriorToTrust({ trust: trustX, posterior });
+                    }
+                  } catch (deepenErr) {
+                    emitEvent('trust.deepen_soft_fail', {
+                      reasonCode: 'TRUST_INJECT',
+                      error: deepenErr instanceof Error ? deepenErr.message : String(deepenErr)
+                    });
+                  }
+                }
                 trustXApplied = applyTrustXGate({
                   gateDecision: toolGate,
                   trust: trustX,
@@ -3743,7 +3838,8 @@ async function runTask() {
                     E: trustX?.E,
                     fallbackLevel: trustX?.fallbackLevel,
                     sourceKey: trustX?.sourceKey,
-                    key: trustX?.key
+                    key: trustX?.key,
+                    ...(trustX?.trustDeepen ? { trustDeepen: trustX.trustDeepen } : {})
                   });
                 } else if ((trustXApplied.requiredControls?.length ?? 0) > 0) {
                   emitEvent('trust.x_soft_controls', {
@@ -3755,7 +3851,8 @@ async function runTask() {
                     R: trustX?.R,
                     E: trustX?.E,
                     fallbackLevel: trustX?.fallbackLevel,
-                    sourceKey: trustX?.sourceKey
+                    sourceKey: trustX?.sourceKey,
+                    ...(trustX?.trustDeepen ? { trustDeepen: trustX.trustDeepen } : {})
                   });
                 }
               } catch (trustXErr) {
@@ -3784,6 +3881,7 @@ async function runTask() {
                   toolName: call.name ? String(call.name) : '',
                   declaredCapabilities: approvedCapabilities
                 });
+                absorbPathAnalysis(capabilityPathAnalysis);
                 capabilityPathTelem = capabilityPathTelemetry(capabilityPathAnalysis);
                 capabilityPathApplied = applyCapabilityPathGate({
                   gateDecision: toolGate,
@@ -4179,6 +4277,10 @@ async function runTask() {
                   capabilityPath: call.name ? [String(call.name)] : [],
                   phase: 'EXECUTE'
                 });
+                // Trust deepen: ATTRIBUTED incident → α/β failure update (soft-fail).
+                if (incidentResult?.incident) {
+                  recordBehaviorFailureFromIncident(incidentResult.incident, executorDescriptor().id);
+                }
                 // S3: after S2 demote path, also tighten State (soft-fail).
                 if (isSafetyStateEnabled() && incidentResult?.incident) {
                   try {
@@ -5397,6 +5499,9 @@ async function runTask() {
       { warn: postPassWarn });
     }
     const creditBlame = await softFailPostPassTelemetry(postPassGate, 'credit-blame-record', async () => {
+      const creditPathOpts = isTrustDeepenEnabled() && runPathNodes.length
+        ? { pathNodes: runPathNodes.slice(0, 16), highRiskSinks: [...runHighRiskSinks] }
+        : {};
       if (creditBlameLedger.hasDurableSink) {
         return creditBlameLedger.recordDurably({
           decisions: decisionIds.map((decisionId) => decisionTrace.get(decisionId)).filter(Boolean),
@@ -5404,12 +5509,14 @@ async function runTask() {
             outcomeId: `task-outcome-${runId}`,
             status: 'SUCCEEDED',
             executionEventIds: [completedTrajectoryEvent.eventId]
-          }
+          },
+          ...creditPathOpts
         });
       }
       return creditBlameLedger.record({
         decisions: decisionIds.map((decisionId) => decisionTrace.get(decisionId)).filter(Boolean),
-        outcome: { outcomeId: `task-outcome-${runId}`, status: 'SUCCEEDED', executionEventIds: [completedTrajectoryEvent.eventId] }
+        outcome: { outcomeId: `task-outcome-${runId}`, status: 'SUCCEEDED', executionEventIds: [completedTrajectoryEvent.eventId] },
+        ...creditPathOpts
       });
     }, { warn: postPassWarn });
     await softFailPostPassTelemetry(postPassGate, 'credit-blame-flush', () => creditBlameLedger.flush(), { warn: postPassWarn });
@@ -5716,7 +5823,10 @@ async function runTask() {
         outcomeId: `task-outcome-${runId}`,
         status: failureStatus,
         executionEventIds: failedTrajectoryEvent?.eventId ? [failedTrajectoryEvent.eventId] : []
-      }
+      },
+      ...(isTrustDeepenEnabled() && runPathNodes.length
+        ? { pathNodes: runPathNodes.slice(0, 16), highRiskSinks: [...runHighRiskSinks] }
+        : {})
     };
     await Promise.resolve(creditBlameLedger.hasDurableSink
       ? creditBlameLedger.recordDurably(failedCreditInput)

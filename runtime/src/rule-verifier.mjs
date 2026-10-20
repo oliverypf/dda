@@ -220,6 +220,15 @@ export const RECOVERABLE_TOOL_ERROR_CODES = new Set([
   'TOOL_INVALID_INPUT',
   'TOOL_INVALID_INPUT_JSON'
 ]);
+
+/** Structured probe / domain tool errors that must not hard-kill the run. */
+export const isRecoverableToolError = (errorCode) => {
+  if (typeof errorCode !== 'string' || !errorCode) return false;
+  return RECOVERABLE_TOOL_ERROR_CODES.has(errorCode)
+    || errorCode.startsWith('WORKSPACE_')
+    || errorCode.startsWith('EXCERPT_');
+};
+
 const actionRecoverableFailure = (action) => {
   const value = normalizeAction(action);
   const code = typeof value.errorCode === 'string' ? value.errorCode : '';

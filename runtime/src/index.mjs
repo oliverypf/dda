@@ -80,6 +80,11 @@ import { resumeWrittenFiles } from './task-file-harness.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
 import { createStageTimer } from './decision/jev-metrics.mjs';
 import { READONLY_FAST_PATH_REASON, readonlyFastPathDecision } from './decision/readonly-fast-path.mjs';
+import {
+  assembleToolActionReasonCodes,
+  dedupePreserveOrder,
+  telemetryElevateReason
+} from './decision/reason-codes.mjs';
 import { councilForTier, planTierCandidates, planTierInactiveReason } from './decision/plan-tier.mjs';
 import {
   TOPOLOGY_PLAN_THEN_EXECUTE,
@@ -1132,8 +1137,8 @@ async function runTask() {
       selectedOptionId: resolvedSelectedOptionId,
       decisionSummary: summary,
       selectionCriteria,
-      reasonCodes,
-      uncertaintyCodes,
+      reasonCodes: dedupePreserveOrder(reasonCodes),
+      uncertaintyCodes: dedupePreserveOrder(uncertaintyCodes),
       expectedOutcome: expectedOutcome ?? {
           successCriteriaRefs: [`criterion-${stepId}`],
           predictedOutcomeCode: 'PIPELINE_STEP_ACCEPTED',
@@ -4164,6 +4169,8 @@ async function runTask() {
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
             }
+            // Elevate already wrote toolGate.reasonCode — telemetryElevateReason
+            // skips re-appending the same Path/Trust/RV/SAFETY_STATE code (r1 dedupe).
             const safetyTelemetryCodes = [
               ...(safetyApplied.profileId ? [`SAFETY_PROFILE:${safetyApplied.profileId}`] : []),
               ...safetyApplied.reasonCodes,
@@ -4171,25 +4178,21 @@ async function runTask() {
               ...(trustXApplied.trust && trustXApplied.trust.fallbackLevel !== undefined
                 ? [`TRUST_X_FALLBACK:${trustXApplied.trust.fallbackLevel}`]
                 : []),
-              ...(trustXApplied.elevated && trustXApplied.reasonCode ? [trustXApplied.reasonCode] : []),
+              ...telemetryElevateReason(trustXApplied, toolGate.reasonCode),
               ...((trustXApplied.requiredControls ?? []).map((c) => `TRUST_X_CONTROL:${c}`)),
-              ...(capabilityPathApplied.elevated && capabilityPathApplied.reasonCode
-                ? [capabilityPathApplied.reasonCode]
-                : []),
+              ...telemetryElevateReason(capabilityPathApplied, toolGate.reasonCode),
               ...(capabilityPathTelem?.expandsBeyondDeclared
                 ? [`CAPABILITY_PATH_EXPANDS`, `CAPABILITY_PATH_LEN:${capabilityPathTelem.pathLen}`]
                 : []),
               ...(Array.isArray(capabilityPathTelem?.highRiskSinks)
                 ? capabilityPathTelem.highRiskSinks.slice(0, 8).map((s) => `CAPABILITY_SINK:${s}`)
                 : []),
-              ...(riskVectorApplied.elevated && riskVectorApplied.reasonCode
-                ? [riskVectorApplied.reasonCode]
-                : []),
+              ...telemetryElevateReason(riskVectorApplied, toolGate.reasonCode),
               ...(riskVectorTelem
                 ? [`RISK_VECTOR_SCORE:${riskVectorTelem.score}`, `RISK_VECTOR_STEPS:${riskVectorTelem.stepCount}`]
                 : []),
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
-              ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : []),
+              ...telemetryElevateReason(safetyStateApplied, toolGate.reasonCode),
               ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
                 ? [`SAFETY_SOFT:${safetyStateApplied.softOutcome}`]
                 : []),
@@ -4239,7 +4242,11 @@ async function runTask() {
                 }
               ],
               selectedOptionId: toolGate.decision === 'ALLOW' ? `tool-${call.id}-selected` : `tool-${call.id}-no-tool`,
-              reasonCodes: [toolGate.reasonCode ?? 'JEV_ACTION_GATE', ...safetyTelemetryCodes],
+              reasonCodes: assembleToolActionReasonCodes({
+                gateReasonCode: toolGate.reasonCode ?? 'JEV_ACTION_GATE',
+                telemetryCodes: safetyTelemetryCodes,
+                max: 32
+              }),
               selectionCriteria: [
                 fastPathTaken
                   ? 'readonly-fast-path-rule'

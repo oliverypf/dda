@@ -430,6 +430,8 @@ async function runTask() {
   const approvedCommands = csv(arg('--lease-commands', process.env.DDA_LEASE_COMMANDS ?? ''));
   const approvedNetworkTargets = parseNetworkTargets(arg('--network-targets', process.env.DDA_NETWORK_TARGETS));
   const mcpConfigPath = arg('--mcp-config', process.env.DDA_MCP_CONFIG);
+  // S6: outcome→propose is opt-in (default off). Never auto-promote to ACTIVE;
+  // promotion remains the explicit evolution CLI / evaluator.promote path only.
   const autoEvolutionProposal = parseBoolean(
     process.argv.includes('--auto-evolution-proposal') ? 'true' : argValue('--auto-evolution-proposal'),
     parseBoolean(process.env.DDA_AUTO_EVOLUTION_PROPOSAL, false)

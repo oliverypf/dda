@@ -63,6 +63,10 @@ export function precheckShellExecuteInput(input = {}) {
 export function looksLikeAcceptanceCommand(line) {
   const text = normalizeWs(line);
   if (!text || text.length < 4) return false;
+  // Must look like an invocable command, not prose that merely mentions tools
+  // (e.g. "Lease: … npx …" must not become a fake acceptance under C3 all-green).
+  const startsLikeCmd = /^(?:cd\s+\S+\s+&&\s+)?(?:node|npm|npx|pnpm|yarn|vitest|pytest|cargo|go|mocha|jest)\b/iu;
+  if (!startsLikeCmd.test(text)) return false;
   if (SHELL_ACCEPTANCE_HINT.test(text)) return true;
   // C1 §1.2: bare `node --test …` (optional name-pattern / path) counts like vitest
   if (/\bnode\b/iu.test(text) && /--test\b/iu.test(text)) return true;
@@ -161,6 +165,30 @@ export function hasAcceptanceGreen(actions = [], acceptanceCommands = []) {
   return false;
 }
 
+/**
+ * C3: every extracted acceptance command must have ≥1 successful matching
+ * shell.execute (or a successful test.execute whose command/args match that
+ * single command). Empty list → false (callers with length<=1 use hasAcceptanceGreen).
+ */
+export function hasAllAcceptanceCommandsGreen(actions = [], acceptanceCommands = []) {
+  const cmds = (Array.isArray(acceptanceCommands) ? acceptanceCommands : [])
+    .map(normalizeWs)
+    .filter(Boolean);
+  if (!cmds.length) return false;
+  const list = Array.isArray(actions) ? actions : [];
+  return cmds.every((cmd) => list.some((action) => {
+    if (!actionSucceededLite(action)) return false;
+    if (action?.name === 'shell.execute') {
+      return commandMatchesAcceptance(shellCommandJoin(action), [cmd]);
+    }
+    if (action?.name === 'test.execute') {
+      const join = normalizeCommandJoin(action.command, action.args);
+      return Boolean(join) && commandMatchesAcceptance(join, [cmd]);
+    }
+    return false;
+  }));
+}
+
 function actionSucceededLite(action) {
   if (!action || typeof action !== 'object') return false;
   if (action.ok === true || action.done === true) return true;
@@ -257,6 +285,12 @@ export function needsVerificationGate(harness = {}, actions = []) {
  */
 export function assertVerificationGate({ harness, actions, acceptanceCommands } = {}) {
   if (!needsVerificationGate(harness, actions)) return;
+  const cmds = Array.isArray(acceptanceCommands) ? acceptanceCommands : [];
+  // C3: multi-acceptance requires every command green; single/empty keep any-green.
+  if (cmds.length >= 2) {
+    if (hasAllAcceptanceCommandsGreen(actions, cmds)) return;
+    throw new Error('VERIFICATION_REQUIRED');
+  }
   if (hasAcceptanceGreen(actions, acceptanceCommands)) return;
   throw new Error('VERIFICATION_REQUIRED');
 }

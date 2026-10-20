@@ -10,6 +10,14 @@ import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
 import { applySafetyProfileGate, SAFETY_PROFILE_REQUIRE_APPROVAL } from './safety-profile-gate.mjs';
 import {
+  applyTrustXGate,
+  isTrustXEnabled,
+  resolveTrustX,
+  TRUST_X_DENY,
+  TRUST_X_LIMIT,
+  TRUST_X_REQUIRE_APPROVAL
+} from './trust-x.mjs';
+import {
   isSafetyIncidentEnabled,
   recordActionGateBlockIncident,
   recordScopeViolationIncident
@@ -3669,6 +3677,73 @@ async function runTask() {
                 reasonCode: toolGate.reasonCode
               });
             }
+            // Trust(X): named Trust(A,S,C,O,R,E) + layered fallback after S1, before S4/S3.
+            // Soft tighten only; hit-layer exclusive R; never exempts hard BLOCK / lease.
+            // DDA_TRUST_X=0 disables (default ON).
+            const trustXEnabled = isTrustXEnabled();
+            let trustXApplied = {
+              elevated: false,
+              decision: toolGate.decision,
+              reasonCode: toolGate.reasonCode,
+              trust: undefined,
+              requiredControls: []
+            };
+            if (trustXEnabled) {
+              try {
+                const trustX = resolveTrustX({
+                  actor: executorDescriptor().id,
+                  capabilityId: call.name ? String(call.name) : '*',
+                  taskClass: '*',
+                  workspace: 'default',
+                  stateStore: typeof safetyStateStore !== 'undefined' ? safetyStateStore : undefined,
+                  profileRegistry
+                });
+                trustXApplied = applyTrustXGate({
+                  gateDecision: toolGate,
+                  trust: trustX,
+                  enabled: true,
+                  toolReadOnly
+                });
+                if (trustXApplied.elevated) {
+                  const fromDecision = toolGate.decision;
+                  toolGate = {
+                    ...toolGate,
+                    decision: trustXApplied.decision,
+                    reasonCode: trustXApplied.reasonCode
+                      ?? (trustXApplied.decision === 'BLOCK' ? TRUST_X_DENY : TRUST_X_REQUIRE_APPROVAL)
+                  };
+                  emitEvent('trust.x_gate_elevated', {
+                    id: call.id,
+                    name: call.name,
+                    from: fromDecision,
+                    to: toolGate.decision,
+                    reasonCode: toolGate.reasonCode,
+                    R: trustX?.R,
+                    E: trustX?.E,
+                    fallbackLevel: trustX?.fallbackLevel,
+                    sourceKey: trustX?.sourceKey,
+                    key: trustX?.key
+                  });
+                } else if ((trustXApplied.requiredControls?.length ?? 0) > 0) {
+                  emitEvent('trust.x_soft_controls', {
+                    id: call.id,
+                    name: call.name,
+                    decision: toolGate.decision,
+                    reasonCode: trustXApplied.reasonCode ?? TRUST_X_LIMIT,
+                    requiredControls: trustXApplied.requiredControls,
+                    R: trustX?.R,
+                    E: trustX?.E,
+                    fallbackLevel: trustX?.fallbackLevel,
+                    sourceKey: trustX?.sourceKey
+                  });
+                }
+              } catch (trustXErr) {
+                emitEvent('trust.x_soft_fail', {
+                  reasonCode: 'TRUST_X_RESOLVE',
+                  error: trustXErr instanceof Error ? trustXErr.message : String(trustXErr)
+                });
+              }
+            }
             // S3/S4: State gate after S1. Spectrum (default ON) maps MONITOR→LIMIT,
             // SANDBOX→approval+control, QUARANTINE reason split. DDA_SAFETY_SPECTRUM=0
             // falls back to S3 applySafetyStateGate. DDA_SAFETY_STATE=0 disables both.
@@ -3794,12 +3869,13 @@ async function runTask() {
             const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
               && toolGateRaw.source === 'jev'
               && toolGateRaw.fallbackUsed !== true;
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || safetyStateApplied.elevated)) {
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || safetyStateApplied.elevated)) {
               const gateEntry = {
                 requireApproval: true,
                 reasonCode: toolGate.reasonCode
                   ?? (safetyStateApplied.elevated ? SAFETY_STATE_REQUIRE_APPROVAL
-                    : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL'))
+                    : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
+                      : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')))
               };
               gateApprovalDecisions.set(call.id, gateEntry);
               if (call.argumentsDigest) gateApprovalDecisions.set(call.argumentsDigest, gateEntry);
@@ -3807,6 +3883,12 @@ async function runTask() {
             const safetyTelemetryCodes = [
               ...(safetyApplied.profileId ? [`SAFETY_PROFILE:${safetyApplied.profileId}`] : []),
               ...safetyApplied.reasonCodes,
+              ...(trustXApplied.trust?.sourceKey ? [`TRUST_X_KEY:${trustXApplied.trust.sourceKey}`] : []),
+              ...(trustXApplied.trust && trustXApplied.trust.fallbackLevel !== undefined
+                ? [`TRUST_X_FALLBACK:${trustXApplied.trust.fallbackLevel}`]
+                : []),
+              ...(trustXApplied.elevated && trustXApplied.reasonCode ? [trustXApplied.reasonCode] : []),
+              ...((trustXApplied.requiredControls ?? []).map((c) => `TRUST_X_CONTROL:${c}`)),
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
               ...(safetyStateApplied.elevated && safetyStateApplied.reasonCode ? [safetyStateApplied.reasonCode] : []),
               ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
@@ -3826,9 +3908,11 @@ async function runTask() {
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
                 : safetyStateApplied.elevated
                   ? `SAFETY state elevated action gate to ${toolGate.decision} for ${call.name}`
-                  : safetyApplied.elevated
-                    ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
-                    : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
+                  : trustXApplied.elevated
+                    ? `Trust(X) elevated action gate to ${toolGate.decision} for ${call.name}`
+                    : safetyApplied.elevated
+                      ? `SAFETY profile elevated action gate to ${toolGate.decision} for ${call.name}`
+                      : `Jev action gate returned ${toolGate.decision} for ${call.name}`,
               outputRefs: [`tool-${attempt}-${call.id}`],
               evidenceRefs: toolEvidence,
               options: [

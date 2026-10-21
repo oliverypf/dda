@@ -98,7 +98,7 @@ export function combineRiskR(stateOrRecord, severity) {
   return Math.max(rState, rSev);
 }
 
-function trustKey({ entityId, capabilityId, taskClass, workspace }) {
+export function trustKey({ entityId, capabilityId, taskClass, workspace }) {
   const id = typeof entityId === 'string' && entityId.trim() ? entityId.trim() : 'executor';
   const cap = typeof capabilityId === 'string' && capabilityId.trim() ? capabilityId.trim() : '*';
   const tc = typeof taskClass === 'string' && taskClass.trim() ? taskClass.trim() : '*';

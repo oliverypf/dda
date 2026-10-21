@@ -2,6 +2,21 @@
 // freeze-harness-decision-reasoncodes-dedupe-r1:
 // Path/Trust/RV elevate writes toolGate.reasonCode then telemetry used to
 // append the same code → cleanCodes threw DECISION_INVALID_REASON_CODES.
+// freeze-harness-trust-x-key-reasoncodes-r1:
+// TRUST_X_KEY:${trustKey()} embeds @ | * rejected by cleanCodes charset —
+// sanitize those three before propose/record; do NOT widen cleanCodes.
+/**
+ * Map trustKey / control chars that cleanCodes rejects (`@` `|` `*`) to safe
+ * stand-ins (`@`/`*` → `_`, `|` → `:`). Other illegal chars (space, `/`, …)
+ * pass through so enforce still fails intentionally dirty inputs.
+ * Does NOT widen cleanCodes; does NOT raise max 32.
+ */
+export const sanitizeReasonCodeCharset = (code) => {
+  if (code == null || code === '') return code;
+  return String(code)
+    .replace(/\|/g, ':')
+    .replace(/[@*]/g, '_');
+};
 
 /** Order-preserving unique: first occurrence kept; null/empty skipped. */
 export const dedupePreserveOrder = (codes) => {
@@ -31,10 +46,11 @@ export const telemetryElevateReason = (applied, toolGateReasonCode) => {
 
 /**
  * SELECT_TOOL_ACTION reasonCodes: gate reason first, then telemetry without
- * self-injury dups. After order-preserving dedupe, if still > max, keep the
- * gate reason and slice the telemetry head so the final list is ≤ max.
- * Does not loosen cleanCodes — illegal chars / true dirty dups still fail
- * upstream when callers bypass this helper.
+ * self-injury dups. Charset-sanitize (@|* → safe) before dedupe so Trust KEY
+ * telemetry matches cleanCodes. After order-preserving dedupe, if still > max,
+ * keep the gate reason and slice the telemetry head so the final list is ≤ max.
+ * Does not loosen cleanCodes — other illegal chars / true dirty dups still fail
+ * when callers bypass this helper or pass residual illegal tokens.
  */
 export const assembleToolActionReasonCodes = ({
   gateReasonCode,
@@ -42,12 +58,15 @@ export const assembleToolActionReasonCodes = ({
   max = 32,
   fallbackGate = 'JEV_ACTION_GATE'
 } = {}) => {
-  const gate = (gateReasonCode != null && gateReasonCode !== '')
+  const gateRaw = (gateReasonCode != null && gateReasonCode !== '')
     ? String(gateReasonCode)
     : fallbackGate;
+  const gate = sanitizeReasonCodeCharset(gateRaw);
   const telem = dedupePreserveOrder(
     (Array.isArray(telemetryCodes) ? telemetryCodes : [])
-      .filter((c) => c != null && c !== '' && String(c) !== gate)
+      .filter((c) => c != null && c !== '')
+      .map((c) => sanitizeReasonCodeCharset(String(c)))
+      .filter((c) => c !== gate)
   );
   if (1 + telem.length <= max) {
     return dedupePreserveOrder([gate, ...telem]);

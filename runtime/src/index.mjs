@@ -177,7 +177,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3521,7 +3521,7 @@ async function runTask() {
     if (!Number.isInteger(recoveryLimit) || recoveryLimit < 1 || recoveryLimit > 8) {
       throw new Error('RECOVERY_ATTEMPT_LIMIT_INVALID');
     }
-    const runPlanStep = async ({ step, priorResults = [] } = {}) => {
+    const runPlanStep = async ({ step, priorResults = [], planContinueHostNote } = {}) => {
       if (!step || typeof step.stepId !== 'string') throw new Error('PLAN_STEP_INVALID');
       // Reconciliation may make an interrupted observation READY while the
       // aggregate remains RECOVERING. Re-enter execution before new work;
@@ -3551,12 +3551,14 @@ async function runTask() {
         prompt,
         `Current validated plan step: ${step.stepId}.`,
         `Step objective: ${step.summary}.`,
-        priorStepContext.length ? `Prior step outcomes (digests only): ${JSON.stringify(priorStepContext)}` : undefined
+        priorStepContext.length ? `Prior step outcomes (digests only): ${JSON.stringify(priorStepContext)}` : undefined,
+        planContinueHostNote || undefined
       ].filter(Boolean).join('\n');
       const stepHistoryContext = [
         historyContext,
         `Current plan step ${step.stepId}: ${step.summary}.`,
-        priorStepContext.length ? `Prior step outcomes (digests only): ${JSON.stringify(priorStepContext)}` : undefined
+        priorStepContext.length ? `Prior step outcomes (digests only): ${JSON.stringify(priorStepContext)}` : undefined,
+        planContinueHostNote || undefined
       ].filter(Boolean).join('\n').slice(0, 6000);
       const recoveryRun = await runVerifierRecovery({
       maxAttempts: recoveryLimit,
@@ -5472,9 +5474,36 @@ async function runTask() {
         recoveryRun
       };
     };
+    // freeze-harness-plan-continue-r1: one plan-step READY re-exec on CONTINUE_EXECUTION+writes.
+    let pendingPlanContinueHostNote = undefined;
     const planExecution = await planCoordinator.run({
       maxAttempts: 1,
-      executeStep: runPlanStep,
+      continueReplan: {
+        getWriteCounts: () => {
+          const snap = harnessProgress.snapshot();
+          return {
+            writesApplied: Number(snap.writesApplied ?? 0),
+            successfulWrites: Number(snap.successfulWrites ?? 0)
+          };
+        },
+        isEligible: isPlanContinueReplanEligible,
+        onPlanContinueReplan: ({ writesApplied, failureCodes, status, nextAction, stepId, attempt }) => {
+          emitEvent('harness.plan_continue_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            status: 'CONTINUE',
+            nextAction: 'CONTINUE_EXECUTION',
+            ...(stepId ? { stepId } : {}),
+            ...(Number.isInteger(attempt) ? { attempt } : {})
+          });
+          pendingPlanContinueHostNote = planContinueReplanHostNote();
+        }
+      },
+      executeStep: async (args) => {
+        const hostNote = pendingPlanContinueHostNote;
+        pendingPlanContinueHostNote = undefined;
+        return runPlanStep({ ...args, planContinueHostNote: hostNote });
+      },
       verifyStep: async ({ result }) => result?.verification ?? { status: 'FAIL', failureCodes: ['STEP_VERIFICATION_MISSING'] }
     });
     if (!planExecution.ok) {

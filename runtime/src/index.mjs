@@ -177,7 +177,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3578,6 +3578,24 @@ async function runTask() {
             // freeze-harness-uncertain-agent-miss-r1: include UNCERTAIN (and FAIL|STALLED)
             ...(status === 'FAIL' || status === 'STALLED' || status === 'UNCERTAIN' ? { status } : {})
           });
+        },
+        onPostMissReplan: ({ writesApplied, failureCodes, status, priorAgentMissReplan }) => {
+          // freeze-harness-post-miss-uncertain-r1 §1.1
+          emitEvent('harness.post_miss_uncertain_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            status: 'UNCERTAIN',
+            priorAgentMissReplan: priorAgentMissReplan === true
+          });
+        },
+        onPostMissTerminalReplan: ({ writesApplied, failureCodes, status, priorPostMissUncertainReplan }) => {
+          // freeze-harness-post-miss-terminal-r1 §1.1
+          emitEvent('harness.post_miss_terminal_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            ...(status === 'FAIL' || status === 'STALLED' ? { status } : {}),
+            priorPostMissUncertainReplan: priorPostMissUncertainReplan === true
+          });
         }
       },
       execute: stageTimer.wrap('execution', async ({ attempt, recovery, previousActions = [] }) => {
@@ -3603,9 +3621,13 @@ async function runTask() {
               recovery.previousActionDigests?.length
                 ? `Previously attempted action digests: ${recovery.previousActionDigests.join(',')}. Do not repeat them unless new evidence is required.`
                 : undefined,
-              recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-                ? agentMissReplanHostNote()
-                : undefined,
+              recovery.postMissTerminalReplan === true
+                ? postMissTerminalReplanHostNote()
+                : (recovery.postMissUncertainReplan === true
+                  ? postMissUncertainReplanHostNote()
+                  : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+                    ? agentMissReplanHostNote()
+                    : undefined)),
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)
           : stepHistoryContext;

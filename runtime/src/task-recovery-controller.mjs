@@ -234,6 +234,36 @@ export const postMissUncertainExhaustedReplanHostNote = () => [
 ].join(' ');
 
 /**
+ * freeze-harness-plan-continue-r1 §1.1: when step verification is CONTINUE with
+ * nextAction=CONTINUE_EXECUTION and writes≥1 (not sole SAFETY/lease DENY), allow
+ * exactly one bounded re-exec at the plan-step layer. Independent of #68/#69/amt.
+ * Cap: at most 1× per step (caller latches alreadyReplanned).
+ */
+export const isPlanContinueReplanEligible = ({
+  status,
+  nextAction,
+  writesApplied = 0,
+  successfulWrites = 0,
+  failureCodes = [],
+  alreadyReplanned = false
+} = {}) => {
+  if (alreadyReplanned) return false;
+  if (String(status ?? '').toUpperCase() !== 'CONTINUE') return false;
+  if (String(nextAction ?? '').toUpperCase() !== 'CONTINUE_EXECUTION') return false;
+  if (Number(writesApplied) < 1 && Number(successfulWrites) < 1) return false;
+  const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
+  if (isSoleHardDenyFailure(codes)) return false;
+  return true;
+};
+
+export const planContinueReplanHostNote = () => [
+  'HOST_PLAN_CONTINUE_REPLAN: Verifier returned CONTINUE with nextAction=CONTINUE_EXECUTION after writes already landed.',
+  'Do not treat the task as failed — change path and/or add fresh evidence to finish the remaining goal.',
+  'Ban repeating the same incomplete approach or claiming PASS without new tool evidence.',
+  'SAFETY / lease hard denies remain in force. No second plan-continue recovery of this kind.'
+].join(' ');
+
+/**
  * freeze-harness-uncertain-agent-miss-r1 §1.1: when Jev behavior elevates a
  * deterministic PASS to UNCERTAIN (evidence gap), stamp JEV_EVIDENCE_REQUIRED
  * into failureCodes. Never summary-only.

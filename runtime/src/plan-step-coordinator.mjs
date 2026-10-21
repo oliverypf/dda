@@ -135,9 +135,21 @@ export class PlanStepCoordinator {
     return pending ? clone(pending) : undefined;
   }
 
-  async run({ executeStep, verifyStep, diagnoseStep, maxAttempts = 3, signal } = {}) {
+  async run({ executeStep, verifyStep, diagnoseStep, maxAttempts = 3, signal, continueReplan } = {}) {
     if (typeof executeStep !== 'function' || typeof verifyStep !== 'function') throw new Error('PLAN_STEP_CALLBACKS_REQUIRED');
     if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS) throw new Error('PLAN_STEP_ATTEMPT_LIMIT_INVALID');
+    if (continueReplan !== undefined) {
+      if (!continueReplan || typeof continueReplan !== 'object') throw new Error('PLAN_CONTINUE_REPLAN_INVALID');
+      if (continueReplan.getWriteCounts !== undefined && typeof continueReplan.getWriteCounts !== 'function') {
+        throw new Error('PLAN_CONTINUE_REPLAN_INVALID');
+      }
+      if (continueReplan.onPlanContinueReplan !== undefined && typeof continueReplan.onPlanContinueReplan !== 'function') {
+        throw new Error('PLAN_CONTINUE_REPLAN_INVALID');
+      }
+      if (continueReplan.isEligible !== undefined && typeof continueReplan.isEligible !== 'function') {
+        throw new Error('PLAN_CONTINUE_REPLAN_INVALID');
+      }
+    }
     await this.initialize();
     const results = [];
     while (true) {
@@ -169,8 +181,10 @@ export class PlanStepCoordinator {
       if (step.status === 'PENDING') await this.#update(step.stepId, { status: 'READY', errorCode: undefined });
       let current = this.#plan.steps.find((item) => item.stepId === step.stepId) ?? step;
       let completed = false;
+      let planContinueBonusUsed = false;
+      let effectiveMaxAttempts = maxAttempts;
       const firstAttempt = Math.max(0, Number.isInteger(current.attempt) ? current.attempt : 0);
-      for (let runAttempt = 1; runAttempt <= maxAttempts; runAttempt += 1) {
+      for (let runAttempt = 1; runAttempt <= effectiveMaxAttempts; runAttempt += 1) {
         const attempt = firstAttempt + runAttempt;
         if (signal?.aborted) throw Object.assign(new Error('PLAN_CANCELLED'), { code: 'PLAN_CANCELLED' });
         await this.#update(step.stepId, {
@@ -212,7 +226,55 @@ export class PlanStepCoordinator {
           completed = true;
           break;
         }
-        if (RECOVERABLE_STATUSES.has(report.status) && runAttempt < maxAttempts) {
+        // freeze-harness-plan-continue-r1: one bonus READY re-exec on CONTINUE_EXECUTION+writes.
+        let planContinueJustFired = false;
+        if (
+          continueReplan
+          && !planContinueBonusUsed
+          && report.status === 'CONTINUE'
+          && statusOf(report.nextAction) === 'CONTINUE_EXECUTION'
+        ) {
+          const counts = typeof continueReplan.getWriteCounts === 'function'
+            ? (continueReplan.getWriteCounts({ step: clone(current), attempt, result: clone(result), report: clone(report) }) ?? {})
+            : {};
+          const eligible = typeof continueReplan.isEligible === 'function'
+            ? continueReplan.isEligible({
+              status: report.status,
+              nextAction: report.nextAction,
+              writesApplied: counts.writesApplied ?? 0,
+              successfulWrites: counts.successfulWrites ?? 0,
+              failureCodes: report.failureCodes,
+              alreadyReplanned: planContinueBonusUsed
+            })
+            : (
+              (Number(counts.writesApplied) >= 1 || Number(counts.successfulWrites) >= 1)
+              && !(Array.isArray(report.failureCodes) && report.failureCodes.length > 0
+                && report.failureCodes.every((code) => {
+                  const c = String(code ?? '');
+                  return c.startsWith('SAFETY_') || c.startsWith('LEASE_')
+                    || c === 'HARD_DECISION_DENY' || c === 'CAPABILITY_NOT_LEASED' || c === 'CAPABILITY_DENIED';
+                }))
+            );
+          if (eligible) {
+            planContinueBonusUsed = true;
+            planContinueJustFired = true;
+            const writesApplied = Number(counts.writesApplied ?? counts.successfulWrites ?? 0) || 0;
+            await continueReplan.onPlanContinueReplan?.({
+              writesApplied,
+              failureCodes: [...(report.failureCodes ?? [])],
+              status: 'CONTINUE',
+              nextAction: 'CONTINUE_EXECUTION',
+              stepId: step.stepId,
+              attempt
+            });
+            effectiveMaxAttempts = Math.max(effectiveMaxAttempts, runAttempt + 1);
+            if (effectiveMaxAttempts > MAX_ATTEMPTS) effectiveMaxAttempts = MAX_ATTEMPTS;
+          }
+        }
+        if (
+          (RECOVERABLE_STATUSES.has(report.status) && runAttempt < effectiveMaxAttempts)
+          || planContinueJustFired
+        ) {
           let diagnosis;
           if (typeof diagnoseStep === 'function') {
             diagnosis = await diagnoseStep({ step: clone(current), attempt, report: clone(report), result: clone(result), priorResults: clone(results) });
@@ -220,7 +282,9 @@ export class PlanStepCoordinator {
           await this.#update(step.stepId, {
             status: 'READY',
             attempt,
-            errorCode: report.failureCodes?.[0] ?? statusOf(report.status),
+            errorCode: planContinueJustFired
+              ? 'PLAN_CONTINUE_REPLAN'
+              : (report.failureCodes?.[0] ?? statusOf(report.status)),
             ...(diagnosis === undefined ? {} : { diagnosisDigest: digest(JSON.stringify(diagnosis)) })
           });
           continue;

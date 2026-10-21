@@ -177,7 +177,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3575,7 +3575,8 @@ async function runTask() {
           emitEvent('harness.agent_miss_replan', {
             writesApplied: Number(writesApplied ?? 0),
             failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
-            ...(status === 'FAIL' || status === 'STALLED' ? { status } : {})
+            // freeze-harness-uncertain-agent-miss-r1: include UNCERTAIN (and FAIL|STALLED)
+            ...(status === 'FAIL' || status === 'STALLED' || status === 'UNCERTAIN' ? { status } : {})
           });
         }
       },
@@ -4753,7 +4754,9 @@ async function runTask() {
             summary: `Jev behavior judgment: ${semanticStatus}`,
             progress: semanticStatus === 'PASS' ? 1 : 0,
             evidenceRefs: behaviorEvidence.map((item) => item.id),
-            failureCodes: semanticStatus === 'FAIL' ? ['JEV_BEHAVIOR_REJECTED'] : [],
+            failureCodes: semanticStatus === 'FAIL'
+              ? ['JEV_BEHAVIOR_REJECTED']
+              : (semanticStatus === 'UNCERTAIN' ? ['JEV_EVIDENCE_REQUIRED'] : []),
             source: 'JEV_DECISION_PLANE',
             reasonCode: behaviorDecision.reasonCode
           },
@@ -4762,7 +4765,11 @@ async function runTask() {
         if (semanticStatus === 'FAIL') {
           verification = { ...verification, status: 'FAIL', summary: `Jev rejected the observed behavior: ${behaviorDecision.reasonCode}`, failureCodes: [...new Set([...(verification.failureCodes ?? []), 'JEV_BEHAVIOR_REJECTED'])], checks: [...(verification.checks ?? []), { id: 'jev-behavior-judge', status: 'FAIL', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }] };
         } else if (semanticStatus === 'UNCERTAIN' && verification.status === 'PASS') {
-          verification = { ...verification, status: 'UNCERTAIN', summary: 'Deterministic checks passed but Jev requires more evidence', checks: [...(verification.checks ?? []), { id: 'jev-behavior-judge', status: 'UNKNOWN', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }] };
+          // freeze-harness-uncertain-agent-miss-r1: stamp JEV_EVIDENCE_REQUIRED (no summary-only path)
+          verification = stampJevEvidenceRequired(verification, {
+            reasonCode: behaviorDecision.reasonCode,
+            evidenceIds: behaviorEvidence.map((item) => item.id)
+          });
         }
         await coordinator.recordEventAndFlush('SemanticVerificationCompleted', {
           attempt, stepId: step.stepId, status: semanticStatus,

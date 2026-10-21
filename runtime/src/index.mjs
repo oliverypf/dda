@@ -3575,7 +3575,8 @@ async function runTask() {
           emitEvent('harness.agent_miss_replan', {
             writesApplied: Number(writesApplied ?? 0),
             failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
-            ...(status === 'FAIL' || status === 'STALLED' ? { status } : {})
+            // freeze-harness-uncertain-agent-miss-r1: include UNCERTAIN (and FAIL|STALLED)
+            ...(status === 'FAIL' || status === 'STALLED' || status === 'UNCERTAIN' ? { status } : {})
           });
         }
       },

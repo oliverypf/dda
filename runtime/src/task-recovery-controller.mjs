@@ -122,6 +122,37 @@ export const postMissTerminalReplanHostNote = () => [
 ].join(' ');
 
 /**
+ * freeze-harness-post-agent-miss-terminal-r1 §1.1: after #68 agent-miss latch already
+ * fired AND #69 post-miss UNCERTAIN has NOT fired, allow exactly one terminal REPLAN
+ * when verification is FAIL or STALLED with writes≥1 (not sole SAFETY/lease DENY).
+ * Independent latch from #70 (which still requires #69). Never for UNCERTAIN.
+ */
+export const isPostAgentMissTerminalReplanEligible = ({
+  writesApplied = 0,
+  successfulWrites = 0,
+  failureCodes = [],
+  agentMissAlreadyReplanned = false,
+  postMissUncertainAlreadyReplanned = false,
+  postAgentMissTerminalAlreadyReplanned = false
+} = {}) => {
+  if (!agentMissAlreadyReplanned) return false;
+  // Skip when #69 already used — that path stays on #70.
+  if (postMissUncertainAlreadyReplanned) return false;
+  if (postAgentMissTerminalAlreadyReplanned) return false;
+  if (Number(writesApplied) < 1 && Number(successfulWrites) < 1) return false;
+  const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
+  if (isSoleHardDenyFailure(codes)) return false;
+  return true;
+};
+
+export const postAgentMissTerminalReplanHostNote = () => [
+  'HOST_POST_AGENT_MISS_TERMINAL_REPLAN: After agent-miss replan, verification went straight to FAIL or STALLED (no post-miss UNCERTAIN latch).',
+  'Ban repeating the same failed action / fingerprint digests from prior attempts.',
+  'Must change approach: different step, smaller write, or re-run verification with fresh evidence.',
+  'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force. No second recovery of this kind.'
+].join(' ');
+
+/**
  * freeze-harness-post-miss-evidence-delta-r1 §1.1: after #69 post-miss UNCERTAIN latch,
  * allow exactly one more REPLAN when still UNCERTAIN with JEV_EVIDENCE_REQUIRED and
  * write-delta=0 vs the writes snapshot taken at #69 fire. Independent latch; never
@@ -297,12 +328,14 @@ export const recoveryContinuationText = (recovery) => recovery ? [
     ? [postMissUncertainExhaustedReplanHostNote()]
     : (recovery.postMissEvidenceDeltaReplan === true
       ? [postMissEvidenceDeltaReplanHostNote()]
-      : (recovery.postMissTerminalReplan === true
-        ? [postMissTerminalReplanHostNote()]
-        : (recovery.postMissUncertainReplan === true
-          ? [postMissUncertainReplanHostNote()]
-          : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-            ? [agentMissReplanHostNote()] : [])))))
+      : (recovery.postAgentMissTerminalReplan === true
+        ? [postAgentMissTerminalReplanHostNote()]
+        : (recovery.postMissTerminalReplan === true
+          ? [postMissTerminalReplanHostNote()]
+          : (recovery.postMissUncertainReplan === true
+            ? [postMissUncertainReplanHostNote()]
+            : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+              ? [agentMissReplanHostNote()] : []))))))
 ].join('\n') : '';
 
 const safeReport = (report) => ({
@@ -376,6 +409,7 @@ export const runVerifierRecovery = async ({
   let agentMissReplanned = false;
   let postMissUncertainReplanned = false;
   let postMissTerminalReplanned = false;
+  let postAgentMissTerminalReplanned = false;
   let postMissEvidenceDeltaReplanned = false;
   let postMissUncertainExhaustedReplanned = false;
   let writesAtPostMiss = undefined;
@@ -624,6 +658,53 @@ export const runVerifierRecovery = async ({
       }
     }
 
+    // freeze-harness-post-agent-miss-terminal-r1: after #68 without #69, one FAIL|STALLED REPLAN.
+    let postAgentMissTerminalJustFired = false;
+    if (
+      !agentMissJustFired
+      && !postMissJustFired
+      && !postMissEvidenceDeltaJustFired
+      && !postMissUncertainExhaustedJustFired
+      && !postMissTerminalJustFired
+      && (report.status === 'FAIL' || report.status === 'STALLED')
+      && agentMiss
+      && agentMissReplanned
+      && !postMissUncertainReplanned
+      && !postAgentMissTerminalReplanned
+    ) {
+      const counts = typeof agentMiss.getWriteCounts === 'function'
+        ? (agentMiss.getWriteCounts() ?? {})
+        : {};
+      if (isPostAgentMissTerminalReplanEligible({
+        writesApplied: counts.writesApplied ?? 0,
+        successfulWrites: counts.successfulWrites ?? 0,
+        failureCodes: report.failureCodes,
+        agentMissAlreadyReplanned: agentMissReplanned,
+        postMissUncertainAlreadyReplanned: postMissUncertainReplanned,
+        postAgentMissTerminalAlreadyReplanned: postAgentMissTerminalReplanned
+      })) {
+        postAgentMissTerminalReplanned = true;
+        postAgentMissTerminalJustFired = true;
+        const originalStatus = report.status;
+        const writesApplied = Number(counts.writesApplied ?? counts.successfulWrites ?? 0) || 0;
+        await agentMiss.onPostAgentMissTerminalReplan?.({
+          writesApplied,
+          failureCodes: [...report.failureCodes],
+          status: originalStatus,
+          priorAgentMissReplan: true
+        });
+        report = {
+          ...report,
+          status: 'CONTINUE',
+          nextAction: 'REPLAN_STEP',
+          summary: boundedText(`post-agent-miss terminal replan after writes: ${report.summary || `verification ${originalStatus}`}`),
+          postAgentMissTerminalReplan: true
+        };
+        effectiveMaxAttempts = Math.max(effectiveMaxAttempts, attempt + 1);
+        if (effectiveMaxAttempts > MAX_ATTEMPTS) effectiveMaxAttempts = MAX_ATTEMPTS;
+      }
+    }
+
     const recoverable = RECOVERABLE_VERIFIER_STATUSES.has(report.status);
     if (!recoverable || attempt >= effectiveMaxAttempts) {
       return {
@@ -636,6 +717,7 @@ export const runVerifierRecovery = async ({
         ...(agentMissReplanned ? { agentMissReplanned: true } : {}),
         ...(postMissUncertainReplanned ? { postMissUncertainReplanned: true } : {}),
         ...(postMissTerminalReplanned ? { postMissTerminalReplanned: true } : {}),
+        ...(postAgentMissTerminalReplanned ? { postAgentMissTerminalReplanned: true } : {}),
         ...(postMissEvidenceDeltaReplanned ? { postMissEvidenceDeltaReplanned: true } : {}),
         ...(postMissUncertainExhaustedReplanned ? { postMissUncertainExhaustedReplanned: true } : {})
       };
@@ -671,6 +753,13 @@ export const runVerifierRecovery = async ({
         ...recovery,
         recoveryDirection: recovery.recoveryDirection || 'REPLAN_STEP',
         postMissTerminalReplan: true
+      };
+    }
+    if (postAgentMissTerminalJustFired) {
+      recovery = {
+        ...recovery,
+        recoveryDirection: recovery.recoveryDirection || 'REPLAN_STEP',
+        postAgentMissTerminalReplan: true
       };
     }
     if (postMissEvidenceDeltaJustFired) {

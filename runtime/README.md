@@ -93,16 +93,18 @@ commands. Planner and Executor remain the existing Execution Plane, while
 deterministic rules and Runtime Safety remain hard boundaries. Keys and
 endpoints are supplied by the deployment environment, not committed here;
 configure the `decision` block in a local `model-config.json`. See
-`model-config.example.json` for a full decision block (an OpenRouter System One
-route), and provide the credential through the variable it names.
+`model-config.example.json` for a full decision block (OpenCode Zen System One
+recommended for Go-free tip / benches), and provide the credential through the
+variable it names.
 
 Jev speaks the official System One protocol (`POST .../systemone` with
-`{model, state, questions}`); no adapter is needed. Two endpoints accept it:
+`{model, state, questions}`); no adapter is needed. These endpoints accept it:
 
 | Route | `endpoint` | `apiKeyEnv` | `model` |
 | --- | --- | --- | --- |
-| OpenRouter | `https://openrouter.ai/api/v1/systemone` | `OPENROUTER_API_KEY` | `jev-latest` or `typesafe/jev-1.13` |
-| TypeSafe direct | `https://api.typesafe.ai/v1/systemone` | `JEV_API_KEY` | `jev-latest` |
+| **OpenCode Zen (recommended for tip / Go-free+Jev)** | `https://opencode.ai/zen/v1/systemone` | `OPENCODE_GO_API_KEY` (Console `OPENCODE_API_KEY` may be used later; GO-key fallback is OK) | `jev-1.13-free` |
+| OpenRouter (fallback) | `https://openrouter.ai/api/v1/systemone` | `OPENROUTER_API_KEY` | `jev-latest` or `typesafe/jev-1.13` |
+| TypeSafe direct (fallback) | `https://api.typesafe.ai/v1/systemone` | `JEV_API_KEY` | `jev-latest` |
 
 The path is `systemone`; `system_one` returns 404. On OpenRouter, use a
 decision model such as `jev-latest` / `typesafe/jev-1.13`. Do not use

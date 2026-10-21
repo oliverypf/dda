@@ -13,6 +13,7 @@ const writesAgent = (extra = {}) => ({
   onPostMissReplan: (evt) => (extra.postEvents ??= []).push(evt),
   onPostMissTerminalReplan: (evt) => (extra.terminalEvents ??= []).push(evt),
   onPostMissEvidenceDeltaReplan: (evt) => (extra.deltaEvents ??= []).push(evt),
+  onPostMissUncertainExhaustedReplan: (evt) => (extra.exhaustedEvents ??= []).push(evt),
   ...extra
 });
 
@@ -68,7 +69,7 @@ test('T-ed-1: after #69, UNCERTAIN+JEV_EVIDENCE + write-delta=0 yields exactly o
     writesAtPostMiss: 2
   }), false);
 
-  const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [] };
+  const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [], exhaustedEvents: [] };
   let executions = 0;
   const result = await runVerifierRecovery({
     maxAttempts: 1,
@@ -82,25 +83,27 @@ test('T-ed-1: after #69, UNCERTAIN+JEV_EVIDENCE + write-delta=0 yields exactly o
         sawPostMiss: recovery?.postMissUncertainReplan === true
       };
     },
-    // #68 → #69 → evidence-delta → stop
-    verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
+    // #68 → #69 → evidence-delta → exhausted → stop
+    verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
   });
 
   assert.equal(bag.agentEvents.length, 1);
   assert.equal(bag.postEvents.length, 1);
-  assert.equal(bag.deltaEvents.length, 1);
+  assert.equal(bag.deltaEvents.length, 1); // evidence-delta still exactly 1×
+  assert.equal(bag.exhaustedEvents.length, 1);
   assert.equal(bag.terminalEvents.length, 0);
   assert.equal(bag.deltaEvents[0].status, 'UNCERTAIN');
   assert.equal(bag.deltaEvents[0].priorPostMissUncertainReplan, true);
   assert.equal(bag.deltaEvents[0].writesApplied, 2);
   assert.equal(bag.deltaEvents[0].writesAtPostMiss, 2);
   assert.deepEqual(bag.deltaEvents[0].failureCodes, [JEV_EVIDENCE_REQUIRED]);
-  assert.equal(executions, 4);
+  assert.equal(executions, 5);
   assert.equal(result.ok, false);
-  assert.equal(result.attempts, 4);
+  assert.equal(result.attempts, 5);
   assert.equal(result.agentMissReplanned, true);
   assert.equal(result.postMissUncertainReplanned, true);
   assert.equal(result.postMissEvidenceDeltaReplanned, true);
+  assert.equal(result.postMissUncertainExhaustedReplanned, true);
   assert.equal(result.postMissTerminalReplanned, undefined);
   assert.equal(result.report.status, 'UNCERTAIN');
 });
@@ -130,7 +133,8 @@ test('T-ed-2: write-delta≥1 after #69 does not fire evidence-delta latch', asy
         writes = 3;
       },
       onPostMissTerminalReplan: (evt) => bag.terminalEvents.push(evt),
-      onPostMissEvidenceDeltaReplan: (evt) => bag.deltaEvents.push(evt)
+      onPostMissEvidenceDeltaReplan: (evt) => bag.deltaEvents.push(evt),
+      onPostMissUncertainExhaustedReplan: (evt) => (bag.exhaustedEvents ??= []).push(evt)
     },
     execute: async ({ attempt }) => {
       executions += 1;
@@ -184,7 +188,7 @@ test('T-ed-3: FAIL/STALLED after #69 never fire evidence-delta (terminal may sti
 
 // T-ed-4: telemetry kind / payload fields present (via onPostMissEvidenceDeltaReplan callback shape)
 test('T-ed-4: evidence-delta telemetry payload fields are complete; host note names write/evidence duty', async () => {
-  const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [] };
+  const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [], exhaustedEvents: [] };
   await runVerifierRecovery({
     maxAttempts: 1,
     agentMiss: writesAgent(bag),
@@ -192,7 +196,7 @@ test('T-ed-4: evidence-delta telemetry payload fields are complete; host note na
       text: `p${attempt}`,
       actions: [{ name: 'file.write', state: 'SUCCEEDED', argumentsDigest: `sha256:${String(attempt).padStart(64, 'c')}` }]
     }),
-    verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
+    verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
   });
 
   assert.equal(bag.deltaEvents.length, 1);

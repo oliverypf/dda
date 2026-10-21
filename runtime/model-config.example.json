@@ -9,9 +9,9 @@
   "decision": {
     "enabled": true,
     "enforce": true,
-    "endpoint": "https://openrouter.ai/api/v1/systemone",
-    "model": "jev-latest",
-    "apiKeyEnv": "OPENROUTER_API_KEY",
+    "endpoint": "https://opencode.ai/zen/v1/systemone",
+    "model": "jev-1.13-free",
+    "apiKeyEnv": "OPENCODE_GO_API_KEY",
     "timeoutMs": 1200,
     "maxStateChars": 16000,
     "classificationEnabled": false,

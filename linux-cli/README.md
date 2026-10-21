@@ -86,10 +86,12 @@ Jev 需要每个部署显式开启，满足下面任一条件才算“已配置�
 
 未改写端点时，默认直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
 
-如需换到别的 System One 主机（例如 OpenRouter），在部署本地的 `model-config.json` 里写 `decision` 块，为新端点命名 `apiKeyEnv`；完整的文件示例见 `runtime/model-config.example.json`。
+Go-free tip / bench **推荐**用 OpenCode Zen：`decision.endpoint=https://opencode.ai/zen/v1/systemone`，`model=jev-1.13-free`，`apiKeyEnv=OPENCODE_GO_API_KEY`（Console `OPENCODE_API_KEY` 可后补；GO-key fallback 可用）。完整示例见 `runtime/model-config.example.json`。
+
+如需换到别的 System One 主机（例如 OpenRouter / TypeSafe 备援），在部署本地的 `model-config.json` 里写 `decision` 块，为新端点命名 `apiKeyEnv`。
 
 - 路径是 `systemone`，写成 `system_one` 会 404。
-- `model` 用 `jev-latest` 或 `typesafe/jev-1.13`。`typesafe/jev-router` 是聊天路由模型，System One 接口会返回 400，不要用在这里。
+- Zen 用 `jev-1.13-free`；OpenRouter / TypeSafe 备援可用 `jev-latest` 或 `typesafe/jev-1.13`。`typesafe/jev-router` 是聊天路由模型，System One 接口会返回 400，不要用在这里。
 - 改写端点后，默认的 `JEV_API_KEY` 不会被发到新主机；用 `decision.apiKeyEnv` 或 `DDA_JEV_API_KEY_ENV` 命名该主机要用的密钥变量。
 
 ## 命令

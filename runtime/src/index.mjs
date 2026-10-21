@@ -177,7 +177,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3606,6 +3606,16 @@ async function runTask() {
             status: 'UNCERTAIN',
             priorPostMissUncertainReplan: priorPostMissUncertainReplan === true
           });
+        },
+        onPostMissUncertainExhaustedReplan: ({ writesApplied, writesAtEvidenceDelta, failureCodes, status, priorPostMissEvidenceDeltaReplan }) => {
+          // freeze-harness-post-miss-uncertain-exhausted-r1 §1.1
+          emitEvent('harness.post_miss_uncertain_exhausted_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            writesAtEvidenceDelta: Number(writesAtEvidenceDelta ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            status: 'UNCERTAIN',
+            priorPostMissEvidenceDeltaReplan: priorPostMissEvidenceDeltaReplan === true
+          });
         }
       },
       execute: stageTimer.wrap('execution', async ({ attempt, recovery, previousActions = [] }) => {
@@ -3631,15 +3641,17 @@ async function runTask() {
               recovery.previousActionDigests?.length
                 ? `Previously attempted action digests: ${recovery.previousActionDigests.join(',')}. Do not repeat them unless new evidence is required.`
                 : undefined,
-              recovery.postMissEvidenceDeltaReplan === true
-                ? postMissEvidenceDeltaReplanHostNote()
-                : (recovery.postMissTerminalReplan === true
-                  ? postMissTerminalReplanHostNote()
-                  : (recovery.postMissUncertainReplan === true
-                    ? postMissUncertainReplanHostNote()
-                    : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-                      ? agentMissReplanHostNote()
-                      : undefined))),
+              recovery.postMissUncertainExhaustedReplan === true
+                ? postMissUncertainExhaustedReplanHostNote()
+                : (recovery.postMissEvidenceDeltaReplan === true
+                  ? postMissEvidenceDeltaReplanHostNote()
+                  : (recovery.postMissTerminalReplan === true
+                    ? postMissTerminalReplanHostNote()
+                    : (recovery.postMissUncertainReplan === true
+                      ? postMissUncertainReplanHostNote()
+                      : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+                        ? agentMissReplanHostNote()
+                        : undefined)))),
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)
           : stepHistoryContext;

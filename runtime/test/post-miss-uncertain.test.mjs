@@ -50,13 +50,14 @@ test('T-pm-1: after agent-miss latch, UNCERTAIN+JEV_EVIDENCE+writes yields exact
   assert.equal(bag.postEvents[0].status, 'UNCERTAIN');
   assert.equal(bag.postEvents[0].priorAgentMissReplan, true);
   assert.deepEqual(bag.postEvents[0].failureCodes, [JEV_EVIDENCE_REQUIRED]);
-  // evidence-delta-r1 adds one more UNCERTAIN replan after #69 when write-delta=0
-  assert.equal(executions, 4);
+  // evidence-delta + uncertain-exhausted add UNCERTAIN replans after #69 when write-delta=0
+  assert.equal(executions, 5);
   assert.equal(result.ok, false);
-  assert.equal(result.attempts, 4);
+  assert.equal(result.attempts, 5);
   assert.equal(result.agentMissReplanned, true);
   assert.equal(result.postMissUncertainReplanned, true);
   assert.equal(result.postMissEvidenceDeltaReplanned, true);
+  assert.equal(result.postMissUncertainExhaustedReplanned, true);
   assert.equal(result.report.status, 'UNCERTAIN');
 });
 
@@ -100,8 +101,8 @@ test('T-pm-2: without prior agent-miss, post-miss latch never fires alone', asyn
 });
 
 // T-pm-3: after post-miss (#69), #69 itself does not fire again (still 1×);
-// evidence-delta-r1 may fire once on write-delta=0, then stop.
-test('T-pm-3: after post-miss latch, #69 does not replan again (evidence-delta may fire once)', async () => {
+// evidence-delta + uncertain-exhausted may fire once each on write-delta=0, then stop.
+test('T-pm-3: after post-miss latch, #69 does not replan again (evidence-delta/exhausted may fire once)', async () => {
   assert.equal(isPostMissUncertainReplanEligible({
     writesApplied: 2,
     failureCodes: [JEV_EVIDENCE_REQUIRED],
@@ -130,9 +131,10 @@ test('T-pm-3: after post-miss latch, #69 does not replan again (evidence-delta m
 
   assert.equal(bag.agentEvents.length, 1);
   assert.equal(bag.postEvents.length, 1); // #69 still exactly 1×
-  assert.equal(executions, 4); // #68 + #69 + evidence-delta + stop
+  assert.equal(executions, 5); // #68 + #69 + evidence-delta + exhausted + stop
   assert.equal(result.postMissUncertainReplanned, true);
   assert.equal(result.postMissEvidenceDeltaReplanned, true);
+  assert.equal(result.postMissUncertainExhaustedReplanned, true);
   assert.equal(result.report.status, 'UNCERTAIN');
 });
 

@@ -12,6 +12,7 @@ const writesAgent = (extra = {}) => ({
   onPostMissReplan: (evt) => (extra.postEvents ??= []).push(evt),
   onPostMissTerminalReplan: (evt) => (extra.terminalEvents ??= []).push(evt),
   onPostMissEvidenceDeltaReplan: (evt) => (extra.deltaEvents ??= []).push(evt),
+  onPostMissUncertainExhaustedReplan: (evt) => (extra.exhaustedEvents ??= []).push(evt),
   ...extra
 });
 
@@ -150,9 +151,9 @@ test('T-pt-3: without post-miss, terminal latch never fires; pure UNCERTAIN afte
   }
 
   // Path B: pure UNCERTAIN after #68+#69 — terminal never for UNCERTAIN;
-  // evidence-delta-r1 may fire once on write-delta=0, still 0× terminal.
+  // evidence-delta + uncertain-exhausted may fire once each on write-delta=0, still 0× terminal.
   {
-    const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [] };
+    const bag = { agentEvents: [], postEvents: [], terminalEvents: [], deltaEvents: [], exhaustedEvents: [] };
     const result = await runVerifierRecovery({
       maxAttempts: 1,
       agentMiss: writesAgent(bag),
@@ -160,14 +161,16 @@ test('T-pt-3: without post-miss, terminal latch never fires; pure UNCERTAIN afte
         text: `u${attempt}`,
         actions: [{ name: 'file.write', state: 'SUCCEEDED', argumentsDigest: `sha256:${String(attempt).padStart(64, 'c')}` }]
       }),
-      verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
+      verify: sequencedVerify(['UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN', 'UNCERTAIN'])
     });
     assert.equal(bag.agentEvents.length, 1);
     assert.equal(bag.postEvents.length, 1);
     assert.equal(bag.terminalEvents.length, 0);
     assert.equal(bag.deltaEvents.length, 1);
+    assert.equal(bag.exhaustedEvents.length, 1);
     assert.equal(result.postMissUncertainReplanned, true);
     assert.equal(result.postMissEvidenceDeltaReplanned, true);
+    assert.equal(result.postMissUncertainExhaustedReplanned, true);
     assert.equal(result.postMissTerminalReplanned, undefined);
     assert.equal(result.report.status, 'UNCERTAIN');
   }

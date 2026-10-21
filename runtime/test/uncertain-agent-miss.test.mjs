@@ -44,11 +44,14 @@ test('T-um-1: writes≥1 + UNCERTAIN + JEV_EVIDENCE_REQUIRED yields exactly one 
   assert.equal(replanEvents[0].writesApplied, 2);
   assert.equal(replanEvents[0].status, 'UNCERTAIN');
   assert.deepEqual(replanEvents[0].failureCodes, [JEV_EVIDENCE_REQUIRED]);
-  assert.equal(executions, 2);
+  // post-miss-uncertain-r1: after #68 latch, a second UNCERTAIN+JEV_EVIDENCE fires
+  // exactly one post-miss replan → 3 executions total; agent-miss remains 1×.
+  assert.equal(executions, 3);
   assert.equal(result.ok, false);
-  assert.equal(result.attempts, 2);
+  assert.equal(result.attempts, 3);
   assert.equal(result.agentMissReplanned, true);
-  // Second UNCERTAIN must not replan again; latch holds.
+  assert.equal(result.postMissUncertainReplanned, true);
+  // Third UNCERTAIN stops; both latches hold.
   assert.equal(result.report.status, 'UNCERTAIN');
   assert.ok(result.history.some((h) => h.status === 'UNCERTAIN'));
 });

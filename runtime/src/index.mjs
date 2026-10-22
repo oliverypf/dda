@@ -182,7 +182,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, zeroWriteJevReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -3553,6 +3553,15 @@ async function runTask() {
             ...(status === 'FAIL' || status === 'STALLED' || status === 'UNCERTAIN' ? { status } : {})
           });
         },
+        onZeroWriteJevReplan: ({ writesApplied, failureCodes, status, toolCount }) => {
+          // freeze-harness-zero-write-jev-replan-r1 §1.1
+          emitEvent('harness.zero_write_jev_replan', {
+            writesApplied: Number(writesApplied ?? 0),
+            failureCodes: Array.isArray(failureCodes) ? failureCodes.slice(0, 16) : [],
+            ...(status === 'FAIL' || status === 'UNCERTAIN' ? { status } : {}),
+            ...(Number.isFinite(Number(toolCount)) ? { toolCount: Number(toolCount) } : {})
+          });
+        },
         onPostMissReplan: ({ writesApplied, failureCodes, status, priorAgentMissReplan }) => {
           // freeze-harness-post-miss-uncertain-r1 §1.1
           emitEvent('harness.post_miss_uncertain_replan', {
@@ -3634,9 +3643,11 @@ async function runTask() {
                       ? postMissTerminalReplanHostNote()
                       : (recovery.postMissUncertainReplan === true
                         ? postMissUncertainReplanHostNote()
-                        : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-                          ? agentMissReplanHostNote()
-                          : undefined))))),
+                        : (recovery.zeroWriteJevReplan === true
+                          ? zeroWriteJevReplanHostNote()
+                          : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+                            ? agentMissReplanHostNote()
+                            : undefined)))))),
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)
           : stepHistoryContext;

@@ -263,6 +263,44 @@ export const planContinueReplanHostNote = () => [
   'SAFETY / lease hard denies remain in force. No second plan-continue recovery of this kind.'
 ].join(' ');
 
+/** Jev codes that may trigger one bounded zero-write REPLAN (independent of #68 writes≥1). */
+export const ZERO_WRITE_JEV_TRIGGER_CODES = Object.freeze(new Set([
+  'JEV_BEHAVIOR_REJECTED',
+  JEV_EVIDENCE_REQUIRED
+]));
+
+/**
+ * freeze-harness-zero-write-jev-replan-r1 §1.1: when writes=0 and verification is
+ * FAIL|UNCERTAIN with JEV_BEHAVIOR_REJECTED / JEV_EVIDENCE_REQUIRED (not sole
+ * SAFETY/lease/HARD_DECISION_DENY), allow exactly one independent REPLAN.
+ * Does NOT relax #68 writes≥1; writes≥1 paths stay on #68+.
+ */
+export const isZeroWriteJevReplanEligible = ({
+  writesApplied = 0,
+  successfulWrites = 0,
+  status,
+  failureCodes = [],
+  alreadyReplanned = false
+} = {}) => {
+  if (alreadyReplanned) return false;
+  const st = String(status ?? '').toUpperCase();
+  if (st !== 'FAIL' && st !== 'UNCERTAIN') return false;
+  if (Number(writesApplied) !== 0 || Number(successfulWrites) !== 0) return false;
+  // Require both counters to be zero (same as freeze: writesApplied=0 AND successfulWrites=0).
+  // Non-finite → treat as ineligible (fail-closed).
+  if (!Number.isFinite(Number(writesApplied)) || !Number.isFinite(Number(successfulWrites))) return false;
+  const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
+  if (!codes.some((code) => ZERO_WRITE_JEV_TRIGGER_CODES.has(code))) return false;
+  if (isSoleHardDenyFailure(codes)) return false;
+  return true;
+};
+
+export const zeroWriteJevReplanHostNote = () => [
+  'HOST_ZERO_WRITE_JEV_REPLAN: Zero writes landed and Jev returned FAIL or UNCERTAIN (JEV_BEHAVIOR_REJECTED / JEV_EVIDENCE_REQUIRED).',
+  'Must file.write or apply a small patch, then re-verify — ban list/focus/test-only loops that never write.',
+  'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force. No second zero-write recovery of this kind.'
+].join(' ');
+
 /**
  * freeze-harness-uncertain-agent-miss-r1 §1.1: when Jev behavior elevates a
  * deterministic PASS to UNCERTAIN (evidence gap), stamp JEV_EVIDENCE_REQUIRED
@@ -364,8 +402,10 @@ export const recoveryContinuationText = (recovery) => recovery ? [
           ? [postMissTerminalReplanHostNote()]
           : (recovery.postMissUncertainReplan === true
             ? [postMissUncertainReplanHostNote()]
-            : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-              ? [agentMissReplanHostNote()] : []))))))
+            : (recovery.zeroWriteJevReplan === true
+              ? [zeroWriteJevReplanHostNote()]
+              : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+                ? [agentMissReplanHostNote()] : [])))))))
 ].join('\n') : '';
 
 const safeReport = (report) => ({
@@ -437,6 +477,7 @@ export const runVerifierRecovery = async ({
   let verificationRetry;
   let recovery = initialContext === undefined ? undefined : clone(initialContext);
   let agentMissReplanned = false;
+  let zeroWriteJevReplanned = false;
   let postMissUncertainReplanned = false;
   let postMissTerminalReplanned = false;
   let postAgentMissTerminalReplanned = false;
@@ -479,9 +520,56 @@ export const runVerifierRecovery = async ({
         stopReason: report.providerError ?? 'STOP_AND_REPORT' };
     }
 
+    // freeze-harness-zero-write-jev-replan-r1: writes=0 + FAIL|UNCERTAIN + Jev codes → one CONTINUE/REPLAN_STEP.
+    let zeroWriteJevJustFired = false;
+    if (
+      (report.status === 'FAIL' || report.status === 'UNCERTAIN')
+      && agentMiss
+      && !zeroWriteJevReplanned
+    ) {
+      const counts = typeof agentMiss.getWriteCounts === 'function'
+        ? (agentMiss.getWriteCounts() ?? {})
+        : {};
+      if (isZeroWriteJevReplanEligible({
+        writesApplied: counts.writesApplied ?? 0,
+        successfulWrites: counts.successfulWrites ?? 0,
+        status: report.status,
+        failureCodes: report.failureCodes,
+        alreadyReplanned: zeroWriteJevReplanned
+      })) {
+        zeroWriteJevReplanned = true;
+        zeroWriteJevJustFired = true;
+        const originalStatus = report.status;
+        const writesApplied = Number(counts.writesApplied ?? 0) || 0;
+        const toolCount = Number.isFinite(Number(counts.toolCount))
+          ? Number(counts.toolCount)
+          : (Array.isArray(previousActions) ? previousActions.length : undefined);
+        await agentMiss.onZeroWriteJevReplan?.({
+          writesApplied,
+          failureCodes: [...report.failureCodes],
+          status: originalStatus,
+          ...(toolCount === undefined ? {} : { toolCount })
+        });
+        report = {
+          ...report,
+          status: 'CONTINUE',
+          nextAction: 'REPLAN_STEP',
+          summary: boundedText(`zero-write jev replan: ${report.summary || `verification ${originalStatus}`}`),
+          zeroWriteJevReplan: true
+        };
+        effectiveMaxAttempts = Math.max(effectiveMaxAttempts, attempt + 1);
+        if (effectiveMaxAttempts > MAX_ATTEMPTS) effectiveMaxAttempts = MAX_ATTEMPTS;
+      }
+    }
+
     // §1.2 / uncertain-agent-miss-r1: write-backed AGENT_MISS FAIL|STALLED|UNCERTAIN → one CONTINUE/REPLAN_STEP.
     let agentMissJustFired = false;
-    if ((report.status === 'FAIL' || report.status === 'STALLED' || report.status === 'UNCERTAIN') && agentMiss && !agentMissReplanned) {
+    if (
+      !zeroWriteJevJustFired
+      && (report.status === 'FAIL' || report.status === 'STALLED' || report.status === 'UNCERTAIN')
+      && agentMiss
+      && !agentMissReplanned
+    ) {
       const counts = typeof agentMiss.getWriteCounts === 'function'
         ? (agentMiss.getWriteCounts() ?? {})
         : {};
@@ -516,7 +604,8 @@ export const runVerifierRecovery = async ({
     // freeze-harness-post-miss-uncertain-r1: after #68 latch, one more UNCERTAIN+JEV_EVIDENCE REPLAN.
     let postMissJustFired = false;
     if (
-      !agentMissJustFired
+      !zeroWriteJevJustFired
+      && !agentMissJustFired
       && report.status === 'UNCERTAIN'
       && agentMiss
       && agentMissReplanned
@@ -558,7 +647,8 @@ export const runVerifierRecovery = async ({
     // freeze-harness-post-miss-evidence-delta-r1: after #69, one UNCERTAIN+delta0 REPLAN.
     let postMissEvidenceDeltaJustFired = false;
     if (
-      !agentMissJustFired
+      !zeroWriteJevJustFired
+      && !agentMissJustFired
       && !postMissJustFired
       && report.status === 'UNCERTAIN'
       && agentMiss
@@ -603,7 +693,8 @@ export const runVerifierRecovery = async ({
     // freeze-harness-post-miss-uncertain-exhausted-r1: after evidence-delta, one last UNCERTAIN+delta0 REPLAN.
     let postMissUncertainExhaustedJustFired = false;
     if (
-      !agentMissJustFired
+      !zeroWriteJevJustFired
+      && !agentMissJustFired
       && !postMissJustFired
       && !postMissEvidenceDeltaJustFired
       && report.status === 'UNCERTAIN'
@@ -647,7 +738,8 @@ export const runVerifierRecovery = async ({
     // freeze-harness-post-miss-terminal-r1: after #69 latch, one FAIL|STALLED REPLAN.
     let postMissTerminalJustFired = false;
     if (
-      !agentMissJustFired
+      !zeroWriteJevJustFired
+      && !agentMissJustFired
       && !postMissJustFired
       && !postMissEvidenceDeltaJustFired
       && !postMissUncertainExhaustedJustFired
@@ -691,7 +783,8 @@ export const runVerifierRecovery = async ({
     // freeze-harness-post-agent-miss-terminal-r1: after #68 without #69, one FAIL|STALLED REPLAN.
     let postAgentMissTerminalJustFired = false;
     if (
-      !agentMissJustFired
+      !zeroWriteJevJustFired
+      && !agentMissJustFired
       && !postMissJustFired
       && !postMissEvidenceDeltaJustFired
       && !postMissUncertainExhaustedJustFired
@@ -745,6 +838,7 @@ export const runVerifierRecovery = async ({
         history,
         exhausted: recoverable && attempt >= effectiveMaxAttempts,
         ...(agentMissReplanned ? { agentMissReplanned: true } : {}),
+        ...(zeroWriteJevReplanned ? { zeroWriteJevReplanned: true } : {}),
         ...(postMissUncertainReplanned ? { postMissUncertainReplanned: true } : {}),
         ...(postMissTerminalReplanned ? { postMissTerminalReplanned: true } : {}),
         ...(postAgentMissTerminalReplanned ? { postAgentMissTerminalReplanned: true } : {}),
@@ -764,6 +858,13 @@ export const runVerifierRecovery = async ({
       ? await diagnose({ attempt, report: clone(report), result, previousActions: clone(previousActions) })
       : recoveryContext(report, { attempt, previousActions });
     recovery = clone(diagnosed ?? recoveryContext(report, { attempt, previousActions }));
+    if (zeroWriteJevJustFired) {
+      recovery = {
+        ...recovery,
+        recoveryDirection: recovery.recoveryDirection || 'REPLAN_STEP',
+        zeroWriteJevReplan: true
+      };
+    }
     if (agentMissJustFired) {
       recovery = {
         ...recovery,

@@ -101,6 +101,10 @@ import {
   shouldDeliberateForTopology,
   isBudgetedTopology
 } from './execution-topology.mjs';
+import {
+  runInitialTopologySelection,
+  buildSelectTopologyDecisionRecord
+} from './initial-topology-selection.mjs';
 import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
@@ -2963,101 +2967,38 @@ async function runTask() {
       let shouldDeliberate = !restoredResumePlan
         && (plannerPlan.steps.length > 2 || ['modify', 'test'].includes(taskClass));
       if (planTierSelection?.tier) shouldDeliberate = councilForTier(planTierSelection.tier, shouldDeliberate);
-      // Diagnose-topology (freeze-diagnose-topology-r1): when topologyEnabled,
-      // Rule fallback selects PLAN_THEN_EXECUTE for complex tasks without
-      // requiring Jev. DIAGNOSE_PROBE_RECOVER only after failure evidence.
-      if (!restoredResumePlan && decisionConfig?.topologyEnabled === true) {
-        const topologyAcceptanceCommands = extractAcceptanceCommands({ prompt });
-        const topologyHint = arg('--topology-hint', process.env.DDA_TOPOLOGY_HINT ?? '');
-        const complexTask = isComplexTask({
-          acceptanceCommands: topologyAcceptanceCommands,
-          topologyHint,
-          acceptanceFailureEvidence
-        });
-        const failureEvidence = {
+      // Diagnose-topology + select-topology-single-r1: initial SELECT_TOPOLOGY
+      // when topologyEnabled — shared helper so agentMode=single (tip default)
+      // also selects PLAN_THEN_EXECUTE for complex tasks. DIAGNOSE still only
+      // after failure evidence (upgrade path unchanged).
+      {
+        const topoResult = await runInitialTopologySelection({
+          topologyEnabled: decisionConfig?.topologyEnabled === true,
+          restoredResumePlan: Boolean(restoredResumePlan),
+          prompt,
+          topologyHint: arg('--topology-hint', process.env.DDA_TOPOLOGY_HINT ?? ''),
+          acceptanceCommands: extractAcceptanceCommands({ prompt }),
           acceptanceFailureEvidence,
-          verificationFailed: acceptanceFailureEvidence
-        };
-        const candidateIds = selectTopologyCandidates({
-          topologyEnabled: true,
-          complex: complexTask,
-          failureEvidence
+          topologyBudgets,
+          planStepCount: plannerPlan?.steps?.length,
+          planDigest: plannerPlan?.planDigest,
+          runId,
+          decisionEngine
         });
-        const topologyCandidates = candidateIds.map((id, index) => ({
-          candidateId: id,
-          modelId: id,
-          status: 'SUCCEEDED',
-          expectedCost: id === TOPOLOGY_DIRECT_EXECUTE ? 1 : 2,
-          expectedLatencyMs: id === TOPOLOGY_DIRECT_EXECUTE ? 1 : (id === TOPOLOGY_DIAGNOSE_PROBE_RECOVER ? 120 : 100)
-        }));
-        let jevSelectedId;
-        let jevSource;
-        if (decisionEngine?.enabled === true && topologyCandidates.length) {
-          const jevPick = await decisionEngine.selectCandidates({
-            state: {
-              taskId: runId,
-              goal: prompt,
-              currentStep: 'topology-selection',
-              action: { kind: 'SELECT_TOPOLOGY', summary: 'Choose the bounded plan execution topology' },
-              observation: {
-                status: 'PLAN_READY',
-                complex: complexTask,
-                acceptanceCommandCount: topologyAcceptanceCommands.length,
-                acceptanceFailureEvidence
-              },
-              evidence: [{ id: `plan-topology-${runId}`, type: 'plan', claim: `Plan has ${plannerPlan.steps.length} steps`, source: plannerPlan.planDigest }]
-            },
-            candidates: topologyCandidates
-          });
-          if (jevPick.source === 'jev') {
-            jevSource = 'jev';
-            jevSelectedId = jevPick.selectedCandidateId;
-          }
+        if (topoResult) {
+          selectedTopology = topoResult.selectedTopology;
+          topologySelection = topoResult.topologySelection;
+          if (topoResult.shouldDeliberate !== undefined) shouldDeliberate = topoResult.shouldDeliberate;
+          await recordDecision(buildSelectTopologyDecisionRecord({
+            runId,
+            parentDecisionId: plannerDecision?.decisionId ?? allocationDecision.decisionId,
+            selectedTopology,
+            resolved: topoResult.resolved,
+            complexTask: topoResult.complexTask,
+            topologyCandidates: topoResult.topologyCandidates
+          }));
+          emitEvent('topology.selected', topologySelection);
         }
-        const resolved = resolveTopologySelection({
-          topologyEnabled: true,
-          complex: complexTask,
-          failureEvidence,
-          jevSelectedId,
-          jevSource
-        });
-        selectedTopology = resolved.topology;
-        topologySelection = {
-          topology: selectedTopology,
-          source: resolved.source,
-          reasonCodes: resolved.reasonCodes,
-          complex: complexTask,
-          candidates: candidateIds,
-          budgets: topologyBudgets,
-          ...(resolved.rejectedJev ? { rejectedJev: resolved.rejectedJev } : {})
-        };
-        const deliberate = shouldDeliberateForTopology(selectedTopology);
-        if (deliberate !== undefined) shouldDeliberate = deliberate;
-        await recordDecision({
-          stepId: 'topology-selection',
-          role: 'decision-engine',
-          roleContextId: `${runId}-decision-engine`,
-          decisionType: 'SELECT_TOPOLOGY',
-          actionKind: 'TOPOLOGY',
-          parentDecisionIds: [plannerDecision?.decisionId ?? allocationDecision.decisionId],
-          summary: resolved.source === 'jev'
-            ? `Jev selected ${selectedTopology}`
-            : `Rule selected ${selectedTopology} (topologyEnabled Rule fallback)`,
-          outputRefs: [`topology-${runId}`],
-          options: topologyCandidates.map(({ candidateId: optionId }) => ({
-            optionId,
-            actionKind: 'TOPOLOGY',
-            summary: optionId,
-            requiredCapabilityIds: [],
-            evidenceRefs: [],
-            riskCodes: optionId === TOPOLOGY_DIAGNOSE_PROBE_RECOVER ? ['DIAGNOSE_PATH'] : [],
-            rejectionReasonCodes: optionId === selectedTopology ? [] : ['NOT_SELECTED']
-          })),
-          selectedOptionId: selectedTopology,
-          reasonCodes: resolved.reasonCodes,
-          selectionCriteria: ['bounded-plan-topology', ...(complexTask ? ['complex-default-plan-then-execute'] : [])]
-        });
-        emitEvent('topology.selected', topologySelection);
       }
       if (shouldDeliberate) {
         const councilContexts = allocatedRoles.filter((context) => context.role.startsWith('council-'));
@@ -3380,6 +3321,36 @@ async function runTask() {
         reasonCodes: ['DETERMINISTIC_RULE', 'NO_EVIDENCE_REQUIRED'],
         selectionCriteria: ['single-agent-bounded-plan']
       });
+      // freeze-harness-select-topology-single-r1: tip default agentMode=single
+      // previously skipped initial SELECT_TOPOLOGY (gated on multi only).
+      if (!selectedTopology) {
+        const topoResult = await runInitialTopologySelection({
+          topologyEnabled: decisionConfig?.topologyEnabled === true,
+          restoredResumePlan: Boolean(restoredResumePlan),
+          prompt,
+          topologyHint: arg('--topology-hint', process.env.DDA_TOPOLOGY_HINT ?? ''),
+          acceptanceCommands: extractAcceptanceCommands({ prompt }),
+          acceptanceFailureEvidence,
+          topologyBudgets,
+          planStepCount: executionPlan?.steps?.length,
+          planDigest: executionPlan?.planDigest,
+          runId,
+          decisionEngine
+        });
+        if (topoResult) {
+          selectedTopology = topoResult.selectedTopology;
+          topologySelection = topoResult.topologySelection;
+          await recordDecision(buildSelectTopologyDecisionRecord({
+            runId,
+            parentDecisionId: plannerDecision?.decisionId ?? allocationDecision.decisionId,
+            selectedTopology,
+            resolved: topoResult.resolved,
+            complexTask: topoResult.complexTask,
+            topologyCandidates: topoResult.topologyCandidates
+          }));
+          emitEvent('topology.selected', topologySelection);
+        }
+      }
     }
     const interruptedResume = resumeRequested && executionPlan.steps.some((step) => step.status === 'RUNNING');
     interruptedResumeDetected = interruptedResume;

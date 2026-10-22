@@ -339,6 +339,61 @@ export const commitTopologyBudgetIncrement = (counters, pendingIncrement) => {
   return next;
 };
 
+/** Bound for diagnose-probe-exhausted recover (freeze-harness-diagnose-probe-exhausted-recover-r1). */
+export const DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN = 2;
+
+/**
+ * Eligible when DIAGNOSE_PROBE_RECOVER would BLOCK on TOPOLOGY_BUDGET_PROBES
+ * and recover budget remains. Does not consider lease / hardDecision — caller
+ * must still preserve those (assertTopologyBudget already does).
+ */
+export const isDiagnoseProbeExhaustedRecoverEligible = ({
+  topology,
+  wouldBlockProbes = false,
+  recoversUsed = 0,
+  maxRecovers = DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN
+} = {}) => {
+  if (normalizeTopology(topology) !== TOPOLOGY_DIAGNOSE_PROBE_RECOVER) return false;
+  if (wouldBlockProbes !== true) return false;
+  const used = Number(recoversUsed ?? 0);
+  const max = Number(maxRecovers ?? DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN);
+  if (!Number.isFinite(used) || used < 0) return false;
+  if (!Number.isFinite(max) || max < 1) return false;
+  return used < max;
+};
+
+/**
+ * Strategy: demote DIAGNOSE → PLAN_THEN_EXECUTE (execute window).
+ * Caller still BLOCKs the current probe (does not raise maxProbes / does not
+ * allow this probe through). Does NOT reset counters (#79 stays upgrade-only).
+ * Does NOT soften lease / hardDecision / denylist.
+ */
+export const applyDiagnoseProbeExhaustedRecover = ({
+  fromTopology,
+  probes,
+  maxProbes,
+  recoversUsed = 0
+} = {}) => {
+  const from = normalizeTopology(fromTopology) || TOPOLOGY_DIAGNOSE_PROBE_RECOVER;
+  return {
+    recovered: true,
+    demotedTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    fromTopology: from,
+    probes: Number(probes ?? 0),
+    maxProbes: Number(maxProbes ?? DEFAULT_MAX_PROBES),
+    recoverOrdinal: Number(recoversUsed ?? 0) + 1,
+    strategy: 'demote_to_plan_then_execute'
+  };
+};
+
+/** Host note appended to the probe BLOCK message after a recover turn. */
+export const diagnoseProbeExhaustedRecoverHostNote = () => [
+  'HOST_DIAGNOSE_PROBE_EXHAUSTED_RECOVER: Probe budget exhausted under DIAGNOSE_PROBE_RECOVER.',
+  'Stop further read/list/focus probes. Next: bounded file.write/file.patch or shell.execute/test.execute/verify.',
+  'Topology demoted to PLAN_THEN_EXECUTE execute window for this recover bound.',
+  `At most ${DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN} diagnose-probe-exhausted recovers per run.`
+].join(' ');
+
 /**
  * Resolve final topology selection: prefer validated Jev choice, else Rule.
  * Rejects DIAGNOSE when no failure evidence even if Jev asks for it.

@@ -18,6 +18,7 @@ import {
   upgradeTopologyAfterFailure,
   resolveTopologyBudgets,
   createTopologyBudgetCounters,
+  resetTopologyBudgetCountersOnUpgrade,
   assertTopologyBudget,
   commitTopologyBudgetIncrement,
   resolveTopologySelection,
@@ -284,4 +285,44 @@ test('T-cfd-4 complex + Jev DELIBERATE alias → still jev-adopted (not clamped)
   });
   assert.equal(sel.topology, TOPOLOGY_DELIBERATE_THEN_EXECUTE);
   assert.equal(sel.source, 'jev');
+});
+
+test('T-tbr-1 upgrade → DIAGNOSE resets counters to zero', () => {
+  const dirty = { writes: 12, tools: 30, probes: 4 };
+  const reset = resetTopologyBudgetCountersOnUpgrade({
+    fromTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    toTopology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER
+  });
+  assert.deepEqual(reset, createTopologyBudgetCounters());
+  assert.notDeepEqual(reset, dirty);
+  assert.equal(reset.writes, 0);
+  assert.equal(reset.tools, 0);
+  assert.equal(reset.probes, 0);
+});
+
+test('T-tbr-1b DIRECT → DIAGNOSE also resets', () => {
+  const reset = resetTopologyBudgetCountersOnUpgrade({
+    fromTopology: TOPOLOGY_DIRECT_EXECUTE,
+    toTopology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER
+  });
+  assert.deepEqual(reset, { writes: 0, tools: 0, probes: 0 });
+});
+
+test('T-tbr-1c same topology → null (no reset / keep accumulating)', () => {
+  const keep = resetTopologyBudgetCountersOnUpgrade({
+    fromTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    toTopology: TOPOLOGY_PLAN_THEN_EXECUTE
+  });
+  assert.equal(keep, null);
+  // continuous accumulate path still works
+  let counters = createTopologyBudgetCounters();
+  const r = assertTopologyBudget({
+    topologyEnabled: true,
+    topology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    counters,
+    toolName: 'file.read'
+  });
+  assert.equal(r.allowed, true);
+  counters = { ...counters, tools: (counters.tools ?? 0) + 1 };
+  assert.equal(counters.tools, 1);
 });

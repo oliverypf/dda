@@ -96,6 +96,7 @@ import {
   upgradeTopologyAfterFailure,
   resolveTopologyBudgets,
   createTopologyBudgetCounters,
+  resetTopologyBudgetCountersOnUpgrade,
   assertTopologyBudget,
   commitTopologyBudgetIncrement,
   shouldDeliberateForTopology,
@@ -5053,6 +5054,13 @@ async function runTask() {
             }
           });
           if (selectedTopology !== prior) {
+            const resetCounters = resetTopologyBudgetCountersOnUpgrade({
+              fromTopology: prior,
+              toTopology: selectedTopology
+            });
+            if (resetCounters) {
+              topologyBudgetCounters = resetCounters;
+            }
             topologySelection = {
               ...(topologySelection ?? {}),
               topology: selectedTopology,
@@ -5065,7 +5073,9 @@ async function runTask() {
               from: prior,
               to: selectedTopology,
               attempt,
-              failureCodes: report.failureCodes ?? []
+              failureCodes: report.failureCodes ?? [],
+              budgetCountersReset: Boolean(resetCounters),
+              counters: { ...(topologyBudgetCounters ?? {}) }
             });
             await recordDecision({
               stepId: `topology-upgrade-${attempt}`,

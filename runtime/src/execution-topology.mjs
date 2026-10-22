@@ -195,6 +195,22 @@ export const createTopologyBudgetCounters = () => ({
   probes: 0
 });
 
+/**
+ * freeze-harness-topology-budget-reset-on-upgrade-r1:
+ * When topology upgrades into a new budget window (esp. → DIAGNOSE_PROBE_RECOVER),
+ * return fresh counters. Limits (maxWrites/maxTools/maxProbes) are unchanged.
+ * Returns null when from===to / missing to (caller keeps existing counters).
+ */
+export const resetTopologyBudgetCountersOnUpgrade = ({
+  fromTopology,
+  toTopology
+} = {}) => {
+  const from = normalizeTopology(fromTopology);
+  const to = normalizeTopology(toTopology);
+  if (!to || to === from) return null;
+  return createTopologyBudgetCounters();
+};
+
 export const isWriteToolName = (name) => WRITE_TOOL_NAMES.has(String(name ?? ''));
 
 /** Probe = read-only diagnostic action; counted only under DIAGNOSE topology. */

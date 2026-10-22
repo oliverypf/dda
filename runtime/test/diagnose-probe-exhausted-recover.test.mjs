@@ -1,0 +1,186 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+  TOPOLOGY_PLAN_THEN_EXECUTE,
+  TOPOLOGY_BUDGET_PROBES,
+  DEFAULT_MAX_PROBES,
+  DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN,
+  createTopologyBudgetCounters,
+  resolveTopologyBudgets,
+  assertTopologyBudget,
+  commitTopologyBudgetIncrement,
+  isDiagnoseProbeExhaustedRecoverEligible,
+  applyDiagnoseProbeExhaustedRecover,
+  diagnoseProbeExhaustedRecoverHostNote,
+  resetTopologyBudgetCountersOnUpgrade
+} from '../src/execution-topology.mjs';
+
+test('bound choice documented: ≤2× per run; default maxProbes stays 6', () => {
+  assert.equal(DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN, 2);
+  assert.equal(DEFAULT_MAX_PROBES, 6);
+  assert.equal(resolveTopologyBudgets().maxProbes, 6);
+});
+
+// T-dpr-1: DIAGNOSE + probes at max → recover telemetry; no ≥3 consecutive pure probe BLOCKs without turn
+test('T-dpr-1: DIAGNOSE + probes at max → recover telemetry; no ≥3 consecutive pure probe BLOCKs without turn', () => {
+  const budgets = resolveTopologyBudgets({ maxWrites: 4, maxTools: 30, maxProbes: 2 });
+  let counters = createTopologyBudgetCounters();
+  let topology = TOPOLOGY_DIAGNOSE_PROBE_RECOVER;
+  let recoversUsed = 0;
+  const recovers = [];
+  const probeBlocks = [];
+
+  // Fill probe budget.
+  for (let i = 0; i < 2; i++) {
+    const r = assertTopologyBudget({
+      topologyEnabled: true,
+      topology,
+      counters,
+      budgets,
+      toolName: 'workspace.read',
+      toolReadOnly: true
+    });
+    assert.equal(r.allowed, true);
+    counters = commitTopologyBudgetIncrement(counters, r.pendingIncrement);
+  }
+  assert.equal(counters.probes, 2);
+
+  // Next three probe attempts: first two should recover+demote (and BLOCK),
+  // after demote probes are no longer budgeted under PTE → allow (turn).
+  for (let i = 0; i < 3; i++) {
+    const r = assertTopologyBudget({
+      topologyEnabled: true,
+      topology,
+      counters,
+      budgets,
+      toolName: 'workspace.read',
+      toolReadOnly: true
+    });
+    if (r.blocked && r.reasonCode === TOPOLOGY_BUDGET_PROBES) {
+      probeBlocks.push({ i, topology });
+      if (isDiagnoseProbeExhaustedRecoverEligible({
+        topology,
+        wouldBlockProbes: true,
+        recoversUsed
+      })) {
+        const recover = applyDiagnoseProbeExhaustedRecover({
+          fromTopology: topology,
+          probes: counters.probes,
+          maxProbes: budgets.maxProbes,
+          recoversUsed
+        });
+        recoversUsed += 1;
+        recovers.push(recover);
+        topology = recover.demotedTopology;
+      }
+    } else {
+      // Allowed under demoted PTE — counts as a turn away from pure probe BLOCK.
+      assert.equal(r.allowed, true, `attempt ${i} should be allowed after demote`);
+      counters = commitTopologyBudgetIncrement(counters, r.pendingIncrement);
+    }
+  }
+
+  assert.ok(recovers.length >= 1, `expected ≥1 recover, got ${recovers.length}`);
+  assert.equal(recovers[0].fromTopology, TOPOLOGY_DIAGNOSE_PROBE_RECOVER);
+  assert.equal(recovers[0].demotedTopology, TOPOLOGY_PLAN_THEN_EXECUTE);
+  assert.equal(recovers[0].probes, 2);
+  assert.equal(recovers[0].maxProbes, 2);
+  assert.equal(recovers[0].strategy, 'demote_to_plan_then_execute');
+  assert.equal(recovers[0].recoverOrdinal, 1);
+  assert.match(diagnoseProbeExhaustedRecoverHostNote(), /HOST_DIAGNOSE_PROBE_EXHAUSTED_RECOVER/);
+  assert.match(diagnoseProbeExhaustedRecoverHostNote(), /file\.write|shell\.execute|test\.execute/i);
+
+  // Consecutive pure probe BLOCKs without a recover turn must be < 3.
+  // After first PROBES block we demote; subsequent probes under PTE are allowed.
+  assert.ok(probeBlocks.length < 3, `expected <3 consecutive probe BLOCKs, got ${probeBlocks.length}`);
+  assert.equal(topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+});
+
+// T-dpr-2: recover does not bypass lease / hardDecision
+test('T-dpr-2: recover does not bypass lease/hardDecision', () => {
+  const hard = {
+    decision: 'BLOCK',
+    confidence: 1,
+    source: 'rule',
+    reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE',
+    decisionType: 'ACTION_GATE'
+  };
+  // Even at probe max under DIAGNOSE, hard BLOCK wins and recover is not a soft ALLOW.
+  const budget = assertTopologyBudget({
+    topologyEnabled: true,
+    topology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    counters: { writes: 0, tools: 0, probes: 6 },
+    budgets: resolveTopologyBudgets({ maxProbes: 6 }),
+    toolName: 'workspace.read',
+    toolReadOnly: true,
+    hardBlocked: true,
+    hardDecision: hard
+  });
+  assert.equal(budget.allowed, false);
+  assert.equal(budget.preservedHardBlock, true);
+  assert.equal(budget.reasonCode, 'TOOL_NOT_ALLOWED_IN_MODE');
+  assert.notEqual(budget.reasonCode, TOPOLOGY_BUDGET_PROBES);
+
+  // Eligible recover still only demotes; it never flips hard BLOCK to ALLOW.
+  assert.equal(isDiagnoseProbeExhaustedRecoverEligible({
+    topology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    wouldBlockProbes: true,
+    recoversUsed: 0
+  }), true);
+  const recover = applyDiagnoseProbeExhaustedRecover({
+    fromTopology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    probes: 6,
+    maxProbes: 6,
+    recoversUsed: 0
+  });
+  assert.equal(recover.demotedTopology, TOPOLOGY_PLAN_THEN_EXECUTE);
+  // Re-assert with hard block after demote — still hard BLOCK.
+  const after = assertTopologyBudget({
+    topologyEnabled: true,
+    topology: recover.demotedTopology,
+    counters: { writes: 0, tools: 0, probes: 6 },
+    budgets: resolveTopologyBudgets(),
+    toolName: 'file.write',
+    hardBlocked: true,
+    hardDecision: hard
+  });
+  assert.equal(after.preservedHardBlock, true);
+  assert.equal(after.decision.decision, 'BLOCK');
+  assert.equal(after.reasonCode, 'TOOL_NOT_ALLOWED_IN_MODE');
+});
+
+test('T-dpr-bound: recoversUsed≥2 → not eligible; lease-alone path unchanged', () => {
+  assert.equal(isDiagnoseProbeExhaustedRecoverEligible({
+    topology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    wouldBlockProbes: true,
+    recoversUsed: 2
+  }), false);
+  assert.equal(isDiagnoseProbeExhaustedRecoverEligible({
+    topology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    wouldBlockProbes: true,
+    recoversUsed: 0
+  }), false);
+  assert.equal(isDiagnoseProbeExhaustedRecoverEligible({
+    topology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    wouldBlockProbes: false,
+    recoversUsed: 0
+  }), false);
+});
+
+test('T-dpr-#79: upgrade reset still independent of recover demote', () => {
+  const reset = resetTopologyBudgetCountersOnUpgrade({
+    fromTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    toTopology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER
+  });
+  assert.deepEqual(reset, { writes: 0, tools: 0, probes: 0 });
+  // Demote recover must NOT reset (caller keeps counters); apply* returns no counters.
+  const recover = applyDiagnoseProbeExhaustedRecover({
+    fromTopology: TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
+    probes: 6,
+    maxProbes: 6,
+    recoversUsed: 0
+  });
+  assert.equal(recover.counters, undefined);
+  assert.equal(recover.demotedTopology, TOPOLOGY_PLAN_THEN_EXECUTE);
+});

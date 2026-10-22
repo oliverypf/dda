@@ -90,6 +90,7 @@ import {
   TOPOLOGY_PLAN_THEN_EXECUTE,
   TOPOLOGY_DIAGNOSE_PROBE_RECOVER,
   TOPOLOGY_DIRECT_EXECUTE,
+  TOPOLOGY_BUDGET_PROBES,
   isComplexTask,
   selectTopologyCandidates,
   resolveTopologySelection,
@@ -100,7 +101,10 @@ import {
   assertTopologyBudget,
   commitTopologyBudgetIncrement,
   shouldDeliberateForTopology,
-  isBudgetedTopology
+  isBudgetedTopology,
+  isDiagnoseProbeExhaustedRecoverEligible,
+  applyDiagnoseProbeExhaustedRecover,
+  diagnoseProbeExhaustedRecoverHostNote
 } from './execution-topology.mjs';
 import {
   runInitialTopologySelection,
@@ -1307,6 +1311,8 @@ async function runTask() {
   let selectedTopology;
   let topologyBudgetCounters = createTopologyBudgetCounters();
   const topologyBudgets = resolveTopologyBudgets();
+  // freeze-harness-diagnose-probe-exhausted-recover-r1: ≤2×/run demote recover
+  let diagnoseProbeExhaustedRecovers = 0;
   let acceptanceFailureEvidence = false;
   let streamedResponseText = "";
   let plannerTurn;
@@ -3763,14 +3769,60 @@ async function runTask() {
                 // keep hardModeBlock; do not invent a softer path
               } else if (budgetAssert.blocked) {
                 topologyBudgetBlock = budgetAssert.decision;
+                // freeze-harness-diagnose-probe-exhausted-recover-r1:
+                // DIAGNOSE + TOPOLOGY_BUDGET_PROBES → demote to PTE ≤2×/run.
+                // Still BLOCK this probe (no maxProbes raise / no lease soften).
+                let diagnoseProbeRecover = null;
+                if (
+                  budgetAssert.reasonCode === TOPOLOGY_BUDGET_PROBES
+                  && isDiagnoseProbeExhaustedRecoverEligible({
+                    topology: selectedTopology,
+                    wouldBlockProbes: true,
+                    recoversUsed: diagnoseProbeExhaustedRecovers
+                  })
+                ) {
+                  diagnoseProbeRecover = applyDiagnoseProbeExhaustedRecover({
+                    fromTopology: selectedTopology,
+                    probes: topologyBudgetCounters?.probes,
+                    maxProbes: topologyBudgets?.maxProbes,
+                    recoversUsed: diagnoseProbeExhaustedRecovers
+                  });
+                  diagnoseProbeExhaustedRecovers += 1;
+                  selectedTopology = diagnoseProbeRecover.demotedTopology;
+                  emitEvent('harness.diagnose_probe_exhausted_recover', {
+                    fromTopology: diagnoseProbeRecover.fromTopology,
+                    toTopology: diagnoseProbeRecover.demotedTopology,
+                    probes: diagnoseProbeRecover.probes,
+                    maxProbes: diagnoseProbeRecover.maxProbes,
+                    recoverOrdinal: diagnoseProbeRecover.recoverOrdinal,
+                    strategy: diagnoseProbeRecover.strategy
+                  });
+                }
                 emitEvent('topology.budget_blocked', {
                   name: call.name,
-                  topology: selectedTopology,
+                  topology: diagnoseProbeRecover?.fromTopology ?? selectedTopology,
                   reasonCode: budgetAssert.reasonCode,
                   reasonCodes: budgetAssert.reasonCodes,
                   counters: topologyBudgetCounters,
-                  budgets: topologyBudgets
+                  budgets: topologyBudgets,
+                  ...(diagnoseProbeRecover
+                    ? {
+                        diagnoseProbeExhaustedRecover: true,
+                        recoverOrdinal: diagnoseProbeRecover.recoverOrdinal,
+                        demotedTo: diagnoseProbeRecover.demotedTopology
+                      }
+                    : {})
                 });
+                if (diagnoseProbeRecover) {
+                  // Enrich BLOCK message so the model sees the host turn immediately.
+                  topologyBudgetBlock = {
+                    ...topologyBudgetBlock,
+                    message: [
+                      `Topology budget blocked this tool action: ${budgetAssert.reasonCode}.`,
+                      diagnoseProbeExhaustedRecoverHostNote()
+                    ].join(' ')
+                  };
+                }
               } else {
                 topologyBudgetPending = budgetAssert.pendingIncrement;
               }
@@ -4450,7 +4502,9 @@ async function runTask() {
                   ? topologyBudgetBlock.reasonCode
                   : (toolGate.decision === 'BLOCK' ? 'TOOL_ACTION_BLOCKED_BY_JEV' : 'TOOL_ACTION_REQUIRES_EVIDENCE'),
                 message: budgetBlocked
-                  ? `Topology budget blocked this tool action: ${topologyBudgetBlock.reasonCode}`
+                  ? (typeof topologyBudgetBlock.message === 'string' && topologyBudgetBlock.message
+                    ? topologyBudgetBlock.message
+                    : `Topology budget blocked this tool action: ${topologyBudgetBlock.reasonCode}`)
                   : `Jev ${toolGate.decision.toLowerCase()} this tool action: ${toolGate.reasonCode ?? 'evidence required'}`,
                 nextAction: budgetBlocked ? 'STOP_OR_PATCH' : 'COLLECT_EVIDENCE',
                 ...(budgetBlocked ? { reasonCodes: [topologyBudgetBlock.reasonCode] } : {})

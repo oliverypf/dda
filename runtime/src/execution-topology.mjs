@@ -326,6 +326,7 @@ export const commitTopologyBudgetIncrement = (counters, pendingIncrement) => {
 /**
  * Resolve final topology selection: prefer validated Jev choice, else Rule.
  * Rejects DIAGNOSE when no failure evidence even if Jev asks for it.
+ * Rejects DIRECT_EXECUTE when complex and no failure evidence (Jev clamp → PLAN).
  */
 export const resolveTopologySelection = ({
   topologyEnabled = false,
@@ -351,6 +352,23 @@ export const resolveTopologySelection = ({
       topology: rule,
       source: 'rule',
       reasonCodes: ['RULE_FALLBACK', 'DIAGNOSE_REQUIRES_FAILURE_EVIDENCE'],
+      rejectedJev: jevSelectedId
+    };
+  }
+  // freeze-harness-complex-forbid-direct-initial-r1: complex + no failure evidence
+  // must not start as DIRECT_EXECUTE — clamp Jev DIRECT to Rule PLAN_THEN_EXECUTE
+  // (aligns with ruleSelectTopology / design comment complex → PLAN_THEN_EXECUTE).
+  if (
+    jevSource === 'jev'
+    && complex === true
+    && !diagnoseOk
+    && normalizeTopology(jevSelectedId) === TOPOLOGY_DIRECT_EXECUTE
+  ) {
+    const rule = ruleSelectTopology({ topologyEnabled: true, complex: true, failureEvidence: false });
+    return {
+      topology: rule,
+      source: 'rule',
+      reasonCodes: ['RULE_FALLBACK', 'COMPLEX_FORBIDS_DIRECT_INITIAL'],
       rejectedJev: jevSelectedId
     };
   }

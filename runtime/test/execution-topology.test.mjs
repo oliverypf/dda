@@ -230,3 +230,58 @@ test('T-topo-hint topologyHint complex|diagnose marks complex without dual accep
   assert.equal(isComplexTask({ acceptanceCommands: ['one'], topologyHint: 'noop' }), false);
   assert.equal(isComplexTask({ acceptanceCommands: [] }), false);
 });
+
+// freeze-harness-complex-forbid-direct-initial-r1
+test('T-cfd-1 complex + Jev DIRECT_EXECUTE → clamp PLAN_THEN_EXECUTE + COMPLEX_FORBIDS_DIRECT_INITIAL', () => {
+  const sel = resolveTopologySelection({
+    topologyEnabled: true,
+    complex: true,
+    failureEvidence: false,
+    jevSelectedId: TOPOLOGY_DIRECT_EXECUTE,
+    jevSource: 'jev'
+  });
+  assert.equal(sel.topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+  assert.equal(sel.source, 'rule');
+  assert.ok(sel.reasonCodes.includes('COMPLEX_FORBIDS_DIRECT_INITIAL'));
+  assert.ok(sel.reasonCodes.includes('RULE_FALLBACK'));
+  assert.equal(sel.rejectedJev, TOPOLOGY_DIRECT_EXECUTE);
+});
+
+test('T-cfd-2 complex + Jev PLAN_THEN_EXECUTE → still jev-adopted', () => {
+  const sel = resolveTopologySelection({
+    topologyEnabled: true,
+    complex: true,
+    failureEvidence: false,
+    jevSelectedId: TOPOLOGY_PLAN_THEN_EXECUTE,
+    jevSource: 'jev'
+  });
+  assert.equal(sel.topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+  assert.equal(sel.source, 'jev');
+  assert.ok(sel.reasonCodes.includes('JEV_DECISION'));
+  assert.equal(sel.rejectedJev, undefined);
+});
+
+test('T-cfd-3 not-complex + Jev DIRECT_EXECUTE → still DIRECT', () => {
+  const sel = resolveTopologySelection({
+    topologyEnabled: true,
+    complex: false,
+    failureEvidence: false,
+    jevSelectedId: TOPOLOGY_DIRECT_EXECUTE,
+    jevSource: 'jev'
+  });
+  assert.equal(sel.topology, TOPOLOGY_DIRECT_EXECUTE);
+  assert.equal(sel.source, 'jev');
+  assert.ok(sel.reasonCodes.includes('JEV_DECISION'));
+});
+
+test('T-cfd-4 complex + Jev DELIBERATE alias → still jev-adopted (not clamped)', () => {
+  const sel = resolveTopologySelection({
+    topologyEnabled: true,
+    complex: true,
+    failureEvidence: false,
+    jevSelectedId: TOPOLOGY_DELIBERATE_THEN_EXECUTE,
+    jevSource: 'jev'
+  });
+  assert.equal(sel.topology, TOPOLOGY_DELIBERATE_THEN_EXECUTE);
+  assert.equal(sel.source, 'jev');
+});

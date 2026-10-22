@@ -302,6 +302,85 @@ export const zeroWriteJevReplanHostNote = () => [
 ].join(' ');
 
 /**
+ * freeze-harness-preflight-require-write-r1 §1.1 bound choice:
+ * ≤2× intercepts per run (not per plan-step). Exhausted → allow VERIFY (#80 still works).
+ */
+export const PREFLIGHT_REQUIRE_WRITE_MAX_PER_RUN = 2;
+
+/**
+ * Explicit host marker only. lease-alone MUST NOT imply true.
+ * Unknown / absent / empty → false (fail-open).
+ */
+export const resolveRequiresWorkspaceMutation = ({
+  explicit,
+  task,
+  envValue
+} = {}) => {
+  if (explicit === true) return true;
+  if (explicit === false) return false;
+  if (task && typeof task === 'object') {
+    if (task.requiresWorkspaceMutation === true) return true;
+    if (task.requiresWorkspaceMutation === false) return false;
+  }
+  if (envValue === undefined || envValue === null) return false;
+  const raw = String(envValue).trim().toLowerCase();
+  if (!raw) return false;
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+};
+
+const codesFromExecuteResult = (result) => {
+  const codes = [];
+  if (Array.isArray(result?.failureCodes)) {
+    for (const code of result.failureCodes) codes.push(String(code ?? ''));
+  }
+  for (const action of Array.isArray(result?.actions) ? result.actions : []) {
+    if (action?.errorCode) codes.push(String(action.errorCode));
+    if (Array.isArray(action?.failureCodes)) {
+      for (const code of action.failureCodes) codes.push(String(code ?? ''));
+    }
+  }
+  return codes.filter(Boolean);
+};
+
+/**
+ * freeze-harness-preflight-require-write-r1 §1.1:
+ * requiresWorkspaceMutation===true ∧ writesApplied=0 ∧ successfulWrites=0
+ * ∧ about to VERIFY ∧ interceptsUsed < MAX → eligible.
+ * lease alone never opens the gate. Unknown marker → fail-open (caller passes false).
+ * Sole SAFETY/lease/HARD_DECISION_DENY from execute result → 0×.
+ */
+export const isPreflightRequireWriteEligible = ({
+  requiresWorkspaceMutation = false,
+  writesApplied = 0,
+  successfulWrites = 0,
+  interceptsUsed = 0,
+  maxIntercepts = PREFLIGHT_REQUIRE_WRITE_MAX_PER_RUN,
+  failureCodes = [],
+  result = undefined
+} = {}) => {
+  if (requiresWorkspaceMutation !== true) return false;
+  if (Number(writesApplied) !== 0 || Number(successfulWrites) !== 0) return false;
+  if (!Number.isFinite(Number(writesApplied)) || !Number.isFinite(Number(successfulWrites))) return false;
+  const used = Number(interceptsUsed);
+  const max = Number(maxIntercepts);
+  if (!Number.isFinite(used) || !Number.isFinite(max) || used < 0 || max < 1) return false;
+  if (used >= max) return false;
+  const codes = [
+    ...(Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? '')),
+    ...codesFromExecuteResult(result)
+  ].filter(Boolean);
+  if (codes.length && isSoleHardDenyFailure(codes)) return false;
+  return true;
+};
+
+export const preflightRequireWriteHostNote = () => [
+  'HOST_PREFLIGHT_REQUIRE_WRITE: Host marked requiresWorkspaceMutation — zero writes landed before VERIFY.',
+  'Must file.write or apply a small patch before verification; ban list/focus/read/test-only empty explore that never writes.',
+  'Do not claim PASS without a workspace mutation. SAFETY / lease hard denies remain in force.',
+  `At most ${PREFLIGHT_REQUIRE_WRITE_MAX_PER_RUN} preflight intercepts per run; then VERIFY is allowed (#80 may still apply).`
+].join(' ');
+
+/**
  * freeze-harness-uncertain-agent-miss-r1 §1.1: when Jev behavior elevates a
  * deterministic PASS to UNCERTAIN (evidence gap), stamp JEV_EVIDENCE_REQUIRED
  * into failureCodes. Never summary-only.
@@ -460,7 +539,9 @@ export const runVerifierRecovery = async ({
   initialActions = [],
   startAttempt = 1,
   // freeze-harness-focus-agent-miss-r1 §1.2: optional one-shot agent-miss replan after writes
-  agentMiss = undefined
+  agentMiss = undefined,
+  // freeze-harness-preflight-require-write-r1: UPSTREAM of verify — bounded intercept before VERIFY
+  preflight = undefined
 } = {}) => {
   if (typeof execute !== 'function' || typeof verify !== 'function') {
     throw new Error('RECOVERY_CALLBACKS_REQUIRED');
@@ -478,6 +559,8 @@ export const runVerifierRecovery = async ({
   let recovery = initialContext === undefined ? undefined : clone(initialContext);
   let agentMissReplanned = false;
   let zeroWriteJevReplanned = false;
+  // Bound: ≤2× per run (PREFLIGHT_REQUIRE_WRITE_MAX_PER_RUN); not per plan-step.
+  let preflightRequireWriteIntercepts = 0;
   let postMissUncertainReplanned = false;
   let postMissTerminalReplanned = false;
   let postAgentMissTerminalReplanned = false;
@@ -495,6 +578,67 @@ export const runVerifierRecovery = async ({
     const result = cached ? cached.result : await execute({
       attempt, recovery: recovery === undefined ? undefined : clone(recovery), previousActions: clone(previousActions)
     });
+
+    // freeze-harness-preflight-require-write-r1: BEFORE verify (upstream of #80 / other latches).
+    let preflightJustFired = false;
+    if (!cached && preflight) {
+      const counts = typeof preflight.getWriteCounts === 'function'
+        ? (preflight.getWriteCounts() ?? {})
+        : {};
+      const requires = typeof preflight.getRequiresWorkspaceMutation === 'function'
+        ? preflight.getRequiresWorkspaceMutation() === true
+        : preflight.requiresWorkspaceMutation === true;
+      if (isPreflightRequireWriteEligible({
+        requiresWorkspaceMutation: requires,
+        writesApplied: counts.writesApplied ?? 0,
+        successfulWrites: counts.successfulWrites ?? 0,
+        interceptsUsed: preflightRequireWriteIntercepts,
+        maxIntercepts: PREFLIGHT_REQUIRE_WRITE_MAX_PER_RUN,
+        result
+      })) {
+        preflightRequireWriteIntercepts += 1;
+        preflightJustFired = true;
+        const writesApplied = Number(counts.writesApplied ?? 0) || 0;
+        const toolCount = Number.isFinite(Number(counts.toolCount))
+          ? Number(counts.toolCount)
+          : (Array.isArray(previousActions) ? previousActions.length : undefined);
+        const interceptOrdinal = preflightRequireWriteIntercepts;
+        await preflight.onIntercept?.({
+          writesApplied,
+          interceptOrdinal,
+          ...(toolCount === undefined ? {} : { toolCount })
+        });
+        const resultActionsEarly = Array.isArray(result?.actions) ? result.actions : [];
+        previousActions = [...previousActions, ...resultActionsEarly].slice(-256);
+        const report = {
+          status: 'CONTINUE',
+          nextAction: 'CONTINUE_EXECUTION',
+          summary: boundedText(`preflight require write #${interceptOrdinal}: must file.write before VERIFY`),
+          failureCodes: [],
+          preflightRequireWrite: true
+        };
+        history.push({
+          attempt,
+          status: report.status,
+          failureCodes: [],
+          preflightRequireWrite: true,
+          interceptOrdinal
+        });
+        effectiveMaxAttempts = Math.max(effectiveMaxAttempts, attempt + 1);
+        if (effectiveMaxAttempts > MAX_ATTEMPTS) effectiveMaxAttempts = MAX_ATTEMPTS;
+        recovery = {
+          ...(recovery === undefined ? {} : recovery),
+          verifierStatus: 'CONTINUE',
+          nextAction: 'CONTINUE_EXECUTION',
+          recoveryDirection: 'CONTINUE_EXECUTION',
+          preflightRequireWrite: true,
+          interceptOrdinal
+        };
+        await onPhase?.({ phase: 'RECOVERING', attempt, report: clone(report), recovery: clone(recovery) });
+        continue;
+      }
+    }
+
     let report = safeReport(await verify({
       attempt,
       result,
@@ -512,7 +656,16 @@ export const runVerifierRecovery = async ({
     const resultActions = Array.isArray(result?.actions) ? result.actions : [];
     if (!cached) previousActions = [...previousActions, ...resultActions].slice(-256);
     if (report.status === 'PASS') {
-      return { ok: true, attempts: attempt, result, report, history };
+      return {
+        ok: true,
+        attempts: attempt,
+        result,
+        report,
+        history,
+        ...(preflightRequireWriteIntercepts > 0
+          ? { preflightRequireWriteIntercepts }
+          : {})
+      };
     }
 
     if (report.stopRecovery === true) {
@@ -839,6 +992,9 @@ export const runVerifierRecovery = async ({
         exhausted: recoverable && attempt >= effectiveMaxAttempts,
         ...(agentMissReplanned ? { agentMissReplanned: true } : {}),
         ...(zeroWriteJevReplanned ? { zeroWriteJevReplanned: true } : {}),
+        ...(preflightRequireWriteIntercepts > 0
+          ? { preflightRequireWriteIntercepts }
+          : {}),
         ...(postMissUncertainReplanned ? { postMissUncertainReplanned: true } : {}),
         ...(postMissTerminalReplanned ? { postMissTerminalReplanned: true } : {}),
         ...(postAgentMissTerminalReplanned ? { postAgentMissTerminalReplanned: true } : {}),

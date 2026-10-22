@@ -182,7 +182,7 @@ import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES,
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, agentMissReplanHostNote, zeroWriteJevReplanHostNote, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, agentMissReplanHostNote, zeroWriteJevReplanHostNote, preflightRequireWriteHostNote, resolveRequiresWorkspaceMutation, postMissUncertainReplanHostNote, postMissTerminalReplanHostNote, postAgentMissTerminalReplanHostNote, postMissEvidenceDeltaReplanHostNote, postMissUncertainExhaustedReplanHostNote, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { createRoleBindingResolver } from './role-binding-resolver.mjs';
@@ -227,7 +227,7 @@ const councilAssumptionStatement = (value) => {
   return `${compact.slice(0, budget).trimEnd()}${ASSUMPTION_TRUNCATION_MARKER}`;
 };
 
-const BOOLEAN_ARGS = new Set(['--resume', '--auto-evolution-proposal', '--purge-expired', '--require-holdout']);
+const BOOLEAN_ARGS = new Set(['--resume', '--auto-evolution-proposal', '--purge-expired', '--require-holdout', '--requires-workspace-mutation']);
 const APPROVAL_TTL_MS = 120000;
 // One CLI invocation runs at most one task; never derive identity from errors.
 let taskResponseRunId;
@@ -491,6 +491,13 @@ async function runTask() {
   const approvedCommands = csv(arg('--lease-commands', process.env.DDA_LEASE_COMMANDS ?? ''));
   const approvedNetworkTargets = parseNetworkTargets(arg('--network-targets', process.env.DDA_NETWORK_TARGETS));
   const mcpConfigPath = arg('--mcp-config', process.env.DDA_MCP_CONFIG);
+  // freeze-harness-preflight-require-write-r1: explicit marker only (lease alone never opens).
+  // CLI --requires-workspace-mutation[=true|false] / env DDA_REQUIRES_WORKSPACE_MUTATION; absent → fail-open false.
+  const requiresWorkspaceMutationCli = argValue('--requires-workspace-mutation')
+    ?? (process.argv.includes('--requires-workspace-mutation') ? 'true' : undefined);
+  const requiresWorkspaceMutation = resolveRequiresWorkspaceMutation({
+    envValue: requiresWorkspaceMutationCli ?? process.env.DDA_REQUIRES_WORKSPACE_MUTATION
+  });
   // S6: outcome→propose is opt-in (default off). Never auto-promote to ACTIVE;
   // promotion remains the explicit evolution CLI / evaluator.promote path only.
   const autoEvolutionProposal = parseBoolean(
@@ -3610,6 +3617,25 @@ async function runTask() {
           });
         }
       },
+      preflight: {
+        // freeze-harness-preflight-require-write-r1 §1.1 — UPSTREAM of verify
+        getRequiresWorkspaceMutation: () => requiresWorkspaceMutation === true,
+        getWriteCounts: () => {
+          const snap = harnessProgress.snapshot();
+          return {
+            writesApplied: Number(snap.writesApplied ?? 0),
+            successfulWrites: Number(snap.successfulWrites ?? 0),
+            toolCount: Number(snap.toolResults ?? 0)
+          };
+        },
+        onIntercept: ({ writesApplied, interceptOrdinal, toolCount }) => {
+          emitEvent('harness.preflight_require_write', {
+            writesApplied: Number(writesApplied ?? 0),
+            interceptOrdinal: Number(interceptOrdinal ?? 0),
+            ...(Number.isFinite(Number(toolCount)) ? { toolCount: Number(toolCount) } : {})
+          });
+        }
+      },
       execute: stageTimer.wrap('execution', async ({ attempt, recovery, previousActions = [] }) => {
         const verificationActions = [];
         const recoveryText = recovery
@@ -3633,7 +3659,9 @@ async function runTask() {
               recovery.previousActionDigests?.length
                 ? `Previously attempted action digests: ${recovery.previousActionDigests.join(',')}. Do not repeat them unless new evidence is required.`
                 : undefined,
-              recovery.postMissUncertainExhaustedReplan === true
+              recovery.preflightRequireWrite === true
+                ? preflightRequireWriteHostNote()
+                : (recovery.postMissUncertainExhaustedReplan === true
                 ? postMissUncertainExhaustedReplanHostNote()
                 : (recovery.postMissEvidenceDeltaReplan === true
                   ? postMissEvidenceDeltaReplanHostNote()
@@ -3647,7 +3675,7 @@ async function runTask() {
                           ? zeroWriteJevReplanHostNote()
                           : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
                             ? agentMissReplanHostNote()
-                            : undefined)))))),
+                            : undefined))))))),
               'Gather new bounded evidence or complete the remaining goal; do not claim success without tool evidence.'
             ].filter(Boolean).join('\n').slice(0, 6000)
           : stepHistoryContext;

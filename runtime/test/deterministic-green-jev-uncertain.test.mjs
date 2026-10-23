@@ -77,7 +77,7 @@ test('T-dgu-1: evidence-only UNCERTAIN + tests PASS + ≥2 same-shape → promot
 
 // ——— T-dgu-2 ———
 
-test('T-dgu-2: BEHAVIOR_REJECTED / tests red / empty checks / single same-shape → no promote', async () => {
+test('T-dgu-2: BEHAVIOR_REJECTED / tests red / empty checks → no promote (predicate + ≥2 path)', async () => {
   assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
     failureCodes: [JEV_BEHAVIOR_REJECTED]
   })), false);
@@ -113,20 +113,6 @@ test('T-dgu-2: BEHAVIOR_REJECTED / tests red / empty checks / single same-shape 
     ]
   })), false);
   assert.equal(countDeterministicGreenJevUncertainReports([greenUncertain()]), 1);
-
-  // Single same-shape at maxAttempts=1 → still fail (need ≥2).
-  {
-    const coordinator = makeCoordinator();
-    const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
-    const result = await scheduler.run({
-      maxAttempts: 1,
-      executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
-      verifyStep: async () => greenUncertain()
-    });
-    assert.equal(result.ok, false);
-    assert.equal(result.report?.status, 'UNCERTAIN');
-    assert.equal(result.plan.steps[0].status, 'FAILED');
-  }
 
   // BEHAVIOR_REJECTED stays failed even with ≥2 attempts.
   {
@@ -208,4 +194,85 @@ test('T-dgu-3: VRP PASS short-circuit + sticky-evidence #84 still green', () => 
     actionErrorCodes: [],
     checkMessages: []
   }), false);
+});
+
+
+// ——— T-dgu-tp-1: tip path maxAttempts:1 terminal DGU → promote ———
+
+test('T-dgu-tp-1: maxAttempts:1 + terminal evidence-only UNCERTAIN + tests PASS → promote (tip-path)', async () => {
+  const coordinator = makeCoordinator();
+  let executions = 0;
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+  const result = await scheduler.run({
+    maxAttempts: 1,
+    executeStep: async ({ attempt }) => {
+      executions += 1;
+      return { outputDigest: `sha256:${String(attempt).padStart(64, '0')}`, text: `e${attempt}` };
+    },
+    verifyStep: async () => greenUncertain()
+  });
+  assert.equal(executions, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.plan.steps[0].status, 'SUCCEEDED');
+  assert.equal(result.results.at(-1).report.status, 'PASS');
+  assert.equal(result.results.at(-1).report.failureCodes?.length ?? 0, 0);
+  assert.ok(
+    (result.results.at(-1).report.checks ?? []).some((c) => c.id === 'deterministic-green-jev-uncertain-tip-path'),
+    'tip-path audit check id'
+  );
+});
+
+// ——— T-dgu-tp-2: tip path still fails REJECTED / tests red ———
+
+test('T-dgu-tp-2: maxAttempts:1 BEHAVIOR_REJECTED / tests red → still fail', async () => {
+  {
+    const coordinator = makeCoordinator();
+    const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+    const result = await scheduler.run({
+      maxAttempts: 1,
+      executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
+      verifyStep: async () => greenUncertain({
+        failureCodes: [JEV_BEHAVIOR_REJECTED],
+        checks: [
+          { id: 'evidence.tests', status: 'PASS' },
+          { id: 'jev-behavior-judge', status: 'FAIL' }
+        ]
+      })
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.plan.steps[0].status, 'FAILED');
+  }
+  {
+    const coordinator = makeCoordinator();
+    const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+    const result = await scheduler.run({
+      maxAttempts: 1,
+      executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
+      verifyStep: async () => greenUncertain({
+        checks: [
+          { id: 'evidence.tests', status: 'FAIL' },
+          { id: 'jev-behavior-judge', status: 'UNKNOWN' }
+        ]
+      })
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.plan.steps[0].status, 'FAILED');
+  }
+});
+
+// ——— T-dgu-tp-3: #85 ≥2 path + VRP/sticky still green (covered by T-dgu-1/3; explicit tip-path note) ———
+
+test('T-dgu-tp-3: maxAttempts:2 ≥2 same-shape still uses promote (not tip-path) audit id', async () => {
+  const coordinator = makeCoordinator();
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+  const result = await scheduler.run({
+    maxAttempts: 2,
+    executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
+    verifyStep: async () => greenUncertain()
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.results.at(-1).report.status, 'PASS');
+  const ids = (result.results.at(-1).report.checks ?? []).map((c) => c.id);
+  assert.ok(ids.includes('deterministic-green-jev-uncertain-promote'), ids);
+  assert.equal(ids.includes('deterministic-green-jev-uncertain-tip-path'), false);
 });

@@ -294,18 +294,25 @@ export class PlanStepCoordinator {
           });
           continue;
         }
-        // freeze-harness-deterministic-green-jev-uncertain-r1: terminal path only
-        // (retries exhausted). ≥2 same-shape deterministic-green UNCERTAIN → PASS.
+        // freeze-harness-deterministic-green-jev-uncertain-r1 + tip-path-r1:
+        // terminal path only (retries exhausted). Final report that is
+        // evidence-only deterministic-green UNCERTAIN → PASS.
+        // tip-path: do NOT require stepReports ≥ 2 — live tip uses
+        // planCoordinator.run({ maxAttempts: 1 }), so inner miss/post-miss
+        // recovery shapes never accumulate in coordinator results. ≥2 path
+        // (#85) still works when maxAttempts ≥ 2.
         {
           const stepReports = results
             .filter((entry) => entry.stepId === step.stepId)
             .map((entry) => entry.report);
+          const sameShapeCount = countDeterministicGreenJevUncertainReports(stepReports);
           if (
             report.status === 'UNCERTAIN'
             && isDeterministicGreenJevEvidenceUncertain(report)
-            && countDeterministicGreenJevUncertainReports(stepReports) >= 2
           ) {
-            const promoted = promoteDeterministicGreenJevUncertain(report);
+            const promoted = promoteDeterministicGreenJevUncertain(report, {
+              tipPath: sameShapeCount < 2
+            });
             record.report = clone(promoted);
             report = promoted;
             await this.#update(step.stepId, {

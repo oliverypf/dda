@@ -470,20 +470,27 @@ export const countDeterministicGreenJevUncertainReports = (reports = []) => {
  * as succeeded. Keeps an audit check; does not invent green from empty checks
  * (caller must gate with isDeterministicGreenJevEvidenceUncertain first).
  */
-export const promoteDeterministicGreenJevUncertain = (verification) => {
+export const promoteDeterministicGreenJevUncertain = (verification, options = {}) => {
   const priorChecks = Array.isArray(verification?.checks) ? verification.checks : [];
+  const tipPath = options?.tipPath === true;
   return {
     ...verification,
     status: 'PASS',
     nextAction: 'COMPLETE',
-    summary: 'Deterministic checks green; promoted evidence-only JEV_EVIDENCE_REQUIRED UNCERTAIN to PASS',
+    summary: tipPath
+      ? 'Deterministic checks green; tip-path promoted terminal evidence-only JEV_EVIDENCE_REQUIRED UNCERTAIN to PASS'
+      : 'Deterministic checks green; promoted evidence-only JEV_EVIDENCE_REQUIRED UNCERTAIN to PASS',
     failureCodes: [],
     checks: [
       ...priorChecks,
       {
-        id: 'deterministic-green-jev-uncertain-promote',
+        id: tipPath
+          ? 'deterministic-green-jev-uncertain-tip-path'
+          : 'deterministic-green-jev-uncertain-promote',
         status: 'PASS',
-        message: 'freeze-harness-deterministic-green-jev-uncertain-r1'
+        message: tipPath
+          ? 'freeze-harness-deterministic-green-jev-uncertain-tip-path-r1'
+          : 'freeze-harness-deterministic-green-jev-uncertain-r1'
       }
     ]
   };

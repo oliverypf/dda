@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { restorePlannerPlan } from './agent-turns.mjs';
+import {
+  countDeterministicGreenJevUncertainReports,
+  isDeterministicGreenJevEvidenceUncertain,
+  promoteDeterministicGreenJevUncertain
+} from './task-recovery-controller.mjs';
 
 const MAX_ATTEMPTS = 8;
 const TERMINAL_STEP_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'BLOCKED', 'SKIPPED']);
@@ -288,6 +293,30 @@ export class PlanStepCoordinator {
             ...(diagnosis === undefined ? {} : { diagnosisDigest: digest(JSON.stringify(diagnosis)) })
           });
           continue;
+        }
+        // freeze-harness-deterministic-green-jev-uncertain-r1: terminal path only
+        // (retries exhausted). ≥2 same-shape deterministic-green UNCERTAIN → PASS.
+        {
+          const stepReports = results
+            .filter((entry) => entry.stepId === step.stepId)
+            .map((entry) => entry.report);
+          if (
+            report.status === 'UNCERTAIN'
+            && isDeterministicGreenJevEvidenceUncertain(report)
+            && countDeterministicGreenJevUncertainReports(stepReports) >= 2
+          ) {
+            const promoted = promoteDeterministicGreenJevUncertain(report);
+            record.report = clone(promoted);
+            report = promoted;
+            await this.#update(step.stepId, {
+              status: 'SUCCEEDED',
+              attempt,
+              ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
+              ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+            });
+            completed = true;
+            break;
+          }
         }
         await this.#update(step.stepId, {
           status: report.status === 'ABSTAIN' || report.status === 'UNKNOWN' ? 'BLOCKED' : 'FAILED',

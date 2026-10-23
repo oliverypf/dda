@@ -421,21 +421,24 @@ export const isProbeBudgetOnlyFailureEvidence = ({
 } = {}) => {
   const actionCodes = asCodeList(actionErrorCodes);
   const codes = asCodeList(failureCodes);
-
-  // Non-empty action errors: suppress only when every code is probe-budget family.
-  // Any real action failure (SHELL_FAILED, etc.) → not probe-budget-only.
-  if (actionCodes.length > 0) {
-    return actionCodes.every((c) => PROBE_BUDGET_FAMILY.has(c));
-  }
-
-  // No action errorCodes: fall back to failureCodes ⊆ soft set + probe signal.
   const allowedFailure = new Set([
     'ACTION_FAILED',
     'JEV_BEHAVIOR_REJECTED',
     TOPOLOGY_BUDGET_PROBES
   ]);
+  // Real non-probe failure codes (TESTS_FAILED, etc.) never suppress.
   if (codes.length > 0 && !codes.every((c) => allowedFailure.has(c))) return false;
-  return codes.includes(TOPOLOGY_BUDGET_PROBES) || mentionsProbeBudget(checkMessages);
+
+  const probeSignal = codes.includes(TOPOLOGY_BUDGET_PROBES) || mentionsProbeBudget(checkMessages);
+  // Prefer verifier check / failureCodes probe signal. previousActions often carries
+  // historical EXCERPT_* noise that must not veto sticky (run61b live miss).
+  if (probeSignal) return true;
+
+  // No probe signal in codes/messages: require every present action error to be probe-family.
+  if (actionCodes.length > 0) {
+    return actionCodes.every((c) => PROBE_BUDGET_FAMILY.has(c));
+  }
+  return false;
 };
 
 /**

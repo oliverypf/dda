@@ -5142,6 +5142,7 @@ async function runTask() {
           const prior = selectedTopology;
           const currentForSticky = selectedTopology ?? TOPOLOGY_PLAN_THEN_EXECUTE;
           const actionErrorCodes = (Array.isArray(previousActions) ? previousActions : [])
+            .filter((action) => String(action?.state ?? '') === 'FAILED')
             .map((action) => action?.errorCode)
             .filter((code) => typeof code === 'string' && code.length > 0);
           const checkMessages = (Array.isArray(report?.checks) ? report.checks : [])

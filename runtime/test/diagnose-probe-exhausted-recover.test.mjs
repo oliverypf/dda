@@ -203,6 +203,13 @@ test('T-pds-1: post-dpr sticky — probe-budget-only FAIL does not upgrade DIAGN
     checkMessages: ['actions.progress FAIL cites TOPOLOGY_BUDGET_PROBES']
   }), true);
 
+  // Historical previousActions noise must not veto when checkMessages cite probe budget.
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: ['EXCERPT_NOT_FOUND', 'TOOL_ACTION_REQUIRES_EVIDENCE', 'TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+
   const suppress = shouldSuppressPostDprDiagnoseUpgrade({
     diagnoseProbeExhaustedRecovers: 1,
     currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,

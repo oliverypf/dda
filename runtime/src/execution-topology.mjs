@@ -390,9 +390,71 @@ export const applyDiagnoseProbeExhaustedRecover = ({
 export const diagnoseProbeExhaustedRecoverHostNote = () => [
   'HOST_DIAGNOSE_PROBE_EXHAUSTED_RECOVER: Probe budget exhausted under DIAGNOSE_PROBE_RECOVER.',
   'Stop further read/list/focus probes. Next: bounded file.write/file.patch or shell.execute/test.execute/verify.',
-  'Topology demoted to PLAN_THEN_EXECUTE execute window for this recover bound.',
+  'Topology demoted to PLAN_THEN_EXECUTE sticky execute window for this recover bound;',
+  'probe-budget-only FAIL must not re-upgrade to DIAGNOSE (post_dpr_sticky_execute).',
   `At most ${DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN} diagnose-probe-exhausted recovers per run.`
 ].join(' ');
+
+/** Probe-budget family codes that must not re-upgrade DIAGNOSE after #82 demote. */
+const PROBE_BUDGET_FAMILY = new Set([TOPOLOGY_BUDGET_PROBES]);
+
+const asCodeList = (value) => (Array.isArray(value) ? value : [])
+  .map((c) => String(c ?? '').trim())
+  .filter(Boolean);
+
+const asMessageList = (value) => (Array.isArray(value) ? value : [])
+  .map((m) => String(m ?? ''))
+  .filter((m) => m.length > 0);
+
+const mentionsProbeBudget = (messages) =>
+  asMessageList(messages).some((m) => m.includes(TOPOLOGY_BUDGET_PROBES));
+
+/**
+ * freeze-harness-post-dpr-sticky-execute-r1:
+ * True when failure evidence is only probe-budget BLOCK (± family), not a real
+ * write/test/shell failure. Used to suppress PTE→DIAGNOSE after #82 demote.
+ */
+export const isProbeBudgetOnlyFailureEvidence = ({
+  failureCodes = [],
+  actionErrorCodes = [],
+  checkMessages = []
+} = {}) => {
+  const actionCodes = asCodeList(actionErrorCodes);
+  const codes = asCodeList(failureCodes);
+
+  // Non-empty action errors: suppress only when every code is probe-budget family.
+  // Any real action failure (SHELL_FAILED, etc.) → not probe-budget-only.
+  if (actionCodes.length > 0) {
+    return actionCodes.every((c) => PROBE_BUDGET_FAMILY.has(c));
+  }
+
+  // No action errorCodes: fall back to failureCodes ⊆ soft set + probe signal.
+  const allowedFailure = new Set([
+    'ACTION_FAILED',
+    'JEV_BEHAVIOR_REJECTED',
+    TOPOLOGY_BUDGET_PROBES
+  ]);
+  if (codes.length > 0 && !codes.every((c) => allowedFailure.has(c))) return false;
+  return codes.includes(TOPOLOGY_BUDGET_PROBES) || mentionsProbeBudget(checkMessages);
+};
+
+/**
+ * After ≥1× diagnose_probe_exhausted_recover demote to PTE, do not upgrade
+ * back to DIAGNOSE when the only failure evidence is probe-budget BLOCK.
+ */
+export const shouldSuppressPostDprDiagnoseUpgrade = ({
+  diagnoseProbeExhaustedRecovers = 0,
+  currentTopology,
+  failureCodes,
+  actionErrorCodes,
+  checkMessages
+} = {}) => {
+  const recovers = Number(diagnoseProbeExhaustedRecovers ?? 0);
+  if (!Number.isFinite(recovers) || recovers < 1) return false;
+  if (normalizeTopology(currentTopology) !== TOPOLOGY_PLAN_THEN_EXECUTE) return false;
+  return isProbeBudgetOnlyFailureEvidence({ failureCodes, actionErrorCodes, checkMessages });
+};
+
 
 /**
  * Resolve final topology selection: prefer validated Jev choice, else Rule.

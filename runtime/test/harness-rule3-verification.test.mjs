@@ -554,3 +554,73 @@ test('T-c3-1 dual acceptance: only one green + writes → VERIFICATION_REQUIRED;
     undefined
   );
 });
+
+// ——— verification-required-after-pass-r1 (freeze-harness-verification-required-after-pass-r1) ———
+
+test('T-vrp-1: final verification PASS → gate does not throw VERIFICATION_REQUIRED', () => {
+  // run62 t3a shape: writesApplied≥1, acceptance observation may miss (multi-cmd
+  // extract / digest-only test.execute), but final verification is PASS.
+  const cmds = extractAcceptanceCommands({
+    prompt: `Fix bug.\nThen run:\n  cd desktop && ${ACCEPT}\nAcceptance ONLY (cwd=desktop): ${ACCEPT}\n`
+  });
+  assert.ok(cmds.length >= 2, 'fixture should extract ≥2 acceptance lines like t3 prompt');
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') },
+    // digest-only test.execute: hasAcceptanceGreen true, hasAllAcceptanceCommandsGreen false
+    { name: 'test.execute', state: 'SUCCEEDED', argumentsDigest: dig('t'), outputDigest: dig('o') }
+  ];
+  assert.equal(hasAcceptanceGreen(actions, cmds), true);
+  assert.equal(hasAllAcceptanceCommandsGreen(actions, cmds), false);
+  assert.throws(
+    () => assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions,
+      acceptanceCommands: cmds
+    }),
+    (error) => error.message === 'VERIFICATION_REQUIRED'
+  );
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions,
+      acceptanceCommands: cmds,
+      verification: { status: 'PASS', nextAction: 'COMPLETE' }
+    }),
+    undefined
+  );
+});
+
+test('T-vrp-2: final FAIL/UNCERTAIN/absent still gates when acceptance not green', () => {
+  const cmds = extractAcceptanceCommands({ prompt: PROMPT });
+  const actions = [
+    { name: 'file.patch', state: 'SUCCEEDED', argumentsDigest: dig('w'), outputDigest: dig('x') }
+  ];
+  for (const verification of [
+    undefined,
+    { status: 'FAIL' },
+    { status: 'UNCERTAIN', failureCodes: ['JEV_EVIDENCE_REQUIRED'] },
+    { status: 'UNKNOWN' }
+  ]) {
+    assert.throws(
+      () => assertVerificationGate({
+        harness: { writesApplied: 1 },
+        actions,
+        acceptanceCommands: cmds,
+        ...(verification ? { verification } : {})
+      }),
+      (error) => error.message === 'VERIFICATION_REQUIRED',
+      `expected throw for verification=${JSON.stringify(verification)}`
+    );
+  }
+  // Red path with green acceptance still ok (do not mis-fail).
+  assert.equal(
+    assertVerificationGate({
+      harness: { writesApplied: 1 },
+      actions: [...actions, acceptanceShell()],
+      acceptanceCommands: cmds,
+      verification: { status: 'UNCERTAIN' }
+    }),
+    undefined
+  );
+});
+

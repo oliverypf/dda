@@ -13,7 +13,10 @@ import {
   isDiagnoseProbeExhaustedRecoverEligible,
   applyDiagnoseProbeExhaustedRecover,
   diagnoseProbeExhaustedRecoverHostNote,
-  resetTopologyBudgetCountersOnUpgrade
+  resetTopologyBudgetCountersOnUpgrade,
+  upgradeTopologyAfterFailure,
+  isProbeBudgetOnlyFailureEvidence,
+  shouldSuppressPostDprDiagnoseUpgrade
 } from '../src/execution-topology.mjs';
 
 test('bound choice documented: ≤2× per run; default maxProbes stays 6', () => {
@@ -90,6 +93,7 @@ test('T-dpr-1: DIAGNOSE + probes at max → recover telemetry; no ≥3 consecuti
   assert.equal(recovers[0].recoverOrdinal, 1);
   assert.match(diagnoseProbeExhaustedRecoverHostNote(), /HOST_DIAGNOSE_PROBE_EXHAUSTED_RECOVER/);
   assert.match(diagnoseProbeExhaustedRecoverHostNote(), /file\.write|shell\.execute|test\.execute/i);
+  assert.match(diagnoseProbeExhaustedRecoverHostNote(), /sticky execute|post_dpr_sticky_execute/i);
 
   // Consecutive pure probe BLOCKs without a recover turn must be < 3.
   // After first PROBES block we demote; subsequent probes under PTE are allowed.
@@ -183,4 +187,229 @@ test('T-dpr-#79: upgrade reset still independent of recover demote', () => {
   });
   assert.equal(recover.counters, undefined);
   assert.equal(recover.demotedTopology, TOPOLOGY_PLAN_THEN_EXECUTE);
+});
+
+
+// T-pds-1: after recover≥1 on PTE, probe-budget-only evidence → suppress upgrade
+test('T-pds-1: post-dpr sticky — probe-budget-only FAIL does not upgrade DIAGNOSE', () => {
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: ['TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [],
+    checkMessages: ['actions.progress FAIL cites TOPOLOGY_BUDGET_PROBES']
+  }), true);
+
+  // Historical previousActions noise must not veto when checkMessages cite probe budget.
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: ['EXCERPT_NOT_FOUND', 'TOOL_ACTION_REQUIRES_EVIDENCE', 'TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+
+  const suppress = shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  });
+  assert.equal(suppress, true);
+
+  // Simulate diagnose-stage gate: when suppress, keep PTE (do not call upgrade path).
+  let topology = TOPOLOGY_PLAN_THEN_EXECUTE;
+  let upgraded = false;
+  if (!suppress) {
+    const next = upgradeTopologyAfterFailure({
+      topologyEnabled: true,
+      currentTopology: topology,
+      failureEvidence: {
+        acceptanceFailureEvidence: true,
+        verificationFailed: true,
+        recoveryPointsDiagnose: true
+      }
+    });
+    if (next !== topology) {
+      upgraded = true;
+      topology = next;
+    }
+  }
+  assert.equal(upgraded, false);
+  assert.equal(topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+
+  // Without suppress, upgrade would fire.
+  const wouldUpgrade = upgradeTopologyAfterFailure({
+    topologyEnabled: true,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureEvidence: {
+      acceptanceFailureEvidence: true,
+      verificationFailed: true,
+      recoveryPointsDiagnose: true
+    }
+  });
+  assert.equal(wouldUpgrade, TOPOLOGY_DIAGNOSE_PROBE_RECOVER);
+
+  // recovers=0 → no sticky suppress even with probe-budget evidence
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 0,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: []
+  }), false);
+});
+
+// T-pds-2: real failures still allow upgrade (no false suppress)
+test('T-pds-2: post-dpr sticky — real failure still upgrades', () => {
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: ['SHELL_FAILED'],
+    checkMessages: []
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 2,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: ['SHELL_FAILED'],
+    checkMessages: ['shell blew up']
+  }), false);
+
+  // Real failure path: upgrade proceeds.
+  const next = upgradeTopologyAfterFailure({
+    topologyEnabled: true,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureEvidence: {
+      acceptanceFailureEvidence: true,
+      verificationFailed: true,
+      recoveryPointsDiagnose: true
+    }
+  });
+  assert.equal(next, TOPOLOGY_DIAGNOSE_PROBE_RECOVER);
+});
+
+// T-pds-3: #82 max recovers still 2; DEFAULT_MAX_PROBES 6; hardDecision preserved
+test('T-pds-3: sticky does not raise recover max / maxProbes; hardDecision preserved', () => {
+  assert.equal(DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN, 2);
+  assert.equal(DEFAULT_MAX_PROBES, 6);
+  assert.equal(resolveTopologyBudgets().maxProbes, 6);
+
+  const hard = {
+    decision: 'BLOCK',
+    confidence: 1,
+    source: 'rule',
+    reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE',
+    decisionType: 'ACTION_GATE'
+  };
+  const budget = assertTopologyBudget({
+    topologyEnabled: true,
+    topology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    counters: { writes: 0, tools: 0, probes: 6 },
+    budgets: resolveTopologyBudgets(),
+    toolName: 'file.write',
+    hardBlocked: true,
+    hardDecision: hard
+  });
+  assert.equal(budget.preservedHardBlock, true);
+  assert.equal(budget.reasonCode, 'TOOL_NOT_ALLOWED_IN_MODE');
+  assert.equal(budget.decision.decision, 'BLOCK');
+
+  // Sticky suppress itself never flips hard BLOCK.
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: []
+  }), true);
+});
+
+// T-smf-1: run62 t1a shape — probe-only via Chinese actions.progress message → suppress
+test('T-smf-1: run62 probe-only fixture suppresses and would emit sticky (no upgrade)', () => {
+  const failureCodes = ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'];
+  const checkMessages = ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）'];
+  // Historical EXCERPT noise must not veto when checks cite probe budget.
+  const actionErrorCodes = ['EXCERPT_AMBIGUOUS', 'EXCERPT_NOT_FOUND', TOPOLOGY_BUDGET_PROBES];
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes, actionErrorCodes, checkMessages
+  }), true);
+  const suppress = shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes,
+    actionErrorCodes,
+    checkMessages
+  });
+  assert.equal(suppress, true);
+
+  // Stage gate simulation: suppress → emit sticky path, 0× upgrade.
+  const emitted = [];
+  let topology = TOPOLOGY_PLAN_THEN_EXECUTE;
+  let upgraded = 0;
+  if (suppress) {
+    emitted.push({
+      kind: 'harness.post_dpr_sticky_execute',
+      stickyExecute: true,
+      suppressedDiagnoseUpgrade: true
+    });
+  } else {
+    const next = upgradeTopologyAfterFailure({
+      topologyEnabled: true,
+      currentTopology: topology,
+      failureEvidence: {
+        acceptanceFailureEvidence: true,
+        verificationFailed: true,
+        recoveryPointsDiagnose: true
+      }
+    });
+    if (next !== topology) {
+      upgraded += 1;
+      topology = next;
+    }
+  }
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].kind, 'harness.post_dpr_sticky_execute');
+  assert.equal(upgraded, 0);
+  assert.equal(topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+
+  // Defense path: empty checkMessages but FAILED action carries probe code/message.
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 2,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes,
+    actionErrorCodes: ['EXCERPT_AMBIGUOUS', TOPOLOGY_BUDGET_PROBES],
+    checkMessages: [TOPOLOGY_BUDGET_PROBES] // synthesized from previousActions errorCode
+  }), true);
+});
+
+// T-smf-2: real failures still upgrade (no false sticky suppress)
+test('T-smf-2: real non-probe failures do not suppress', () => {
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 2,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: ['SHELL_FAILED'],
+    checkMessages: ['shell blew up']
+  }), false);
 });

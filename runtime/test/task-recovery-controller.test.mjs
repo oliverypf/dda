@@ -53,3 +53,60 @@ test('pauses before another execution when recovery requests user input', async 
   assert.equal(result.stopReason, 'request-user');
   assert.equal(executions, 1);
 });
+
+test('T-smf-1: safeReport path preserves TOPOLOGY_BUDGET_PROBES checks into diagnose', async () => {
+  const seen = [];
+  const result = await runVerifierRecovery({
+    maxAttempts: 2,
+    execute: async ({ attempt }) => ({
+      text: `attempt-${attempt}`,
+      actions: [{
+        id: `a${attempt}`,
+        name: 'workspace.read',
+        state: 'FAILED',
+        errorCode: 'TOPOLOGY_BUDGET_PROBES',
+        errorMessage: 'Topology budget blocked this tool action: TOPOLOGY_BUDGET_PROBES',
+        argumentsDigest: `sha256:${String(attempt).padStart(64, '0')}`
+      }]
+    }),
+    verify: async ({ attempt }) => (attempt === 1
+      ? {
+          status: 'CONTINUE',
+          summary: 'Jev rejected the observed behavior: RULE_VERIFIER_FAILED',
+          nextAction: 'STOP_AND_REPORT',
+          failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+          checks: [
+            { id: 'actions.progress', status: 'FAIL', message: '1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）' },
+            { id: 'jev-behavior-judge', status: 'FAIL', message: 'RULE_VERIFIER_FAILED' }
+          ]
+        }
+      : { status: 'PASS', summary: 'verified', progress: 1 }),
+    diagnose: async ({ report, previousActions }) => {
+      seen.push({
+        failureCodes: report?.failureCodes ?? [],
+        checks: report?.checks ?? [],
+        checkMessages: (report?.checks ?? []).map((c) => c?.message).filter(Boolean),
+        actionErrorCodes: (previousActions ?? [])
+          .filter((a) => String(a?.state ?? '') === 'FAILED')
+          .map((a) => a?.errorCode)
+          .filter(Boolean)
+      });
+      return {
+        recoveryDirection: 'REPLAN_STEP',
+        verifierStatus: 'CONTINUE',
+        failureCodes: report?.failureCodes ?? []
+      };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0].failureCodes, ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED']);
+  assert.ok(
+    seen[0].checkMessages.some((m) => String(m).includes('TOPOLOGY_BUDGET_PROBES')),
+    'diagnose must receive probe-budget check message after safeReport'
+  );
+  assert.ok(
+    (seen[0].checks ?? []).some((c) => c?.id === 'actions.progress' && c?.status === 'FAIL'),
+    'actions.progress FAIL check must survive safeReport'
+  );
+});

@@ -282,8 +282,16 @@ export function needsVerificationGate(harness = {}, actions = []) {
  * §1.1: writes / APPLIED_UNVERIFIED without acceptance green → throw (unadorned).
  * Does not replace an already-thrown MODEL_TRANSPORT (caller must not catch-and-rewrite).
  * C1 does NOT relax this when writes exist and acceptance never went green.
+ *
+ * freeze-harness-verification-required-after-pass-r1: when the *final*
+ * verification status is PASS, the completion gate must not throw
+ * VERIFICATION_REQUIRED (verifier already accepted the run; gate false-negatives
+ * such as multi-cmd cd-equivalent extract vs digest-only test.execute must not
+ * flip PASS → run.failed).
  */
-export function assertVerificationGate({ harness, actions, acceptanceCommands } = {}) {
+export function assertVerificationGate({ harness, actions, acceptanceCommands, verification } = {}) {
+  // Final PASS wins over acceptance-observation gate.
+  if (verification && String(verification.status ?? '').toUpperCase() === 'PASS') return;
   if (!needsVerificationGate(harness, actions)) return;
   const cmds = Array.isArray(acceptanceCommands) ? acceptanceCommands : [];
   // C3: multi-acceptance requires every command green; single/empty keep any-green.

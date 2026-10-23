@@ -104,7 +104,8 @@ import {
   isBudgetedTopology,
   isDiagnoseProbeExhaustedRecoverEligible,
   applyDiagnoseProbeExhaustedRecover,
-  diagnoseProbeExhaustedRecoverHostNote
+  diagnoseProbeExhaustedRecoverHostNote,
+  shouldSuppressPostDprDiagnoseUpgrade
 } from './execution-topology.mjs';
 import {
   runInitialTopologySelection,
@@ -5134,64 +5135,106 @@ async function runTask() {
       }),
       diagnose: stageTimer.wrap('recovery', async ({ attempt, report, previousActions }) => {
         // Topology upgrade: verification/acceptance failure unlocks DIAGNOSE_PROBE_RECOVER.
+        // After #82 demote, suppress upgrade when evidence is only probe-budget BLOCK
+        // (sticky PTE execute window — freeze-harness-post-dpr-sticky-execute-r1).
         if (decisionConfig?.topologyEnabled === true) {
           acceptanceFailureEvidence = true;
           const prior = selectedTopology;
-          selectedTopology = upgradeTopologyAfterFailure({
-            topologyEnabled: true,
-            currentTopology: selectedTopology ?? TOPOLOGY_PLAN_THEN_EXECUTE,
-            failureEvidence: {
-              acceptanceFailureEvidence: true,
-              verificationFailed: true,
-              recoveryPointsDiagnose: true
+          const currentForSticky = selectedTopology ?? TOPOLOGY_PLAN_THEN_EXECUTE;
+          const actionErrorCodes = (Array.isArray(previousActions) ? previousActions : [])
+            .filter((action) => String(action?.state ?? '') === 'FAILED')
+            .map((action) => action?.errorCode)
+            .filter((code) => typeof code === 'string' && code.length > 0);
+          const checkMessages = (Array.isArray(report?.checks) ? report.checks : [])
+            .map((item) => item?.message)
+            .filter((message) => typeof message === 'string' && message.length > 0);
+          // Defense (miss-fire r1): if safeReport historically stripped checks, still
+          // surface probe-budget FAIL from previousActions so sticky can emit/suppress.
+          const hasProbeInChecks = checkMessages.some((m) => m.includes(TOPOLOGY_BUDGET_PROBES));
+          if (!hasProbeInChecks) {
+            for (const action of (Array.isArray(previousActions) ? previousActions : [])) {
+              if (String(action?.state ?? '') !== 'FAILED') continue;
+              const code = typeof action?.errorCode === 'string' ? action.errorCode : '';
+              const msg = typeof action?.errorMessage === 'string' ? action.errorMessage : '';
+              if (code === TOPOLOGY_BUDGET_PROBES || msg.includes(TOPOLOGY_BUDGET_PROBES)) {
+                checkMessages.push(msg || code);
+              }
             }
+          }
+          const suppressSticky = shouldSuppressPostDprDiagnoseUpgrade({
+            diagnoseProbeExhaustedRecovers,
+            currentTopology: currentForSticky,
+            failureCodes: report?.failureCodes ?? [],
+            actionErrorCodes,
+            checkMessages
           });
-          if (selectedTopology !== prior) {
-            const resetCounters = resetTopologyBudgetCountersOnUpgrade({
-              fromTopology: prior,
-              toTopology: selectedTopology
-            });
-            if (resetCounters) {
-              topologyBudgetCounters = resetCounters;
-            }
-            topologySelection = {
-              ...(topologySelection ?? {}),
-              topology: selectedTopology,
-              source: 'rule',
-              reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
-              upgradedFrom: prior,
-              budgets: topologyBudgets
-            };
-            emitEvent('topology.upgraded', {
-              from: prior,
-              to: selectedTopology,
+          if (suppressSticky) {
+            emitEvent('harness.post_dpr_sticky_execute', {
+              stickyExecute: true,
+              suppressedDiagnoseUpgrade: true,
               attempt,
-              failureCodes: report.failureCodes ?? [],
-              budgetCountersReset: Boolean(resetCounters),
-              counters: { ...(topologyBudgetCounters ?? {}) }
+              failureCodes: report?.failureCodes ?? [],
+              from: TOPOLOGY_PLAN_THEN_EXECUTE,
+              actionErrorCodes: actionErrorCodes.slice(0, 8)
             });
-            await recordDecision({
-              stepId: `topology-upgrade-${attempt}`,
-              role: 'decision-engine',
-              roleContextId: `${runId}-decision-engine`,
-              decisionType: 'SELECT_TOPOLOGY',
-              actionKind: 'TOPOLOGY',
-              parentDecisionIds: [finalVerificationDecision?.decisionId ?? allocationDecision.decisionId],
-              summary: `Upgraded topology ${prior ?? 'none'} → ${selectedTopology} after failure classification`,
-              outputRefs: [`topology-upgrade-${runId}-${attempt}`],
-              options: [{
-                optionId: selectedTopology,
+            // Stay on PTE; do not upgrade / do not reset budgets.
+          } else {
+            selectedTopology = upgradeTopologyAfterFailure({
+              topologyEnabled: true,
+              currentTopology: currentForSticky,
+              failureEvidence: {
+                acceptanceFailureEvidence: true,
+                verificationFailed: true,
+                recoveryPointsDiagnose: true
+              }
+            });
+            if (selectedTopology !== prior) {
+              const resetCounters = resetTopologyBudgetCountersOnUpgrade({
+                fromTopology: prior,
+                toTopology: selectedTopology
+              });
+              if (resetCounters) {
+                topologyBudgetCounters = resetCounters;
+              }
+              topologySelection = {
+                ...(topologySelection ?? {}),
+                topology: selectedTopology,
+                source: 'rule',
+                reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
+                upgradedFrom: prior,
+                budgets: topologyBudgets
+              };
+              emitEvent('topology.upgraded', {
+                from: prior,
+                to: selectedTopology,
+                attempt,
+                failureCodes: report.failureCodes ?? [],
+                budgetCountersReset: Boolean(resetCounters),
+                counters: { ...(topologyBudgetCounters ?? {}) }
+              });
+              await recordDecision({
+                stepId: `topology-upgrade-${attempt}`,
+                role: 'decision-engine',
+                roleContextId: `${runId}-decision-engine`,
+                decisionType: 'SELECT_TOPOLOGY',
                 actionKind: 'TOPOLOGY',
-                summary: selectedTopology,
-                requiredCapabilityIds: [],
-                evidenceRefs: [],
-                riskCodes: ['DIAGNOSE_PATH'],
-                rejectionReasonCodes: []
-              }],
-              selectedOptionId: selectedTopology,
-              reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
-              selectionCriteria: ['failure-classification-diagnose-upgrade']
-            });
+                parentDecisionIds: [finalVerificationDecision?.decisionId ?? allocationDecision.decisionId],
+                summary: `Upgraded topology ${prior ?? 'none'} → ${selectedTopology} after failure classification`,
+                outputRefs: [`topology-upgrade-${runId}-${attempt}`],
+                options: [{
+                  optionId: selectedTopology,
+                  actionKind: 'TOPOLOGY',
+                  summary: selectedTopology,
+                  requiredCapabilityIds: [],
+                  evidenceRefs: [],
+                  riskCodes: ['DIAGNOSE_PATH'],
+                  rejectionReasonCodes: []
+                }],
+                selectedOptionId: selectedTopology,
+                reasonCodes: ['RULE_FALLBACK', 'TOPOLOGY_UPGRADE_AFTER_FAILURE'],
+                selectionCriteria: ['failure-classification-diagnose-upgrade']
+              });
+            }
           }
         }
         await saveThreadCheckpoint('DIAGNOSING', {
@@ -5626,13 +5669,16 @@ async function runTask() {
     finalVerification = verification;
     // Freeze rule3 §1.1: writes / APPLIED_UNVERIFIED without harness-observed
     // acceptance green must throw (not return {ok:false} → exit 0).
+    // freeze-harness-verification-required-after-pass-r1: pass final verification
+    // so PASS short-circuits the gate (never terminal VERIFICATION_REQUIRED after PASS).
     assertVerificationGate({
       harness: harnessProgress.snapshot(),
       actions: result.actions,
       acceptanceCommands: extractAcceptanceCommands({
         prompt,
         acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria
-      })
+      }),
+      verification
     });
     const verificationDecision = completedStepRuns.at(-1).verificationDecision ?? finalVerificationDecision;
     const recoveryRun = {

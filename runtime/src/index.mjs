@@ -5148,6 +5148,19 @@ async function runTask() {
           const checkMessages = (Array.isArray(report?.checks) ? report.checks : [])
             .map((item) => item?.message)
             .filter((message) => typeof message === 'string' && message.length > 0);
+          // Defense (miss-fire r1): if safeReport historically stripped checks, still
+          // surface probe-budget FAIL from previousActions so sticky can emit/suppress.
+          const hasProbeInChecks = checkMessages.some((m) => m.includes(TOPOLOGY_BUDGET_PROBES));
+          if (!hasProbeInChecks) {
+            for (const action of (Array.isArray(previousActions) ? previousActions : [])) {
+              if (String(action?.state ?? '') !== 'FAILED') continue;
+              const code = typeof action?.errorCode === 'string' ? action.errorCode : '';
+              const msg = typeof action?.errorMessage === 'string' ? action.errorMessage : '';
+              if (code === TOPOLOGY_BUDGET_PROBES || msg.includes(TOPOLOGY_BUDGET_PROBES)) {
+                checkMessages.push(msg || code);
+              }
+            }
+          }
           const suppressSticky = shouldSuppressPostDprDiagnoseUpgrade({
             diagnoseProbeExhaustedRecovers,
             currentTopology: currentForSticky,

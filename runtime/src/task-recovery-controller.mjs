@@ -487,6 +487,22 @@ export const recoveryContinuationText = (recovery) => recovery ? [
                 ? [agentMissReplanHostNote()] : [])))))))
 ].join('\n') : '';
 
+/** Bound verifier checks so diagnose sticky suppress can see probe-budget signals (run62 miss). */
+const boundedSafeChecks = (checks) => (Array.isArray(checks) ? checks : []).slice(0, 24).map((check) => ({
+  id: boundedText(check?.id, 120) || 'unknown',
+  status: boundedText(check?.status, 24) || 'UNKNOWN',
+  message: boundedText(check?.message, 500),
+  ...(Array.isArray(check?.evidence)
+    ? {
+        evidence: check.evidence
+          .filter((ref) => typeof ref === 'string')
+          .slice(0, 8)
+          .map((ref) => boundedText(ref, 200))
+          .filter(Boolean)
+      }
+    : {})
+})).filter((check) => check.message.length > 0 || check.id !== 'unknown');
+
 const safeReport = (report) => ({
   status: normalizeStatus(report?.status),
   summary: boundedText(report?.summary),
@@ -494,6 +510,10 @@ const safeReport = (report) => ({
   failureCodes: Array.isArray(report?.failureCodes)
     ? report.failureCodes.map((code) => boundedText(code, 80)).filter(Boolean).slice(0, 16)
     : [],
+  // Preserve checks for post-dpr sticky (freeze-harness-post-dpr-sticky-miss-fire-r1).
+  ...(Array.isArray(report?.checks) && report.checks.length
+    ? { checks: boundedSafeChecks(report.checks) }
+    : {}),
   ...(report?.verificationOnlyRetry === true ? { verificationOnlyRetry: true } : {}),
   ...(report?.stopRecovery === true ? { stopRecovery: true } : {}),
   ...(safeIdentifier(report?.providerError) ? { providerError: report.providerError } : {}),

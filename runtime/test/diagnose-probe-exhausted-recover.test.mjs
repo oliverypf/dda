@@ -193,20 +193,22 @@ test('T-dpr-#79: upgrade reset still independent of recover demote', () => {
 
 // T-pds-1: after recover≥1 on PTE, probe-budget-only evidence → suppress upgrade
 test('T-pds-1: post-dpr sticky — probe-budget-only FAIL does not upgrade DIAGNOSE', () => {
+  // Probe-only = ACTION_FAILED ± TOPOLOGY_BUDGET_PROBES (no JEV_BEHAVIOR_REJECTED;
+  // REJECTED must not suppress — see T-srm-1 / reject-miss-fire-r1).
   assert.equal(isProbeBudgetOnlyFailureEvidence({
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
     actionErrorCodes: ['TOPOLOGY_BUDGET_PROBES'],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   }), true);
   assert.equal(isProbeBudgetOnlyFailureEvidence({
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED'],
     actionErrorCodes: [],
     checkMessages: ['actions.progress FAIL cites TOPOLOGY_BUDGET_PROBES']
   }), true);
 
   // Historical previousActions noise must not veto when checkMessages cite probe budget.
   assert.equal(isProbeBudgetOnlyFailureEvidence({
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED'],
     actionErrorCodes: ['EXCERPT_NOT_FOUND', 'TOOL_ACTION_REQUIRES_EVIDENCE', 'TOPOLOGY_BUDGET_PROBES'],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   }), true);
@@ -214,7 +216,7 @@ test('T-pds-1: post-dpr sticky — probe-budget-only FAIL does not upgrade DIAGN
   const suppress = shouldSuppressPostDprDiagnoseUpgrade({
     diagnoseProbeExhaustedRecovers: 1,
     currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
     actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   });
@@ -341,7 +343,8 @@ test('T-pds-3: sticky does not raise recover max / maxProbes; hardDecision prese
 
 // T-smf-1: run62 t1a shape — probe-only via Chinese actions.progress message → suppress
 test('T-smf-1: run62 probe-only fixture suppresses and would emit sticky (no upgrade)', () => {
-  const failureCodes = ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'];
+  // Probe-budget sticky fixture without REJECTED (REJECTED → T-srm-1 must not suppress).
+  const failureCodes = ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'];
   const checkMessages = ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）'];
   // Historical EXCERPT noise must not veto when checks cite probe budget.
   const actionErrorCodes = ['EXCERPT_AMBIGUOUS', 'EXCERPT_NOT_FOUND', TOPOLOGY_BUDGET_PROBES];
@@ -564,17 +567,82 @@ test('T-pde-3: recovers=0 evidence still upgrades; probe sticky regression green
     checkMessages: []
   }), false);
 
-  // #83 probe sticky still fires after dpr.
+  // #83 probe sticky still fires after dpr (ACTION_FAILED + probe; no REJECTED).
   assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
     diagnoseProbeExhaustedRecovers: 1,
     currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
     actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   }), true);
   assert.equal(isProbeBudgetOnlyFailureEvidence({
-    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
     actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+});
+
+
+// ——— T-srm: sticky must not swallow JEV_BEHAVIOR_REJECTED (reject-miss-fire-r1) ———
+
+test('T-srm-1: REJECTED + historical BUDGET_PROBES messages → suppress false', () => {
+  // Live run74 t2-117 / t3-110 shape: FAIL + JEV_BEHAVIOR_REJECTED while checkMessages
+  // still cite historical TOPOLOGY_BUDGET_PROBES from prior probe BLOCK / miss-fire synth.
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: ['EXCERPT_AMBIGUOUS', 'TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), false);
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [],
+    checkMessages: ['actions.progress FAIL cites TOPOLOGY_BUDGET_PROBES']
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: ['EXCERPT_AMBIGUOUS', 'TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), false);
+
+  // Without suppress, PTE→DIAG upgrade path remains available.
+  const next = upgradeTopologyAfterFailure({
+    topologyEnabled: true,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureEvidence: {
+      acceptanceFailureEvidence: true,
+      verificationFailed: true,
+      recoveryPointsDiagnose: true
+    }
+  });
+  assert.equal(next, TOPOLOGY_DIAGNOSE_PROBE_RECOVER);
+});
+
+test('T-srm-2: pure TOPOLOGY_BUDGET_PROBES / pure JEV_EVIDENCE_REQUIRED → suppress true', () => {
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED', 'TOPOLOGY_BUDGET_PROBES'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), true);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [],
+    checkMessages: []
   }), true);
 });

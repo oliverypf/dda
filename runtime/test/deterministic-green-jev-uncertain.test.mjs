@@ -276,3 +276,50 @@ test('T-dgu-tp-3: maxAttempts:2 ≥2 same-shape still uses promote (not tip-path
   assert.ok(ids.includes('deterministic-green-jev-uncertain-promote'), ids);
   assert.equal(ids.includes('deterministic-green-jev-uncertain-tip-path'), false);
 });
+
+
+// ——— T-srm-3: #85 DGU tip-path / ≥2 promote still green after reject-miss-fire ———
+
+test('T-srm-3: DGU tip-path maxAttempts:1 + ≥2 promote still green; REJECTED not promoted', async () => {
+  // tip-path promote still works
+  {
+    const coordinator = makeCoordinator();
+    const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+    const result = await scheduler.run({
+      maxAttempts: 1,
+      executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
+      verifyStep: async () => greenUncertain()
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.results.at(-1).report.status, 'PASS');
+  }
+  // ≥2 path still promote (not tip-path id when count≥2)
+  {
+    const coordinator = makeCoordinator();
+    const scheduler = createPlanStepCoordinator({ coordinator, plan: singleStepPlan() });
+    const result = await scheduler.run({
+      maxAttempts: 2,
+      executeStep: async ({ attempt }) => ({ outputDigest: `sha256:${String(attempt).padStart(64, '0')}` }),
+      verifyStep: async () => greenUncertain()
+    });
+    assert.equal(result.ok, true);
+    const ids = (result.results.at(-1).report.checks ?? []).map((c) => c.id);
+    assert.ok(ids.includes('deterministic-green-jev-uncertain-promote'));
+  }
+  // REJECTED must not be DGU-promoted
+  assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
+    failureCodes: [JEV_BEHAVIOR_REJECTED],
+    checks: [
+      { id: 'evidence.tests', status: 'PASS' },
+      { id: 'jev-behavior-judge', status: 'FAIL' }
+    ]
+  })), false);
+  // sticky: REJECTED must not suppress (align T-srm-1)
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED', JEV_BEHAVIOR_REJECTED],
+    actionErrorCodes: ['TOPOLOGY_BUDGET_PROBES'],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), false);
+});

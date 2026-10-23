@@ -421,9 +421,15 @@ export const isProbeBudgetOnlyFailureEvidence = ({
 } = {}) => {
   const actionCodes = asCodeList(actionErrorCodes);
   const codes = asCodeList(failureCodes);
+  // freeze-harness-post-dpr-sticky-reject-miss-fire-r1:
+  // Real behavior reject must NOT be treated as probe-only, even when historical
+  // TOPOLOGY_BUDGET_PROBES remains in checkMessages (miss-fire synthesis / prior
+  // probe BLOCK). Align with isEvidenceOnlyFailureEvidence (do not fold REJECTED).
+  if (codes.includes('JEV_BEHAVIOR_REJECTED')) return false;
+  if (actionCodes.includes('JEV_BEHAVIOR_REJECTED')) return false;
+
   const allowedFailure = new Set([
     'ACTION_FAILED',
-    'JEV_BEHAVIOR_REJECTED',
     TOPOLOGY_BUDGET_PROBES
   ]);
   // Real non-probe failure codes (TESTS_FAILED, etc.) never suppress.
@@ -432,6 +438,8 @@ export const isProbeBudgetOnlyFailureEvidence = ({
   const probeSignal = codes.includes(TOPOLOGY_BUDGET_PROBES) || mentionsProbeBudget(checkMessages);
   // Prefer verifier check / failureCodes probe signal. previousActions often carries
   // historical EXCERPT_* noise that must not veto sticky (run61b live miss).
+  // ACTION_FAILED is only probe-only when paired with an explicit probe signal
+  // (or all action errors are probe-family below) — never with REJECTED (gated above).
   if (probeSignal) return true;
 
   // No probe signal in codes/messages: require every present action error to be probe-family.

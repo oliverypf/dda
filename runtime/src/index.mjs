@@ -5669,13 +5669,16 @@ async function runTask() {
     finalVerification = verification;
     // Freeze rule3 §1.1: writes / APPLIED_UNVERIFIED without harness-observed
     // acceptance green must throw (not return {ok:false} → exit 0).
+    // freeze-harness-verification-required-after-pass-r1: pass final verification
+    // so PASS short-circuits the gate (never terminal VERIFICATION_REQUIRED after PASS).
     assertVerificationGate({
       harness: harnessProgress.snapshot(),
       actions: result.actions,
       acceptanceCommands: extractAcceptanceCommands({
         prompt,
         acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria
-      })
+      }),
+      verification
     });
     const verificationDecision = completedStepRuns.at(-1).verificationDecision ?? finalVerificationDecision;
     const recoveryRun = {

@@ -464,12 +464,27 @@ test('T-pde-1: post-dpr sticky — JEV_EVIDENCE_REQUIRED-only does not upgrade D
   assert.equal(upgraded, false);
   assert.equal(topology, TOPOLOGY_PLAN_THEN_EXECUTE);
 
-  // Probe path must not be claimed as evidence-only.
+  // Probe-shaped failureCodes must not be claimed as evidence-only.
   assert.equal(isEvidenceOnlyFailureEvidence({
     failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
     actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   }), false);
+
+  // Live run67 t3a shape: evidence failureCodes + miss-fire-synthesized probe
+  // checkMessages must still suppress (neither path used to fire → upgrade leaked).
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
 });
 
 // T-pde-2: real failures still allow upgrade (no false evidence sticky)

@@ -475,29 +475,32 @@ export const isEvidenceOnlyFailureEvidence = ({
   const actionCodes = asCodeList(actionErrorCodes);
   const messages = asMessageList(checkMessages);
 
-  // Probe sticky owns TOPOLOGY_BUDGET_PROBES — never claim evidence-only for it.
+  // Real failures must still upgrade (even if mixed with evidence).
+  if (codes.some(isPostDprRealFailureCode) || actionCodes.some(isPostDprRealFailureCode)) {
+    return false;
+  }
+
+  // Primary live shape (run66/run67): failureCodes exclusively evidence-family.
+  // Historical TOPOLOGY_BUDGET_PROBES may still sit in previousActions / be
+  // synthesized into checkMessages by miss-fire defense — that must NOT veto
+  // evidence-only sticky (otherwise neither probe-only nor evidence-only fires:
+  // JEV_EVIDENCE_REQUIRED ∉ probe allowedFailure set).
+  if (codes.length > 0) {
+    if (!codes.every((c) => EVIDENCE_ONLY_FAMILY.has(c))) return false;
+    return true;
+  }
+
+  // Empty failureCodes: require explicit evidence signal; leave probe-only path
+  // to isProbeBudgetOnlyFailureEvidence when checks cite TOPOLOGY_BUDGET_PROBES.
   if (
-    codes.includes(TOPOLOGY_BUDGET_PROBES)
-    || actionCodes.includes(TOPOLOGY_BUDGET_PROBES)
+    actionCodes.includes(TOPOLOGY_BUDGET_PROBES)
     || mentionsProbeBudget(messages)
   ) {
     return false;
   }
 
-  // Real failures must still upgrade.
-  if (codes.some(isPostDprRealFailureCode) || actionCodes.some(isPostDprRealFailureCode)) {
-    return false;
-  }
-
-  const evidenceSignal = codes.includes('JEV_EVIDENCE_REQUIRED')
-    || actionCodes.includes('JEV_EVIDENCE_REQUIRED')
+  return actionCodes.includes('JEV_EVIDENCE_REQUIRED')
     || mentionsEvidenceRequired(messages);
-  if (!evidenceSignal) return false;
-
-  // failureCodes must be empty or exclusively evidence-only family.
-  if (codes.length > 0 && !codes.every((c) => EVIDENCE_ONLY_FAMILY.has(c))) return false;
-
-  return true;
 };
 
 /**

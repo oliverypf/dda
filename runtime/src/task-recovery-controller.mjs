@@ -496,6 +496,67 @@ export const promoteDeterministicGreenJevUncertain = (verification, options = {}
   };
 };
 
+/**
+ * freeze-harness-deterministic-green-jev-behavior-reject-r1:
+ * Final FAIL whose failureCodes ⊆ {JEV_BEHAVIOR_REJECTED, ACTION_FAILED}
+ * (must include JEV_BEHAVIOR_REJECTED), with deterministic checks (incl.
+ * evidence.tests) all PASS/SKIPPED. jev-behavior-judge may be FAIL (the reject).
+ * Empty / UNKNOWN deterministic checks are NOT green. Pure ACTION_FAILED
+ * without REJECTED does NOT promote. Does not weaken sticky / probe-only.
+ */
+const BEHAVIOR_REJECT_PROMOTE_CODES = new Set(['JEV_BEHAVIOR_REJECTED', 'ACTION_FAILED']);
+
+export const isDeterministicGreenJevBehaviorReject = (verification) => {
+  if (String(verification?.status ?? '').toUpperCase() !== 'FAIL') return false;
+  const codes = (Array.isArray(verification?.failureCodes) ? verification.failureCodes : [])
+    .map((code) => String(code ?? '').trim())
+    .filter(Boolean);
+  if (!codes.length) return false;
+  if (!codes.includes('JEV_BEHAVIOR_REJECTED')) return false;
+  if (!codes.every((code) => BEHAVIOR_REJECT_PROMOTE_CODES.has(code))) return false;
+
+  const checks = Array.isArray(verification?.checks) ? verification.checks : [];
+  if (!checks.length) return false;
+
+  const deterministic = checks.filter((check) => !isJevBehaviorJudgeCheck(check));
+  if (!deterministic.length) return false;
+
+  const tests = deterministic.find(isEvidenceTestsCheck);
+  if (!tests) return false;
+  if (!['PASS', 'SKIPPED'].includes(statusOfCheck(tests))) return false;
+
+  for (const check of deterministic) {
+    const status = statusOfCheck(check);
+    if (status === 'FAIL') return false;
+    if (!['PASS', 'SKIPPED'].includes(status)) return false;
+  }
+  return true;
+};
+
+/**
+ * Promote terminal FAIL+JEV_BEHAVIOR_REJECTED (tests green) → PASS.
+ * Caller must gate with isDeterministicGreenJevBehaviorReject first.
+ */
+export const promoteDeterministicGreenJevBehaviorReject = (verification) => {
+  const priorChecks = Array.isArray(verification?.checks) ? verification.checks : [];
+  return {
+    ...verification,
+    status: 'PASS',
+    nextAction: 'COMPLETE',
+    summary: 'Deterministic checks green; promoted terminal FAIL+JEV_BEHAVIOR_REJECTED to PASS',
+    failureCodes: [],
+    checks: [
+      ...priorChecks,
+      {
+        id: 'deterministic-green-jev-behavior-reject-promote',
+        status: 'PASS',
+        message: 'freeze-harness-deterministic-green-jev-behavior-reject-r1'
+      }
+    ]
+  };
+};
+
+
 const clone = (value) => structuredClone(value);
 const boundedText = (value, max = 500) => String(value ?? '')
   .replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ')

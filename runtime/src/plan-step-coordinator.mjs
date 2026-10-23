@@ -2,7 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { restorePlannerPlan } from './agent-turns.mjs';
 import {
   countDeterministicGreenJevUncertainReports,
+  isDeterministicGreenJevBehaviorReject,
   isDeterministicGreenJevEvidenceUncertain,
+  promoteDeterministicGreenJevBehaviorReject,
   promoteDeterministicGreenJevUncertain
 } from './task-recovery-controller.mjs';
 
@@ -324,6 +326,25 @@ export class PlanStepCoordinator {
             completed = true;
             break;
           }
+        }
+        // freeze-harness-deterministic-green-jev-behavior-reject-r1:
+        // terminal FAIL + REJECTED/(±ACTION_FAILED) + deterministic tests green → PASS.
+        // Does not fold REJECTED into sticky/probe-only suppress; DGU UNCERTAIN path unchanged.
+        if (
+          report.status === 'FAIL'
+          && isDeterministicGreenJevBehaviorReject(report)
+        ) {
+          const promoted = promoteDeterministicGreenJevBehaviorReject(report);
+          record.report = clone(promoted);
+          report = promoted;
+          await this.#update(step.stepId, {
+            status: 'SUCCEEDED',
+            attempt,
+            ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
+            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+          });
+          completed = true;
+          break;
         }
         await this.#update(step.stepId, {
           status: report.status === 'ABSTAIN' || report.status === 'UNKNOWN' ? 'BLOCKED' : 'FAILED',

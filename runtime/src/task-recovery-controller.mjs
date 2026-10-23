@@ -506,6 +506,23 @@ export const promoteDeterministicGreenJevUncertain = (verification, options = {}
  */
 const BEHAVIOR_REJECT_PROMOTE_CODES = new Set(['JEV_BEHAVIOR_REJECTED', 'ACTION_FAILED']);
 
+const isActionsProgressCheck = (check) => {
+  const id = String(check?.id ?? '');
+  return id === 'actions.progress' || id.endsWith('.actions.progress');
+};
+
+/**
+ * actions.progress FAIL is the check-level twin of ACTION_FAILED (± probe budget
+ * noise). Live residual (run76 t2-121 / t3-114, run77 t3-117) pairs
+ * REJECTED + evidence.tests PASS with actions.progress FAIL — allow that when
+ * ACTION_FAILED is already in failureCodes. Other deterministic FAILs still block.
+ */
+const isAllowedActionProgressFail = (check, codes) => {
+  if (!isActionsProgressCheck(check)) return false;
+  if (statusOfCheck(check) !== 'FAIL') return false;
+  return codes.includes('ACTION_FAILED');
+};
+
 export const isDeterministicGreenJevBehaviorReject = (verification) => {
   if (String(verification?.status ?? '').toUpperCase() !== 'FAIL') return false;
   const codes = (Array.isArray(verification?.failureCodes) ? verification.failureCodes : [])
@@ -527,6 +544,7 @@ export const isDeterministicGreenJevBehaviorReject = (verification) => {
 
   for (const check of deterministic) {
     const status = statusOfCheck(check);
+    if (isAllowedActionProgressFail(check, codes)) continue;
     if (status === 'FAIL') return false;
     if (!['PASS', 'SKIPPED'].includes(status)) return false;
   }

@@ -78,6 +78,37 @@ test('T-dgr-1: final FAIL + only REJECTED/(±ACTION_FAILED) + tests PASS → pro
     failureCodes: ['ACTION_FAILED', JEV_BEHAVIOR_REJECTED]
   })), true);
 
+  // live residual shape (run76/run77): actions.progress FAIL + tests PASS + REJECTED
+  assert.equal(isDeterministicGreenJevBehaviorReject(greenRejectFail({
+    failureCodes: ['ACTION_FAILED', JEV_BEHAVIOR_REJECTED],
+    checks: [
+      { id: 'evidence.tests', status: 'PASS', message: 'tests green' },
+      { id: 'actions.progress', status: 'FAIL', message: '1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）' },
+      { id: 'output.non_empty', status: 'PASS' },
+      { id: 'jev-behavior-judge', status: 'FAIL', message: 'RULE_VERIFIER_FAILED' }
+    ]
+  })), true, 'live residual actions.progress FAIL must still promote');
+
+  // actions.progress FAIL without ACTION_FAILED in codes → still no promote
+  assert.equal(isDeterministicGreenJevBehaviorReject(greenRejectFail({
+    failureCodes: [JEV_BEHAVIOR_REJECTED],
+    checks: [
+      { id: 'evidence.tests', status: 'PASS' },
+      { id: 'actions.progress', status: 'FAIL', message: '1 个动作执行失败' },
+      { id: 'jev-behavior-judge', status: 'FAIL' }
+    ]
+  })), false);
+
+  // other deterministic FAIL (e.g. paths.scope) still blocks
+  assert.equal(isDeterministicGreenJevBehaviorReject(greenRejectFail({
+    failureCodes: ['ACTION_FAILED', JEV_BEHAVIOR_REJECTED],
+    checks: [
+      { id: 'evidence.tests', status: 'PASS' },
+      { id: 'paths.scope', status: 'FAIL', message: 'out of scope' },
+      { id: 'jev-behavior-judge', status: 'FAIL' }
+    ]
+  })), false);
+
   // tip maxAttempts:1
   {
     const coordinator = makeCoordinator();

@@ -105,7 +105,9 @@ import {
   isDiagnoseProbeExhaustedRecoverEligible,
   applyDiagnoseProbeExhaustedRecover,
   diagnoseProbeExhaustedRecoverHostNote,
-  shouldSuppressPostDprDiagnoseUpgrade
+  shouldSuppressPostDprDiagnoseUpgrade,
+  isProbeBudgetOnlyFailureEvidence,
+  isEvidenceOnlyFailureEvidence
 } from './execution-topology.mjs';
 import {
   runInitialTopologySelection,
@@ -5161,17 +5163,23 @@ async function runTask() {
               }
             }
           }
-          const suppressSticky = shouldSuppressPostDprDiagnoseUpgrade({
-            diagnoseProbeExhaustedRecovers,
-            currentTopology: currentForSticky,
+          const stickyArgs = {
             failureCodes: report?.failureCodes ?? [],
             actionErrorCodes,
             checkMessages
+          };
+          const suppressSticky = shouldSuppressPostDprDiagnoseUpgrade({
+            diagnoseProbeExhaustedRecovers,
+            currentTopology: currentForSticky,
+            ...stickyArgs
           });
           if (suppressSticky) {
+            const probeOnly = isProbeBudgetOnlyFailureEvidence(stickyArgs);
+            const evidenceOnly = isEvidenceOnlyFailureEvidence(stickyArgs);
             emitEvent('harness.post_dpr_sticky_execute', {
               stickyExecute: true,
               suppressedDiagnoseUpgrade: true,
+              stickyEvidence: evidenceOnly === true && probeOnly !== true,
               attempt,
               failureCodes: report?.failureCodes ?? [],
               from: TOPOLOGY_PLAN_THEN_EXECUTE,

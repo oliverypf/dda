@@ -16,6 +16,7 @@ import {
   resetTopologyBudgetCountersOnUpgrade,
   upgradeTopologyAfterFailure,
   isProbeBudgetOnlyFailureEvidence,
+  isEvidenceOnlyFailureEvidence,
   shouldSuppressPostDprDiagnoseUpgrade
 } from '../src/execution-topology.mjs';
 
@@ -412,4 +413,153 @@ test('T-smf-2: real non-probe failures do not suppress', () => {
     actionErrorCodes: ['SHELL_FAILED'],
     checkMessages: ['shell blew up']
   }), false);
+});
+
+
+// T-pde-1: after recover≥1 on PTE, JEV_EVIDENCE_REQUIRED-only → suppress upgrade
+test('T-pde-1: post-dpr sticky — JEV_EVIDENCE_REQUIRED-only does not upgrade DIAGNOSE', () => {
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), true);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: [],
+    actionErrorCodes: [],
+    checkMessages: ['verifier UNCERTAIN (JEV_EVIDENCE_REQUIRED)']
+  }), true);
+  // Historical EXCERPT noise must not veto when failureCodes are evidence-only.
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: ['EXCERPT_NOT_FOUND', 'TOOL_ACTION_REQUIRES_EVIDENCE'],
+    checkMessages: []
+  }), true);
+
+  const suppress = shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  });
+  assert.equal(suppress, true);
+
+  let topology = TOPOLOGY_PLAN_THEN_EXECUTE;
+  let upgraded = false;
+  if (!suppress) {
+    const next = upgradeTopologyAfterFailure({
+      topologyEnabled: true,
+      currentTopology: topology,
+      failureEvidence: {
+        acceptanceFailureEvidence: true,
+        verificationFailed: true,
+        recoveryPointsDiagnose: true
+      }
+    });
+    if (next !== topology) {
+      upgraded = true;
+      topology = next;
+    }
+  }
+  assert.equal(upgraded, false);
+  assert.equal(topology, TOPOLOGY_PLAN_THEN_EXECUTE);
+
+  // Probe path must not be claimed as evidence-only.
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), false);
+});
+
+// T-pde-2: real failures still allow upgrade (no false evidence sticky)
+test('T-pde-2: post-dpr sticky — real failure still upgrades despite JEV_EVIDENCE_REQUIRED', () => {
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED', 'TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: ['SHELL_FAILED'],
+    checkMessages: []
+  }), false);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: ['JEV_EVIDENCE_REQUIRED']
+  }), false);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['RULE_VERIFIER'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(isEvidenceOnlyFailureEvidence({
+    failureCodes: ['RULE_VERIFIER_SCHEMA'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED', 'TESTS_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 2,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED'],
+    actionErrorCodes: [],
+    checkMessages: ['JEV_EVIDENCE_REQUIRED']
+  }), false);
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: ['SHELL_FAILED'],
+    checkMessages: []
+  }), false);
+
+  const next = upgradeTopologyAfterFailure({
+    topologyEnabled: true,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureEvidence: {
+      acceptanceFailureEvidence: true,
+      verificationFailed: true,
+      recoveryPointsDiagnose: true
+    }
+  });
+  assert.equal(next, TOPOLOGY_DIAGNOSE_PROBE_RECOVER);
+});
+
+// T-pde-3: pre-dpr evidence still upgrades; #83 probe sticky does not regress
+test('T-pde-3: recovers=0 evidence still upgrades; probe sticky regression green', () => {
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 0,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['JEV_EVIDENCE_REQUIRED'],
+    actionErrorCodes: [],
+    checkMessages: []
+  }), false);
+
+  // #83 probe sticky still fires after dpr.
+  assert.equal(shouldSuppressPostDprDiagnoseUpgrade({
+    diagnoseProbeExhaustedRecovers: 1,
+    currentTopology: TOPOLOGY_PLAN_THEN_EXECUTE,
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
+  assert.equal(isProbeBudgetOnlyFailureEvidence({
+    failureCodes: ['ACTION_FAILED', 'JEV_BEHAVIOR_REJECTED'],
+    actionErrorCodes: [TOPOLOGY_BUDGET_PROBES],
+    checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
+  }), true);
 });

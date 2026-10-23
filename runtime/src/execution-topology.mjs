@@ -391,7 +391,7 @@ export const diagnoseProbeExhaustedRecoverHostNote = () => [
   'HOST_DIAGNOSE_PROBE_EXHAUSTED_RECOVER: Probe budget exhausted under DIAGNOSE_PROBE_RECOVER.',
   'Stop further read/list/focus probes. Next: bounded file.write/file.patch or shell.execute/test.execute/verify.',
   'Topology demoted to PLAN_THEN_EXECUTE sticky execute window for this recover bound;',
-  'probe-budget-only FAIL must not re-upgrade to DIAGNOSE (post_dpr_sticky_execute).',
+  'probe-budget-only or JEV_EVIDENCE_REQUIRED-only FAIL must not re-upgrade to DIAGNOSE (post_dpr_sticky_execute).',
   `At most ${DIAGNOSE_PROBE_EXHAUSTED_RECOVER_MAX_PER_RUN} diagnose-probe-exhausted recovers per run.`
 ].join(' ');
 
@@ -442,8 +442,68 @@ export const isProbeBudgetOnlyFailureEvidence = ({
 };
 
 /**
+ * Evidence-gap family for post-dpr sticky (freeze-harness-post-dpr-sticky-evidence-r1).
+ * Keep narrow — do NOT fold JEV_BEHAVIOR_REJECTED into evidence-only suppress.
+ */
+const EVIDENCE_ONLY_FAMILY = new Set(['JEV_EVIDENCE_REQUIRED']);
+
+/** Real execute/test/shell/rule failures that must still allow PTE→DIAG after dpr. */
+const isPostDprRealFailureCode = (code) => {
+  const c = String(code ?? '');
+  if (!c) return false;
+  if (c === 'ACTION_FAILED' || c === 'TESTS_FAILED' || c === 'SHELL_FAILED' || c === 'RULE_VERIFIER') {
+    return true;
+  }
+  return c.startsWith('RULE_VERIFIER');
+};
+
+const mentionsEvidenceRequired = (messages) =>
+  asMessageList(messages).some((m) => m.includes('JEV_EVIDENCE_REQUIRED'));
+
+/**
+ * freeze-harness-post-dpr-sticky-evidence-r1:
+ * True when failure evidence is ONLY JEV_EVIDENCE_REQUIRED (± empty / same-family),
+ * with no ACTION_FAILED / TESTS_FAILED / SHELL_FAILED / RULE_VERIFIER.
+ * Probe-budget path stays owned by isProbeBudgetOnlyFailureEvidence (do not double-claim).
+ */
+export const isEvidenceOnlyFailureEvidence = ({
+  failureCodes = [],
+  actionErrorCodes = [],
+  checkMessages = []
+} = {}) => {
+  const codes = asCodeList(failureCodes);
+  const actionCodes = asCodeList(actionErrorCodes);
+  const messages = asMessageList(checkMessages);
+
+  // Probe sticky owns TOPOLOGY_BUDGET_PROBES — never claim evidence-only for it.
+  if (
+    codes.includes(TOPOLOGY_BUDGET_PROBES)
+    || actionCodes.includes(TOPOLOGY_BUDGET_PROBES)
+    || mentionsProbeBudget(messages)
+  ) {
+    return false;
+  }
+
+  // Real failures must still upgrade.
+  if (codes.some(isPostDprRealFailureCode) || actionCodes.some(isPostDprRealFailureCode)) {
+    return false;
+  }
+
+  const evidenceSignal = codes.includes('JEV_EVIDENCE_REQUIRED')
+    || actionCodes.includes('JEV_EVIDENCE_REQUIRED')
+    || mentionsEvidenceRequired(messages);
+  if (!evidenceSignal) return false;
+
+  // failureCodes must be empty or exclusively evidence-only family.
+  if (codes.length > 0 && !codes.every((c) => EVIDENCE_ONLY_FAMILY.has(c))) return false;
+
+  return true;
+};
+
+/**
  * After ≥1× diagnose_probe_exhausted_recover demote to PTE, do not upgrade
- * back to DIAGNOSE when the only failure evidence is probe-budget BLOCK.
+ * back to DIAGNOSE when the only failure evidence is probe-budget BLOCK
+ * or JEV_EVIDENCE_REQUIRED-only (sticky evidence).
  */
 export const shouldSuppressPostDprDiagnoseUpgrade = ({
   diagnoseProbeExhaustedRecovers = 0,
@@ -455,7 +515,9 @@ export const shouldSuppressPostDprDiagnoseUpgrade = ({
   const recovers = Number(diagnoseProbeExhaustedRecovers ?? 0);
   if (!Number.isFinite(recovers) || recovers < 1) return false;
   if (normalizeTopology(currentTopology) !== TOPOLOGY_PLAN_THEN_EXECUTE) return false;
-  return isProbeBudgetOnlyFailureEvidence({ failureCodes, actionErrorCodes, checkMessages });
+  const probeOnly = isProbeBudgetOnlyFailureEvidence({ failureCodes, actionErrorCodes, checkMessages });
+  if (probeOnly) return true;
+  return isEvidenceOnlyFailureEvidence({ failureCodes, actionErrorCodes, checkMessages });
 };
 
 

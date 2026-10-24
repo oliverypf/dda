@@ -497,14 +497,21 @@ export const promoteDeterministicGreenJevUncertain = (verification, options = {}
 };
 
 /**
- * freeze-harness-deterministic-green-jev-behavior-reject-r1:
- * Final FAIL whose failureCodes ⊆ {JEV_BEHAVIOR_REJECTED, ACTION_FAILED}
+ * freeze-harness-deterministic-green-jev-behavior-reject-r1, extended by
+ * freeze-harness-mid-rejected-friction-r1 to include REPEATED_ACTION:
+ * Final FAIL whose failureCodes ⊆ {JEV_BEHAVIOR_REJECTED, ACTION_FAILED,
+ * REPEATED_ACTION}
  * (must include JEV_BEHAVIOR_REJECTED), with deterministic checks (incl.
  * evidence.tests) all PASS/SKIPPED. jev-behavior-judge may be FAIL (the reject).
- * Empty / UNKNOWN deterministic checks are NOT green. Pure ACTION_FAILED
- * without REJECTED does NOT promote. Does not weaken sticky / probe-only.
+ * Empty / UNKNOWN deterministic checks are NOT green. ACTION_FAILED or
+ * REPEATED_ACTION without REJECTED does NOT promote. Does not weaken sticky /
+ * probe-only.
  */
-const BEHAVIOR_REJECT_PROMOTE_CODES = new Set(['JEV_BEHAVIOR_REJECTED', 'ACTION_FAILED']);
+const BEHAVIOR_REJECT_PROMOTE_CODES = new Set([
+  'JEV_BEHAVIOR_REJECTED',
+  'ACTION_FAILED',
+  'REPEATED_ACTION'
+]);
 
 const isActionsProgressCheck = (check) => {
   const id = String(check?.id ?? '');

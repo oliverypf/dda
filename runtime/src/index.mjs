@@ -436,6 +436,15 @@ const boundedVerificationChecks = (checks) => Array.isArray(checks)
     }))
   : [];
 
+// A promoted coordinator report carries one of these audit checks. Keep the
+// IDs in one place so plan aggregation can detect a post-promote terminal
+// report before it is flattened into the aggregate verification.
+const PROMOTE_VERIFICATION_CHECK_IDS = new Set([
+  'deterministic-green-jev-uncertain-promote',
+  'deterministic-green-jev-uncertain-tip-path',
+  'deterministic-green-jev-behavior-reject-promote'
+]);
+
 const trajectoryErrorPayload = (error) => {
   const rawMessage = error instanceof Error ? error.message : String(error);
   const message = safeRuntimeMessage(error, '运行时未提供具体错误信息');
@@ -5603,6 +5612,22 @@ async function runTask() {
     let pendingPlanContinueHostNote = undefined;
     const planExecution = await planCoordinator.run({
       maxAttempts: 1,
+      onVerificationPromoted: ({ stepId, attempt, report }) => {
+        // Keep the historical pre-promote verification.completed event for
+        // auditability, then surface the coordinator's terminal PASS so the
+        // live harness progress and consumers converge on SUCCEEDED.
+        emitEvent('verification.completed', {
+          attempt,
+          status: report?.status,
+          summary: report?.summary,
+          nextAction: report?.nextAction,
+          failureCodes: report?.failureCodes ?? [],
+          checks: boundedVerificationChecks(report?.checks),
+          promoted: true,
+          stepId
+        });
+        emitEvent('harness.progress', harnessProgress.snapshot());
+      },
       continueReplan: {
         getWriteCounts: () => {
           const snap = harnessProgress.snapshot();
@@ -5647,7 +5672,13 @@ async function runTask() {
     }
     executionPlan = planExecution.plan;
     if (plannerPlan) plannerPlan = executionPlan;
-    const completedStepRuns = planExecution.results.map((entry) => entry.result).filter((entry) => entry?.result && entry?.verification);
+    // The coordinator's report is authoritative after a deterministic
+    // promote. Keep the nested executeStep payload for text/actions and other
+    // execution metadata, while selecting report first for verification.
+    const completedPlanEntries = planExecution.results.filter((entry) =>
+      entry?.result?.result && (entry?.report || entry?.result?.verification)
+    );
+    const completedStepRuns = completedPlanEntries.map((entry) => entry.result);
     if (!completedStepRuns.length) throw new Error('PLAN_NO_COMPLETED_STEPS');
     const result = {
       text: completedStepRuns.map((entry) => entry.result.text).filter(Boolean).join('\n\n'),
@@ -5656,7 +5687,7 @@ async function runTask() {
       toolCallCount: completedStepRuns.reduce((sum, entry) => sum + Number(entry.result.toolCallCount ?? 0), 0),
       actions: completedStepRuns.flatMap((entry) => Array.isArray(entry.result.actions) ? entry.result.actions : [])
     };
-    const stepReports = completedStepRuns.map((entry) => entry.verification);
+    const stepReports = completedPlanEntries.map((entry) => entry.report ?? entry.result.verification);
     const verification = {
       status: stepReports.every((report) => report.status === 'PASS') ? 'PASS' : 'FAIL',
       summary: `Verified ${stepReports.length} plan step(s)`,
@@ -5668,13 +5699,40 @@ async function runTask() {
       failureCodes: [...new Set(stepReports.flatMap((report) => report.failureCodes ?? []))].slice(0, 32),
       nextAction: stepReports.every((report) => report.status === 'PASS') ? 'COMPLETE' : 'STOP_AND_REPORT',
       verifierVersion: [...new Set(stepReports.map((report) => report.verifierVersion).filter(Boolean))].join(',') || undefined,
-      checks: completedStepRuns.flatMap((entry) => (entry.verification.checks ?? []).map((check) => ({
-        ...check,
-        id: `${entry.result?.stepId ?? 'step'}.${check.id}`
-      })))
+      checks: completedPlanEntries.flatMap((entry) => {
+        // A coordinator report may omit checks on ordinary steps; preserve
+        // the nested verifier checks in that case while still preferring a
+        // promoted report's checks whenever they are present.
+        const checks = entry.report?.checks ?? entry.result?.verification?.checks ?? [];
+        return checks.map((check) => ({
+          ...check,
+          id: `${entry.result?.stepId ?? 'step'}.${check.id}`
+        }));
+      })
     };
     finalResult = result;
     finalVerification = verification;
+    // Preserve the pre-promote events, but emit one aggregate terminal event
+    // whenever a promoted audit check contributed to the final report. This
+    // gives consumers a final PASS event whose checks match the plan result.
+    const hasPromotedVerification = completedPlanEntries.some((entry) => {
+      const checks = entry.report?.checks ?? entry.result?.verification?.checks ?? [];
+      return checks.some((check) => PROMOTE_VERIFICATION_CHECK_IDS.has(check?.id));
+    });
+    const lastStepReport = stepReports.at(-1);
+    if (hasPromotedVerification || lastStepReport?.status !== 'PASS') {
+      const lastPlanEntry = completedPlanEntries.at(-1);
+      emitEvent('verification.completed', {
+        attempt: lastPlanEntry?.attempt ?? lastPlanEntry?.result?.recoveryRun?.attempts ?? lastPlanEntry?.result?.recoveryRun?.attempt ?? 1,
+        status: verification.status,
+        summary: verification.summary,
+        nextAction: verification.nextAction,
+        failureCodes: verification.failureCodes,
+        checks: boundedVerificationChecks(verification.checks),
+        ...(hasPromotedVerification ? { promoted: true } : {})
+      });
+      emitEvent('harness.progress', harnessProgress.snapshot());
+    }
     // Freeze rule3 §1.1: writes / APPLIED_UNVERIFIED without harness-observed
     // acceptance green must throw (not return {ok:false} → exit 0).
     // freeze-harness-verification-required-after-pass-r1: pass final verification

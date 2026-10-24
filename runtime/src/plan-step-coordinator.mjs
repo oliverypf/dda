@@ -142,9 +142,12 @@ export class PlanStepCoordinator {
     return pending ? clone(pending) : undefined;
   }
 
-  async run({ executeStep, verifyStep, diagnoseStep, maxAttempts = 3, signal, continueReplan } = {}) {
+  async run({ executeStep, verifyStep, diagnoseStep, maxAttempts = 3, signal, continueReplan, onVerificationPromoted } = {}) {
     if (typeof executeStep !== 'function' || typeof verifyStep !== 'function') throw new Error('PLAN_STEP_CALLBACKS_REQUIRED');
     if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS) throw new Error('PLAN_STEP_ATTEMPT_LIMIT_INVALID');
+    if (onVerificationPromoted !== undefined && typeof onVerificationPromoted !== 'function') {
+      throw new Error('PLAN_VERIFICATION_PROMOTED_CALLBACK_INVALID');
+    }
     if (continueReplan !== undefined) {
       if (!continueReplan || typeof continueReplan !== 'object') throw new Error('PLAN_CONTINUE_REPLAN_INVALID');
       if (continueReplan.getWriteCounts !== undefined && typeof continueReplan.getWriteCounts !== 'function') {
@@ -312,16 +315,33 @@ export class PlanStepCoordinator {
             report.status === 'UNCERTAIN'
             && isDeterministicGreenJevEvidenceUncertain(report)
           ) {
+            const priorStatus = report.status;
+            const tipPath = sameShapeCount < 2;
             const promoted = promoteDeterministicGreenJevUncertain(report, {
-              tipPath: sameShapeCount < 2
+              tipPath
             });
             record.report = clone(promoted);
             report = promoted;
+            // Keep the executeStep payload aligned with the coordinator's
+            // terminal report. Downstream aggregation receives this payload
+            // through result.verification, while report remains the durable
+            // coordinator result used by the plan scheduler.
+            if (record.result && typeof record.result === 'object') {
+              record.result.verification = clone(promoted);
+              if ('ok' in record.result) record.result.ok = true;
+            }
             await this.#update(step.stepId, {
               status: 'SUCCEEDED',
               attempt,
               ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
               ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+            });
+            await onVerificationPromoted?.({
+              stepId: step.stepId,
+              attempt,
+              report: clone(promoted),
+              priorStatus,
+              reason: tipPath ? 'tip-path' : 'dgu'
             });
             completed = true;
             break;
@@ -334,14 +354,28 @@ export class PlanStepCoordinator {
           report.status === 'FAIL'
           && isDeterministicGreenJevBehaviorReject(report)
         ) {
+          const priorStatus = report.status;
           const promoted = promoteDeterministicGreenJevBehaviorReject(report);
           record.report = clone(promoted);
           report = promoted;
+          // See the DGU path above: aggregation and downstream consumers must
+          // observe the promoted PASS in the nested executeStep payload too.
+          if (record.result && typeof record.result === 'object') {
+            record.result.verification = clone(promoted);
+            if ('ok' in record.result) record.result.ok = true;
+          }
           await this.#update(step.stepId, {
             status: 'SUCCEEDED',
             attempt,
             ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
             ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+          });
+          await onVerificationPromoted?.({
+            stepId: step.stepId,
+            attempt,
+            report: clone(promoted),
+            priorStatus,
+            reason: 'dgr'
           });
           completed = true;
           break;

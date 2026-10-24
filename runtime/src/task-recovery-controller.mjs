@@ -1088,6 +1088,8 @@ export const runVerifierRecovery = async ({
       && !postMissEvidenceDeltaJustFired
       && !postMissUncertainExhaustedJustFired
       && (report.status === 'FAIL' || report.status === 'STALLED')
+      // freeze-harness-dgr-before-post-miss-replan-r1: preserve DGR FAIL for coordinator promotion.
+      && !isDeterministicGreenJevBehaviorReject(report)
       && agentMiss
       && postMissUncertainReplanned
       && !postMissTerminalReplanned
@@ -1134,6 +1136,8 @@ export const runVerifierRecovery = async ({
       && !postMissUncertainExhaustedJustFired
       && !postMissTerminalJustFired
       && (report.status === 'FAIL' || report.status === 'STALLED')
+      // freeze-harness-dgr-before-post-miss-replan-r1: preserve DGR FAIL for coordinator promotion.
+      && !isDeterministicGreenJevBehaviorReject(report)
       && agentMiss
       && agentMissReplanned
       && !postMissUncertainReplanned

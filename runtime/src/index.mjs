@@ -204,6 +204,7 @@ import { normalizeCandidateSetSpec, planCandidateFanout } from './candidate-fano
 import { runCandidateDraftStage } from './candidate-draft-stage.mjs';
 import { createAgentCouncil } from './agent-council.mjs';
 import { createPlanStepCoordinator } from './plan-step-coordinator.mjs';
+import { buildAggregatePlanVerification } from './promote-align-aggregate.mjs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -5678,7 +5679,15 @@ async function runTask() {
     const completedPlanEntries = planExecution.results.filter((entry) =>
       entry?.result?.result && (entry?.report || entry?.result?.verification)
     );
-    const completedStepRuns = completedPlanEntries.map((entry) => entry.result);
+    // freeze-harness-promote-align-after-tip-path-r1: aggregate on last entry
+    // per stepId so pre-promote UNCERTAIN/FAIL attempts do not poison the
+    // terminal verification.completed into FAIL promoted:true (last_ver).
+    // Historical per-attempt verification.completed events remain for audit.
+    const aggregate = buildAggregatePlanVerification(completedPlanEntries, {
+      promoteCheckIds: PROMOTE_VERIFICATION_CHECK_IDS
+    });
+    const authoritativePlanEntries = aggregate.authoritativeEntries;
+    const completedStepRuns = authoritativePlanEntries.map((entry) => entry.result);
     if (!completedStepRuns.length) throw new Error('PLAN_NO_COMPLETED_STEPS');
     const result = {
       text: completedStepRuns.map((entry) => entry.result.text).filter(Boolean).join('\n\n'),
@@ -5687,41 +5696,20 @@ async function runTask() {
       toolCallCount: completedStepRuns.reduce((sum, entry) => sum + Number(entry.result.toolCallCount ?? 0), 0),
       actions: completedStepRuns.flatMap((entry) => Array.isArray(entry.result.actions) ? entry.result.actions : [])
     };
-    const stepReports = completedPlanEntries.map((entry) => entry.report ?? entry.result.verification);
-    const verification = {
-      status: stepReports.every((report) => report.status === 'PASS') ? 'PASS' : 'FAIL',
-      summary: `Verified ${stepReports.length} plan step(s)`,
-      progress: stepReports.reduce((sum, report) => sum + Number(report.progress ?? 0), 0) / stepReports.length,
-      quality: Math.min(...stepReports.map((report) => Number(report.quality ?? 0))),
-      safety: Math.min(...stepReports.map((report) => Number(report.safety ?? 0))),
-      uncertainty: Math.max(...stepReports.map((report) => Number(report.uncertainty ?? 0))),
-      evidence: [...new Set(stepReports.flatMap((report) => report.evidence ?? []))].slice(0, 64),
-      failureCodes: [...new Set(stepReports.flatMap((report) => report.failureCodes ?? []))].slice(0, 32),
-      nextAction: stepReports.every((report) => report.status === 'PASS') ? 'COMPLETE' : 'STOP_AND_REPORT',
-      verifierVersion: [...new Set(stepReports.map((report) => report.verifierVersion).filter(Boolean))].join(',') || undefined,
-      checks: completedPlanEntries.flatMap((entry) => {
-        // A coordinator report may omit checks on ordinary steps; preserve
-        // the nested verifier checks in that case while still preferring a
-        // promoted report's checks whenever they are present.
-        const checks = entry.report?.checks ?? entry.result?.verification?.checks ?? [];
-        return checks.map((check) => ({
-          ...check,
-          id: `${entry.result?.stepId ?? 'step'}.${check.id}`
-        }));
-      })
-    };
+    const {
+      hasPromotedVerification,
+      authoritativeEntries: _authoritativeUnused,
+      stepReports,
+      ...verification
+    } = aggregate;
     finalResult = result;
     finalVerification = verification;
     // Preserve the pre-promote events, but emit one aggregate terminal event
     // whenever a promoted audit check contributed to the final report. This
     // gives consumers a final PASS event whose checks match the plan result.
-    const hasPromotedVerification = completedPlanEntries.some((entry) => {
-      const checks = entry.report?.checks ?? entry.result?.verification?.checks ?? [];
-      return checks.some((check) => PROMOTE_VERIFICATION_CHECK_IDS.has(check?.id));
-    });
     const lastStepReport = stepReports.at(-1);
     if (hasPromotedVerification || lastStepReport?.status !== 'PASS') {
-      const lastPlanEntry = completedPlanEntries.at(-1);
+      const lastPlanEntry = authoritativePlanEntries.at(-1);
       emitEvent('verification.completed', {
         attempt: lastPlanEntry?.attempt ?? lastPlanEntry?.result?.recoveryRun?.attempts ?? lastPlanEntry?.result?.recoveryRun?.attempt ?? 1,
         status: verification.status,

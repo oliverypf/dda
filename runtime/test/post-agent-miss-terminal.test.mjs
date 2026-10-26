@@ -2,9 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   JEV_EVIDENCE_REQUIRED,
+  agentMissReplanHostNote,
   isPostAgentMissTerminalReplanEligible,
   isPostMissTerminalReplanEligible,
   postAgentMissTerminalReplanHostNote,
+  postMissTerminalReplanHostNote,
+  postMissUncertainReplanHostNote,
+  recoveryContinuationText,
   runVerifierRecovery
 } from '../src/task-recovery-controller.mjs';
 
@@ -237,8 +241,16 @@ test('T-amt-5: host note + sole SAFETY/lease DENY never eligible; no hardDecisio
   const note = postAgentMissTerminalReplanHostNote();
   assert.match(note, /HOST_POST_AGENT_MISS_TERMINAL_REPLAN/);
   assert.match(note, /FAIL or STALLED/);
+  assert.match(note, /post_amt.*post_agent_miss_terminal_replan/);
+  assert.match(note, /carry.*terminal-miss evidence.*next plan/i);
+  assert.match(note, /status and failureCodes.*remain true.*given/);
+  assert.match(note, /Stop repeating.*recovery probes/);
+  assert.match(note, /read\/list\/focus/);
+  assert.match(note, /fingerprint digests/);
+  assert.match(note, /Next:.*bounded.*file\.write\/file\.patch.*shell\.execute\/test\.execute\/verify/);
   assert.match(note, /Do not claim PASS/);
   assert.match(note, /SAFETY \/ lease/);
+  assert.match(note, /No second recovery of this kind/);
 
   assert.equal(isPostAgentMissTerminalReplanEligible({
     writesApplied: 2,
@@ -309,4 +321,91 @@ test('T-amt-5: host note + sole SAFETY/lease DENY never eligible; no hardDecisio
   assert.equal(result.postAgentMissTerminalReplanned, undefined);
   assert.equal(result.report.status, 'FAIL');
   assert.deepEqual(result.report.failureCodes, ['SAFETY_POLICY_DENY']);
+});
+
+test('T-steal-amt-1: post_amt continuation carries terminal-miss guidance without erasing FAIL/STALLED evidence', async () => {
+  for (const status of ['FAIL', 'STALLED']) {
+    const failureCodes = status === 'FAIL'
+      ? ['JEV_BEHAVIOR_REJECTED', 'ACTION_FAILED', 'REPEATED_ACTION']
+      : ['REPEATED_ACTION'];
+    const bag = { amtEvents: [] };
+    const recoveries = [];
+    const result = await runVerifierRecovery({
+      maxAttempts: 1,
+      agentMiss: writesAgent(bag),
+      execute: async ({ attempt, recovery }) => {
+        if (recovery) recoveries.push(structuredClone(recovery));
+        return {
+          text: `carry-${status}-${attempt}`,
+          actions: [{ name: 'file.write', state: 'SUCCEEDED', argumentsDigest: `sha256:${String(attempt).padStart(64, 'e')}` }]
+        };
+      },
+      verify: sequencedVerify(['UNCERTAIN', status, status])
+    });
+
+    assert.equal(bag.amtEvents.length, 1);
+    assert.equal(bag.amtEvents[0].status, status);
+    assert.deepEqual(bag.amtEvents[0].failureCodes, failureCodes);
+    const amtRecoveries = recoveries.filter((recovery) => recovery.postAgentMissTerminalReplan === true);
+    assert.equal(amtRecoveries.length, 1);
+    const recovery = amtRecoveries[0];
+    assert.deepEqual(recovery.failureCodes, failureCodes);
+    const beforeNote = structuredClone(recovery);
+    const continuation = recoveryContinuationText(recovery);
+    assert.ok(continuation.includes(postAgentMissTerminalReplanHostNote()));
+    assert.match(continuation, /carry.*terminal-miss evidence.*next plan/i);
+    assert.match(continuation, /Next:.*file\.write\/file\.patch.*shell\.execute\/test\.execute\/verify/);
+    assert.deepEqual(recovery, beforeNote, 'host guidance must not mutate recovery evidence');
+    assert.deepEqual(result.history[1], { attempt: 2, status, failureCodes });
+    assert.equal(result.ok, false);
+    assert.equal(result.report.status, status);
+    assert.deepEqual(result.report.failureCodes, failureCodes);
+  }
+});
+
+test('T-steal-amt-2: agent-miss-only, #70, and UNCERTAIN continuations retain their own notes', async () => {
+  for (const scenario of [
+    {
+      name: 'agent-miss-only',
+      statuses: ['FAIL', 'PASS'],
+      recoveryFlag: 'agentMissReplan',
+      expectedNote: agentMissReplanHostNote()
+    },
+    {
+      name: 'post-miss-terminal #70',
+      statuses: ['UNCERTAIN', 'UNCERTAIN', 'FAIL', 'FAIL'],
+      recoveryFlag: 'postMissTerminalReplan',
+      expectedNote: postMissTerminalReplanHostNote()
+    },
+    {
+      name: 'UNCERTAIN',
+      statuses: ['UNCERTAIN'],
+      recoveryFlag: 'postMissUncertainReplan',
+      expectedNote: postMissUncertainReplanHostNote()
+    }
+  ]) {
+    const bag = { amtEvents: [] };
+    const recoveries = [];
+    const result = await runVerifierRecovery({
+      maxAttempts: 1,
+      agentMiss: writesAgent(bag),
+      execute: async ({ attempt, recovery }) => {
+        if (recovery) recoveries.push(structuredClone(recovery));
+        return {
+          text: `isolation-${scenario.name}-${attempt}`,
+          actions: [{ name: 'file.write', state: 'SUCCEEDED', argumentsDigest: `sha256:${String(attempt).padStart(64, 'f')}` }]
+        };
+      },
+      verify: sequencedVerify(scenario.statuses)
+    });
+
+    assert.equal(bag.amtEvents.length, 0, scenario.name);
+    assert.equal(result.postAgentMissTerminalReplanned, undefined, scenario.name);
+    const expectedRecovery = recoveries.find((recovery) => recovery[scenario.recoveryFlag] === true);
+    assert.ok(expectedRecovery, `${scenario.name} must reach its own recovery path`);
+    assert.ok(recoveryContinuationText(expectedRecovery).includes(scenario.expectedNote), scenario.name);
+    for (const recovery of recoveries) {
+      assert.doesNotMatch(recoveryContinuationText(recovery), /HOST_POST_AGENT_MISS_TERMINAL_REPLAN/, scenario.name);
+    }
+  }
 });

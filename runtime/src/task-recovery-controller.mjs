@@ -146,9 +146,10 @@ export const isPostAgentMissTerminalReplanEligible = ({
 };
 
 export const postAgentMissTerminalReplanHostNote = () => [
-  'HOST_POST_AGENT_MISS_TERMINAL_REPLAN: After agent-miss replan, verification went straight to FAIL or STALLED (no post-miss UNCERTAIN latch).',
-  'Ban repeating the same failed action / fingerprint digests from prior attempts.',
-  'Must change approach: different step, smaller write, or re-run verification with fresh evidence.',
+  'HOST_POST_AGENT_MISS_TERMINAL_REPLAN: After agent-miss replan, verification went straight to FAIL or STALLED (post_amt / post_agent_miss_terminal_replan; no post-miss UNCERTAIN latch).',
+  'Carry this terminal-miss evidence into the next plan: status and failureCodes remain true and must be treated as given.',
+  'Stop repeating the same recovery probes (read/list/focus), failed actions or fingerprint digests from prior attempts.',
+  'Next: prefer a concrete bounded file.write/file.patch or shell.execute/test.execute/verify step with fresh tool evidence.',
   'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force. No second recovery of this kind.'
 ].join(' ');
 

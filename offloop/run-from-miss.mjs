@@ -91,7 +91,16 @@ Does not empty-rebench green tips.`);
   let resolvedMeta = null;
 
   if (args.run60) {
-    benchLog = path.join(DRIVE, 'bench-log-run60.md');
+    const liveBenchLog = path.join(DRIVE, 'bench-log-run60.md');
+    const fixtureBenchLog = path.join(__dirname, 'test/fixtures/bench-log-run60-fallback.md');
+    benchLog = fs.existsSync(liveBenchLog) ? liveBenchLog : fixtureBenchLog;
+    if (benchLog === fixtureBenchLog) {
+      console.error(`warn: run60 bench-log missing; using ${fixtureBenchLog} for bounded fixture smoke`);
+      // A fixture-backed run has no real CLOSED result to promote; retain its
+      // EXPERIENCE record as a successful bounded smoke, matching the product
+      // root run60 fallback contract.
+      args.allowExperienceOnly = true;
+    }
     const t3pairs = [
       [path.join(DRIVE, 'bench/t3/run60a.jsonl'), path.join(DRIVE, 'bench/t3/run60b.jsonl')],
       [

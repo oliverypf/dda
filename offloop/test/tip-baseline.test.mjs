@@ -6,9 +6,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveMissBaseline } from '../dayloop-soft.mjs';
 import { runClosedHook } from '../on-closed.mjs';
+import { parseBenchLog } from '../ingest.mjs';
 
 const PIN = '2258685ce9793639ebc9698c8961dcedccf6e49b';
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+test('T-PR91-P1-TIP64: parseBenchLog preserves a full 64-character backtick tip', () => {
+  const expectedTip = '0123456789abcdef'.repeat(4);
+  const bench = parseBenchLog(path.join(FIXTURES, 'bench-log-tip64.md'));
+  assert.equal(expectedTip.length, 64);
+  assert.equal(bench.tip, expectedTip);
+  assert.equal(bench.tip.length, 64);
+  assert.notEqual(bench.tip, bench.tip.slice(0, 40));
+});
 
 function tempDrive(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'offloop-tip-baseline-'));

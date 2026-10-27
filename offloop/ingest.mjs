@@ -98,7 +98,7 @@ export function parseBenchLog(benchLogPath) {
     const row = parseCellRow(line);
     if (row) cells.push(row);
   }
-  const tipMatch = text.match(/`([0-9a-f]{7,40})`/);
+  const tipMatch = text.match(/`([0-9a-f]{7,64})`/);
   const greensMatch =
     text.match(/\*\*Greens\*\*[^:]*:\s*\*\*(\d+)\s*\/\s*(\d+)\*\*/i) ||
     text.match(/Greens\s*\(GATE[^)]*\)\s*:\s*\*\*(\d+)\s*\/\s*(\d+)\*\*/i) ||

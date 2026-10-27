@@ -3,7 +3,8 @@
 Off-loop **Propose → Probe L0 → (optional L1 smoke) → Compose** for DDA bench **CLOSED MISS** or **path-anomaly（路径异常）**, wired by a **CLOSED hook**.
 
 - **Does not** modify `oliverypf/dda` runtime host.
-- Scripts live only under `dda-drive/offloop/`; outputs under `dda-drive/`.
+- Historical hook evidence may live under `dda-drive/`; the product-root MVP
+  scripts and ignored smoke output stay under this `offloop/` package.
 - Win = scriptable green **and** poison-loop count == 0 (else false win).
 - Compose writes **CANDIDATE** only (never auto-FROZEN); default path-anomaly remains EXPERIENCE-only. Only an allowlisted steal hypothesis with Probe adoption and complete pinned soft evidence can become CANDIDATE. Merged sticky-execute (#83/#84) is rejected as `shipped_duplicate` with EXPERIENCE and 0 candidate writes.
 - Runtime must **0×** read `dda-drive/experience/` as unchecked Memory.
@@ -84,6 +85,35 @@ Output precedence is `--out-dir` > `OFFLOOP_OUT_DIR` > `offloop/out`, and
 artifact; CANDIDATE files remain reviewable PR proposals and are never merged
 or promoted automatically. The default entry records zero live requests and
 zero Main OpenRouter calls.
+
+## MVP（最小可行产品） loop and smoke（冒烟）
+
+From the product root, run the core tests and the fixture-only bounded smoke:
+
+```bash
+export DDA_TIP_REPO="$(git rev-parse --show-toplevel)"
+npm --prefix offloop test
+npm --prefix offloop run mvp:smoke
+git diff --check
+git status --short
+```
+
+The wrapper uses the fixed non-empty tip, delegates `MISS（未命中）` to the
+existing `run-from-miss` path, and writes a report under ignored
+`offloop/out/mvp-smoke/`. The report separates a true fixture `PASS` from an
+`ENVIRONMENT SKIP` for live work and records `tipSha`, `pinEqual`,
+`candidateWrites`, `liveRequests`, and `mainOpenRouterCalls`. See
+[docs/mvp-loop.md](./docs/mvp-loop.md) for the copyable loop and exact core/live
+CI（持续集成） split.
+
+## Human PR gate（人工 PR 闸）
+
+`EXPERIENCE（经验）` stays `experience_only` / `adopted=false`. `CANDIDATE（候选）`
+is a PR proposal only: there is no automatic write-back, merge, promotion, or
+`CANDIDATE → FROZEN` transition. A human checks the tip/pin, DGR（decision-grade
+record，决策级记录）, hard gate,
+invariants, tests, and diff before merging; see
+[docs/human-pr-gate.md](./docs/human-pr-gate.md).
 
 ## Layout
 

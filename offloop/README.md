@@ -52,6 +52,39 @@ node dayloop-soft.mjs --fixture false-win  --soft-worktree /tmp/swt --out-dir /t
 node dayloop-soft.mjs --fixture hard-gate  --soft-worktree /tmp/swt --out-dir /tmp/out
 ```
 
+## Product-root CLI（命令行入口） — Harness² MVP（最小可行产品）
+
+From `/workspace/dda` (or from this `offloop/` package), use the product-root
+entry for bounded off-loop evidence:
+
+```bash
+node offloop/bin/offloop.mjs help
+node offloop/bin/offloop.mjs miss --fixture \
+  --tip-path /workspace/dda-tip-r25 \
+  --out-dir /tmp/dda-offloop-out
+
+# A real bounded MISS can still delegate explicit bench inputs:
+node offloop/bin/offloop.mjs miss \
+  --tip-sha 2258685ce9793639ebc9698c8961dcedccf6e49b \
+  --bench-log /path/to/bench-log-run60.md \
+  --jsonl /path/to/run60a.jsonl
+```
+
+`core（核心）` is the default and performs only the bounded `run-from-miss`
+path; `live（在线）` work is never enabled implicitly and live flags are
+rejected by this entry. The `tip-path（tip 路径）` check runs before MISS work:
+`--tip-sha` > `--tip-path` > `DDA_TIP_REPO` > the product repo's git root, and
+the resolved non-empty SHA must equal the fixed pin
+`2258685ce9793639ebc9698c8961dcedccf6e49b`. Each invocation emits `tipSha`,
+`tipSource`, and `pinEqual`; an empty or drifting tip exits non-zero.
+
+Output precedence is `--out-dir` > `OFFLOOP_OUT_DIR` > `offloop/out`, and
+`--experience-dir` > `OFFLOOP_EXPERIENCE_DIR` > `offloop/experience`. A bounded
+`MISS（未命中）` writes an auditable `EXPERIENCE（经验）` or `CANDIDATE（候选）`
+artifact; CANDIDATE files remain reviewable PR proposals and are never merged
+or promoted automatically. The default entry records zero live requests and
+zero Main OpenRouter calls.
+
 ## Layout
 
 | File | Role |

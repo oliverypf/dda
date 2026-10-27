@@ -3,8 +3,13 @@
   "private": true,
   "type": "module",
   "description": "Off-loop contrast-probe meta tools (no DDA runtime host edits)",
+  "bin": {
+    "offloop": "./bin/offloop.mjs"
+  },
   "scripts": {
-    "test": "node --test $(find test -maxdepth 1 -type f -name '*.test.mjs' ! -name '*live*' -print | grep -E 'test/(closed-miss-dayloop-soft-bounded-r1|compose-soft-evidence|compose-soft-footer-contract-r1|compose|dayloop-cli-l1-flags-r1|dayloop-from-miss|dgr-agent-miss-notes-r1|dgr-mid-reject-experience-structure-r1|e2e-soft-dayloop|experience-dedupe-retrieve-r1|experience-isolation|experience-slug-filter-before-dedupe-r1|experience-soft-priors|host-note-candidate-promote-r1|host-note-soft-align-pr82-r1|merged-directions-host-note-r1|merged-directions-steal-post-amt-r1|path-anomaly-experience-complete-r1|path-anomaly-experience-consume-r1|poison-loop|probe-l1|propose-diversity-dedupe-r1|propose|soft-contrast-pair|soft-worktree|steal-path-anomaly-candidate-r1|tip-baseline|true-candidate-r1)\\.test\\.mjs$' | sort)",
+    "test": "node --test $(find test -maxdepth 1 -type f -name '*.test.mjs' ! -name '*live*' -print | grep -E 'test/(closed-miss-dayloop-soft-bounded-r1|compose-soft-evidence|compose-soft-footer-contract-r1|compose|dayloop-cli-l1-flags-r1|dayloop-from-miss|dgr-agent-miss-notes-r1|dgr-mid-reject-experience-structure-r1|e2e-soft-dayloop|experience-dedupe-retrieve-r1|experience-isolation|experience-slug-filter-before-dedupe-r1|experience-soft-priors|harness2-product-cli-entry-r1|host-note-candidate-promote-r1|host-note-soft-align-pr82-r1|merged-directions-host-note-r1|merged-directions-steal-post-amt-r1|path-anomaly-experience-complete-r1|path-anomaly-experience-consume-r1|poison-loop|probe-l1|propose-diversity-dedupe-r1|propose|soft-contrast-pair|soft-worktree|steal-path-anomaly-candidate-r1|tip-baseline|true-candidate-r1)\\.test\\.mjs$' | sort)",
+    "offloop": "node bin/offloop.mjs",
+    "offloop:help": "node bin/offloop.mjs help",
     "test:live": "node --test test/*live*.test.mjs",
     "run60": "node run-from-miss.mjs --run60"
   }

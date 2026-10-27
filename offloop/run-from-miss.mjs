@@ -22,6 +22,7 @@ import { hypothesisIsSteal, isExperienceOnlyHypothesis } from './path-signals.mj
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIVE = path.resolve(__dirname, '..');
+const PRODUCT_ROOT = __dirname;
 
 function parseArgs(argv) {
   const out = {
@@ -40,8 +41,8 @@ function parseArgs(argv) {
     tipSha: null,
     model: null,
     jev: null,
-    outDir: DRIVE,
-    experienceDir: path.join(DRIVE, 'experience'),
+    outDir: process.env.OFFLOOP_OUT_DIR || path.join(PRODUCT_ROOT, 'out'),
+    experienceDir: process.env.OFFLOOP_EXPERIENCE_DIR || path.join(PRODUCT_ROOT, 'experience'),
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -341,7 +342,7 @@ Does not empty-rebench green tips.`);
       probeResult: adoptProbe,
       ingest,
       outDir: args.outDir,
-      experienceDir: path.join(args.outDir, 'experience'),
+      experienceDir: args.experienceDir,
       write: !args.dryRun,
     });
 

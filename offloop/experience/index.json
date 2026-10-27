@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "offloop-experience-inrepo-r1",
+  "kind": "experience-index",
+  "schemaRef": "./schema.json",
+  "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "entries": [
+    {
+      "id": "mvp-smoke-fixture-pass",
+      "slug": "harness2-mvp-smoke-fixture-pass",
+      "path": "samples/mvp-smoke-fixture-pass.json",
+      "source": "offloop/scripts/mvp-smoke.mjs",
+      "provenance": {
+        "kind": "mvp-smoke-fixture",
+        "fixture": "offloop/test/harness2-mvploop-smoke-docs-r1.test.mjs#T-H2-K5-MVP-MISS",
+        "manifest": null,
+        "reportFields": [
+          "tipSha",
+          "tipPin",
+          "pinEqual",
+          "candidateWrites",
+          "liveRequests",
+          "mainOpenRouterCalls"
+        ]
+      },
+      "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+      "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+      "pinEqual": true,
+      "indexable": true,
+      "status": "PASS",
+      "dgr": null,
+      "dgrRef": null,
+      "dgrReason": "No standalone DGR artifact is committed; the bounded smoke report fields are retained as the review reference.",
+      "adopted": false,
+      "experience_only": true,
+      "reason": "experience_only",
+      "lesson": "A fixture-only MVP smoke result is reusable off-loop experience, not runtime Memory or policy.",
+      "summary": "Fixture-only MVP smoke retained a bounded MISS result with zero candidate, live, and Main OpenRouter writes.",
+      "date": "2026-10-27",
+      "runtimeMemory": false
+    },
+    {
+      "id": "mvp-smoke-no-live-boundary",
+      "slug": "harness2-mvp-smoke-no-live-boundary",
+      "path": "samples/mvp-smoke-no-live-boundary.json",
+      "source": "offloop/scripts/mvp-smoke.mjs",
+      "provenance": {
+        "kind": "mvp-smoke-fixture",
+        "fixture": "offloop/test/harness2-mvploop-smoke-docs-r1.test.mjs#T-H2-K5-NO-EMPTY",
+        "manifest": null,
+        "reportFields": [
+          "mode",
+          "liveOptIn",
+          "environment.status",
+          "tipSha",
+          "pinEqual",
+          "candidateWrites",
+          "liveRequests",
+          "mainOpenRouterCalls"
+        ]
+      },
+      "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+      "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+      "pinEqual": true,
+      "indexable": true,
+      "status": "PASS",
+      "dgr": null,
+      "dgrRef": null,
+      "dgrReason": "No standalone DGR artifact is committed; the fixture-only live boundary is the bounded review reference.",
+      "adopted": false,
+      "experience_only": true,
+      "reason": "experience_only",
+      "lesson": "The MVP smoke keeps live work explicitly skipped; an empty or drifting tip cannot be a green experience row.",
+      "summary": "The smoke keeps live work explicitly skipped; an empty or drifting tip cannot become a green experience row.",
+      "date": "2026-10-27",
+      "runtimeMemory": false
+    }
+  ],
+  "samples": [
+    "samples/mvp-smoke-fixture-pass.json",
+    "samples/mvp-smoke-no-live-boundary.json"
+  ],
+  "greenRule": {
+    "indexable": "true only when tipSha is non-empty and equals the fixed tipPin",
+    "tipSha": "must be a non-empty 64-hex SHA",
+    "tipPin": "must equal 2258685ce9793639ebc9698c8961dcedccf6e49b",
+    "pinEqual": "must be true only for exact tipSha/tipPin equality",
+    "status": "PASS requires indexable=true, pinEqual=true, and the fixed non-empty pin",
+    "missingTip": "missing, null, or empty tipSha is indexable=false and never PASS"
+  }
+}

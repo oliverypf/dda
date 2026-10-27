@@ -1,0 +1,50 @@
+{
+  "id": "mvp-smoke-fixture-pass",
+  "slug": "harness2-mvp-smoke-fixture-pass",
+  "source": "offloop/scripts/mvp-smoke.mjs",
+  "provenance": {
+    "kind": "mvp-smoke-fixture",
+    "fixture": "offloop/test/harness2-mvploop-smoke-docs-r1.test.mjs#T-H2-K5-MVP-MISS",
+    "manifest": null,
+    "reportFields": [
+      "tipSha",
+      "tipPin",
+      "pinEqual",
+      "candidateWrites",
+      "liveRequests",
+      "mainOpenRouterCalls"
+    ]
+  },
+  "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "pinEqual": true,
+  "indexable": true,
+  "status": "PASS",
+  "dgr": null,
+  "dgrRef": null,
+  "dgrReason": "No standalone DGR artifact is committed; the bounded smoke report fields are retained as the review reference.",
+  "adopted": false,
+  "experience_only": true,
+  "reason": "experience_only",
+  "lesson": "A fixture-only MVP smoke result is reusable off-loop experience, not runtime Memory or policy.",
+  "summary": "The bounded MISS smoke passed with mode=fixture, liveOptIn=false, candidateWrites=0, liveRequests=0, and mainOpenRouterCalls=0.",
+  "date": "2026-10-27",
+  "runtimeMemory": false,
+  "report": {
+    "schema": "offloop-mvp-smoke-r1",
+    "status": "PASS",
+    "passKind": "fixture-smoke",
+    "mode": "fixture",
+    "liveOptIn": false,
+    "environment": {
+      "status": "SKIP",
+      "kind": "live"
+    },
+    "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+    "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+    "pinEqual": true,
+    "candidateWrites": 0,
+    "liveRequests": 0,
+    "mainOpenRouterCalls": 0
+  }
+}

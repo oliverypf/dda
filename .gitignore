@@ -63,6 +63,12 @@ jev.config.json
 # Raw per-run harness state (model requests, trajectory DBs, workspace copies).
 # Curated evidence belongs in the dated docs/artifacts/<name>-<date> bundles instead.
 /docs/artifacts/agent-goal-runs/
+
+# ---- Harness² off-loop generated evidence ----
+/offloop/out-*/
+/offloop/out/
+/offloop/experience/
+/offloop/bench/
 # Self-hosted VPS migration bundles carry secrets/ and provider auth files; keep
 # them out of the public repo and transfer them out of band.
 /toeic-vps-migration-transfer-*.tar.gz

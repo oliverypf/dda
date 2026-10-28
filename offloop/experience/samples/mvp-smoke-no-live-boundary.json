@@ -1,0 +1,52 @@
+{
+  "id": "mvp-smoke-no-live-boundary",
+  "slug": "harness2-mvp-smoke-no-live-boundary",
+  "source": "offloop/scripts/mvp-smoke.mjs",
+  "provenance": {
+    "kind": "mvp-smoke-fixture",
+    "fixture": "offloop/test/harness2-mvploop-smoke-docs-r1.test.mjs#T-H2-K5-NO-EMPTY",
+    "manifest": null,
+    "reportFields": [
+      "mode",
+      "liveOptIn",
+      "environment.status",
+      "tipSha",
+      "pinEqual",
+      "candidateWrites",
+      "liveRequests",
+      "mainOpenRouterCalls"
+    ]
+  },
+  "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "pinEqual": true,
+  "indexable": true,
+  "status": "PASS",
+  "dgr": null,
+  "dgrRef": null,
+  "dgrReason": "No standalone DGR artifact is committed; the fixture-only live boundary is the bounded review reference.",
+  "adopted": false,
+  "experience_only": true,
+  "reason": "experience_only",
+  "lesson": "The MVP smoke records a separate live SKIP; an empty or drifting tip cannot be a green experience row.",
+  "summary": "The fixture boundary has liveOptIn=false, environment.status=SKIP, and zero candidate/live/Main OpenRouter counters.",
+  "date": "2026-10-27",
+  "runtimeMemory": false,
+  "report": {
+    "schema": "offloop-mvp-smoke-r1",
+    "status": "PASS",
+    "passKind": "fixture-smoke",
+    "mode": "fixture",
+    "liveOptIn": false,
+    "environment": {
+      "status": "SKIP",
+      "kind": "live"
+    },
+    "tipSha": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+    "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+    "pinEqual": true,
+    "candidateWrites": 0,
+    "liveRequests": 0,
+    "mainOpenRouterCalls": 0
+  }
+}

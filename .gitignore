@@ -67,7 +67,14 @@ jev.config.json
 # ---- Harness² off-loop generated evidence ----
 /offloop/out-*/
 /offloop/out/
-/offloop/experience/
+# Keep generated/runtime EXPERIENCE writes ignored while allowing the small
+# curated in-repo contract and samples below.
+/offloop/experience/**
+!/offloop/experience/README.md
+!/offloop/experience/schema.json
+!/offloop/experience/index.json
+!/offloop/experience/samples/
+!/offloop/experience/samples/**
 /offloop/bench/
 # Self-hosted VPS migration bundles carry secrets/ and provider auth files; keep
 # them out of the public repo and transfer them out of band.

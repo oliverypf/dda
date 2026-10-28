@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "offloop/experience/schema.json",
+  "title": "Curated off-loop EXPERIENCE layout",
+  "description": "Machine-checkable contract for one bounded experience entry or its curated index.",
+  "schemaVersion": "offloop-experience-inrepo-r1",
+  "tipPin": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/experienceEntry"
+    },
+    {
+      "$ref": "#/$defs/experienceIndex"
+    }
+  ],
+  "x-contract": {
+    "entryRequired": [
+      "id",
+      "slug",
+      "source",
+      "provenance",
+      "tipSha",
+      "tipPin",
+      "pinEqual",
+      "indexable",
+      "dgr",
+      "dgrRef",
+      "dgrReason",
+      "adopted",
+      "experience_only",
+      "reason",
+      "lesson",
+      "summary",
+      "date",
+      "runtimeMemory"
+    ],
+    "indexRequired": [
+      "schemaVersion",
+      "kind",
+      "schemaRef",
+      "tipPin",
+      "entries",
+      "samples",
+      "greenRule"
+    ],
+    "greenRule": {
+      "indexable": "true only when tipSha is a non-empty 64-hex SHA equal to tipPin",
+      "pinEqual": "true only when tipSha equals the fixed tipPin",
+      "status": "PASS is allowed only when indexable=true and pinEqual=true",
+      "missingTip": "null, empty, or missing tipSha is non-green and never PASS"
+    }
+  },
+  "$defs": {
+    "fixedPin": {
+      "type": "string",
+      "const": "2258685ce9793639ebc9698c8961dcedccf6e49b",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonEmptySha": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dgrRef": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["kind", "fixture", "reportFields"],
+      "properties": {
+        "kind": {
+          "const": "mvp-smoke-fixture"
+        },
+        "fixture": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest": {
+          "type": ["string", "null"]
+        },
+        "reportFields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "experienceEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "slug",
+        "source",
+        "provenance",
+        "tipSha",
+        "tipPin",
+        "pinEqual",
+        "indexable",
+        "status",
+        "dgr",
+        "dgrRef",
+        "dgrReason",
+        "adopted",
+        "experience_only",
+        "reason",
+        "lesson",
+        "summary",
+        "date",
+        "runtimeMemory"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "tipSha": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptySha"
+            },
+            {
+              "type": ["null", "string"],
+              "maxLength": 0
+            }
+          ]
+        },
+        "tipPin": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/fixedPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pinEqual": {
+          "type": "boolean"
+        },
+        "indexable": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["PASS", "NON_GREEN", "REJECTED"]
+        },
+        "dgr": {
+          "type": ["object", "null"]
+        },
+        "dgrRef": {
+          "$ref": "#/$defs/dgrRef"
+        },
+        "dgrReason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adopted": {
+          "const": false
+        },
+        "experience_only": {
+          "const": true
+        },
+        "reason": {
+          "const": "experience_only"
+        },
+        "lesson": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "runtimeMemory": {
+          "const": false
+        },
+        "report": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "indexable": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tipSha": {
+                "$ref": "#/$defs/fixedPin"
+              },
+              "tipPin": {
+                "$ref": "#/$defs/fixedPin"
+              },
+              "pinEqual": {
+                "const": true
+              },
+              "status": {
+                "const": "PASS"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tipSha": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "indexable": {
+                "const": false
+              },
+              "pinEqual": {
+                "const": false
+              },
+              "status": {
+                "not": {
+                  "const": "PASS"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tipSha": {
+                "type": "string",
+                "maxLength": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "indexable": {
+                "const": false
+              },
+              "pinEqual": {
+                "const": false
+              },
+              "status": {
+                "not": {
+                  "const": "PASS"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "indexRow": {
+      "type": "object",
+      "required": [
+        "id",
+        "slug",
+        "path",
+        "source",
+        "provenance",
+        "tipSha",
+        "tipPin",
+        "pinEqual",
+        "indexable",
+        "status",
+        "dgr",
+        "dgrRef",
+        "dgrReason",
+        "adopted",
+        "experience_only",
+        "reason",
+        "lesson",
+        "summary",
+        "date",
+        "runtimeMemory"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^samples/[^/]+\\.(?:json|md)$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "tipSha": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptySha"
+            },
+            {
+              "type": ["null", "string"],
+              "maxLength": 0
+            }
+          ]
+        },
+        "tipPin": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/fixedPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pinEqual": {
+          "type": "boolean"
+        },
+        "indexable": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["PASS", "NON_GREEN", "REJECTED"]
+        },
+        "dgr": {
+          "type": ["object", "null"]
+        },
+        "dgrRef": {
+          "$ref": "#/$defs/dgrRef"
+        },
+        "dgrReason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adopted": {
+          "const": false
+        },
+        "experience_only": {
+          "const": true
+        },
+        "reason": {
+          "const": "experience_only"
+        },
+        "lesson": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "runtimeMemory": {
+          "const": false
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "indexable": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tipSha": {
+                "$ref": "#/$defs/fixedPin"
+              },
+              "tipPin": {
+                "$ref": "#/$defs/fixedPin"
+              },
+              "pinEqual": {
+                "const": true
+              },
+              "status": {
+                "const": "PASS"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tipSha": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "indexable": {
+                "const": false
+              },
+              "pinEqual": {
+                "const": false
+              },
+              "status": {
+                "not": {
+                  "const": "PASS"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tipSha": {
+                "type": "string",
+                "maxLength": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "indexable": {
+                "const": false
+              },
+              "pinEqual": {
+                "const": false
+              },
+              "status": {
+                "not": {
+                  "const": "PASS"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "experienceIndex": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "kind",
+        "schemaRef",
+        "tipPin",
+        "entries",
+        "samples",
+        "greenRule"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "offloop-experience-inrepo-r1"
+        },
+        "kind": {
+          "const": "experience-index"
+        },
+        "schemaRef": {
+          "const": "./schema.json"
+        },
+        "tipPin": {
+          "$ref": "#/$defs/fixedPin"
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/indexRow"
+          }
+        },
+        "samples": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "string",
+            "pattern": "^samples/[^/]+\\.(?:json|md)$"
+          }
+        },
+        "greenRule": {
+          "type": "object",
+          "required": ["tipSha", "tipPin", "pinEqual", "status", "missingTip"],
+          "properties": {
+            "tipSha": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tipPin": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pinEqual": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1
+            },
+            "missingTip": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

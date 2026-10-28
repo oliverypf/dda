@@ -11,6 +11,10 @@ Off-loop **Propose → Probe L0 → (optional L1 smoke) → Compose** for DDA be
 - EXPERIENCE（教训库）is retrieved into Propose as `prior` refs (Harness² improvement library).
 - **CLOSED hook**: GATE（过门分）全绿且无 path-anomaly → **0×** `run-from-miss`（不空转 tip）。
 
+The architecture boundary for Harness² and the Agent Harness runtime is recorded in
+[ADR-0025](../docs/adr/0025-harness2-meta-vs-agent-harness.md); this package remains
+off-loop and has no runtime policy or executor write surface.
+
 旧候选升格状态：鹏飞已显式升格；sticky (`post-dpr-sticky-execute`) → **PROMOTED / SHIPPED-soft**，由 [sticky-host-note-promote-r1](../freeze-offloop-sticky-host-note-promote-r1.md) 补齐可测 latch-md 软指导，#83/#84 runtime 保持原实现；host-note-bias (`host-note-post-dpr-execute-bias`) → **PROMOTED / SHIPPED-soft（NO_PRODUCT_DELTA）**，沿用 `host-note-candidate-promote-r1` + `host-note-soft-align-pr82-r1` 的 soft HOST 正文，本刀仅覆盖旧挂档状态；steal (`steal-post-amt-terminal-replan`) → **SHIPPED / archived（#90）**，已合入，勿重复开刀。上述旧稿不在待冻升格队列；正文保留为历史证据，以 H1 / 状态栏及本刀 freeze 为准。
 
 ## Commands

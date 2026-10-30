@@ -169,6 +169,20 @@ describe('HarnessReadModel store', () => {
     expect(model.runtime.configLoaded).toBe(true);
   });
 
+  it('uses controlled execution on a modern release channel', () => {
+    const model = setRuntimeReady(createInitialReadModel(), {
+      platform: 'WINDOWS',
+      version: '0.1.0',
+      readOnly: true,
+      workspaceRead: true,
+      commandExecution: false,
+      networkSideEffects: false,
+      releaseChannel: 'WINDOWS_FULL_LOCAL'
+    });
+    expect(model.composer.mode).toBe('CONTROLLED');
+    expect(model.composer.placeholder).toContain('审批');
+  });
+
   it('projects OpenViking sidecar lifecycle status without changing execution policy', () => {
     const initial = createInitialReadModel();
     const projected = setContextSidecarStatus(initial, {

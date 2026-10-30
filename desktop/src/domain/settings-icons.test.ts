@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import mainSource from '../main.ts?raw';
+import rawMainSource from '../main.ts?raw';
+
+const mainSource = rawMainSource.replace(/\r\n/g, '\n');
 
 // lucide's replaceElement looks icons up by PascalCase of the data-lucide name.
 const pascal = (name: string): string => name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('');

@@ -440,8 +440,8 @@ try {
   await nonstream.waitForFunction(() => [...document.querySelectorAll('.timeline-body')].some((body) => body.textContent === 'full nonstream response\n'.repeat(2000)));
   results.push({ name: 'nonstream response completes promptly while viewing another page' });
   const controlled = await fixture(undefined, { controlled: true });
-  await controlled.locator('[data-action="toggle-mode"]').click();
-  assert.match(await controlled.locator('.version-label').innerText(), /受控模式/);
+  assert.equal(await controlled.locator('.mode-pill').count(), 0);
+  assert.doesNotMatch(await controlled.locator('.version-label').innerText(), /受控模式|只读模式/);
   await submit(controlled);
   await controlled.evaluate(() => window.__executionTest.emit('approval.requested', { requestId: 'layout-approval', capability: 'file.write', path: 'example.txt', requestDigest: 'fixture' }));
   await controlled.locator('[data-live-region="approvals"] .approval-actions').waitFor();
@@ -466,9 +466,8 @@ try {
   await controlled.waitForFunction(() => document.querySelector('.transcript')?.textContent.includes('已经执行的操作不会自动撤销'));
   assert.match(await controlled.locator('.transcript').textContent(), /已经执行的操作不会自动撤销/);
   assert.doesNotMatch(await controlled.locator('.transcript').textContent(), /只读运行没有产生外部副作用/);
-  await controlled.locator('[data-action="toggle-mode"]').click();
-  assert.match(await controlled.locator('.version-label').innerText(), /只读模式/);
-  results.push({ name: 'controlled mode label matches selection and cancellation does not promise rollback or no side effects' });
+  assert.doesNotMatch(await controlled.locator('.version-label').innerText(), /受控模式|只读模式/);
+  results.push({ name: 'controlled mode stays on and cancellation does not promise rollback or no side effects' });
   for (const verification of [
     { status: 'FAIL', summary: 'Fixture failed', checks: [] },
     { status: 'UNKNOWN', summary: 'Fixture missing evidence', checks: [] },
@@ -476,7 +475,6 @@ try {
     null
   ]) {
     const unverified = await fixture(undefined, { controlled: true });
-    await unverified.locator('[data-action="toggle-mode"]').click();
     await submit(unverified);
     await unverified.evaluate(verification => window.__executionTest.complete('Preserve this output', verification), verification);
     await unverified.waitForFunction(() => document.querySelector('.send-button')?.disabled === false);

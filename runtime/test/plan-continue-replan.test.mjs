@@ -4,8 +4,10 @@ import { normalizePlannerPlan } from '../src/agent-turns.mjs';
 import { createPlanStepCoordinator } from '../src/plan-step-coordinator.mjs';
 import {
   isPlanContinueReplanEligible,
+  isOpenPlanContinuation,
   isSoleHardDenyFailure,
   planContinueReplanHostNote,
+  PLAN_CONTINUE_REPLAN_LIMIT,
   JEV_EVIDENCE_REQUIRED
 } from '../src/task-recovery-controller.mjs';
 
@@ -33,8 +35,8 @@ const continueReport = (extra = {}) => ({
   ...extra
 });
 
-// T-pc-1: first CONTINUE+writes → exactly 1× re-exec; second still CONTINUE → stop
-test('T-pc-1: CONTINUE+writes yields exactly one plan-continue re-exec; second CONTINUE stops', async () => {
+// T-pc-1: CONTINUE+writes keeps the same task going until the continuation budget; a further CONTINUE stops
+test('T-pc-1: CONTINUE+writes re-executes until the continuation budget, then stops', async () => {
   assert.equal(isPlanContinueReplanEligible({
     status: 'CONTINUE',
     nextAction: 'CONTINUE_EXECUTION',
@@ -69,15 +71,16 @@ test('T-pc-1: CONTINUE+writes yields exactly one plan-continue re-exec; second C
     verifyStep: async () => continueReport()
   });
 
-  assert.equal(events.length, 1);
+  assert.equal(events.length, PLAN_CONTINUE_REPLAN_LIMIT);
   assert.equal(events[0].status, 'CONTINUE');
   assert.equal(events[0].nextAction, 'CONTINUE_EXECUTION');
   assert.equal(events[0].writesApplied, 2);
-  assert.equal(executions, 2);
+  assert.equal(executions, PLAN_CONTINUE_REPLAN_LIMIT + 1);
   assert.equal(result.ok, false);
   assert.equal(result.failedStepId, 'execute');
   assert.equal(result.report?.status, 'CONTINUE');
-  assert.equal(result.results.length, 2);
+  assert.equal(isOpenPlanContinuation(result.report), true);
+  assert.equal(result.results.length, PLAN_CONTINUE_REPLAN_LIMIT + 1);
   assert.equal(result.plan.steps[0].status, 'FAILED');
   assert.equal(result.plan.steps[0].errorCode, 'CONTINUE');
 });
@@ -163,14 +166,21 @@ test('T-pc-3: FAIL and UNCERTAIN do not take the plan-continue path', async () =
   }
 });
 
-// T-pc-4: 0 writes / sole SAFETY → no trigger
-test('T-pc-4: zero writes or sole SAFETY/lease DENY does not trigger', async () => {
+// T-pc-4: 0 writes still continues the same task; sole SAFETY/lease DENY does not
+test('T-pc-4: zero writes continues the task; sole SAFETY/lease DENY does not trigger', async () => {
   assert.equal(isPlanContinueReplanEligible({
     status: 'CONTINUE',
     nextAction: 'CONTINUE_EXECUTION',
     writesApplied: 0,
     successfulWrites: 0,
     failureCodes: [],
+    alreadyReplanned: false
+  }), true);
+  assert.equal(isPlanContinueReplanEligible({
+    status: 'CONTINUE',
+    nextAction: 'CONTINUE_EXECUTION',
+    writesApplied: 0,
+    continuationsUsed: PLAN_CONTINUE_REPLAN_LIMIT,
     alreadyReplanned: false
   }), false);
 

@@ -272,8 +272,8 @@ const waitForReady = async (client) => {
   // gate only accepted the phase-1.5 title, so it timed out after the runtime
   // was already ready and made the UI suite report a false startup failure.
   await runTest('T00 发布渠道标记', async () => {
-    await waitFor(client, `document.querySelector('.mode-pill') && /WINDOWS_(?:MVP_PRE_PHASE1|PHASE1_READ_ONLY|PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(document.querySelector('.mode-pill').title)`, {
-      timeout: 5000, interval: 500, label: 'release mode gate'
+    await waitFor(client, `document.querySelector('#app')?.dataset.releaseChannel && /WINDOWS_(?:MVP_PRE_PHASE1|PHASE1_READ_ONLY|PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(document.querySelector('#app').dataset.releaseChannel)`, {
+      timeout: 5000, interval: 500, label: 'release channel'
     });
   });
   await runTest('T00A 空会话不进入项目树', async () => {
@@ -285,7 +285,7 @@ const waitForReady = async (client) => {
   });
 };
 
-const isControlledChannel = async (client) => /WINDOWS_(?:PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(await attr(client, '.mode-pill', 'title') ?? '');
+const isControlledChannel = async (client) => /WINDOWS_(?:PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(await attr(client, '#app', 'data-release-channel') ?? '');
 
 const suite = async (client) => {
   await waitForReady(client);
@@ -299,14 +299,10 @@ const suite = async (client) => {
     assert(await exists(client, '.workbench'), 'workbench');
     assert(await exists(client, '.context-panel'), 'context-panel');
     assert((await text(client, '.connection-status')).length > 0, 'connection-status');
-    assert(/等待任务|只读检查完成|任务未完成|任务已取消|历史会话/u.test(await text(client, '.run-status')), 'startup restores idle or saved terminal state');
+    assert(/等待任务|任务已完成|只读检查完成|任务未完成|任务已取消|历史会话/u.test(await text(client, '.run-status')), 'startup restores idle or saved terminal state');
     const controlled = await isControlledChannel(client);
-    if (controlled) {
-      assert((await attr(client, '.mode-pill', 'disabled')) === null, 'mode pill enabled');
-    } else {
-      assert((await text(client, '.mode-pill')).includes('只读模式'), 'mode pill 只读模式');
-      assert((await attr(client, '.mode-pill', 'disabled')) !== null, 'mode pill disabled');
-    }
+    assert(await client.evaluate(`document.querySelector('.mode-pill') == null`), 'no mode status');
+    if (!controlled) assert(/WINDOWS_PHASE1_READ_ONLY/u.test(await attr(client, '#app', 'data-release-channel') ?? ''), 'phase1 channel stays marked');
     assert(await exists(client, 'textarea[name="prompt"]'), 'composer textarea');
     assert((await attr(client, 'textarea[name="prompt"]', 'disabled')) === null, 'composer enabled');
     assert(await exists(client, '.send-button'), 'send button');
@@ -419,26 +415,10 @@ const suite = async (client) => {
     return `${file} · ${digest.slice(0, 18)}…`;
   });
 
-  await runTest('T05 READ ONLY 模式不可切换', async () => {
-    const before = await text(client, '.mode-pill');
-    if (await isControlledChannel(client)) {
-      assert((await attr(client, '.mode-pill', 'disabled')) === null, 'mode pill enabled');
-      if (!before.includes('受控模式')) {
-        assert((await click(client, '.mode-pill')) === 'CLICKED', 'enter CONTROLLED');
-        await waitFor(client, `/受控模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode entered' });
-      }
-      assert((await click(client, '.mode-pill')) === 'CLICKED', 'toggle to READ ONLY');
-      await waitFor(client, `/只读模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'read-only mode reached' });
-      assert((await click(client, '.mode-pill')) === 'CLICKED', 'toggle back to CONTROLLED');
-      await waitFor(client, `/受控模式/u.test(document.querySelector('.mode-pill').innerText)`, { label: 'controlled mode restored' });
-      return '受控模式 ⇄ 只读模式';
-    }
-    assert(before.includes('只读模式'), '只读模式 label');
-    assert((await attr(client, '.mode-pill', 'disabled')) !== null, 'mode pill disabled');
-    const clickResult = await click(client, '.mode-pill');
-    assert(clickResult === 'DISABLED' || clickResult === 'NOT_FOUND', `mode pill click blocked (${clickResult})`);
-    assert((await text(client, '.mode-pill')) === before, 'mode label unchanged');
-    return '只读模式门控生效';
+  await runTest('T05 没有执行模式切换', async () => {
+    assert(await client.evaluate(`document.querySelector('.mode-pill') == null`), 'no mode pill');
+    assert(!/受控模式|只读模式/u.test(await text(client, '.version-label')), 'version has no mode');
+    return '界面不显示执行模式';
   });
 
   await runTest('T06 新建任务重置', async () => {
@@ -510,7 +490,7 @@ const suite = async (client) => {
     assert(await exists(client, 'textarea[name="prompt"]'), 'composer after history load');
     assert((await attr(client, 'textarea[name="prompt"]', 'disabled')) === null, 'composer enabled after history load');
     assert(await exists(client, '.run-status'), 'run status after history load');
-    assert((await text(client, '.run-status')).startsWith('等待任务') || /任务未完成|只读检查完成|任务已取消|已验证完成|历史会话/u.test(await text(client, '.run-status')), 'run status after history load');
+    assert((await text(client, '.run-status')).startsWith('等待任务') || /任务未完成|任务已完成|只读检查完成|任务已取消|已验证完成|历史会话/u.test(await text(client, '.run-status')), 'run status after history load');
     const historyText = await text(client, 'body');
     for (const hiddenKind of ['RecoveryStarted', 'RecoveryCompleted', 'DiagnosisRequested', 'DreamRunReconciled']) {
       assert(!historyText.includes(hiddenKind), `internal history event hidden: ${hiddenKind}`);
@@ -570,20 +550,16 @@ const suite = async (client) => {
       assert((await clickByDataset(client, '.thread-row', 'threadId', seed.id)) === 'CLICKED', 'seeded thread click');
       await waitFor(client, `document.querySelector('.thread-row.active')?.dataset.threadId === ${JSON.stringify(seed.id)}`, { label: 'seeded thread active' });
       await waitFor(client, `Boolean(document.querySelector('[data-action="continue-task"]'))`, { label: 'continue action visible' });
-      if ((await text(client, '.mode-pill')).includes('受控模式')) {
-        assert((await click(client, '.mode-pill')) === 'CLICKED', 'switch resume fixture to read-only');
-        await waitFor(client, `/只读模式/u.test(document.querySelector('.mode-pill')?.innerText ?? '')`, { label: 'resume fixture read-only mode' });
-      }
       const beforeStats = modelFixtureStatsUrl
         ? await (await fetch(modelFixtureStatsUrl)).json()
         : { plannerCalls: 0, executorCalls: 0 };
       assert((await click(client, '[data-action="continue-task"]')) === 'CLICKED', 'continue checkpoint action');
       await waitFor(client, `document.querySelector('.composer-stop')?.disabled === false`, { timeout: 30000, label: 'resumed task started' });
-      await waitFor(client, `/只读检查完成|任务未完成|任务已取消|已验证完成/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'resumed task terminal state' });
+      await waitFor(client, `/任务已完成|只读检查完成|任务未完成|任务已取消|已验证完成/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'resumed task terminal state' });
       await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { timeout: 30000, label: 'resumed task settled' });
       const body = await text(client, 'body');
       const timeline = await client.evaluate(`[...document.querySelectorAll('.timeline-item')].map((item) => item.innerText).join(' || ')`);
-      assert(/只读检查完成|已验证完成/u.test(body) && timeline.includes('工具执行完成'), `resumed task evidence missing; timeline=${timeline}; body=${body.slice(-1200)}`);
+      assert(/任务已完成|只读检查完成|已验证完成/u.test(body) && timeline.includes('工具执行完成'), `resumed task evidence missing; timeline=${timeline}; body=${body.slice(-1200)}`);
       if (modelFixtureStatsUrl) {
         const afterStats = await (await fetch(modelFixtureStatsUrl)).json();
         assert(afterStats.executorCalls > beforeStats.executorCalls, `executor call count did not increase: ${JSON.stringify({ beforeStats, afterStats })}`);
@@ -645,7 +621,7 @@ const suite = async (client) => {
       assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
       assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
       await waitFor(client, `document.querySelector('.composer-stop')?.disabled === false`, { timeout: 30000, label: 'new task actually started' });
-      await waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'task terminal state' });
+      await waitFor(client, `/任务已完成|只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 180000, interval: 500, label: 'task terminal state' });
       const terminal = await text(client, '.run-status');
       assert((await count(client, '.timeline-item')) > 0, 'timeline items after terminal state');
       await waitFor(client, `document.querySelectorAll('.thread-row').length > 0`, { timeout: 60000, label: 'thread persisted after terminal state' });
@@ -654,9 +630,6 @@ const suite = async (client) => {
       return `${terminal} · ${await count(client, '.timeline-item')} timeline items · ${await count(client, '.thread-row')} threads`;
     });
     if (runRetryFlow) await runTest('T15 必失败任务点击重试升级后成功', async () => {
-      if ((await text(client, '.mode-pill')).includes('受控模式')) {
-        assert((await click(client, '.mode-pill')) === 'CLICKED', 'read-only retry fixture');
-      }
       await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { label: 'previous task settled' });
       assert((await setComposer(client, 'UI_RETRY_UPGRADE_PROBE: read README and provide evidence')) === 'SET', 'retry probe prompt');
       assert((await submitComposer(client)) === 'SUBMITTED', 'failure task submitted');
@@ -669,7 +642,7 @@ const suite = async (client) => {
       await client.evaluate(`(() => { window.__retryOriginalPrompt = window.prompt; window.prompt = () => 'strong-executor-fixture'; })()`);
       assert((await click(client, '[data-action="retry-task"]')) === 'CLICKED', 'actual retry action');
       await client.evaluate(`window.prompt = window.__retryOriginalPrompt`);
-      await waitFor(client, `/只读检查完成|已验证完成/u.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 90000, label: 'upgraded retry succeeded' });
+      await waitFor(client, `/任务已完成|只读检查完成|已验证完成/u.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout: 90000, label: 'upgraded retry succeeded' });
       await waitFor(client, `document.querySelector('.send-button')?.disabled === false`, { label: 'upgrade reader released' });
       const after = await (await fetch(modelFixtureStatsUrl)).json();
       assert(after.definiteFailureCalls === failedStats.definiteFailureCalls, 'retry did not call the pinned ordinary executor');

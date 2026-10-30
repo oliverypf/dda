@@ -126,10 +126,6 @@ const main = async () => {
   const client = await connect();
   try {
     await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { label: 'runtime ready' });
-    if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式') === true`)) {
-      await client.evaluate(`document.querySelector('.mode-pill').click()`);
-    }
-    await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { label: 'read-only execution mode' });
     await client.evaluate(`(() => {
       const textarea = document.querySelector('textarea[name="prompt"]');
       textarea.value = ${JSON.stringify(prompt)};
@@ -162,7 +158,7 @@ const main = async () => {
       if (parsed.streamingLength > Math.max(0, lastLength)) sawGrowth = true;
       if (sawGrowth && parsed.marker === 'keep') markerKeptWhileGrowing += 1;
       lastLength = parsed.streamingLength;
-      if (/只读检查完成|任务未完成|任务已取消/.test(parsed.runStatus)) break;
+      if (/任务已完成|只读检查完成|任务未完成|任务已取消/.test(parsed.runStatus)) break;
       await delay(200);
     }
     const terminal = samples.at(-1)?.runStatus ?? '';

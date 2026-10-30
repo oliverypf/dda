@@ -60,7 +60,31 @@ const mappedRealpath = async (value) => {
   }
 };
 
+const hasDisallowedControls = (text) => /[\u0000-\u0008\u000b\u000e-\u001f\u007f]/u.test(stripVTControlCharacters(text));
+
+// PowerShell's default redirection writes UTF-16 LE with a BOM. Those build
+// logs are text. Decode a BOM before the NUL-byte check; files without a
+// UTF-16 BOM stay on the UTF-8 path.
+const decodeUtf16 = (bytes) => {
+  if (!bytes || bytes.length < 2 || bytes.length % 2 !== 0) return undefined;
+  const little = bytes[0] === 0xff && bytes[1] === 0xfe;
+  const big = bytes[0] === 0xfe && bytes[1] === 0xff;
+  if (!little && !big) return undefined;
+  const body = bytes.subarray(2);
+  if (body.length === 0) return '';
+  let text;
+  try {
+    text = new TextDecoder(little ? 'utf-16le' : 'utf-16be', { fatal: true }).decode(body);
+  } catch {
+    return undefined;
+  }
+  if (hasDisallowedControls(text)) return undefined;
+  return text;
+};
+
 const decodeText = (bytes) => {
+  const utf16 = decodeUtf16(bytes);
+  if (utf16 !== undefined) return utf16;
   if (bytes.includes(0)) return undefined;
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);

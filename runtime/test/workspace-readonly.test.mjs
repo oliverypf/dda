@@ -98,6 +98,27 @@ test('excludes host-owned runtime stores from snapshot, listing and reads', asyn
   await assert.rejects(withCancelStore.read('trajectory.jsonl.cancels.json.lock'), /WORKSPACE_EXCLUDED_PATH/u);
 });
 
+test('reads UTF-16 build logs written by PowerShell as text', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-utf16-'));
+  const text = 'node : build start\r\nFinished 2 bundles at:\r\n';
+  await writeFile(join(root, 'build-exe.log'), Buffer.from(`\uFEFF${text}`, 'utf16le'));
+  await writeFile(join(root, 'build-be.log'), Buffer.concat([
+    Buffer.from([0xfe, 0xff]),
+    Buffer.from(text, 'utf16le').swap16()
+  ]));
+  await writeFile(join(root, 'utf16-control.log'), Buffer.from(`\uFEFF${text}\u0001`, 'utf16le'));
+  const workspace = new ReadonlyWorkspace(root);
+
+  const file = await workspace.read('build-exe.log');
+  assert.equal(file.content, text);
+  assert.equal(file.sizeBytes, Buffer.byteLength(`\uFEFF${text}`, 'utf16le'));
+  assert.equal((await workspace.read('build-be.log')).content, text);
+  const page = await workspace.read('build-exe.log', 4);
+  assert.equal(page.content, text.slice(0, 4));
+  assert.equal(page.truncated, true);
+  await assert.rejects(workspace.read('utf16-control.log'), /WORKSPACE_BINARY_FILE/);
+});
+
 test('reads ANSI-colored build logs without changing file evidence or paging offsets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-ansi-'));
   const text = 'build start\r\n\x1b[32mBUILD SUCCESSFUL\x1b[0m\n';

@@ -1,4 +1,5 @@
 import { bounded } from './types.mjs';
+import { preferStableConnect } from '../plugins/model-openai.mjs';
 
 const DEFAULT_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const DEFAULT_MODEL = 'jev-latest';
@@ -101,6 +102,7 @@ export class JevClient {
     const startedAtMs = Date.now();
     try {
       if (controller.signal.aborted) throw controller.signal.reason;
+      preferStableConnect();
       const response = await this.#fetch(this.#endpoint, {
         method: 'POST',
         headers: {

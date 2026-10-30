@@ -1399,7 +1399,7 @@ const runStateLabel = (state?: string): string => {
     RECOVERING: '正在恢复任务',
     PAUSING: '正在暂停任务',
     PAUSED: '任务已暂停',
-    SUCCEEDED: '只读检查完成',
+    SUCCEEDED: '任务已完成',
     FAILED: '任务未完成',
     CANCELLED: '任务已取消',
     QUARANTINED: '已隔离',
@@ -2576,7 +2576,7 @@ const renderTaskValueSummary = (): string => {
   const nextStep = running ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
     : failed ? '先查看对话中的失败原因，再决定是否继续或重试。'
     : completed ? '回答在中间的对话区。可以把结果保存为文件。'
-    : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断，尚无完整计划。重新规划时可能需要补充原始目标。'
+    : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断。继续后，模型会结合已保存的任务和你的新消息决定下一步。'
     : terminal && resumable ? '有已保存的任务进度，可以从上次中断的地方继续。'
     : hasTask ? '可以查看已有回答；要提出新需求，请在下方输入。'
     : '在中间下方输入要完成的事情，例如“总结这个项目的功能”，然后发送。';
@@ -2589,10 +2589,10 @@ const renderTaskValueSummary = (): string => {
   const actionRow = (action: string, title: string, hint: string, disabled = false, primary = false): string =>
     `<button class="task-action-row ${primary ? 'task-action-primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span aria-hidden="true">›</span></button>`;
   const continueAction = resumable && terminal
-    ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', recoveryMode === 'PREPARATION' ? '补齐目标后重新制定计划' : '使用已保存的进度继续执行', false, !failed)
+    ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', '把当前输入和已保存的任务交给模型，由模型决定下一步', false, !failed)
     : '';
   const retryAction = failed && recoveryMode !== 'INVALID' && terminal
-    ? actionRow('retry-task', '重试任务', '使用设置中的模型重新尝试，缺少目标时会提示补充') : '';
+    ? actionRow('retry-task', '重试任务', '把当前输入和已保存的任务交给模型重试') : '';
   const title = run?.title ?? (thread?.title && !/^Thread\s+[a-f\d]+$/i.test(thread.title) ? thread.title : undefined);
   return `<section class="context-section task-value-section" aria-label="当前任务与下一步">
           ${isThreadArchived(model.activeThreadId) ? `<div class="panel-next-step">此会话已归档。发送新消息或继续任务时会自动恢复。<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(model.activeThreadId!)}">恢复到列表</button></div>` : ''}
@@ -2674,7 +2674,7 @@ const renderContextContent = (): string => {
           <div class="section-heading">
             <div><span class="section-kicker">安全设置</span><h3>当前允许的操作</h3></div>
           </div>
-          ${panelPurpose(controlled ? '当前为受控模式：Agent 每次执行命令或修改文件前，会先询问你是否同意。' : '当前为只读模式：Agent 只能查看文件，不会执行命令、修改文件或访问网络。')}
+          ${panelPurpose('执行命令或修改文件前，会先询问你是否同意。')}
           <dl class="capability-list">
             <div><dt>读文件</dt><dd class="${model.workspace.granted ? 'capability-on' : ''}"><i data-lucide="${model.workspace.granted ? 'check-circle-2' : 'x-circle'}"></i>${model.workspace.granted ? '已允许' : '未授权'}</dd></div>
             <div><dt>执行命令</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '需要你确认' : '已关闭'}</dd></div>
@@ -2692,7 +2692,7 @@ const renderContextContent = (): string => {
             </div>`) : ''}
           <button class="governance-button" data-action="navigate" data-page="safety">查看审批记录和详细权限</button>
           ${panelDetails('permissions:past', '查看已处理的请求', model.approvals.filter(approval => isPastApprovalList(approval.state)).map(renderApprovalCard).join('') || '<p class="empty-note">暂无已处理的请求。</p>')}
-        </section>`, controlled ? '当前为受控模式：每次操作前都会询问你' : '当前为只读模式：不会改动任何东西')}}
+        </section>`, '执行命令或修改文件前，会先询问你是否同意。')}}
 
         ${contextGroup('tools:troubleshooting', '遇到问题 / 查看执行细节', '查操作记录、模型选择依据和连接状态，帮助定位失败原因。', `
         <button class="governance-button" data-action="navigate" data-page="diagnostics">打开模型设置与故障排查</button>
@@ -2738,23 +2738,10 @@ const setTextIfChanged = (element: Node | null, text: string): void => {
   if (element && element.textContent !== text) element.textContent = text;
 };
 const refreshModeControls = (): void => {
-  const controlled = model.composer.mode === 'CONTROLLED';
-  const mode = app.querySelector<HTMLButtonElement>('[data-action="toggle-mode"]');
-  if (mode) {
-    mode.title = desktopBridge.isNative()
-      ? (model.runtime.releaseChannel ?? '发布渠道尚未确认')
-      : 'Web 预览仅支持只读模式';
-    mode.disabled = running || !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
-    mode.classList.toggle('mode-controlled', controlled);
-    const label = mode.lastChild;
-    if (label?.nodeType === Node.TEXT_NODE) setTextIfChanged(label, controlled ? '受控模式' : '只读模式');
-  }
   const version = app.querySelector<HTMLElement>('.version-label');
-  setTextIfChanged(version, `v${model.runtime.version} · ${controlled ? '受控模式' : '只读模式'}`);
+  setTextIfChanged(version, `v${model.runtime.version}`);
   const note = app.querySelector<HTMLElement>('.composer-note');
-  setTextIfChanged(note, controlled
-    ? '受控模式：每次执行命令或修改文件前，都会先询问你是否同意。'
-    : '只读模式：Agent 只能看文件，不会执行命令、修改文件或访问网络。');
+  setTextIfChanged(note, '执行命令或修改文件前，会先询问你是否同意。');
 };
 
 const renderHistoryView = (timelineItems = model.timeline): void => {
@@ -2837,16 +2824,8 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   }
   const brand = app.querySelector<HTMLElement>('.brand-row strong + span');
   if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览';
-  const mode = app.querySelector<HTMLButtonElement>('[data-action="toggle-mode"]');
-  if (mode) {
-    mode.title = desktopBridge.isNative()
-      ? (model.runtime.releaseChannel ?? '发布渠道尚未确认')
-      : 'Web 预览仅支持只读模式';
-    mode.disabled = !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
-    mode.classList.toggle('mode-controlled', model.composer.mode === 'CONTROLLED');
-    const label = mode.lastChild;
-    if (label?.nodeType === Node.TEXT_NODE) label.textContent = model.composer.mode === 'CONTROLLED' ? '受控模式' : '只读模式';
-  }
+  const version = app.querySelector<HTMLElement>('.version-label');
+  if (version) version.textContent = `v${model.runtime.version}`;
   const workspaceTitle = currentProjectName();
   const workspace = app.querySelector<HTMLElement>('.workspace-identity strong');
   if (workspace) { workspace.textContent = workspaceTitle; workspace.title = workspaceTitle; }
@@ -3045,30 +3024,11 @@ const threadRecoveryMode = (thread: HarnessReadModel['threads'][number] | undefi
   return checkpoint ? 'INVALID' : thread?.resumable ? 'PLAN' : 'NONE';
 };
 
-const isContinuationPrompt = (value: string): boolean => /^(?:继续(?:之前的|上次的)?任务|继续|重试|continue(?:\s+(?:the\s+)?(?:previous\s+)?task)?|resume|retry)[.!。！\s]*$/iu.test(value.trim());
-const latestPromptForThread = (): string => {
-  // The timeline belongs to the selected thread. Never borrow a global last
-  // prompt from a different conversation or treat a continue label as a goal.
-  const latest = [...model.timeline].reverse().find((item) => item.kind === 'USER' && item.body.trim() && !isContinuationPrompt(item.body));
-  return latest?.body.trim() ?? '';
-};
-
 const taskContinuationPrompt = (): string | undefined => {
   const thread = model.threads.find((item) => item.id === model.activeThreadId);
-  const recoveryMode = threadRecoveryMode(thread);
-  if (recoveryMode === 'INVALID') return undefined;
-  const known = latestPromptForThread();
-  if (known) return known;
-  if (recoveryMode === 'PLAN') return '继续之前的任务';
-  const supplied = window.prompt('上次未生成可执行计划，历史记录也未保存原始任务文字。请输入要完成的具体任务；将在当前会话中重新规划。', '');
-  if (supplied === null) return undefined;
-  const prompt = supplied.trim();
-  if (!prompt || isContinuationPrompt(prompt)) {
-    taskActionNotice = '请填写具体任务目标，例如需要检查或修改什么；仅填写“继续任务”无法重新规划。';
-    render();
-    return undefined;
-  }
-  return prompt;
+  if (threadRecoveryMode(thread) === 'INVALID') return undefined;
+  const typed = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value.trim() ?? '';
+  return typed || '继续';
 };
 
 const focusTaskSection = (selector: string): void => {
@@ -3290,9 +3250,8 @@ const renderSafetyPage = (): string => {
     ['权限上限来源', '未提供']
   ] : [];
   const rows = [
-    ['执行模式', controlled ? '受控，逐项审批' : '只读'],
-    ['命令执行', controlled ? '受控' : '关闭'],
-    ['文件写入', controlled ? '受控' : '关闭'],
+    ['命令执行', controlled ? '需要确认' : '关闭'],
+    ['文件写入', controlled ? '需要确认' : '关闭'],
     ['外部网络', network]
   ].map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('');
   const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
@@ -3584,6 +3543,7 @@ const renderLiveView = (): void => {
   syncMemoryActionControls();
 };
 const render = (): void => {
+  if (model.runtime.releaseChannel) app.dataset.releaseChannel = model.runtime.releaseChannel;
   const promptError = app.querySelector<HTMLElement>('#composer-prompt-error');
   if (promptError) { promptError.hidden = !composerPromptError; promptError.textContent = composerPromptError; }
   app.querySelectorAll<HTMLDetailsElement>('details[data-disclosure-id]').forEach(detail => contextDisclosureState.set(detail.dataset.disclosureId!, detail.open));
@@ -3621,7 +3581,6 @@ const render = (): void => {
   const canCompose = model.composer.enabled;
   const canSend = canCompose && !workspaceChanging;
   const taskRunning = Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
-  const controlled = model.composer.mode === 'CONTROLLED';
   const runtimeRoute = model.runtime.model
     ? `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`
     : model.runtime.platform === 'WINDOWS' ? '模型路由未读取' : 'Web 预览无本地模型';
@@ -3650,7 +3609,7 @@ const render = (): void => {
         <div class="rail-footer">
           <div data-archive-navigation>${renderArchiveNotice()}</div>
           <button class="nav-item ${settingsVisible ? 'active' : ''}" data-action="open-settings" aria-label="模型设置"><i data-lucide="settings"></i><span>设置</span></button>
-          <div class="version-label">v${escapeHtml(model.runtime.version)} · ${controlled ? '受控模式' : '只读模式'}</div>
+          <div class="version-label">v${escapeHtml(model.runtime.version)}</div>
         </div>
       </aside>
 
@@ -3675,9 +3634,6 @@ const render = (): void => {
               : '<i data-lucide="shield-check"></i>'}
             <span>${escapeHtml(taskProgressMessage || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>
           </div>
-          <button class="mode-pill ${controlled ? 'mode-controlled' : ''}" data-action="toggle-mode" title="${escapeHtml(desktopBridge.isNative() ? (model.runtime.releaseChannel ?? '发布渠道尚未确认') : 'Web 预览仅支持只读模式')}" ${!desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY' ? 'disabled' : ''}>
-            <i data-lucide="shield-check"></i>${controlled ? '受控模式' : '只读模式'}
-          </button>
         </section>
 
         <section class="transcript" aria-label="任务时间线">
@@ -3704,7 +3660,6 @@ const render = (): void => {
             <textarea name="prompt" rows="2" aria-describedby="composer-prompt-error" placeholder="${escapeHtml(model.composer.placeholder)}" ${canCompose ? '' : 'disabled'}></textarea>
             <div class="composer-bottom">
               <div class="composer-context">
-                <span><i data-lucide="shield-check"></i>${controlled ? '受控执行，逐项审批' : '只读分析'}</span>
                 <span class="composer-project">${escapeHtml(workspaceTitle)}</span><span class="composer-summary" title="${escapeHtml(runtimeRoute)}"><i data-lucide="cpu"></i>${escapeHtml(runtimeRoute)}</span>
               </div>
               <div class="composer-actions">
@@ -3714,7 +3669,7 @@ const render = (): void => {
             </div>
           </form>
           <p id="composer-prompt-error" role="alert" class="settings-message settings-message-error" ${composerPromptError ? '' : 'hidden'}>${escapeHtml(composerPromptError)}</p>
-          <p class="composer-note">${controlled ? '受控模式：每次执行命令或修改文件前，都会先询问你是否同意。' : '只读模式：Agent 只能看文件，不会执行命令、修改文件或访问网络。'}</p>
+          <p class="composer-note">执行命令或修改文件前，会先询问你是否同意。</p>
         </footer>
       </main>
 
@@ -5607,13 +5562,11 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     return;
   }
   const hostAgentId = `${runId}-cordis-host`;
-  const workspaceAgentId = `${runId}-workspace-plugin`;
   const modelAgentId = `${runId}-model-plugin`;
   const summaryAgentId = `${runId}-summary-plugin`;
   for (const agent of [
     { agentId: hostAgentId, name: 'Cordis 插件宿主', task: '装载已签名插件组合', state: 'STARTING' as const },
-    { agentId: workspaceAgentId, name: '只读工作区', task: '等待生成授权目录快照', state: 'STARTING' as const },
-    { agentId: modelAgentId, name: '模型提供方', task: '等待模型调用', state: 'STARTING' as const },
+    { agentId: modelAgentId, name: '模型提供方', task: '等待调用模型', state: 'STARTING' as const },
     { agentId: summaryAgentId, name: '结果汇总', task: '等待插件任务完成', state: 'STARTING' as const }
   ]) {
     next = upsertSubAgent(next, agent);
@@ -5625,18 +5578,19 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
   try {
     next = setRunState(model, 'EXECUTING_READ');
     next = upsertSubAgent(next, { agentId: hostAgentId, task: 'Cordis 服务注入已完成', state: 'SUCCEEDED' });
-    next = upsertSubAgent(next, { agentId: workspaceAgentId, task: '生成 canonical 只读 workspace snapshot', state: 'RUNNING' });
-    next = upsertSubAgent(next, { agentId: modelAgentId, task: '等待只读快照后调用模型', state: 'STARTING' });
+    next = upsertSubAgent(next, { agentId: modelAgentId, task: '等待调用模型', state: 'STARTING' });
     update(next);
 
-    const taskOptions: RuntimeTaskOptions = model.composer.mode === 'CONTROLLED'
-      ? {
+    const readOnlyRelease = !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
+    if (!readOnlyRelease && model.composer.mode !== 'CONTROLLED') update(setExecutionMode(model, 'CONTROLLED'));
+    const taskOptions: RuntimeTaskOptions = readOnlyRelease
+      ? { executionMode: 'READ_ONLY' as const }
+      : {
           executionMode: 'CONTROLLED' as const,
           leaseCapabilities: controlledCapabilities,
           leaseCommands: controlledCommands,
           ...(controlledNetworkTargets.parsed.length ? { leaseNetworkTargets: controlledNetworkTargets.parsed } : {})
-        }
-      : { executionMode: 'READ_ONLY' as const };
+        };
     Object.assign(taskOptions, workspaceThreadOptions(model));
     Object.assign(taskOptions, taskOptionsFromBudget(), extraOptions);
     if (model.activeThreadId && !taskOptions.threadId) update(setActiveThread(model, undefined));
@@ -5667,7 +5621,6 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     // cannot be overwritten by the stale pre-submit snapshot.
     next = model;
     if (!result.ok) {
-      next = upsertSubAgent(next, { agentId: workspaceAgentId, task: 'workspace snapshot 未能提交', state: 'FAILED' });
       next = upsertSubAgent(next, { agentId: modelAgentId, task: result.error, state: 'FAILED' });
       next = upsertSubAgent(next, { agentId: summaryAgentId, task: '未生成结果', state: 'CANCELLED' });
       if (lastSubmitReceipt?.status === 'pending') lastSubmitReceipt.status = 'unconfirmed';
@@ -5679,7 +5632,6 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
 
     if (lastSubmitReceipt) lastSubmitReceipt.status = 'accepted';
     next = model;
-    next = upsertSubAgent(next, { agentId: workspaceAgentId, task: `snapshot 已提交（${result.workspace.entryCount ?? 0} 项）`, state: 'SUCCEEDED' });
     next = setActiveThread(next, result.threadId);
     next = setThreads(next, [result.thread, ...next.threads.filter((thread) => thread.id !== result.thread.id)]);
     const modelSummary = result.model
@@ -5706,8 +5658,7 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     const toolSummary = result.toolCallCount
       ? `完成 ${result.toolCallCount} 次工具调用（${result.toolRounds ?? 0} 轮）`
       : '未请求工具';
-    const sideEffectSummary = result.executionMode === 'CONTROLLED' ? '受控执行' : '只读边界';
-    next = upsertSubAgent(next, { agentId: summaryAgentId, task: `结果已汇总，${toolSummary}，${sideEffectSummary}，${contextSummary}，${evolutionSummary}，${trajectorySummary}`, state: 'SUCCEEDED' });
+    next = upsertSubAgent(next, { agentId: summaryAgentId, task: `结果已汇总，${toolSummary}，${contextSummary}，${evolutionSummary}，${trajectorySummary}`, state: 'SUCCEEDED' });
     if (result.context?.status === 'DEGRADED') {
       next = appendTimelineItem(next, {
         kind: 'STATUS',
@@ -6084,9 +6035,7 @@ app.addEventListener('click', (event) => {
   if (action === 'close-settings' && !settingsSaving) {
     closeSettings();
   }
-  if (action === 'toggle-mode' && desktopBridge.isNative() && !running && model.runtime.releaseChannel !== 'WINDOWS_PHASE1_READ_ONLY') {
-    update(setExecutionMode(model, model.composer.mode === 'READ_ONLY' ? 'CONTROLLED' : 'READ_ONLY'));
-  }
+  if (action === 'toggle-mode') return;
   if (action === 'resolve-approval') {
     update(expireRequestedApprovals(model));
     const requestId = actionElement?.dataset.approvalId ?? '';

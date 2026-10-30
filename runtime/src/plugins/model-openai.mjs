@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import net from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { stableToolDefinitions, cacheSessionId } from '../prompt-cache.mjs';
 import { providerTokenUsage } from '../model-usage.mjs';
@@ -26,6 +27,22 @@ const tagTransport = (error, phase, extra = {}) => {
   return error;
 };
 
+// Windows Happy Eyeballs (autoSelectFamily) makes undici spend its 10s
+// connect budget across IPv6 and IPv4 and then fail, even when a direct IPv4
+// TLS handshake to the same host succeeds. Model requests use one family.
+export const preferStableConnect = () => {
+  if (process.platform === 'win32' && typeof net.setDefaultAutoSelectFamily === 'function') {
+    net.setDefaultAutoSelectFamily(false);
+  }
+};
+
+const connectFailureText = (error) => {
+  const cause = error?.cause;
+  const code = typeof cause?.code === 'string' ? cause.code : '';
+  const message = String(cause?.message ?? error?.message ?? error);
+  return (code ? `${code}: ${message}` : message).slice(0, 160);
+};
+
 /** Map a settled HTTP status to the freeze §2.4 surface code (message string). */
 export const classifyModelHttpStatus = (status) => {
   const code = Number(status);
@@ -39,6 +56,7 @@ export const classifyModelHttpStatus = (status) => {
 // could duplicate tool calls or output, so streaming errors still propagate.
 // transportBudget.remaining is decremented only at this fetch() call site (NIT-2).
 const fetchModelStream = async (endpoint, init, { retries, retryDelayMs, transportBudget } = {}) => {
+  preferStableConnect();
   for (let attempt = 0; ; attempt += 1) {
     init.signal?.throwIfAborted();
     if (transportBudget) {
@@ -56,7 +74,7 @@ const fetchModelStream = async (endpoint, init, { retries, retryDelayMs, transpo
         && (!transportBudget || transportBudget.remaining > 0);
       if (!canRetry) {
         throw tagTransport(new Error('MODEL_TRANSPORT'), 'CONNECT', {
-          transportCause: String(error?.message ?? error).slice(0, 40),
+          transportCause: connectFailureText(error),
           transportAttempts: attempt + 1
         });
       }

@@ -178,10 +178,6 @@ const submitComposer = (client) =>
 
 const waitForReady = async (client) => {
   await waitFor(client, `Boolean(document.querySelector('.connection-status.status-ready'))`, { timeout: 45000, label: 'runtime ready' });
-  if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式') === true`)) {
-    assert((await click(client, '.mode-pill')) === 'CLICKED', 'select read-only mode');
-  }
-  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('只读模式') === true`, { timeout: 45000, label: 'read-only execution mode' });
 };
 
 const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
@@ -197,7 +193,7 @@ const submitAndWaitTerminal = async (client, prompt, timeoutMs) => {
   await waitFor(client, `!document.querySelector('.project-picker-card')`, { label: 'fixture project selected' });
   assert((await setComposer(client, prompt)) === 'SET', 'set composer');
   assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
-  await waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, {
+  await waitFor(client, `/只读检查完成|任务已完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, {
     timeout: timeoutMs,
     interval: 500,
     label: 'terminal state'
@@ -246,14 +242,14 @@ const main = async () => {
     await waitForReady(client);
     await runTest('T15 恢复配置后任务可继续', async () => {
       let status = await submitAndWaitTerminal(client, 'hello', 180000);
-      if (status !== '只读检查完成') {
+      if (status !== '任务已完成' && status !== '只读检查完成') {
         const lockTimeout = await client.evaluate(`document.body.innerText.includes('PERSISTENCE_LOCK_TIMEOUT')`);
         if (lockTimeout) {
           await delay(5000);
           status = await submitAndWaitTerminal(client, 'hello', 180000);
         }
       }
-      assert(status === '只读检查完成', `expected 只读检查完成, got ${status}`);
+      assert(status === '任务已完成' || status === '只读检查完成', `expected completed task, got ${status}`);
       return status;
     });
   } finally {

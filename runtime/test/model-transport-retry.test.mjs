@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import { createServer } from 'node:http';
 import { Context } from '@deepseek-ai/cordis';
-import { createOpenAICompatiblePlugin } from '../src/plugins/model-openai.mjs';
+import { createOpenAICompatiblePlugin, preferStableConnect } from '../src/plugins/model-openai.mjs';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const setup = async (t, handler, options = {}) => {
@@ -97,4 +98,11 @@ test('partial streams are never replayed after a disconnect', async t => {
   await assert.rejects(async () => { for await (const chunk of provider.stream(request)) chunks.push(chunk); });
   assert.equal(calls, 1);
   assert.equal(chunks[0].text, 'partial');
+});
+
+test('windows model requests do not use happy eyeballs', () => {
+  if (process.platform !== 'win32' || typeof net.setDefaultAutoSelectFamily !== 'function') return;
+  net.setDefaultAutoSelectFamily(true);
+  preferStableConnect();
+  assert.equal(net.getDefaultAutoSelectFamily(), false);
 });

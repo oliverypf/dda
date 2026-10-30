@@ -304,20 +304,14 @@ const debug = (message) => { if (process.env.DDA_UI_SECURITY_DEBUG === '1') cons
 
 const ready = async (client) => {
   await waitFor(client, `document.querySelector('.connection-status')?.classList.contains('status-ready')`, { timeout: 45000, label: 'runtime ready' });
-  await waitFor(client, `document.querySelector('.mode-pill')?.getAttribute('disabled') === null`, { timeout: 45000, label: 'controlled mode enabled' });
-};
-
-const setWorkspace = async (client, root) => {
-  // The fixture workspace is selected before process launch. Verify the visible
-  // grant, rather than changing only native state behind the frontend model.
-  await waitFor(client, `(document.querySelector('.workspace-path')?.innerText ?? '').toLowerCase().includes(${JSON.stringify(root.toLowerCase())})`, { label: 'visible workspace matches isolated test root' });
 };
 
 const setControlledMode = async (client) => {
   await ready(client);
-  if (await client.evaluate(`document.querySelector('.mode-pill')?.innerText.includes('受控模式')`)) return;
-  assert((await click(client, '.mode-pill')) === 'CLICKED', 'switch to controlled mode');
-  await waitFor(client, `document.querySelector('.mode-pill')?.innerText.includes('受控模式')`, { label: 'controlled mode selected' });
+};
+
+const setWorkspace = async (client, root) => {
+  await waitFor(client, `(document.querySelector('.workspace-path')?.innerText ?? '').toLowerCase().includes(${JSON.stringify(root.toLowerCase())})`, { label: 'visible workspace matches isolated test root' });
 };
 
 const runTask = async (client, prompt) => {
@@ -338,7 +332,7 @@ const runTask = async (client, prompt) => {
   assert((await submitComposer(client)) === 'SUBMITTED', 'submit task');
 };
 
-const terminal = (client, timeout = 120000) => waitFor(client, `/只读检查完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout, interval: 300, label: 'task terminal state' });
+const terminal = (client, timeout = 120000) => waitFor(client, `/只读检查完成|任务已完成|任务未完成|任务已取消/.test(document.querySelector('.run-status')?.innerText ?? '')`, { timeout, interval: 300, label: 'task terminal state' });
 
 const main = async () => {
   console.log(`dda controlled UI security tests · exe=${exe} · port=${port}`);
@@ -356,14 +350,13 @@ const main = async () => {
       client = await connect();
       await ready(client);
       await setWorkspace(client, workspace);
-    await runTest('S01 受控门与模式区分', async () => {
+    await runTest('S01 执行前仍会询问', async () => {
       await setControlledMode(client);
-      const mode = await text(client, '.mode-pill');
+      assert(await client.evaluate(`document.querySelector('.mode-pill') == null`), 'no mode pill');
+      assert(!(await text(client, '.version-label')).match(/受控模式|只读模式/), 'footer has no mode');
       const note = await text(client, '.composer-note');
-      assert(mode.includes('受控模式'), `mode=${mode}`);
-      assert((await text(client, '.version-label')).includes('受控模式'), 'footer mode agrees with controlled selection');
-      assert(note.includes('受控模式'), `note=${note}`);
-      return mode;
+      assert(note.includes('询问'), `note=${note}`);
+      return note;
     });
     await runTest('S02 网络目标编辑器拒绝非法 JSON', async () => {
       assert((await client.evaluate(`(() => {

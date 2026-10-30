@@ -235,33 +235,46 @@ export const postMissUncertainExhaustedReplanHostNote = () => [
 ].join(' ');
 
 /**
- * freeze-harness-plan-continue-r1 §1.1: when step verification is CONTINUE with
- * nextAction=CONTINUE_EXECUTION and writes≥1 (not sole SAFETY/lease DENY), allow
- * exactly one bounded re-exec at the plan-step layer. Independent of #68/#69/amt.
- * Cap: at most 1× per step (caller latches alreadyReplanned).
+ * Extra executions after a verifier CONTINUE / CONTINUE_EXECUTION.
+ * The first turn is not counted. A later CONTINUE still stops scheduling
+ * once this budget is spent, so an unfinished task cannot loop forever.
+ */
+export const PLAN_CONTINUE_REPLAN_LIMIT = 3;
+
+/**
+ * Verifier CONTINUE with nextAction=CONTINUE_EXECUTION means the same task
+ * is unfinished and must take another turn. Writes are not required.
+ * Sole SAFETY / lease / hard denies stay fail-closed. Independent of #68/#69/amt.
  */
 export const isPlanContinueReplanEligible = ({
   status,
   nextAction,
-  writesApplied = 0,
-  successfulWrites = 0,
   failureCodes = [],
-  alreadyReplanned = false
+  alreadyReplanned = false,
+  continuationsUsed = 0
 } = {}) => {
   if (alreadyReplanned) return false;
+  const used = Number(continuationsUsed);
+  if (!Number.isFinite(used) || used < 0 || used >= PLAN_CONTINUE_REPLAN_LIMIT) return false;
   if (String(status ?? '').toUpperCase() !== 'CONTINUE') return false;
   if (String(nextAction ?? '').toUpperCase() !== 'CONTINUE_EXECUTION') return false;
-  if (Number(writesApplied) < 1 && Number(successfulWrites) < 1) return false;
   const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
   if (isSoleHardDenyFailure(codes)) return false;
   return true;
 };
 
+/** Model stopped with the task still open. That is not a failed run. */
+export const isOpenPlanContinuation = (report) => {
+  if (!report || typeof report !== 'object') return false;
+  return String(report.status ?? '').toUpperCase() === 'CONTINUE'
+    && String(report.nextAction ?? '').toUpperCase() === 'CONTINUE_EXECUTION';
+};
+
 export const planContinueReplanHostNote = () => [
-  'HOST_PLAN_CONTINUE_REPLAN: Verifier returned CONTINUE with nextAction=CONTINUE_EXECUTION after writes already landed.',
-  'Do not treat the task as failed — change path and/or add fresh evidence to finish the remaining goal.',
+  'HOST_PLAN_CONTINUE_REPLAN: Verifier returned CONTINUE with nextAction=CONTINUE_EXECUTION. The same task is not finished.',
+  'Do not treat the task as failed — continue that task, change path if the last turn made no progress, and add fresh evidence to finish the remaining goal.',
   'Ban repeating the same incomplete approach or claiming PASS without new tool evidence.',
-  'SAFETY / lease hard denies remain in force. No second plan-continue recovery of this kind.'
+  'SAFETY / lease hard denies remain in force. No further plan-continue recovery of this kind after the continuation budget is spent.'
 ].join(' ');
 
 /** Jev codes that may trigger one bounded zero-write REPLAN (independent of #68 writes≥1). */

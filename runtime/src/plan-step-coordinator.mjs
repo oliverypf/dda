@@ -4,6 +4,8 @@ import {
   countDeterministicGreenJevUncertainReports,
   isDeterministicGreenJevBehaviorReject,
   isDeterministicGreenJevEvidenceUncertain,
+  isSoleHardDenyFailure,
+  PLAN_CONTINUE_REPLAN_LIMIT,
   promoteDeterministicGreenJevBehaviorReject,
   promoteDeterministicGreenJevUncertain
 } from './task-recovery-controller.mjs';
@@ -191,7 +193,7 @@ export class PlanStepCoordinator {
       if (step.status === 'PENDING') await this.#update(step.stepId, { status: 'READY', errorCode: undefined });
       let current = this.#plan.steps.find((item) => item.stepId === step.stepId) ?? step;
       let completed = false;
-      let planContinueBonusUsed = false;
+      let planContinuationsUsed = 0;
       let effectiveMaxAttempts = maxAttempts;
       const firstAttempt = Math.max(0, Number.isInteger(current.attempt) ? current.attempt : 0);
       for (let runAttempt = 1; runAttempt <= effectiveMaxAttempts; runAttempt += 1) {
@@ -236,11 +238,12 @@ export class PlanStepCoordinator {
           completed = true;
           break;
         }
-        // freeze-harness-plan-continue-r1: one bonus READY re-exec on CONTINUE_EXECUTION+writes.
+        // CONTINUE / CONTINUE_EXECUTION keeps the same task running, including
+        // when nothing has been written yet. A sole safety or lease deny does not.
         let planContinueJustFired = false;
         if (
           continueReplan
-          && !planContinueBonusUsed
+          && planContinuationsUsed < PLAN_CONTINUE_REPLAN_LIMIT
           && report.status === 'CONTINUE'
           && statusOf(report.nextAction) === 'CONTINUE_EXECUTION'
         ) {
@@ -254,19 +257,15 @@ export class PlanStepCoordinator {
               writesApplied: counts.writesApplied ?? 0,
               successfulWrites: counts.successfulWrites ?? 0,
               failureCodes: report.failureCodes,
-              alreadyReplanned: planContinueBonusUsed
+              alreadyReplanned: planContinuationsUsed >= PLAN_CONTINUE_REPLAN_LIMIT,
+              continuationsUsed: planContinuationsUsed
             })
             : (
-              (Number(counts.writesApplied) >= 1 || Number(counts.successfulWrites) >= 1)
-              && !(Array.isArray(report.failureCodes) && report.failureCodes.length > 0
-                && report.failureCodes.every((code) => {
-                  const c = String(code ?? '');
-                  return c.startsWith('SAFETY_') || c.startsWith('LEASE_')
-                    || c === 'HARD_DECISION_DENY' || c === 'CAPABILITY_NOT_LEASED' || c === 'CAPABILITY_DENIED';
-                }))
+              planContinuationsUsed < PLAN_CONTINUE_REPLAN_LIMIT
+              && !isSoleHardDenyFailure(report.failureCodes)
             );
           if (eligible) {
-            planContinueBonusUsed = true;
+            planContinuationsUsed += 1;
             planContinueJustFired = true;
             const writesApplied = Number(counts.writesApplied ?? counts.successfulWrites ?? 0) || 0;
             await continueReplan.onPlanContinueReplan?.({

@@ -75,7 +75,7 @@ export const createInitialReadModel = (): HarnessReadModel => ({
       itemId: 'welcome',
       kind: 'AGENT',
       title: 'dda',
-      body: 'Windows 只读工作台已启动。你可以授权一个项目目录，然后让 dda 检查结构、阅读文件或整理实现计划。',
+      body: 'Windows 工作台已启动。你可以授权一个项目目录，然后让 dda 直接完成任务。',
       status: 'COMPLETE',
       createdAtMs: Date.now()
     }
@@ -181,7 +181,9 @@ export const setRuntimeReady = (
   runtime: snapshot ?? model.runtime,
   composer: snapshot?.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY'
     ? { ...model.composer, mode: 'READ_ONLY', placeholder: '描述需要检查或分析的任务' }
-    : model.composer
+    : snapshot?.releaseChannel
+      ? { ...model.composer, mode: 'CONTROLLED', placeholder: '描述任务，必要的副作用会逐项请求审批' }
+      : model.composer
 });
 
 export const setCellsSession = (

@@ -19,6 +19,16 @@ export const checkpointResumeMode = (checkpoint) => {
   }
   return 'INVALID';
 };
+
+// ThreadCreated stores only a title digest. The visible title in the local
+// snapshot is the original user task, recovered when its digest matches.
+export const recoverableThreadGoal = (thread) => {
+  const title = String(thread?.title ?? '').trim();
+  if (!title) return '';
+  if (/^(?:dda task|new thread)$/iu.test(title)) return '';
+  if (/^Thread [a-f0-9]{8}$/iu.test(title)) return '';
+  return title;
+};
 const checkpointDigest = (value) => {
   const { checkpointDigest: _ignored, ...unsigned } = value;
   return `sha256:${createHash('sha256').update(canonical(unsigned), 'utf8').digest('hex')}`;

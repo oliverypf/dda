@@ -15,7 +15,7 @@ export const CELLS_UNKNOWN_TITLE = '结果不确定（进程中断）';
 export const CELLS_RESET_TITLE = 'cell 环境已重置，变量已丢失';
 export const CELLS_RUNNING_LABEL = '运行中';
 export const CELL_CODE_PREVIEW_LIMIT = 240;
-export const CELL_APPROVAL_TTL_MS = 120_000;
+export const CELL_APPROVAL_TTL_MS = 900_000;
 
 const FRESH_HEALTH_REASONS = new Set(['NODE_TOO_OLD', 'DESKTOP_SESSION_KEEP_REQUIRED']);
 const LIVE_SESSION_REASONS = new Set([

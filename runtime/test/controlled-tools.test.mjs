@@ -98,16 +98,46 @@ test('a failed lease-start durability callback prevents the executor effect', as
   assert.deepEqual(calls, []);
 });
 
-test('denied approval creates no lease and executes no effect', async () => {
+test('a live declined approval surfaces APPROVAL_DENIED and executes no effect', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-controlled-tools-denied-'));
   const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: [] });
   const calls = [];
   const executor = { async shell() { calls.push('effect'); return { ok: true }; }, async writeFile() { calls.push('effect'); return {}; }, async test() { calls.push('effect'); return {}; } };
   const registry = new ToolRegistry({ allowSideEffects: true });
   registerExecutorTools(registry, executor, {
-    leaseProvider: createExplicitLeaseProvider({ monitor, capabilities: [CAPABILITIES.SHELL], commands: ['node'], requestApproval: async () => false, onLeaseIssued: () => calls.push('lease') })
+    leaseProvider: createExplicitLeaseProvider({
+      monitor,
+      capabilities: [CAPABILITIES.SHELL],
+      commands: ['node'],
+      requestApproval: async ({ onApprovalFailure }) => {
+        onApprovalFailure?.({ code: 'APPROVAL_DENIED', state: 'DECLINED' });
+        return false;
+      },
+      onLeaseIssued: () => calls.push('lease')
+    })
   });
-  await assert.rejects(() => registry.invoke('shell.execute', { command: nodeCommand, args: ['-e', ''] }), /SAFETY_LEASE_REQUIRED/);
+  await assert.rejects(() => registry.invoke('shell.execute', { command: nodeCommand, args: ['-e', ''] }), /APPROVAL_DENIED/);
+  assert.deepEqual(calls, []);
+});
+
+test('a live expired approval surfaces APPROVAL_EXPIRED and executes no effect', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-controlled-tools-expired-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: [] });
+  const calls = [];
+  const executor = { async shell() { calls.push('effect'); return { ok: true }; }, async writeFile() { return {}; }, async test() { return {}; } };
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  registerExecutorTools(registry, executor, {
+    leaseProvider: createExplicitLeaseProvider({
+      monitor,
+      capabilities: [CAPABILITIES.SHELL],
+      commands: ['node'],
+      requestApproval: async ({ onApprovalFailure }) => {
+        onApprovalFailure?.({ code: 'APPROVAL_EXPIRED', state: 'EXPIRED' });
+        return false;
+      }
+    })
+  });
+  await assert.rejects(() => registry.invoke('shell.execute', { command: nodeCommand, args: ['-e', ''] }), /APPROVAL_EXPIRED/);
   assert.deepEqual(calls, []);
 });
 

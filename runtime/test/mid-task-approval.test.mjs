@@ -57,11 +57,12 @@ test('the shared approval policy refuses risky actions without a live approver a
 // the same shared policy the runtime uses, so these tests exercise real logic.
 const hostApproval = ({ hasLiveApprover, userDecision = true }) => {
   const calls = [];
-  const requestApproval = async ({ capability, requireApproval, risk }) => {
+  const requestApproval = async ({ capability, requireApproval, risk, onApprovalFailure }) => {
     calls.push({ capability, requireApproval, risk });
     const outcome = resolveApprovalOutcome({ requireApproval, hasLiveApprover });
     if (outcome === APPROVAL_OUTCOMES.REFUSE) return false;
     if (outcome === APPROVAL_OUTCOMES.AUTO_APPROVE) return true;
+    if (!userDecision) onApprovalFailure?.({ code: 'APPROVAL_DENIED', state: 'DECLINED' });
     return userDecision;
   };
   return { requestApproval, calls };
@@ -119,7 +120,7 @@ test('a HIGH-risk command a live user declines runs no effect', async (t) => {
   const { registry, effects } = await controlledRegistry(t, { requestApproval });
   await assert.rejects(
     registry.invoke('shell.execute', { command: 'git', args: ['reset', '--hard', 'HEAD~1'] }, { toolCallId: 'call-c', argumentsDigest: 'digest-c' }),
-    /SAFETY_LEASE_REQUIRED/
+    /APPROVAL_DENIED/
   );
   assert.deepEqual(effects, []);
 });

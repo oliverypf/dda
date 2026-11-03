@@ -3,9 +3,9 @@ import { approvalSubject, cellApprovalPresentation } from './cell-approval.mjs';
 import { executionDigest } from '../execution-state-store.mjs';
 import { CAPABILITIES } from '../runtime-safety-monitor.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
-import { APPROVAL_OUTCOMES, resolveApprovalOutcome } from '../controlled-tools.mjs';
+import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome } from '../controlled-tools.mjs';
 
-const DEFAULT_APPROVAL_TTL_MS = 120_000;
+const DEFAULT_APPROVAL_TTL_MS = 900_000;
 
 /**
  * One pending approval per cell. Queued waiters resolve false when the cell
@@ -149,6 +149,17 @@ export const createApprovalSession = (deps) => {
         else emitResolved(pending, requestId, state);
         if (state === 'DECLINED' || state === 'EXPIRED') pending.cellOpSink?.markTerminal(state);
         pending.cellOpSink?.onApprovalSettled(state);
+        if (state === 'EXPIRED' || state === 'DECLINED') {
+          // Keep the public return value boolean for existing callers, while
+          // allowing the lease provider to preserve the reason a live card
+          // failed. A no-live refusal never reaches this settlement path and
+          // therefore remains an ordinary missing-lease failure.
+          pending.onApprovalFailure?.({
+            code: state === 'EXPIRED' ? APPROVAL_ERROR_CODES.EXPIRED : APPROVAL_ERROR_CODES.DENIED,
+            requestId,
+            state
+          });
+        }
         pending.resolve(approved);
       } catch {
         pending.resolve(false);
@@ -226,7 +237,7 @@ export const createApprovalSession = (deps) => {
     }
   };
 
-  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk, context: approvalCallContext } = {}) => {
+  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk, context: approvalCallContext, onApprovalFailure } = {}) => {
     const requestId = `approval-${randomUUID()}`;
     const batchGranted = requireApproval !== true
       && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
@@ -283,6 +294,7 @@ export const createApprovalSession = (deps) => {
       cellId,
       toolCallId: approvalCallContext?.toolCallId ?? null,
       cellOpSink: sinkFor(approvalCallContext),
+      onApprovalFailure: undefined,
       settled: false,
       inserted: false
     };
@@ -297,6 +309,7 @@ export const createApprovalSession = (deps) => {
       releaseGate();
       resolveApproval(value);
     };
+    pending.onApprovalFailure = typeof onApprovalFailure === 'function' ? onApprovalFailure : undefined;
     let intentRecord;
     let approvalRecord;
     let intentState;

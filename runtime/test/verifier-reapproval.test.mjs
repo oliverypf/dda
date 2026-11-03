@@ -36,11 +36,12 @@ test('only an uncertain or stalled verifier verdict arms re-approval', () => {
 // flows through the same shared policy the runtime uses.
 const hostApproval = ({ hasLiveApprover, userDecision = true }) => {
   const calls = [];
-  const requestApproval = async ({ capability, requireApproval, risk }) => {
+  const requestApproval = async ({ capability, requireApproval, risk, onApprovalFailure }) => {
     calls.push({ capability, requireApproval, risk });
     const outcome = resolveApprovalOutcome({ requireApproval, hasLiveApprover });
     if (outcome === APPROVAL_OUTCOMES.REFUSE) return false;
     if (outcome === APPROVAL_OUTCOMES.AUTO_APPROVE) return true;
+    if (!userDecision) onApprovalFailure?.({ code: 'APPROVAL_DENIED', state: 'DECLINED' });
     return userDecision;
   };
   return { requestApproval, calls };
@@ -100,7 +101,7 @@ test('an uncertain verdict a live user declines runs no effect', async () => {
   const { registry, effects } = await controlledRegistry({ requestApproval, verifierStatus: 'UNCERTAIN' });
   await assert.rejects(
     registry.invoke('shell.execute', { command: 'node', args: ['-e', 'process.stdout.write("ok")'] }, { toolCallId: 'call-c', argumentsDigest: 'digest-c' }),
-    /SAFETY_LEASE_REQUIRED/
+    /APPROVAL_DENIED/
   );
   assert.deepEqual(effects, []);
 });

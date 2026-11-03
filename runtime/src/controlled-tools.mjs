@@ -246,6 +246,32 @@ const normalizeList = (value) => Array.isArray(value)
 // lease when no live approver exists.
 export const APPROVAL_OUTCOMES = Object.freeze({ PROMPT: 'PROMPT', REFUSE: 'REFUSE', AUTO_APPROVE: 'AUTO_APPROVE' });
 
+// These codes describe a live approval card that was settled without granting
+// a lease. They must remain distinct from SAFETY_LEASE_REQUIRED, which means
+// the capability was never available to this provider (or no lease provider
+// was configured at all).
+export const APPROVAL_ERROR_CODES = Object.freeze({
+  EXPIRED: 'APPROVAL_EXPIRED',
+  DENIED: 'APPROVAL_DENIED'
+});
+
+export class ApprovalError extends Error {
+  constructor(code, message = '') {
+    super(message ? `${code}:${message}` : code);
+    this.name = 'ApprovalError';
+    this.code = code;
+  }
+}
+
+const normalizeApprovalErrorCode = (value) => {
+  const candidate = typeof value === 'string'
+    ? value
+    : value?.code ?? value?.errorCode ?? value?.reason ?? value?.state;
+  if (candidate === 'EXPIRED' || candidate === APPROVAL_ERROR_CODES.EXPIRED) return APPROVAL_ERROR_CODES.EXPIRED;
+  if (candidate === 'DECLINED' || candidate === APPROVAL_ERROR_CODES.DENIED) return APPROVAL_ERROR_CODES.DENIED;
+  return undefined;
+};
+
 /**
  * Decide the approval outcome for a side-effect request. This is the single
  * fail-closed policy shared by the host: when no live approver is connected a
@@ -370,8 +396,26 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
     // approval mechanism at all to answer for it.
     if (requireApproval && typeof requestApproval !== 'function') return undefined;
     if (typeof requestApproval === 'function') {
-      const approved = await requestApproval({ capability, request, context, requireApproval, risk: assessment.risk, dangerReasons: assessment.reasons });
-      if (!approved) return undefined;
+      let approvalErrorCode;
+      const approvalFailure = (failure) => {
+        approvalErrorCode ??= normalizeApprovalErrorCode(failure);
+      };
+      const approvalResult = await requestApproval({
+        capability,
+        request,
+        context,
+        requireApproval,
+        risk: assessment.risk,
+        dangerReasons: assessment.reasons,
+        onApprovalFailure: approvalFailure
+      });
+      const approved = approvalResult === true
+        || (approvalResult && typeof approvalResult === 'object' && approvalResult.approved === true);
+      if (!approved) {
+        approvalErrorCode ??= normalizeApprovalErrorCode(approvalResult);
+        if (approvalErrorCode) throw new ApprovalError(approvalErrorCode);
+        return undefined;
+      }
     }
     const lease = monitor.issueLease({
       capabilities: [capability],
@@ -418,10 +462,12 @@ export const registerExecutorTools = (registry, executor, {
     : '';
   const executeWithLease = async (capability, input, operation, context) => {
     let lease;
+    let effectStarted = false;
     try {
       lease = await getLease({ capability, request: input, context });
       if (typeof leaseProvider === 'function' && !lease) throw new SafetyError(SAFETY_ERROR_CODES.LEASE_REQUIRED);
       await onLeaseStarted?.({ capability, request: input, lease, context });
+      effectStarted = true;
       const result = await operation(lease);
       await onLeaseConsumed?.({ capability, request: input, lease, result, context });
       return result;
@@ -433,6 +479,10 @@ export const registerExecutorTools = (registry, executor, {
       } catch {
         // Cleanup/reporting failures must not replace the original error. The next runtime reconciliation can still revoke the lease.
       }
+      // Plain preparation errors are internal callback failures, not public
+      // domain codes inferred from their messages. Cleanup receives the original
+      // error above; structured safety/approval errors and executor errors pass through.
+      if (!effectStarted && !error?.code) throw new Error('Lease preparation failed', { cause: error });
       throw error;
     } finally {
       lease?.releaseWorkspace?.();

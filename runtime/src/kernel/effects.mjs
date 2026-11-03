@@ -399,7 +399,9 @@ export const createKernelEffectsDispatcher = ({
       const code = errorCode(error);
       const uncertain = UNCERTAIN_ERROR_CODES.has(code);
       if (uncertain) armUncertain(code);
-      const refused = code === 'SAFETY_LEASE_REQUIRED';
+      const refused = code === 'SAFETY_LEASE_REQUIRED'
+        || code === 'APPROVAL_EXPIRED'
+        || code === 'APPROVAL_DENIED';
       await audit.append({ ...base, phase: uncertain ? 'UNKNOWN' : refused ? 'REFUSED' : 'FAILED', approvalPath: refused ? 'REFUSED' : approvalPath, errorCode: code }).catch(() => {});
       if (uncertain && approvalPath === 'AUTO_HOST_POLICY' && autoDenylistOnUnknown) await denylist.add(key, { reason: 'AUTO_APPROVED_OUTCOME_UNKNOWN' }).catch(() => {});
       throw error;

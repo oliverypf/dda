@@ -4,7 +4,7 @@
  * shown in the approval fold; callers compare `requestDigest` only.
  */
 
-export const CELL_EFFECT_APPROVAL_TTL_MS = 120_000;
+export const CELL_EFFECT_APPROVAL_TTL_MS = 900_000;
 const CODE_PREVIEW_CHARS = 240;
 
 export const approvalSubject = ({ capability, request, context } = {}) => {

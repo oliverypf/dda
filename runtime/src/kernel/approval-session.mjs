@@ -5,7 +5,7 @@ import { CAPABILITIES } from '../runtime-safety-monitor.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
 import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome } from '../controlled-tools.mjs';
 
-const DEFAULT_APPROVAL_TTL_MS = 120_000;
+const DEFAULT_APPROVAL_TTL_MS = 900_000;
 
 /**
  * One pending approval per cell. Queued waiters resolve false when the cell

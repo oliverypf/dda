@@ -415,7 +415,7 @@ test('desktop and CLI kernel.exec descriptions stay on separate branch keys', ()
 });
 
 test('cell approval digest covers code, cellOpIndex, and host.request; fingerprint is that digest', () => {
-  assert.equal(CELL_EFFECT_APPROVAL_TTL_MS, 120_000);
+  assert.equal(CELL_EFFECT_APPROVAL_TTL_MS, 900_000);
   const base = {
     capability: 'WRITE_FILE',
     request: { path: 'a.txt' },

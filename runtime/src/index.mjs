@@ -237,7 +237,7 @@ const councilAssumptionStatement = (value) => {
 };
 
 const BOOLEAN_ARGS = new Set(['--resume', '--auto-evolution-proposal', '--purge-expired', '--require-holdout', '--requires-workspace-mutation']);
-const APPROVAL_TTL_MS = 120000;
+const APPROVAL_TTL_MS = 900_000;
 // One CLI invocation runs at most one task; never derive identity from errors.
 let taskResponseRunId;
 

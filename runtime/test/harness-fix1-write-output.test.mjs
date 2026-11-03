@@ -356,3 +356,72 @@ test('T14 resumeWrittenFiles ignores TaskWriteEffectUnverified', async () => {
   assert.ok(files instanceof Error || Array.isArray(files));
   if (Array.isArray(files)) assert.equal(files.length, 0);
 });
+
+const resumeLineage = () => {
+  const prompts = ['Create the first file', 'Add another file', '继续'];
+  const events = prompts.flatMap((prompt, index) => {
+    const runId = `r${index}`;
+    return [
+      { runId, kind: 'TaskRunCreated', payload: {
+        requestedMode: 'CONTROLLED', promptDigest: textDigest(prompt),
+        ...(index > 0 ? { sourceRunId: `r${index - 1}`, sourceCheckpointDigest: textDigest(`checkpoint-${index - 1}`) } : {})
+      } },
+      { runId, eventId: `write-${index}`, kind: 'TaskFileWritten', payload: {
+        name: 'file.write', path: `${runId}.txt`, contentDigest: textDigest(`content-${index}`),
+        outputDigest: textDigest(`output-${index}`)
+      } },
+      { runId, kind: 'ThreadCheckpointCommitted', payload: {
+        threadId: 'thread', checkpointDigest: textDigest(`checkpoint-${index}`), checkpoint: { runId }
+      } }
+    ];
+  });
+  return {
+    events, sourceRunId: 'r2', checkpointDigest: textDigest('checkpoint-2'),
+    threadId: 'thread', promptDigest: textDigest(prompts[2]), mode: 'CONTROLLED',
+    workspace: { read: async () => assert.fail('invalid lineage must not read the workspace') }
+  };
+};
+
+test('T15 resumeWrittenFiles restores multi-turn lineage with differing ancestor prompt digests', async () => {
+  const facts = resumeLineage();
+  const reads = [];
+  facts.workspace.read = async (path, limit) => {
+    reads.push([path, limit]);
+    const write = facts.events.find(event => event.kind === 'TaskFileWritten' && event.payload.path === path);
+    assert.ok(write, `unexpected workspace read: ${path}`);
+    return { digest: write.payload.contentDigest };
+  };
+  assert.deepEqual(await resumeWrittenFiles(facts), [0, 1, 2].map(index => ({
+    id: `write-${index}`, name: 'file.write', path: `r${index}.txt`,
+    contentDigest: textDigest(`content-${index}`), outputDigest: textDigest(`output-${index}`),
+    state: 'SUCCEEDED', sourceEventId: `write-${index}`
+  })));
+  assert.deepEqual(reads, [['r0.txt', 1], ['r1.txt', 1], ['r2.txt', 1]]);
+});
+
+test('T16 resumeWrittenFiles rejects a selected source prompt mismatch', async () => {
+  const facts = resumeLineage();
+  facts.events.find(event => event.runId === facts.sourceRunId && event.kind === 'TaskRunCreated')
+    .payload.promptDigest = textDigest('a different selected prompt');
+  await assert.rejects(resumeWrittenFiles(facts), { message: 'RECOVERY_LINEAGE_INVALID' });
+});
+
+test('T17 resumeWrittenFiles rejects cross-thread checkpoints in the source or ancestors', async () => {
+  for (const runId of ['r2', 'r1', 'r0']) {
+    const facts = resumeLineage();
+    facts.events.find(event => event.runId === runId && event.kind === 'ThreadCheckpointCommitted')
+      .payload.threadId = 'another-thread';
+    await assert.rejects(resumeWrittenFiles(facts), { message: 'RECOVERY_LINEAGE_INVALID' });
+  }
+});
+
+test('T18 resumeWrittenFiles rejects invalid ancestor prompt digests', async () => {
+  for (const runId of ['r1', 'r0']) {
+    for (const promptDigest of [undefined, null, 42, '', 'sha256:bad', `sha256:${'g'.repeat(64)}`, 'a'.repeat(64)]) {
+      const facts = resumeLineage();
+      facts.events.find(event => event.runId === runId && event.kind === 'TaskRunCreated')
+        .payload.promptDigest = promptDigest;
+      await assert.rejects(resumeWrittenFiles(facts), { message: 'RECOVERY_LINEAGE_INVALID' });
+    }
+  }
+});

@@ -194,7 +194,9 @@ export const createApprovalSession = (deps) => {
       if (!claim(pending, requestId)) return;
       settleWinner(pending, requestId, {
         state: 'EXPIRED',
-        coordinatorNext: 'FAILED',
+        // Expiry rejects this effect, but leaves the run available for the
+        // model to handle the observation or request approval again.
+        coordinatorNext: 'EXECUTING',
         coordinatorReason: 'APPROVAL_EXPIRED',
         deleteContext: true
       });

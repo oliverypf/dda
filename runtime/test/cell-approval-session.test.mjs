@@ -3,8 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CAPABILITIES } from '../src/runtime-safety-monitor.mjs';
+import { Context } from '@deepseek-ai/cordis';
+import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor } from '../src/runtime-safety-monitor.mjs';
+import { createExplicitLeaseProvider, registerExecutorTools } from '../src/controlled-tools.mjs';
+import { ToolRegistry, toolRegistryPlugin } from '../src/tool-registry.mjs';
+import { cordisPlugin } from '../src/plugins/cordis-plugin.mjs';
+import { taskRunnerPlugin } from '../src/plugins/task-runner.mjs';
 import { createExecutionStateStore, executionDigest } from '../src/execution-state-store.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { createExecutionScopeSnapshot } from '../src/execution-scope-snapshot.mjs';
 import { createTaskRunCoordinator } from '../src/task-run-coordinator.mjs';
 import { approvalSubject } from '../src/kernel/cell-approval.mjs';
@@ -23,9 +29,9 @@ const waitFor = async (predicate, attempts = 50) => {
   assert.fail('timed out waiting for condition');
 };
 
-const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now } = {}) => {
+const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now, eventStore } = {}) => {
   const events = [];
-  const store = createExecutionStateStore();
+  const store = createExecutionStateStore({ eventStore });
   const real = createTaskRunCoordinator({ runId: 'run-cell-approval' });
   real.transition('PLANNING');
   real.transition('EXECUTING');
@@ -97,6 +103,190 @@ const cellContext = (cellId, cellOpIndex, extra = {}) => ({
 });
 
 const requested = (events) => events.filter((event) => event.kind === 'approval.requested');
+
+for (const fromCell of [false, true]) {
+  test(`expired approval rejects the action, preserves audit evidence, and permits reapproval (cell=${fromCell})`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'approval-expiry-audit-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const storagePath = join(directory, 'audit.json');
+    const eventStore = createHarnessEventStore({ storagePath });
+    const { session, events, store, real, approvalContexts, marks, track } = harness({ ttlMs: 80, eventStore });
+    const context = fromCell ? cellContext('expiry-cell', 1) : { toolCallId: 'expiry-tool' };
+    track(context.toolCallId);
+    const failures = [];
+    const input = {
+      capability: CAPABILITIES.WRITE_FILE,
+      request: { path: 'expired.txt' },
+      context,
+      requireApproval: true,
+      onApprovalFailure: (failure) => failures.push(failure)
+    };
+    const keepalive = setInterval(() => {}, 20);
+    t.after(() => clearInterval(keepalive));
+    const first = session.requestApproval(input);
+    await waitFor(() => requested(events).length === 1);
+    const expired = requested(events)[0].payload;
+    assert.equal(await first, false, 'expiry never authorizes the effect');
+    assert.equal(real.state, 'EXECUTING', 'expiry must not terminate the task');
+    assert.equal(session.pendingApprovals.size, 0);
+    assert.equal(approvalContexts.size, 0);
+    assert.equal(session.holds.n, 0);
+    assert.deepEqual(failures, [{ code: 'APPROVAL_EXPIRED', requestId: expired.requestId, state: 'EXPIRED' }]);
+    assert.equal(store.get(expired.approvalId).state, 'EXPIRED');
+    assert.equal(store.get(expired.intentId).state, 'REJECTED');
+    assert.deepEqual(events.filter((event) => event.kind === 'approval.expired'), [
+      { kind: 'approval.expired', payload: { requestId: expired.requestId } }
+    ]);
+    assert.ok(real.history.some((entry) => entry.from === 'WAITING_APPROVAL'
+      && entry.to === 'EXECUTING' && entry.reason === 'APPROVAL_EXPIRED'));
+    assert.ok(marks.some((mark) => mark.toolCallId === context.toolCallId && mark.state === 'EXPIRED'));
+
+    const second = session.requestApproval(input);
+    await waitFor(() => requested(events).length === 2);
+    const retry = requested(events)[1].payload;
+    assert.notEqual(retry.requestId, expired.requestId);
+    assert.equal(real.state, 'WAITING_APPROVAL');
+    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: expired.requestId,
+      approved: true, displayedDigest: expired.requestDigest }));
+    assert.equal(session.pendingApprovals.size, 1, 'a late response cannot approve the retry');
+    assert.equal(store.get(expired.approvalId).state, 'EXPIRED');
+    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: retry.requestId,
+      approved: true, displayedDigest: retry.requestDigest }));
+    assert.equal(await second, true);
+    assert.equal(real.state, 'EXECUTING');
+    assert.equal(store.get(retry.approvalId).state, 'APPROVED');
+    assert.equal(failures.length, 1);
+    const audit = await createHarnessEventStore({ storagePath }).list({ runId: 'run-cell-approval' });
+    assert.equal(audit.filter((event) => event.kind === 'ExecutionStateChanged'
+      && event.payload.recordId === expired.approvalId && event.payload.state === 'EXPIRED').length, 1);
+    assert.ok(audit.some((event) => event.kind === 'ExecutionStateChanged'
+      && event.payload.recordId === expired.intentId && event.payload.state === 'REJECTED'));
+  });
+}
+
+test('no live approver still yields SAFETY_LEASE_REQUIRED without a lease or effect', async (t) => {
+  const { session, events, store, real } = harness({ live: false });
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'approval-no-live-'));
+  t.after(() => rm(workspaceRoot, { recursive: true, force: true }));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot });
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  const effects = [];
+  let leases = 0;
+  registerExecutorTools(registry, {
+    async shell() { effects.push('shell'); },
+    async writeFile() { effects.push('write'); },
+    async test() { effects.push('test'); }
+  }, {
+    leaseProvider: createExplicitLeaseProvider({
+      monitor, capabilities: [CAPABILITIES.WRITE_FILE],
+      requestApproval: (input) => session.requestApproval(input),
+      onLeaseIssued: () => { leases += 1; }
+    })
+  });
+  await assert.rejects(registry.invoke('file.write', { path: '.env', content: 'SECRET=test' }),
+    (error) => error.code === 'SAFETY_LEASE_REQUIRED');
+  assert.deepEqual(effects, []);
+  assert.equal(leases, 0);
+  assert.equal(real.state, 'EXECUTING');
+  assert.equal(requested(events).length, 0);
+  assert.equal(events.some((event) => event.kind === 'approval.expired'), false);
+  assert.ok(events.some((event) => event.kind === 'approval.refused' && event.payload.reason === 'NO_LIVE_APPROVER'));
+  assert.equal(store.list().find((record) => record.recordType === 'intent').state, 'REJECTED');
+});
+
+test('declined approval still fails the task and reports APPROVAL_DENIED', async () => {
+  const { session, events, store, real } = harness();
+  const failures = [];
+  const pending = session.requestApproval({ capability: CAPABILITIES.WRITE_FILE,
+    request: { path: 'denied.txt' }, requireApproval: true,
+    onApprovalFailure: (failure) => failures.push(failure) });
+  await waitFor(() => requested(events).length === 1);
+  const card = requested(events)[0].payload;
+  session.handleLine(JSON.stringify({ type: 'approval_response', requestId: card.requestId,
+    approved: false, displayedDigest: card.requestDigest }));
+  assert.equal(await pending, false);
+  assert.equal(real.state, 'FAILED');
+  assert.deepEqual(failures, [{ code: 'APPROVAL_DENIED', requestId: card.requestId, state: 'DECLINED' }]);
+  assert.equal(store.get(card.approvalId).state, 'DECLINED');
+  assert.equal(store.get(card.intentId).state, 'REJECTED');
+  assert.ok(events.some((event) => event.kind === 'approval.resolved' && event.payload.state === 'DECLINED'));
+  assert.equal(events.some((event) => event.kind === 'approval.expired'), false);
+});
+
+test('the model observes APPROVAL_EXPIRED and retries with no effect until fresh approval', async (t) => {
+  const { session, events, real } = harness({ ttlMs: 80 });
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'approval-expiry-continue-'));
+  t.after(() => rm(workspaceRoot, { recursive: true, force: true }));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot });
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  const effects = [];
+  let leases = 0;
+  registerExecutorTools(registry, {
+    async shell() { assert.fail('unexpected shell effect'); },
+    async test() { assert.fail('unexpected test effect'); },
+    async writeFile() {
+      effects.push('write');
+      return { ok: true, action: 'write_file', path: 'retry.txt', bytesWritten: 2, contentDigest: DIGEST };
+    }
+  }, {
+    leaseProvider: createExplicitLeaseProvider({
+      monitor, capabilities: [CAPABILITIES.WRITE_FILE],
+      requestApproval: (input) => session.requestApproval(input),
+      onLeaseIssued: () => { leases += 1; }
+    })
+  });
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  const keepalive = setInterval(() => {}, 20);
+  t.after(() => clearInterval(keepalive));
+  await root.plugin(toolRegistryPlugin(registry));
+  let rounds = 0;
+  await root.plugin(cordisPlugin((ctx) => ctx.provide('modelProvider', {
+    provider: 'fixture', protocol: 'fixture', model: 'approval-expiry',
+    async *stream(request) {
+      rounds += 1;
+      if (rounds === 2) {
+        const observation = request.messages.find((message) => message.source?.kind === 'tool');
+        assert.match(JSON.stringify(observation), /APPROVAL_EXPIRED/);
+        assert.equal(real.state, 'EXECUTING');
+        assert.deepEqual(effects, []);
+        assert.equal(leases, 0);
+      }
+      if (rounds <= 2) {
+        yield { type: 'tool-call', id: `write-${rounds}`, name: 'file.write',
+          arguments: JSON.stringify({ path: 'retry.txt', content: 'ok' }) };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      } else {
+        yield { type: 'text-delta', text: 'Fresh approval completed the write.' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      }
+    }
+  }), 'approval-expiry-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  const observations = [];
+  const run = root.taskRunner.run({ prompt: 'Write the requested file.', mode: 'CONTROLLED',
+    workspace: { granted: true, rootLabel: workspaceRoot, snapshotDigest: DIGEST, entries: [], sections: [] },
+    onEvent: (event) => observations.push(event) });
+  const approveRetry = async () => {
+    await waitFor(() => requested(events).length === 2);
+    const retry = requested(events)[1].payload;
+    assert.deepEqual(effects, []);
+    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: retry.requestId,
+      approved: true, displayedDigest: retry.requestDigest }));
+  };
+  const [result] = await Promise.all([run, approveRetry()]);
+  assert.equal(result.text, 'Fresh approval completed the write.');
+  assert.equal(rounds, 3);
+  assert.deepEqual(effects, ['write']);
+  assert.equal(leases, 1);
+  assert.equal(real.state, 'EXECUTING');
+  assert.ok(observations.some((event) => event.kind === 'tool.result'
+    && event.id === 'write-1' && event.ok === false && event.errorCode === 'APPROVAL_EXPIRED'));
+  assert.ok(observations.some((event) => event.kind === 'tool.result' && event.id === 'write-2' && event.ok === true));
+  real.transition('VERIFYING');
+  real.transition('SUCCEEDED');
+  assert.equal(real.state, 'SUCCEEDED');
+});
 
 test('cell and non-cell digests, and both paths stamp cellId on the pending entry', async () => {
   const { session, store, events } = harness();

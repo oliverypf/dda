@@ -3450,14 +3450,19 @@ async function runTask() {
       sourceRunId: resumeSourceRunId, sourceEventIds: resumedReadonlyActions.map(action => action.sourceEventId), actionCount: resumedReadonlyActions.length
     });
     const reconcileInterruptedStep = async ({ step }) => {
+      // No journal is not the same as an empty journal. Discrete file writes
+      // never open one, so a FAILED intent cannot be cleared without a list.
+      // A list that throws or is not an array hides a STARTED row.
       let journalEffects = [];
+      let journalStatus = 'absent';
       if (effectJournal && typeof effectJournal.list === 'function') {
         try {
           const listed = await effectJournal.list();
-          journalEffects = Array.isArray(listed) ? listed : [];
+          if (!Array.isArray(listed)) return { status: 'UNCERTAIN', reason: 'JOURNAL_UNREADABLE' };
+          journalEffects = listed;
+          journalStatus = 'ready';
         } catch {
-          // A journal that cannot be read hides whether a side effect started.
-          return { status: 'UNCERTAIN' };
+          return { status: 'UNCERTAIN', reason: 'JOURNAL_UNREADABLE' };
         }
       }
       return reconcileInterruptedPlanStep({
@@ -3467,7 +3472,8 @@ async function runTask() {
         events: priorEvents,
         records: executionState.list(),
         sourceRunId: resumeSourceRunId,
-        journalEffects
+        journalEffects,
+        journalStatus
       });
     };
     const planCoordinator = createPlanStepCoordinator({

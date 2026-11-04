@@ -333,6 +333,186 @@ test('blocks when the effect journal shows execution the intent records do not e
   assert.deepEqual(hidden, { status: 'UNCERTAIN', reason: 'JOURNAL_EXECUTION_UNACCOUNTED' });
 });
 
+const failedBeforeStartEvidence = ({
+  journalEffects = [],
+  journalStatus = 'ready',
+  extraEvents = [],
+  extraRecords = [],
+  intentPatch = {}
+} = {}) => {
+  const record = createRecorder();
+  const failedHistory = [
+    transition('PROPOSED', 'SAFETY_EVALUATING'),
+    transition('SAFETY_EVALUATING', 'WAITING_APPROVAL'),
+    transition('WAITING_APPROVAL', 'APPROVED'),
+    transition('APPROVED', 'EXECUTING'),
+    transition('EXECUTING', 'FAILED', 'EXECUTION_OUTCOME_UNCERTAIN')
+  ];
+  const events = [
+    record('run-a', 'TaskRunCreated', { requestedMode: 'CONTROLLED' }),
+    record('run-a', 'PlanStepStateChanged', { steps: runningSteps('inspect') }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'intent', recordId: 'intent-pre', state: 'PROPOSED', intentId: 'intent-pre'
+    }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'intent', recordId: 'intent-pre', state: 'EXECUTING', intentId: 'intent-pre'
+    }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'approval', recordId: 'approval-pre', state: 'APPROVED', intentId: 'intent-pre'
+    }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'lease', recordId: 'lease-pre', state: 'ACTIVE', intentId: 'intent-pre'
+    }),
+    record('run-a', 'ActionAuthorized', { intentId: 'intent-pre', leaseId: 'lease-pre', operationId: 'operation-pre' }),
+    record('run-a', 'ActionLeased', { intentId: 'intent-pre', leaseId: 'lease-pre', operationId: 'operation-pre' }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'lease', recordId: 'lease-pre', state: 'REVOKED', intentId: 'intent-pre'
+    }),
+    record('run-a', 'LeaseExecutionFailed', {
+      intentId: 'intent-pre', leaseId: 'lease-pre', errorCode: 'JOURNAL_UNAVAILABLE'
+    }),
+    record('run-a', 'ActionFailed', {
+      intentId: 'intent-pre', leaseId: 'lease-pre', operationId: 'operation-pre', errorCode: 'JOURNAL_UNAVAILABLE'
+    }),
+    record('run-a', 'ExecutionStateChanged', {
+      recordType: 'intent', recordId: 'intent-pre', state: 'FAILED', intentId: 'intent-pre'
+    }),
+    ...extraEvents.map((event) => record(event.runId, event.kind, event.payload))
+  ];
+  return {
+    events,
+    records: [
+      intentRecord('intent-pre', { state: 'FAILED', transitionHistory: failedHistory, operationId: 'operation-pre', ...intentPatch }),
+      approvalRecord('approval-pre', 'intent-pre', 'APPROVED', [
+        transition('REQUESTED', 'PRESENTED'),
+        transition('PRESENTED', 'APPROVED')
+      ]),
+      { recordType: 'lease', recordId: 'lease-pre', intentId: 'intent-pre', runId: 'run-a', state: 'REVOKED' },
+      ...extraRecords
+    ],
+    journalEffects,
+    journalStatus,
+    sourceRunId: 'run-a'
+  };
+};
+
+test('retries a pre-execution FAILED intent when the journal has no start entry', () => {
+  const requestedOnly = failedBeforeStartEvidence({
+    journalEffects: [{ effectId: 'effect-pre', state: 'REQUESTED', runId: 'run-a', leaseId: 'lease-pre' }]
+  });
+  assert.deepEqual(classify(requestedOnly), { status: 'RETRY', reason: 'FAILED_BEFORE_START' });
+  const emptyJournal = failedBeforeStartEvidence({ journalEffects: [] });
+  assert.deepEqual(classify(emptyJournal), { status: 'RETRY', reason: 'FAILED_BEFORE_START' });
+});
+
+test('blocks a FAILED intent when the journal shows the effect started', () => {
+  for (const state of ['LEASED', 'STARTED', 'COMPLETED', 'FAILED', 'UNKNOWN']) {
+    const evidence = failedBeforeStartEvidence({
+      journalEffects: [{ effectId: `effect-${state}`, state, runId: 'run-a', leaseId: 'lease-pre' }]
+    });
+    assert.equal(classify(evidence).status, 'UNCERTAIN', state);
+    assert.equal(classify(evidence).reason, 'JOURNAL_EFFECT_STARTED', state);
+  }
+});
+
+test('blocks a pre-execution failure when the journal is missing or unreadable', () => {
+  const unreadable = failedBeforeStartEvidence({ journalStatus: 'unreadable', journalEffects: [] });
+  assert.deepEqual(classify(unreadable), { status: 'UNCERTAIN', reason: 'JOURNAL_UNREADABLE' });
+
+  const absent = failedBeforeStartEvidence({ journalStatus: 'absent', journalEffects: [] });
+  assert.equal(classify(absent).status, 'UNCERTAIN');
+  assert.notEqual(classify(absent).reason, 'FAILED_BEFORE_START');
+
+  const stillRejected = expiredInspectEvidence();
+  assert.equal(classify({ ...stillRejected, journalStatus: 'absent' }).status, 'RETRY');
+  assert.equal(classify({ ...stillRejected, journalStatus: 'unreadable' }).reason, 'JOURNAL_UNREADABLE');
+});
+
+test('does not excuse a consumed lease or an executed action when the journal is empty', () => {
+  const consumed = failedBeforeStartEvidence({
+    extraRecords: [],
+    extraEvents: [{
+      runId: 'run-a',
+      kind: 'ExecutionStateChanged',
+      payload: { recordType: 'lease', recordId: 'lease-pre', state: 'CONSUMED', intentId: 'intent-pre' }
+    }]
+  });
+  consumed.records[2] = { recordType: 'lease', recordId: 'lease-pre', intentId: 'intent-pre', runId: 'run-a', state: 'CONSUMED' };
+  assert.equal(classify(consumed).reason, 'STEP_EXECUTION_RECORDED');
+
+  const executed = failedBeforeStartEvidence({
+    extraEvents: [{ runId: 'run-a', kind: 'ActionExecuted', payload: { intentId: 'intent-pre', leaseId: 'lease-pre' } }]
+  });
+  assert.equal(classify(executed).reason, 'STEP_EXECUTION_RECORDED');
+});
+
+test('an effect started for another step does not block a pre-start failure', () => {
+  const evidence = failedBeforeStartEvidence({
+    extraEvents: [
+      {
+        runId: 'run-a',
+        kind: 'PlanStepStateChanged',
+        payload: {
+          steps: [
+            { stepId: 'inspect', status: 'READY', attempt: 1 },
+            { stepId: 'change', status: 'RUNNING', attempt: 1 },
+            { stepId: 'report', status: 'PENDING', attempt: 0 }
+          ]
+        }
+      },
+      {
+        runId: 'run-a',
+        kind: 'ExecutionStateChanged',
+        payload: { recordType: 'intent', recordId: 'intent-change', state: 'COMPLETED', intentId: 'intent-change' }
+      }
+    ],
+    extraRecords: [
+      intentRecord('intent-change', {
+        state: 'COMPLETED',
+        operationId: 'operation-change',
+        transitionHistory: [
+          transition('PROPOSED', 'APPROVED'),
+          transition('APPROVED', 'EXECUTING'),
+          transition('EXECUTING', 'COMPLETED')
+        ]
+      })
+    ],
+    journalEffects: [{ effectId: 'effect-change', state: 'COMPLETED', runId: 'run-a', intentId: 'intent-change' }]
+  });
+  assert.equal(classify(evidence).status, 'RETRY');
+});
+
+test('retries a rejected step across more than eight resumed runs and rejects a truncated or over-long log', () => {
+  const chain = (depth, { dropRoot = false } = {}) => {
+    const record = createRecorder();
+    const events = [];
+    for (let index = 0; index < depth; index += 1) {
+      if (dropRoot && index === 0) continue;
+      events.push(record(`run-${index}`, 'TaskRunCreated', {
+        requestedMode: 'CONTROLLED',
+        ...(index > 0 ? { sourceRunId: `run-${index - 1}` } : {})
+      }));
+    }
+    const newest = `run-${depth - 1}`;
+    events.push(record(newest, 'PlanStepStateChanged', { steps: runningSteps('inspect') }));
+    events.push(record(newest, 'ExecutionStateChanged', {
+      recordType: 'intent', recordId: 'intent-1', state: 'PROPOSED', intentId: 'intent-1'
+    }));
+    return {
+      events,
+      records: [
+        intentRecord('intent-1', { runId: newest }),
+        approvalRecord('approval-1', 'intent-1', 'EXPIRED')
+      ],
+      sourceRunId: newest
+    };
+  };
+  assert.equal(classify(chain(9)).status, 'RETRY');
+  assert.equal(classify(chain(64)).status, 'RETRY');
+  assert.equal(classify(chain(65)).reason, 'LINEAGE_UNKNOWN');
+  assert.equal(classify(chain(3, { dropRoot: true })).reason, 'LINEAGE_UNKNOWN');
+});
+
 test('read-only observation retry is unchanged and does not clear a persisted uncertain step', () => {
   const executed = expiredInspectEvidence({
     extraEvents: [{ runId: 'run-a', kind: 'ActionExecuted', payload: { intentId: 'intent-1' } }]

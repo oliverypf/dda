@@ -4,10 +4,14 @@
 // only when both the source run and the current run are READ_ONLY, and a step
 // already persisted as SIDE_EFFECT_OUTCOME_UNCERTAIN stays blocked.
 //
-// Controlled runs retry only when every side-effect intent recorded for that
-// step was rejected, expired, or denied, and none of them has an execution
-// started or committed record. Any executed intent, or any intent whose state
-// cannot be proved, stays SIDE_EFFECT_OUTCOME_UNCERTAIN.
+// Controlled runs retry when every side-effect intent for that step was
+// rejected before a lease, or failed before the effect actually started.
+// `onLeaseFailed` can set the intent FAILED and emit ActionFailed when the
+// failure happens after the lease is issued but before the effect journal
+// records STARTED. That path did not run the effect. A journal entry in
+// LEASED, STARTED, COMPLETED, FAILED, or UNKNOWN means it did start (FAILED
+// overwrites STARTED). A missing, unreadable, or ambiguous journal cannot
+// prove the difference and stays blocked.
 
 const EXECUTION_INTENT_STATES = new Set(['APPROVED', 'EXECUTING', 'COMPLETED', 'FAILED']);
 const SAFE_APPROVAL_STATES = new Set(['EXPIRED', 'DECLINED', 'CANCELLED']);
@@ -15,7 +19,15 @@ const SIDE_EFFECT_TOOLS = new Set([
   'file.write', 'file.patch', 'shell.execute', 'test.execute', 'network.request', 'kernel.exec'
 ]);
 const JOURNAL_EXECUTED_STATES = new Set(['LEASED', 'STARTED', 'COMPLETED', 'FAILED', 'UNKNOWN']);
+const HARD_EVENT_KINDS = new Set(['ActionExecuted', 'TaskFileWritten', 'TaskWriteEffectUnverified']);
+const PRE_START_EVENT_KINDS = new Set(['ActionAuthorized', 'ActionLeased', 'ActionFailed', 'LeaseExecutionFailed']);
 const UNCERTAIN_REASON = /UNCERTAIN|SCOPE_VIOLATION/u;
+
+// Eight runs was short enough that a thread resumed across a working session
+// walked off the end and locked again. The cap still rejects a truncated log:
+// the oldest walked run must have exactly one TaskRunCreated, and a cycle or
+// a duplicate creation is unknown. File replay uses the same bound.
+export const RECOVERY_LINEAGE_RUN_LIMIT = 64;
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const uncertain = (reason) => ({ status: 'UNCERTAIN', reason });
@@ -56,7 +68,7 @@ const lineageRunIds = (events, sourceRunId) => {
   const seen = new Set();
   let runId = sourceRunId;
   while (runId) {
-    if (seen.has(runId) || newestFirst.length >= 8) return undefined;
+    if (seen.has(runId) || newestFirst.length >= RECOVERY_LINEAGE_RUN_LIMIT) return undefined;
     seen.add(runId);
     newestFirst.push(runId);
     const created = events.filter((event) => event?.runId === runId && event?.kind === 'TaskRunCreated');
@@ -97,9 +109,10 @@ const attributeLineage = (events, runIds) => {
       || (left.sequence ?? 0) - (right.sequence ?? 0)
       || String(left.eventId ?? '').localeCompare(String(right.eventId ?? '')));
   const intentOwner = new Map();
-  const executedIntentIds = new Set();
-  const stepExecution = new Set();
-  let ambiguousExecution = false;
+  const intentHard = new Set();
+  const intentPreStart = new Set();
+  const stepHard = new Set();
+  let ambiguousHard = false;
   let activeStepId;
   let currentRunId;
 
@@ -107,17 +120,24 @@ const attributeLineage = (events, runIds) => {
     if (typeof intentId !== 'string' || !intentId || intentOwner.has(intentId)) return;
     intentOwner.set(intentId, typeof activeStepId === 'string' ? activeStepId : null);
   };
-  const markExecuted = (intentId) => {
+  const markHard = (intentId) => {
     if (typeof intentId === 'string' && intentId) {
-      executedIntentIds.add(intentId);
+      ownIntent(intentId);
+      intentHard.add(intentId);
       const owner = intentOwner.get(intentId);
-      if (typeof owner === 'string') {
-        stepExecution.add(owner);
-        return;
-      }
+      if (typeof owner === 'string') stepHard.add(owner);
+      return;
     }
-    if (typeof activeStepId === 'string') stepExecution.add(activeStepId);
-    else ambiguousExecution = true;
+    if (typeof activeStepId === 'string') stepHard.add(activeStepId);
+    else ambiguousHard = true;
+  };
+  const markPreStart = (intentId) => {
+    if (typeof intentId !== 'string' || !intentId) {
+      ambiguousHard = true;
+      return;
+    }
+    ownIntent(intentId);
+    intentPreStart.add(intentId);
   };
 
   for (const event of ordered) {
@@ -129,21 +149,15 @@ const attributeLineage = (events, runIds) => {
     if (event.kind === 'PlanStepStateChanged') activeStepId = activeStepIdFrom(payload);
     if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'intent') ownIntent(payload.recordId);
     if (event.kind === 'ActionRequested') ownIntent(payload.intentId);
-    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'intent'
-      && EXECUTION_INTENT_STATES.has(upper(payload.state))) {
-      markExecuted(payload.recordId);
+    if (typeof payload.errorCode === 'string' && payload.errorCode.includes('SCOPE_VIOLATION')) markHard(payload.intentId);
+    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'lease' && upper(payload.state) === 'CONSUMED') {
+      markHard(payload.intentId);
     }
-    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'lease') markExecuted(payload.intentId);
-    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'approval' && upper(payload.state) === 'APPROVED') {
-      markExecuted(payload.intentId);
-    }
-    if (['ActionAuthorized', 'ActionLeased', 'ActionExecuted', 'ActionFailed', 'LeaseExecutionFailed',
-      'TaskFileWritten', 'TaskWriteEffectUnverified'].includes(event.kind)) {
-      markExecuted(payload.intentId);
-    }
-    if (event.kind === 'ToolInvocationCompleted' && sideEffectInvocationExecuted(payload)) markExecuted(payload.intentId);
+    if (HARD_EVENT_KINDS.has(event.kind)) markHard(payload.intentId);
+    if (event.kind === 'ToolInvocationCompleted' && sideEffectInvocationExecuted(payload)) markHard(payload.intentId);
+    if (PRE_START_EVENT_KINDS.has(event.kind)) markPreStart(payload.intentId);
   }
-  return { intentOwner, executedIntentIds, stepExecution, ambiguousExecution };
+  return { intentOwner, intentHard, intentPreStart, stepHard, ambiguousHard };
 };
 
 const rejectedBeforeExecution = (intent, records) => {
@@ -160,50 +174,140 @@ const rejectedBeforeExecution = (intent, records) => {
   return approvals.every((approval) => SAFE_APPROVAL_STATES.has(upper(approval?.state)) && !approvalGranted(approval));
 };
 
-const journalExecutedCount = (journalEffects, runIds) => {
-  if (!Array.isArray(journalEffects) || journalEffects.length === 0) return 0;
-  const runs = new Set(runIds);
-  let count = 0;
-  for (const effect of journalEffects) {
-    if (!isRecord(effect) || !JOURNAL_EXECUTED_STATES.has(effect.state)) continue;
-    if (typeof effect.runId !== 'string' || !runs.has(effect.runId)) continue;
-    count += 1;
+const resolveJournal = (journalStatus, journalEffects) => {
+  if (journalStatus === 'unreadable') return { status: 'unreadable', effects: [] };
+  if (journalStatus === 'absent') {
+    if (Array.isArray(journalEffects) && journalEffects.length > 0) return { status: 'invalid', effects: [] };
+    return { status: 'absent', effects: [] };
   }
-  return count;
+  if (journalStatus === 'ready' || journalStatus === undefined) {
+    return Array.isArray(journalEffects)
+      ? { status: 'ready', effects: journalEffects }
+      : { status: 'invalid', effects: [] };
+  }
+  return { status: 'invalid', effects: [] };
 };
 
-const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalEffects }) => {
+const journalLink = (effect, records, events) => {
+  if (typeof effect.intentId === 'string' && effect.intentId) return { kind: 'id', intentId: effect.intentId };
+  if (typeof effect.leaseId === 'string' && effect.leaseId) {
+    const lease = records.find((record) => record?.recordType === 'lease' && record.recordId === effect.leaseId);
+    if (typeof lease?.intentId === 'string' && lease.intentId) return { kind: 'id', intentId: lease.intentId };
+    for (const event of events) {
+      const payload = unwrap(event);
+      if (payload.leaseId === effect.leaseId && typeof payload.intentId === 'string' && payload.intentId) {
+        return { kind: 'id', intentId: payload.intentId };
+      }
+    }
+    return { kind: 'ambiguous' };
+  }
+  if (typeof effect.operationId === 'string' && effect.operationId) {
+    const intent = records.find((record) => record?.recordType === 'intent' && record.operationId === effect.operationId);
+    if (typeof intent?.recordId === 'string') return { kind: 'id', intentId: intent.recordId };
+    return { kind: 'ambiguous' };
+  }
+  return { kind: 'unlinked' };
+};
+
+const journalExecution = (journal, records, events, runIds) => {
+  const started = new Set();
+  const knownIntents = new Set(records.filter((record) => record?.recordType === 'intent').map((record) => record.recordId));
+  let unlinked = 0;
+  let ambiguous = false;
+  if (journal.status !== 'ready') return { started, unlinked, ambiguous };
+  const runs = new Set(runIds);
+  for (const effect of journal.effects) {
+    if (!isRecord(effect) || !JOURNAL_EXECUTED_STATES.has(effect.state)) continue;
+    if (typeof effect.runId !== 'string' || !effect.runId) {
+      ambiguous = true;
+      continue;
+    }
+    if (!runs.has(effect.runId)) continue;
+    const link = journalLink(effect, records, events);
+    if (link.kind === 'ambiguous' || (link.kind === 'id' && !knownIntents.has(link.intentId))) {
+      ambiguous = true;
+      continue;
+    }
+    if (link.kind === 'id') started.add(link.intentId);
+    else unlinked += 1;
+  }
+  return { started, unlinked, ambiguous };
+};
+
+const intentVerdict = (intent, records, attributed, journal, journalFacts) => {
+  if (attributed.intentHard.has(intent.recordId)) return 'executed';
+  const state = upper(intent.state);
+  if (state === 'APPROVED' || state === 'EXECUTING' || state === 'COMPLETED') return 'executed';
+  const leases = records.filter((record) => record?.recordType === 'lease' && record.intentId === intent.recordId);
+  if (leases.some((lease) => upper(lease?.state) === 'CONSUMED')) return 'executed';
+  if (journalFacts.started.has(intent.recordId)) return 'journal-started';
+  if (state === 'FAILED') {
+    // The journal is the start boundary. Without a readable journal, a FAILED
+    // intent may be a discrete write that finished and never opened a journal.
+    if (journal.status !== 'ready') return 'unknown';
+    const history = transitionsOf(intent);
+    if (!history || history.length === 0) return 'unknown';
+    if (history.some((transition) => transitionReason(transition).includes('SCOPE_VIOLATION'))) return 'unknown';
+    return 'before-start';
+  }
+  if (attributed.intentPreStart.has(intent.recordId)) return 'unknown';
+  if (rejectedBeforeExecution(intent, records)) return 'rejected';
+  return 'unknown';
+};
+
+const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalStatus, journalEffects }) => {
+  const journal = resolveJournal(journalStatus, journalEffects);
+  if (journal.status === 'invalid') return uncertain('EVIDENCE_INVALID');
+  if (journal.status === 'unreadable') return uncertain('JOURNAL_UNREADABLE');
   const runIds = lineageRunIds(events, sourceRunId);
   if (!runIds) return uncertain('LINEAGE_UNKNOWN');
-  const runs = new Set(runIds);
-  const { intentOwner, executedIntentIds, stepExecution, ambiguousExecution } = attributeLineage(events, runIds);
-  if (ambiguousExecution) return uncertain('AMBIGUOUS_EXECUTION');
-  const lineageIntents = records.filter((record) => record?.recordType === 'intent' && runs.has(record.runId));
+  const { intentOwner, intentHard, intentPreStart, stepHard, ambiguousHard } = attributeLineage(events, runIds);
+  if (ambiguousHard) return uncertain('AMBIGUOUS_EXECUTION');
+  const lineageIntents = records.filter((record) => record?.recordType === 'intent' && runIds.includes(record.runId));
   for (const intent of lineageIntents) {
     if (typeof intentOwner.get(intent.recordId) !== 'string') return uncertain('UNATTRIBUTED_INTENT');
   }
+  const journalFacts = journalExecution(journal, records, events, runIds);
+  if (journalFacts.ambiguous) return uncertain('JOURNAL_AMBIGUOUS');
+  const attributed = { intentHard, intentPreStart };
   const stepIntentIds = [...intentOwner.entries()]
     .filter(([, owner]) => owner === stepId)
     .map(([intentId]) => intentId);
-  if (stepIntentIds.length === 0 || stepExecution.has(stepId)) return uncertain(stepIntentIds.length === 0 ? 'NO_STEP_INTENTS' : 'STEP_EXECUTION_RECORDED');
+  if (stepIntentIds.length === 0) return uncertain('NO_STEP_INTENTS');
+  if (stepHard.has(stepId) || stepIntentIds.some((intentId) => intentHard.has(intentId))) {
+    return uncertain('STEP_EXECUTION_RECORDED');
+  }
   const stepIntents = [];
+  let stoppedBeforeStart = false;
   for (const intentId of stepIntentIds) {
     const intent = records.find((record) => record?.recordType === 'intent' && record.recordId === intentId);
-    if (!intent || !runs.has(intent.runId)) return uncertain('MISSING_INTENT_RECORD');
-    if (executedIntentIds.has(intentId) || !rejectedBeforeExecution(intent, records)) return uncertain('EXECUTION_OR_UNKNOWN');
+    if (!intent || !runIds.includes(intent.runId)) return uncertain('MISSING_INTENT_RECORD');
+    const verdict = intentVerdict(intent, records, attributed, journal, journalFacts);
+    if (verdict === 'before-start') stoppedBeforeStart = true;
+    else if (verdict === 'journal-started') return uncertain('JOURNAL_EFFECT_STARTED');
+    else if (verdict === 'executed') return uncertain('STEP_EXECUTION_RECORDED');
+    else if (verdict !== 'rejected') return uncertain('EXECUTION_OR_UNKNOWN');
     stepIntents.push(intent);
   }
   if (stepIntents.length === 0) return uncertain('NO_STEP_INTENTS');
-  const executedRecords = lineageIntents.filter((intent) => executedIntentIds.has(intent.recordId)
-    || upper(intent.state) !== 'REJECTED'
-    || historyShowsExecution(intent)).length;
-  if (journalExecutedCount(journalEffects, runIds) > executedRecords) return uncertain('JOURNAL_EXECUTION_UNACCOUNTED');
-  return { status: 'RETRY', reason: 'ALL_INTENTS_REJECTED_BEFORE_EXECUTION' };
+  const unsafe = lineageIntents.filter((intent) => {
+    const verdict = intentVerdict(intent, records, attributed, journal, journalFacts);
+    return verdict !== 'rejected' && verdict !== 'before-start';
+  }).length;
+  if (journalFacts.unlinked > unsafe) return uncertain('JOURNAL_EXECUTION_UNACCOUNTED');
+  return {
+    status: 'RETRY',
+    reason: stoppedBeforeStart ? 'FAILED_BEFORE_START' : 'ALL_INTENTS_REJECTED_BEFORE_EXECUTION'
+  };
 };
 
 /**
  * Reconciliation result for one interrupted plan step.
  * `RETRY` is safe to run again. `UNCERTAIN` must stay blocked.
+ *
+ * `journalStatus` is `ready` after a successful list, `absent` when this run
+ * has no effect journal, and `unreadable` when the list failed. Omitting it
+ * treats an array of effects as a successful read.
  */
 export const reconcileInterruptedPlanStep = ({
   mode,
@@ -212,7 +316,8 @@ export const reconcileInterruptedPlanStep = ({
   events = [],
   records = [],
   sourceRunId,
-  journalEffects = []
+  journalEffects = [],
+  journalStatus
 } = {}) => {
   const persistedUncertain = step?.status === 'BLOCKED' && step?.errorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
   if (mode !== 'CONTROLLED') {
@@ -220,13 +325,14 @@ export const reconcileInterruptedPlanStep = ({
     return uncertain('READ_ONLY_UNCHANGED');
   }
   if (!step || typeof step.stepId !== 'string' || !step.stepId) return uncertain('STEP_INVALID');
-  if (!Array.isArray(events) || !Array.isArray(records) || !Array.isArray(journalEffects)) return uncertain('EVIDENCE_INVALID');
+  if (!Array.isArray(events) || !Array.isArray(records)) return uncertain('EVIDENCE_INVALID');
   try {
     return classifyControlledStep({
       stepId: step.stepId,
       events,
       records,
       sourceRunId,
+      journalStatus,
       journalEffects
     });
   } catch {

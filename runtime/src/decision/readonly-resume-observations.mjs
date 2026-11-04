@@ -18,7 +18,7 @@ export const readonlyResumeObservations = ({ events = [], sourceRunId, checkpoin
     const source = events.filter(event => event.runId === runId);
     const created = source.filter(event => event.kind === 'TaskRunCreated');
     const creation = unwrap(created[0]);
-    if (created.length !== 1 || creation?.requestedMode !== 'READ_ONLY' || creation.promptDigest !== promptDigest) return [];
+    if (created.length !== 1 || creation?.requestedMode !== 'READ_ONLY' || !digest(creation.promptDigest)) return [];
     const checkpoint = source.some(event => event.kind === 'ThreadCheckpointCommitted' && unwrap(event)?.threadId === threadId
       && unwrap(event)?.checkpointDigest === expectedCheckpoint && unwrap(event)?.checkpoint?.runId === runId);
     if (!checkpoint) return [];

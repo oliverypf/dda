@@ -425,3 +425,15 @@ test('T18 resumeWrittenFiles rejects invalid ancestor prompt digests', async () 
     }
   }
 });
+
+test('T19 resumeWrittenFiles rejects a tampered middle ancestor in same-thread multi-turn lineage', async () => {
+  for (const [scenario, tampered] of [
+    ['checkpoint digest does not match the child sourceCheckpointDigest', { checkpointDigest: textDigest('checkpoint-0') }],
+    ['checkpoint runId differs from the middle ancestor', { checkpoint: { runId: 'r0' } }]
+  ]) {
+    const facts = resumeLineage();
+    const middle = facts.events.find(event => event.runId === 'r1' && event.kind === 'ThreadCheckpointCommitted');
+    Object.assign(middle.payload, tampered);
+    await assert.rejects(resumeWrittenFiles(facts), { message: 'RECOVERY_LINEAGE_INVALID' }, scenario);
+  }
+});

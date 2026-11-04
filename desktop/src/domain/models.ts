@@ -196,6 +196,8 @@ export interface TimelineItem {
   cellState?: 'STARTED' | 'UNKNOWN' | 'RESET';
   /** Live host.request rows for a Windows desktop cell. Merged by epoch + toolCallId. */
   rows?: CellExecRow[];
+  /** The matching tool step is waiting for the user's approval. */
+  awaitingApproval?: boolean;
 }
 
 export type CellExecRowState =

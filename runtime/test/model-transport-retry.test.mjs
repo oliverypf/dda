@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import dns from 'node:dns';
 import net from 'node:net';
 import { createServer } from 'node:http';
 import { Context } from '@deepseek-ai/cordis';
@@ -100,9 +101,19 @@ test('partial streams are never replayed after a disconnect', async t => {
   assert.equal(chunks[0].text, 'partial');
 });
 
-test('windows model requests do not use happy eyeballs', () => {
-  if (process.platform !== 'win32' || typeof net.setDefaultAutoSelectFamily !== 'function') return;
-  net.setDefaultAutoSelectFamily(true);
-  preferStableConnect();
-  assert.equal(net.getDefaultAutoSelectFamily(), false);
+test('windows model requests prefer IPv4 and do not use happy eyeballs', {
+  skip: process.platform !== 'win32'
+}, () => {
+  const previousOrder = dns.getDefaultResultOrder();
+  const previousAuto = net.getDefaultAutoSelectFamily();
+  try {
+    dns.setDefaultResultOrder('verbatim');
+    net.setDefaultAutoSelectFamily(true);
+    preferStableConnect();
+    assert.equal(dns.getDefaultResultOrder(), 'ipv4first');
+    assert.equal(net.getDefaultAutoSelectFamily(), false);
+  } finally {
+    dns.setDefaultResultOrder(previousOrder);
+    net.setDefaultAutoSelectFamily(previousAuto);
+  }
 });

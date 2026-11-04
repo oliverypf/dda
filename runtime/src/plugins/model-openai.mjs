@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import dns from 'node:dns';
 import net from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { stableToolDefinitions, cacheSessionId } from '../prompt-cache.mjs';
@@ -27,11 +28,12 @@ const tagTransport = (error, phase, extra = {}) => {
   return error;
 };
 
-// Windows Happy Eyeballs (autoSelectFamily) makes undici spend its 10s
-// connect budget across IPv6 and IPv4 and then fail, even when a direct IPv4
-// TLS handshake to the same host succeeds. Model requests use one family.
+// With automatic family selection disabled, prefer IPv4 on Windows so an
+// unreachable IPv6 address does not consume the model's connection timeout.
 export const preferStableConnect = () => {
-  if (process.platform === 'win32' && typeof net.setDefaultAutoSelectFamily === 'function') {
+  if (process.platform !== 'win32') return;
+  dns.setDefaultResultOrder('ipv4first');
+  if (typeof net.setDefaultAutoSelectFamily === 'function') {
     net.setDefaultAutoSelectFamily(false);
   }
 };

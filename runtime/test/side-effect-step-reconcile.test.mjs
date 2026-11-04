@@ -396,6 +396,51 @@ const failedBeforeStartEvidence = ({
   };
 };
 
+test('a trajectory EXECUTING event stays uncertain when the record is still rejected', () => {
+  const evidence = expiredInspectEvidence({
+    extraEvents: [{
+      runId: 'run-a',
+      kind: 'ExecutionStateChanged',
+      payload: { recordType: 'intent', recordId: 'intent-1', state: 'EXECUTING', intentId: 'intent-1' }
+    }]
+  });
+  assert.equal(evidence.records.find((record) => record.recordId === 'intent-1').state, 'REJECTED');
+  assert.deepEqual(
+    evidence.records.find((record) => record.recordId === 'intent-1').transitionHistory.map((transition) => transition.to),
+    ['SAFETY_EVALUATING', 'WAITING_APPROVAL', 'REJECTED']
+  );
+  assert.deepEqual(classify(evidence), { status: 'UNCERTAIN', reason: 'STEP_EXECUTION_RECORDED' });
+
+  const completed = expiredInspectEvidence({
+    extraEvents: [{
+      runId: 'run-a',
+      kind: 'ExecutionStateChanged',
+      payload: { recordType: 'intent', recordId: 'intent-1', state: 'COMPLETED', intentId: 'intent-1' }
+    }]
+  });
+  assert.equal(classify(completed).reason, 'STEP_EXECUTION_RECORDED');
+
+  const failedEvent = expiredInspectEvidence({
+    extraEvents: [{
+      runId: 'run-a',
+      kind: 'ExecutionStateChanged',
+      payload: { recordType: 'intent', recordId: 'intent-1', state: 'FAILED', intentId: 'intent-1' }
+    }]
+  });
+  assert.equal(classify(failedEvent).reason, 'STEP_EXECUTION_RECORDED');
+});
+
+test('a COMPLETED trajectory event is not excused by a journal that never started', () => {
+  const evidence = failedBeforeStartEvidence({
+    extraEvents: [{
+      runId: 'run-a',
+      kind: 'ExecutionStateChanged',
+      payload: { recordType: 'intent', recordId: 'intent-pre', state: 'COMPLETED', intentId: 'intent-pre' }
+    }]
+  });
+  assert.equal(classify(evidence).reason, 'STEP_EXECUTION_RECORDED');
+});
+
 test('retries a pre-execution FAILED intent when the journal has no start entry', () => {
   const requestedOnly = failedBeforeStartEvidence({
     journalEffects: [{ effectId: 'effect-pre', state: 'REQUESTED', runId: 'run-a', leaseId: 'lease-pre' }]

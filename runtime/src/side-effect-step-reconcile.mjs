@@ -12,6 +12,12 @@
 // LEASED, STARTED, COMPLETED, FAILED, or UNKNOWN means it did start (FAILED
 // overwrites STARTED). A missing, unreadable, or ambiguous journal cannot
 // prove the difference and stays blocked.
+//
+// Trajectory intent transitions are evidence even when the record store
+// disagrees. EXECUTING or COMPLETED marks the intent executed. FAILED does
+// too, except for the journal-proven pre-start path above: that path also
+// records the EXECUTING transition from onLeaseIssued, and a readable journal
+// with no start row is what shows the effect never ran.
 
 const EXECUTION_INTENT_STATES = new Set(['APPROVED', 'EXECUTING', 'COMPLETED', 'FAILED']);
 const SAFE_APPROVAL_STATES = new Set(['EXPIRED', 'DECLINED', 'CANCELLED']);
@@ -111,6 +117,7 @@ const attributeLineage = (events, runIds) => {
   const intentOwner = new Map();
   const intentHard = new Set();
   const intentPreStart = new Set();
+  const intentTrajectoryStates = new Map();
   const stepHard = new Set();
   let ambiguousHard = false;
   let activeStepId;
@@ -147,7 +154,19 @@ const attributeLineage = (events, runIds) => {
     }
     const payload = unwrap(event);
     if (event.kind === 'PlanStepStateChanged') activeStepId = activeStepIdFrom(payload);
-    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'intent') ownIntent(payload.recordId);
+    if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'intent') {
+      const intentId = typeof payload.recordId === 'string' && payload.recordId ? payload.recordId : payload.intentId;
+      ownIntent(intentId);
+      const trajectoryState = upper(payload.state);
+      if (trajectoryState === 'EXECUTING' || trajectoryState === 'COMPLETED' || trajectoryState === 'FAILED') {
+        if (typeof intentId !== 'string' || !intentId) ambiguousHard = true;
+        else {
+          const seen = intentTrajectoryStates.get(intentId) ?? new Set();
+          seen.add(trajectoryState);
+          intentTrajectoryStates.set(intentId, seen);
+        }
+      }
+    }
     if (event.kind === 'ActionRequested') ownIntent(payload.intentId);
     if (typeof payload.errorCode === 'string' && payload.errorCode.includes('SCOPE_VIOLATION')) markHard(payload.intentId);
     if (event.kind === 'ExecutionStateChanged' && payload.recordType === 'lease' && upper(payload.state) === 'CONSUMED') {
@@ -157,7 +176,7 @@ const attributeLineage = (events, runIds) => {
     if (event.kind === 'ToolInvocationCompleted' && sideEffectInvocationExecuted(payload)) markHard(payload.intentId);
     if (PRE_START_EVENT_KINDS.has(event.kind)) markPreStart(payload.intentId);
   }
-  return { intentOwner, intentHard, intentPreStart, stepHard, ambiguousHard };
+  return { intentOwner, intentHard, intentPreStart, intentTrajectoryStates, stepHard, ambiguousHard };
 };
 
 const rejectedBeforeExecution = (intent, records) => {
@@ -234,6 +253,17 @@ const journalExecution = (journal, records, events, runIds) => {
   return { started, unlinked, ambiguous };
 };
 
+const journalProvenPreStart = (intent, records, journal, journalFacts) => {
+  if (upper(intent?.state) !== 'FAILED' || journal.status !== 'ready') return false;
+  if (journalFacts.started.has(intent.recordId)) return false;
+  const leases = records.filter((record) => record?.recordType === 'lease' && record.intentId === intent.recordId);
+  if (leases.some((lease) => upper(lease?.state) === 'CONSUMED')) return false;
+  const history = transitionsOf(intent);
+  if (!history || history.length === 0) return false;
+  if (history.some((transition) => transitionReason(transition).includes('SCOPE_VIOLATION'))) return false;
+  return true;
+};
+
 const intentVerdict = (intent, records, attributed, journal, journalFacts) => {
   if (attributed.intentHard.has(intent.recordId)) return 'executed';
   const state = upper(intent.state);
@@ -241,15 +271,16 @@ const intentVerdict = (intent, records, attributed, journal, journalFacts) => {
   const leases = records.filter((record) => record?.recordType === 'lease' && record.intentId === intent.recordId);
   if (leases.some((lease) => upper(lease?.state) === 'CONSUMED')) return 'executed';
   if (journalFacts.started.has(intent.recordId)) return 'journal-started';
-  if (state === 'FAILED') {
-    // The journal is the start boundary. Without a readable journal, a FAILED
-    // intent may be a discrete write that finished and never opened a journal.
-    if (journal.status !== 'ready') return 'unknown';
-    const history = transitionsOf(intent);
-    if (!history || history.length === 0) return 'unknown';
-    if (history.some((transition) => transitionReason(transition).includes('SCOPE_VIOLATION'))) return 'unknown';
-    return 'before-start';
-  }
+  // The record store cannot explain away a trajectory transition. COMPLETED
+  // always ran. EXECUTING and FAILED ran unless this intent is the
+  // journal-proven pre-start failure, which records both of those states
+  // before the effect starts.
+  const trajectory = attributed.intentTrajectoryStates.get(intent.recordId);
+  const preStartProven = journalProvenPreStart(intent, records, journal, journalFacts);
+  if (trajectory?.has('COMPLETED')) return 'executed';
+  if (trajectory?.has('EXECUTING') && !preStartProven) return 'executed';
+  if (trajectory?.has('FAILED') && !preStartProven) return 'executed';
+  if (preStartProven) return 'before-start';
   if (attributed.intentPreStart.has(intent.recordId)) return 'unknown';
   if (rejectedBeforeExecution(intent, records)) return 'rejected';
   return 'unknown';
@@ -261,7 +292,7 @@ const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalS
   if (journal.status === 'unreadable') return uncertain('JOURNAL_UNREADABLE');
   const runIds = lineageRunIds(events, sourceRunId);
   if (!runIds) return uncertain('LINEAGE_UNKNOWN');
-  const { intentOwner, intentHard, intentPreStart, stepHard, ambiguousHard } = attributeLineage(events, runIds);
+  const { intentOwner, intentHard, intentPreStart, intentTrajectoryStates, stepHard, ambiguousHard } = attributeLineage(events, runIds);
   if (ambiguousHard) return uncertain('AMBIGUOUS_EXECUTION');
   const lineageIntents = records.filter((record) => record?.recordType === 'intent' && runIds.includes(record.runId));
   for (const intent of lineageIntents) {
@@ -269,7 +300,7 @@ const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalS
   }
   const journalFacts = journalExecution(journal, records, events, runIds);
   if (journalFacts.ambiguous) return uncertain('JOURNAL_AMBIGUOUS');
-  const attributed = { intentHard, intentPreStart };
+  const attributed = { intentHard, intentPreStart, intentTrajectoryStates };
   const stepIntentIds = [...intentOwner.entries()]
     .filter(([, owner]) => owner === stepId)
     .map(([intentId]) => intentId);

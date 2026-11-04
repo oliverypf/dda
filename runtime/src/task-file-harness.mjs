@@ -17,9 +17,9 @@ export async function resumeWrittenFiles({ events = [], sourceRunId, checkpointD
     const source = events.filter(event => event.runId === runId);
     const created = source.filter(event => event.kind === 'TaskRunCreated');
     const creation = unwrap(created[0]);
-    // Prior turns may have different prompts; only the selected source must match.
+    // Each prior turn has its own prompt; the continuation belongs to the new run.
     if (created.length !== 1 || creation?.requestedMode !== 'CONTROLLED' || !digest(creation.promptDigest)
-      || (runId === sourceRunId && creation.promptDigest !== promptDigest)
+      || !digest(promptDigest)
       || !source.some(event => event.kind === 'ThreadCheckpointCommitted' && unwrap(event)?.threadId === threadId
         && unwrap(event)?.checkpointDigest === expectedCheckpoint && unwrap(event)?.checkpoint?.runId === runId)) {
       throw new Error('RECOVERY_LINEAGE_INVALID');

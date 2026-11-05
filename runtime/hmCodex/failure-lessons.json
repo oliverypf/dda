@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0",
+  "lessons": [
+    {
+      "signature": "workspace.focus:WORKSPACE_NOT_FOUND:missing/file-1.ts",
+      "tool": "workspace.focus",
+      "errorCode": "WORKSPACE_NOT_FOUND",
+      "failedPath": "missing/file-1.ts",
+      "nextAction": "RETRY_WITH_BOUNDED_RELATIVE_PATH",
+      "count": 1,
+      "lastSeenAtMs": 1793870915700
+    },
+    {
+      "signature": "workspace.focus:WORKSPACE_NOT_FOUND:missing/file-2.ts",
+      "tool": "workspace.focus",
+      "errorCode": "WORKSPACE_NOT_FOUND",
+      "failedPath": "missing/file-2.ts",
+      "nextAction": "RETRY_WITH_BOUNDED_RELATIVE_PATH",
+      "count": 1,
+      "lastSeenAtMs": 1793870915701
+    },
+    {
+      "signature": "workspace.focus:WORKSPACE_NOT_FOUND:missing/file-3.ts",
+      "tool": "workspace.focus",
+      "errorCode": "WORKSPACE_NOT_FOUND",
+      "failedPath": "missing/file-3.ts",
+      "nextAction": "RETRY_WITH_BOUNDED_RELATIVE_PATH",
+      "count": 1,
+      "lastSeenAtMs": 1793870915703
+    }
+  ]
+}

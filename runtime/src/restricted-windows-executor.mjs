@@ -23,27 +23,50 @@ import {
 
 const MAX_INPUT_BYTES = 64 * 1024;
 const SECRET_ENV = /(?:key|token|secret|password|credential|private|authorization)/i;
+const INHERITED_ENV = new Set(['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'ComSpec', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']);
 
 const fail = (code, message = '') => { throw new SafetyError(code, message); };
+
+const normalizePathEnvironment = (environment) => {
+  const normalized = {};
+  let pathValue;
+  let pathExtValue;
+  for (const [key, value] of Object.entries(environment)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === 'path') {
+      pathValue = value;
+    } else if (lowerKey === 'pathext') {
+      pathExtValue = value;
+    } else {
+      normalized[key] = value;
+    }
+  }
+  if (pathValue !== undefined) normalized.PATH = pathValue;
+  if (pathExtValue !== undefined) normalized.PATHEXT = pathExtValue;
+  return normalized;
+};
 
 const safeEnvironment = (provided) => {
   const inherited = {};
   // Keep only process-discovery and temporary-directory variables. In
   // particular, API keys and arbitrary user configuration are not inherited.
-  for (const key of ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'ComSpec', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']) {
+  for (const key of Object.keys(process.env)) {
+    if (!INHERITED_ENV.has(key) && !['path', 'pathext'].includes(key.toLowerCase())) continue;
     if (typeof process.env[key] === 'string') inherited[key] = process.env[key];
   }
-  if (provided === undefined) return inherited;
+  const inheritedEnvironment = normalizePathEnvironment(inherited);
+  if (provided === undefined) return inheritedEnvironment;
   if (!provided || typeof provided !== 'object' || Array.isArray(provided) || Object.keys(provided).length > 32) {
     fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'env');
   }
+  const providedEnvironment = {};
   for (const [key, value] of Object.entries(provided)) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || SECRET_ENV.test(key) || typeof value !== 'string' || value.length > 4096 || value.includes('\0')) {
       fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'env');
     }
-    inherited[key] = value;
+    providedEnvironment[key] = value;
   }
-  return inherited;
+  return { ...inheritedEnvironment, ...normalizePathEnvironment(providedEnvironment) };
 };
 
 const boundedLimit = (value, maximum, fallback) => {

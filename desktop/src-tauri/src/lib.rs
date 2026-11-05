@@ -28,9 +28,8 @@ const MAX_PREVIEW_BYTES: u64 = 256 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 200;
 const RUNTIME_HEARTBEAT_TIMEOUT_MS: u64 = 30_000;
 // A terminal state is emitted before the runtime flushes durable stores and
-// disposes provider fibers. Keep a bounded grace period for that final
-// shutdown so slow workspace/database writes are not reported as a live-run
-// heartbeat failure.
+// disposes provider fibers. Allow that final shutdown to finish while the
+// process is heartbeating; only stop a stale process after this grace period.
 const RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS: u64 = 120_000;
 const RUNTIME_STARTUP_GRACE_MS: u64 = 120_000;
 const RUNTIME_WATCHDOG_POLL_MS: u64 = 250;
@@ -783,6 +782,11 @@ fn runtime_heartbeat_is_stale(last_heartbeat_at_ms: Option<u64>, now_ms: u64) ->
     last_heartbeat_at_ms.map_or(true, |heartbeat| {
         now_ms.saturating_sub(heartbeat) > RUNTIME_HEARTBEAT_TIMEOUT_MS
     })
+}
+
+fn runtime_watchdog_should_stop(stale: bool, terminal_for_ms: Option<u64>) -> bool {
+    stale
+        && terminal_for_ms.map_or(true, |elapsed| elapsed > RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS)
 }
 
 /// Return whether stdout emitted by `pid` still belongs to the active runtime
@@ -1970,9 +1974,8 @@ fn run_model_task_blocking(
                 } else {
                     startup_elapsed_ms > RUNTIME_STARTUP_GRACE_MS
                 };
-                let terminal_shutdown_expired = terminal_seen_at_ms
-                    .is_some_and(|seen| now_ms.saturating_sub(seen) > RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS);
-                if (stale && terminal_seen_at_ms.is_none() || terminal_shutdown_expired)
+                let terminal_for_ms = terminal_seen_at_ms.map(|seen| now_ms.saturating_sub(seen));
+                if runtime_watchdog_should_stop(stale, terminal_for_ms)
                     && runtime_process_is_active(&state, pid)
                 {
                     let exited = child.try_wait().map_or(false, |status| status.is_some());
@@ -1990,10 +1993,17 @@ fn run_model_task_blocking(
                         }
                         None => {
                             let phase = runtime_last_phase(&stdout_text).unwrap_or_else(|| "未收到首个心跳".to_string());
-                            append_desktop_log(&format!(
-                                "runtime 心跳超时，监督器终止进程 pid={pid} phase={phase}"
-                            ));
-                            format!("Cordis runtime 心跳超时，已由监督器终止（阶段: {phase}）")
+                            if terminal_for_ms.is_some() {
+                                append_desktop_log(&format!(
+                                    "runtime 任务结束后心跳停止，监督器终止进程 pid={pid} phase={phase}"
+                                ));
+                                format!("Cordis runtime 在任务结束后没有退出，已由监督器终止（阶段: {phase}）")
+                            } else {
+                                append_desktop_log(&format!(
+                                    "runtime 心跳超时，监督器终止进程 pid={pid} phase={phase}"
+                                ));
+                                format!("Cordis runtime 心跳超时，已由监督器终止（阶段: {phase}）")
+                            }
                         }
                     };
                     stdout_error = Some(message);
@@ -3670,6 +3680,38 @@ mod tests {
         assert!(!runtime_heartbeat_is_stale(Some(10_000), 39_999));
         assert!(runtime_heartbeat_is_stale(Some(10_000), 40_001));
         assert!(runtime_heartbeat_is_stale(None, 1));
+    }
+
+    #[test]
+    fn watchdog_preserves_live_run_heartbeat_timeout() {
+        assert!(!runtime_watchdog_should_stop(false, None));
+        assert!(runtime_watchdog_should_stop(true, None));
+    }
+
+    #[test]
+    fn watchdog_keeps_heartbeating_terminal_process_alive_after_grace() {
+        for elapsed in [0, RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS, RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS + 1, u64::MAX] {
+            assert!(!runtime_watchdog_should_stop(false, Some(elapsed)));
+        }
+    }
+
+    #[test]
+    fn watchdog_stops_stale_terminal_process_only_after_grace() {
+        for elapsed in [0, RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS - 1, RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS] {
+            assert!(!runtime_watchdog_should_stop(true, Some(elapsed)));
+        }
+        assert!(runtime_watchdog_should_stop(true, Some(RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS + 1)));
+    }
+
+    #[test]
+    fn watchdog_requires_current_staleness_after_terminal_grace() {
+        let now_ms = RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS + RUNTIME_HEARTBEAT_TIMEOUT_MS + 1;
+        let terminal_for_ms = Some(now_ms);
+        assert!(runtime_watchdog_should_stop(runtime_heartbeat_is_stale(Some(0), now_ms), terminal_for_ms));
+        assert!(!runtime_watchdog_should_stop(runtime_heartbeat_is_stale(Some(now_ms), now_ms), terminal_for_ms));
+        let last_heartbeat = Some(now_ms - RUNTIME_HEARTBEAT_TIMEOUT_MS);
+        assert!(!runtime_watchdog_should_stop(runtime_heartbeat_is_stale(last_heartbeat, now_ms), terminal_for_ms));
+        assert!(runtime_watchdog_should_stop(runtime_heartbeat_is_stale(last_heartbeat, now_ms + 1), terminal_for_ms));
     }
 
     #[test]

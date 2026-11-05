@@ -2814,13 +2814,32 @@ fn runtime_command(runtime: &Path, resource_dir: Option<&Path>) -> Command {
     runtime_command_for(runtime, resource_dir, DesktopSpawnMode::PerInvoke)
 }
 
+fn add_runtime_env_proxy_arg(command: &mut Command, node_version: Option<&str>) {
+    let major = node_version.and_then(|version| {
+        version.trim().strip_prefix('v')?.split('.').next()?.parse::<u32>().ok()
+    });
+    // Older Node versions must still start so runtime health can report their
+    // compatibility. Unknown versions also omit the unsupported CLI option.
+    if major.is_some_and(|major| major >= 24) {
+        command.arg("--use-env-proxy");
+    }
+}
+
 fn runtime_command_for(
     runtime: &Path,
     resource_dir: Option<&Path>,
     mode: DesktopSpawnMode,
 ) -> Command {
     let program = resolve_node_program(std::env::var_os("DDA_NODE").as_deref(), resource_dir);
+    let mut version_command = Command::new(&program);
+    version_command.arg("--version");
+    #[cfg(windows)]
+    version_command.creation_flags(CREATE_NO_WINDOW);
+    let node_version = version_command.output().ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok());
     let mut command = Command::new(program);
+    add_runtime_env_proxy_arg(&mut command, node_version.as_deref());
     #[cfg(windows)]
     command.creation_flags(runtime_creation_flags(mode));
     if let Some(channel) = option_env!("DDA_BAKED_RELEASE_CHANNEL") {
@@ -3786,6 +3805,31 @@ mod tests {
             Some(Some("windows-desktop".to_string()))
         );
         assert_eq!(runtime_creation_flags(TASK_RUNTIME_SPAWN_MODE), runtime_creation_flags(DesktopSpawnMode::SessionKeep));
+    }
+
+    #[test]
+    fn runtime_commands_enable_environment_proxy_only_on_node_24_or_newer() {
+        for (version, expected) in [
+            (Some("v20.19.0"), false),
+            (Some("v22.23.4"), false),
+            (Some("v23.11.0"), false),
+            (Some("v24.0.0\r\n"), true),
+            (Some("v25.0.0"), true),
+            (Some("invalid"), false),
+            (Some(""), false),
+            (None, false),
+        ] {
+            let mut command = Command::new("node");
+            add_runtime_env_proxy_arg(&mut command, version);
+            command.arg("index.mjs");
+            let args: Vec<_> = command.get_args().collect();
+            let expected_args = if expected {
+                vec!["--use-env-proxy", "index.mjs"]
+            } else {
+                vec!["index.mjs"]
+            };
+            assert_eq!(args, expected_args, "Node version: {version:?}");
+        }
     }
 
     #[test]

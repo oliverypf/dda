@@ -2371,6 +2371,7 @@ const timelineItemHtml = (item: TimelineItem): string => {
   if (item.toolName) {
     const toolLabel = toolDisplayLabel(item.toolName);
     const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
+    const awaitingApproval = isRunning && item.awaitingApproval;
     const isSuccess = item.status === 'COMPLETE';
     const isFailed = item.status === 'ERROR';
     
@@ -2394,11 +2395,11 @@ const timelineItemHtml = (item: TimelineItem): string => {
             ${unknownJournalHtml(item)}
             ${item.toolName === 'kernel.exec' ? cellExecTimelineHtml(item.rows) : ''}
             <div class="timeline-step-header">
-              <strong class="timeline-step-title">${item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}`}</strong>
+              <strong class="timeline-step-title">${awaitingApproval ? `等待批准 ${escapeHtml(toolLabel)}` : item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}`}</strong>
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
               <time>${formatTime(item.createdAtMs)}</time>
             </div>
-            ${item.body && !isRunning && !targetInfo ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && !targetInfo ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
             ${item.commandText ? `<details class="timeline-step-details">
               <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
               <pre><code>${escapeHtml(item.commandText)}</code></pre>
@@ -3816,6 +3817,12 @@ const update = (next: HarnessReadModel, { coalesce = false }: { coalesce?: boole
   next = expireRequestedApprovals(next);
   if (next === model) return;
   const approvalsChanged = next.approvals !== model.approvals;
+  if (approvalsChanged) {
+    const pendingCapabilities = new Set(next.approvals.filter((approval) => approval.state === 'REQUESTED')
+      .map((approval) => approval.capability));
+    next = { ...next, timeline: next.timeline.map((item) => item.awaitingApproval
+      && !pendingCapabilities.has(item.toolName ?? '') ? { ...item, awaitingApproval: false } : item) };
+  }
   const navigationChanged = next.activeThreadId !== model.activeThreadId
     || next.activeRun?.runId !== model.activeRun?.runId
     || next.workspace.currentPath !== model.workspace.currentPath;
@@ -4366,6 +4373,7 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
     status: failed ? 'ERROR' : isResult ? 'COMPLETE' : 'STREAMING',
     createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
     toolName: rawName || undefined,
+    awaitingApproval: false,
     ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
     ...(typeof payload.sandbox === 'string' ? { sandbox: payload.sandbox } : {}),
     digest,
@@ -4515,9 +4523,10 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     const risk = payload.risk === 'LOW' || payload.risk === 'MEDIUM' || payload.risk === 'HIGH'
       ? payload.risk
       : undefined;
+    const capability = typeof payload.capability === 'string' ? payload.capability : 'unknown';
     update(upsertApproval(model, {
       requestId,
-      capability: typeof payload.capability === 'string' ? payload.capability : 'unknown',
+      capability,
       requestDigest: typeof payload.requestDigest === 'string' ? payload.requestDigest : '',
       ...(typeof payload.intentId === 'string' ? { intentId: payload.intentId } : {}),
       ...(typeof payload.approvalId === 'string' ? { approvalId: payload.approvalId } : {}),
@@ -4541,6 +4550,11 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       state: 'REQUESTED',
       createdAtMs: event.emittedAtMs
     }));
+    const pendingTool = [...model.timeline].reverse().find((item) => item.runId === event.runId
+      && item.toolName === capability && (item.status === 'PENDING' || item.status === 'STREAMING'));
+    if (pendingTool && model.approvals.some((approval) => approval.requestId === requestId && approval.state === 'REQUESTED')) {
+      update(replaceTimelineItem(model, pendingTool.itemId, { awaitingApproval: true }));
+    }
     update(appendTimelineItem(model, {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',

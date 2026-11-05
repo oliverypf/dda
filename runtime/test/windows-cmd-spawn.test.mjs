@@ -135,3 +135,48 @@ test('the windows executor spawns the planned cmd.exe line with shell false', as
   assert.equal(seen[0].options.windowsVerbatimArguments, true);
   assert.equal(JSON.stringify(seen[0].options).includes('"shell":true'), false);
 });
+
+test('the executor gives caller PATH and PATHEXT values precedence regardless of casing', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-cmd-path-merge-'));
+  const seen = [];
+  const spawnImpl = (file, args, options) => {
+    seen.push({ file, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { end() {} };
+    child.pid = 4243;
+    queueMicrotask(() => child.emit('close', 0, null));
+    return child;
+  };
+  const monitor = new RuntimeSafetyMonitor({
+    mode: EXECUTION_MODES.CONTROLLED,
+    workspaceRoot: workspace,
+    commandAllowlist: { shell: ['npm'] }
+  });
+  const executor = new RestrictedWindowsExecutor({
+    monitor,
+    platform: 'win32',
+    spawnImpl,
+    fileExists: (candidate) => candidate === 'C:\\caller-tools\\npm.CMD'
+  });
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: ['npm'] });
+  const result = await executor.shell({
+    command: 'npm',
+    args: ['install'],
+    env: {
+      Path: 'C:\\inherited-tools',
+      PATH: 'C:\\caller-tools',
+      Pathext: '.EXE',
+      PATHEXT: '.CMD',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe'
+    }
+  }, { lease });
+  assert.equal(result.ok, true);
+  assert.equal(seen[0].file, 'C:\\Windows\\System32\\cmd.exe');
+  assert.match(seen[0].args[3], /npm\.CMD/);
+  assert.equal(seen[0].options.env.PATH, 'C:\\caller-tools');
+  assert.equal(seen[0].options.env.PATHEXT, '.CMD');
+  assert.equal(Object.keys(seen[0].options.env).filter((key) => key.toLowerCase() === 'path').length, 1);
+  assert.equal(Object.keys(seen[0].options.env).filter((key) => key.toLowerCase() === 'pathext').length, 1);
+});

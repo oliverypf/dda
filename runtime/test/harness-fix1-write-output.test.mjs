@@ -446,7 +446,8 @@ for (const [scenario, prompts, continuation] of [
   ['KDS root plus three resumed rounds', kdsPrompts, '继续'],
   ['KDS lineage with new continuation text', kdsPrompts, '帮我再看看'],
   ['first continuation from the root', ['编译exe'], '继续'],
-  ['eight-run lineage', ['编译exe', ...Array(7).fill('继续')], '帮我再看看']
+  ['eight-run lineage', ['编译exe', ...Array(7).fill('继续')], '帮我再看看'],
+  ['sixty-four-run lineage', ['编译exe', ...Array(63).fill('继续')], '帮我再看看']
 ]) {
   test(`resumeWrittenFiles restores all writes: ${scenario}`, async () => {
     const facts = resumeLineage(prompts);
@@ -480,10 +481,10 @@ test('resumeWrittenFiles validates creation count, mode and parent checkpoint di
   }
 });
 
-test('resumeWrittenFiles rejects cycles and lineages deeper than eight runs', async () => {
+test('resumeWrittenFiles rejects cycles and lineages deeper than sixty-four runs', async () => {
   const cycle = resumeLineage(kdsPrompts);
   Object.assign(cycle.events[0].payload, { sourceRunId: cycle.sourceRunId, sourceCheckpointDigest: cycle.checkpointDigest });
-  for (const facts of [cycle, resumeLineage(['编译exe', ...Array(8).fill('继续')])]) {
+  for (const facts of [cycle, resumeLineage(['编译exe', ...Array(64).fill('继续')])]) {
     await assert.rejects(resumeWrittenFiles(facts), { message: 'RECOVERY_LINEAGE_INVALID' });
   }
 });

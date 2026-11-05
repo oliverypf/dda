@@ -77,6 +77,7 @@ import {
 import { isPostPassGateOpen, softFailPostPassTelemetry } from './post-pass-telemetry.mjs';
 import { runSupervisionCommand } from './task-supervision.mjs';
 import { resumeWrittenFiles } from './task-file-harness.mjs';
+import { reconcileInterruptedPlanStep } from './side-effect-step-reconcile.mjs';
 import { readonlyResumeObservations } from './decision/readonly-resume-observations.mjs';
 import { createStageTimer } from './decision/jev-metrics.mjs';
 import { READONLY_FAST_PATH_REASON, readonlyFastPathDecision } from './decision/readonly-fast-path.mjs';
@@ -3448,11 +3449,44 @@ async function runTask() {
     if (resumedReadonlyActions.length) await coordinator.recordEventAndFlush('ReadonlyResumeObservationsImported', {
       sourceRunId: resumeSourceRunId, sourceEventIds: resumedReadonlyActions.map(action => action.sourceEventId), actionCount: resumedReadonlyActions.length
     });
+    const reconcileInterruptedStep = async ({ step }) => {
+      // No journal is not the same as an empty journal. Discrete file writes
+      // never open one, so a FAILED intent cannot be cleared without a list.
+      // A list that throws or is not an array hides a STARTED row.
+      let journalEffects = [];
+      let journalStatus = 'absent';
+      if (effectJournal && typeof effectJournal.list === 'function') {
+        try {
+          const listed = await effectJournal.list();
+          if (!Array.isArray(listed)) return { status: 'UNCERTAIN', reason: 'JOURNAL_UNREADABLE' };
+          journalEffects = listed;
+          journalStatus = 'ready';
+        } catch {
+          return { status: 'UNCERTAIN', reason: 'JOURNAL_UNREADABLE' };
+        }
+      }
+      return reconcileInterruptedPlanStep({
+        mode,
+        readOnlyObservationRetry: canRetryInterruptedObservation,
+        step,
+        events: priorEvents,
+        records: executionState.list(),
+        sourceRunId: resumeSourceRunId,
+        journalEffects,
+        journalStatus
+      });
+    };
     const planCoordinator = createPlanStepCoordinator({
       coordinator,
       plan: executionPlan,
       resumeFailed: resumeRequested,
-      reconcileStep: canRetryInterruptedObservation ? () => ({ status: 'RETRY' }) : undefined,
+      // Read-only observations retry only when both runs are read-only.
+      // Controlled runs retry an interrupted step only when every recorded
+      // side-effect intent was rejected before execution. Already-persisted
+      // UNCERTAIN steps are fed through the same callback on explicit resume.
+      reconcileStep: resumeRequested && (canRetryInterruptedObservation || mode === EXECUTION_MODES.CONTROLLED)
+        ? reconcileInterruptedStep
+        : undefined,
       onStateChange: async ({ reason, plan: statePlan, currentStepId }) => {
         const checkpointPlan = {
           planId: statePlan.planId,

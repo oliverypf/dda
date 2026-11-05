@@ -1,3 +1,5 @@
+import { RECOVERY_LINEAGE_RUN_LIMIT } from './side-effect-step-reconcile.mjs';
+
 const unwrap = event => event?.payload?.payload ?? event?.payload;
 const digest = value => typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value);
 const safePath = value => typeof value === 'string' && value.length > 0 && value.length <= 512
@@ -12,7 +14,7 @@ export async function resumeWrittenFiles({ events = [], sourceRunId, checkpointD
   const runs = [], visited = new Set();
   let runId = sourceRunId, expectedCheckpoint = checkpointDigest;
   while (runId) {
-    if (visited.has(runId) || visited.size >= 8) throw new Error('RECOVERY_LINEAGE_INVALID');
+    if (visited.has(runId) || visited.size >= RECOVERY_LINEAGE_RUN_LIMIT) throw new Error('RECOVERY_LINEAGE_INVALID');
     visited.add(runId);
     const source = events.filter(event => event.runId === runId);
     const created = source.filter(event => event.kind === 'TaskRunCreated');

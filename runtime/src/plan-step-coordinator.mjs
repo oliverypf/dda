@@ -27,6 +27,8 @@ const statusOf = (value) => bounded(value, 24).toUpperCase();
 const errorCode = (error) => bounded(error?.code ?? error?.message ?? error, 120) || 'PLAN_STEP_FAILED';
 const resumeEligible = (step) => ['FAILED', 'BLOCKED'].includes(step?.status)
   && step?.errorCode !== 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
+const uncertainSideEffect = (step) => step?.status === 'BLOCKED'
+  && step?.errorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
 
 const normalizeReport = (report) => {
   if (report === true) return { status: 'PASS', summary: 'Step verifier passed' };
@@ -100,30 +102,18 @@ export class PlanStepCoordinator {
           }))
         };
         for (const running of this.#plan.steps.filter((step) => step.status === 'RUNNING')) {
-          const reconciliation = this.#reconcileStep
-            ? await this.#reconcileStep({ step: clone(running), plan: this.plan })
-            : undefined;
-          const reconciledStatus = statusOf(reconciliation?.status);
-          // Never replay an interrupted side effect merely because the host
-          // restarted. The adapter must positively prove retry or completion.
-          const patch = reconciledStatus === 'SUCCEEDED'
-            ? { status: 'SUCCEEDED', outputDigest: reconciliation.outputDigest }
-            : reconciledStatus === 'RETRY' || reconciledStatus === 'READY'
-              ? { status: 'READY', errorCode: 'RECONCILED_SAFE_TO_RETRY' }
-              : reconciledStatus === 'FAILED'
-                ? { status: 'FAILED', errorCode: reconciliation.errorCode ?? 'RECONCILED_FAILED' }
-                : { status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' };
-          this.#plan = {
-            ...this.#plan,
-            steps: this.#plan.steps.map((step) => step.stepId === running.stepId ? { ...step, ...patch } : step)
-          };
+          await this.#reconcileInterrupted(running);
         }
       }
     }
     // A thread checkpoint may be loaded into a fresh run store during an
     // explicit resume. Failed or blocked steps are retryable only because the
-    // caller opted into resume; RUNNING steps still require reconciliation.
+    // caller opted into resume. A step already persisted as
+    // SIDE_EFFECT_OUTCOME_UNCERTAIN is not blindly retried: the same proof
+    // rule runs again, and only a positive retry/completion result clears it.
     if (this.#resumeFailed) {
+      const uncertain = this.#plan.steps.filter(uncertainSideEffect);
+      for (const step of uncertain) await this.#reconcileInterrupted(step, { preserveUncertain: true });
       this.#plan = {
         ...this.#plan,
         steps: this.#plan.steps.map((step) => resumeEligible(step)
@@ -405,6 +395,31 @@ export class PlanStepCoordinator {
         };
       }
     }
+  }
+
+  async #reconcileInterrupted(step, { preserveUncertain = false } = {}) {
+    const reconciliation = this.#reconcileStep
+      ? await this.#reconcileStep({ step: clone(step), plan: this.plan })
+      : undefined;
+    const reconciledStatus = statusOf(reconciliation?.status);
+    // Never replay an interrupted side effect merely because the host
+    // restarted. The adapter must positively prove retry or completion.
+    const proved = reconciledStatus === 'SUCCEEDED' || reconciledStatus === 'RETRY' || reconciledStatus === 'READY';
+    // An already-blocked uncertain step stays blocked unless reconciliation
+    // positively proves retry or completion. A failed or unknown answer must
+    // not fall through to the explicit-resume retry of ordinary failures.
+    if (preserveUncertain && !proved) return;
+    const patch = reconciledStatus === 'SUCCEEDED'
+      ? { status: 'SUCCEEDED', outputDigest: reconciliation.outputDigest }
+      : reconciledStatus === 'RETRY' || reconciledStatus === 'READY'
+        ? { status: 'READY', errorCode: 'RECONCILED_SAFE_TO_RETRY' }
+        : reconciledStatus === 'FAILED'
+          ? { status: 'FAILED', errorCode: reconciliation.errorCode ?? 'RECONCILED_FAILED' }
+          : { status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' };
+    this.#plan = {
+      ...this.#plan,
+      steps: this.#plan.steps.map((item) => item.stepId === step.stepId ? { ...item, ...patch } : item)
+    };
   }
 
   #dependenciesSatisfied(step) {

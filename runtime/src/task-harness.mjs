@@ -33,7 +33,13 @@ const RECOVERY_ADVICE = Object.freeze({
   APPROVAL_EXPIRED: {
     class: 'APPROVAL_EXPIRED',
     action: 'REQUEST_APPROVAL_AGAIN',
-    advice: 'A write approval expired or was denied before execution. Re-request approval for the single affected path; do not assume the write landed.',
+    advice: 'A write approval expired before execution. Re-request approval for the single affected path; do not assume the write landed.',
+    replayWrites: false
+  },
+  APPROVAL_DENIED: {
+    class: 'APPROVAL_DENIED',
+    action: 'STOP_OR_OFFER_ALTERNATIVE',
+    advice: 'The user declined approval before execution. You must not re-request approval for the same effect. Stop or offer an alternative; do not assume the effect occurred.',
     replayWrites: false
   },
   WORKSPACE_HANDLER_REPEATED_FAILURE: {
@@ -66,7 +72,7 @@ const RUN_FAILURE_CODES = Object.freeze({
   MAX_TOOL_ROUNDS: 'TOOL_LOOP_LIMIT',
   APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
   APPROVAL_TIMEOUT: 'APPROVAL_EXPIRED',
-  APPROVAL_DENIED: 'APPROVAL_EXPIRED',
+  APPROVAL_DENIED: 'APPROVAL_DENIED',
   MODEL_TRANSPORT: 'MODEL_TRANSPORT',
   VERIFICATION_REQUIRED: 'VERIFICATION_REQUIRED'
 });

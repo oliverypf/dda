@@ -20,9 +20,9 @@ test('rebuildFailedTaskResult keeps harness.recovery on declined final line', ()
       heartbeats: 1,
       toolResults: 0,
       recovery: {
-        failureClass: 'APPROVAL_EXPIRED',
-        nextAction: 'REQUEST_APPROVAL_AGAIN',
-        advice: 're-request',
+        failureClass: 'APPROVAL_DENIED',
+        nextAction: 'STOP_OR_OFFER_ALTERNATIVE',
+        advice: 'The user declined approval. You must not re-request approval for the same effect. Stop or offer an alternative.',
         replayWrites: false
       }
     }
@@ -32,7 +32,8 @@ test('rebuildFailedTaskResult keeps harness.recovery on declined final line', ()
   assert.equal(rebuilt.runId, 'run-declined-1');
   assert.equal(rebuilt.approval, 'DECLINED');
   assert.equal(rebuilt.error.code, 'PLAN_STEP_FAILED:execute:FAIL');
-  assert.equal(rebuilt.harness.recovery.failureClass, 'APPROVAL_EXPIRED');
+  assert.equal(rebuilt.harness.recovery.failureClass, 'APPROVAL_DENIED');
+  assert.deepEqual(rebuilt.harness.recovery, event.harness.recovery);
   assert.equal(rebuilt.harness.heartbeats, 1);
 });
 
@@ -66,7 +67,12 @@ test('harness.progress / supervise status expose failureClass at documented path
   const status = summarizeTaskEvents([
     JSON.stringify({ kind: 'run.failed', payload: { code: 'APPROVAL_DENIED' } })
   ].join('\n'));
-  assert.equal(status.recovery.failureClass, 'APPROVAL_EXPIRED');
+  assert.equal(status.recovery.failureClass, 'APPROVAL_DENIED');
+  assert.equal(status.recovery.nextAction, 'STOP_OR_OFFER_ALTERNATIVE');
+  assert.match(status.recovery.advice, /user declined/i);
+  assert.match(status.recovery.advice, /must not re-request approval for the same effect/i);
+  assert.match(status.recovery.advice, /stop or offer an alternative/i);
+  assert.equal(status.recovery.replayWrites, false);
 
   // Final / CLI rebuilt line: harness.recovery.failureClass
   const finalLine = rebuildFailedTaskResult({

@@ -16,6 +16,17 @@ const fail = (message) => {
 
 const pathApi = (platform) => (platform === 'win32' ? path.win32 : path.posix);
 
+const environmentValue = (env, name) => {
+  if (!env || typeof env !== 'object') return undefined;
+  if (Object.prototype.hasOwnProperty.call(env, name)) return env[name];
+  const lowerName = name.toLowerCase();
+  let value;
+  for (const [key, candidate] of Object.entries(env)) {
+    if (key.toLowerCase() === lowerName) value = candidate;
+  }
+  return value;
+};
+
 /** Quote one argv element for cmd.exe /d /s /c. Control characters are rejected. */
 export const escapeCmdArgument = (arg) => {
   if (typeof arg !== 'string') fail('arg');
@@ -46,12 +57,12 @@ export const buildCmdCommandLine = (executable, args) => {
 };
 
 const pathExtensions = (env) => {
-  const raw = env.PATHEXT || env.Pathext || '.COM;.EXE;.BAT;.CMD';
+  const raw = environmentValue(env, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD';
   return String(raw).split(';').map((item) => item.trim()).filter(Boolean)
     .map((item) => (item.startsWith('.') ? item : `.${item}`));
 };
 
-const pathDirs = (env) => String(env.Path ?? env.PATH ?? '').split(';').map((item) => item.trim()).filter(Boolean);
+const pathDirs = (env) => String(environmentValue(env, 'PATH') ?? '').split(';').map((item) => item.trim()).filter(Boolean);
 
 const commandStem = (command, platform) => pathApi(platform).basename(command)
   .replace(/\.(?:exe|cmd|bat|com)$/iu, '')

@@ -251,6 +251,10 @@ export interface ApprovalReadModel {
   leaseState?: 'ISSUED' | 'CLAIMED' | 'CONSUMED' | 'FAILED';
   executionOk?: boolean;
   command?: string;
+  args?: string[];
+  commandLine?: string;
+  summaryZh?: string;
+  riskReasons?: string[];
   path?: string;
   cwd?: string;
   host?: string;

@@ -577,6 +577,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cell-op-output { margin: 6px 0 0; white-space: pre-wrap; font: 11px/1.4 Consolas, monospace; }
 .approval-title { display: flex; align-items: center; gap: 6px; color: #8d5700; font-size: 11px; }
 .approval-detail { margin-top: 7px; color: var(--text-soft); font: 10px/1.5 Consolas, monospace; overflow-wrap: anywhere; }
+.approval-lead { display: grid; gap: 6px; margin-top: 8px; }
+.approval-command-line { color: var(--text); font: 13px/1.5 Consolas, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.approval-cwd, .approval-summary { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.approval-risk-reason { margin: 0; color: #8d5700; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .approval-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; color: var(--text-muted); font-size: 10px; }
 .approval-risk { font-weight: 700; }
 .approval-risk-high { color: var(--red); }

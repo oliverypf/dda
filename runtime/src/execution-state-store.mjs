@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { publicCommandFields } from './approval-command.mjs';
 import { DEFAULT_RELEASE_CHANNEL, resolveReleaseChannel } from './release-channel.mjs';
 import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 
@@ -34,10 +35,19 @@ const reference = (recordId, recordType) => {
   if (typeof recordId !== 'string' || !recordId.trim()) throw new Error(`EXECUTION_${recordType.toUpperCase()}_REQUIRED`);
   return recordId.trim();
 };
-const requestSummary = (request = {}) => ({
+const requestSummary = (request = {}) => {
+  const commandView = publicCommandFields(request);
+  return {
   ...(safeText(request.reason, 240) ? { reason: safeText(request.reason, 240) } : {}),
   ...(safeText(request.command, 4096) ? { command: safeText(request.command, 4096) } : {}),
-  ...(Array.isArray(request.args) ? { argsDigest: digest(request.args), argCount: request.args.length } : {}),
+  ...(Array.isArray(request.args) ? {
+    args: commandView.args ?? [],
+    argsDigest: digest(request.args),
+    argCount: request.args.length
+  } : {}),
+  ...(commandView.commandLine ? { commandLine: commandView.commandLine } : {}),
+  ...(commandView.summaryZh ? { summaryZh: commandView.summaryZh } : {}),
+  ...(commandView.riskReasons ? { riskReasons: commandView.riskReasons } : {}),
   ...(safeText(request.path) ? { path: safeText(request.path) } : {}),
   ...(safeText(request.cwd) ? { cwd: safeText(request.cwd) } : {}),
   ...(safeText(request.host, 253) ? { host: safeText(request.host, 253) } : {}),
@@ -46,7 +56,8 @@ const requestSummary = (request = {}) => ({
   ...(typeof request.method === 'string' && request.method ? { method: request.method.slice(0, 10) } : {}),
   ...(safeText(request.content) ? { contentDigest: digest(request.content), contentBytes: Buffer.byteLength(request.content, 'utf8') } : {}),
   ...(request.env && typeof request.env === 'object' && !Array.isArray(request.env) ? { envDigest: digest(request.env), envKeyCount: Object.keys(request.env).length } : {})
-});
+  };
+};
 
 const isDigest = (value) => typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
 const executionEventPayload = (record) => Object.fromEntries(Object.entries({

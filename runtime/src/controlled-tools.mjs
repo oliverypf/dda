@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, sep as pathSep } from 'node:path';
 import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
+import { resolveShellTimeout } from './shell-timeout.mjs';
 import { applyTextPatch, MAX_PATCH_TEXT, MAX_PATCH_FILE_BYTES, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
 import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
 import { canonicalJson } from './model-tool-calls.mjs';
@@ -72,7 +73,7 @@ const commandInputSchema = {
     args: { type: 'array', maxItems: MAX_ARGUMENTS, items: { type: 'string', maxLength: MAX_ARGUMENT_LENGTH } },
     cwd: { type: 'string', maxLength: MAX_PATH_LENGTH },
     input: { type: 'string', maxLength: 64 * 1024 },
-    timeoutMs: { type: 'integer', minimum: 1, maximum: 60 * 1000 },
+    timeoutMs: { type: 'integer', minimum: 1, maximum: 60 * 60 * 1000 },
     maxOutputBytes: { type: 'integer', minimum: 1, maximum: 256 * 1024 },
     maxOutputChars: { type: 'integer', minimum: 1, maximum: 256 * 1024 }
   },
@@ -103,6 +104,7 @@ const processOutputSchema = {
     stdout: { type: 'string' },
     stderr: { type: 'string' },
     durationMs: { type: 'integer', minimum: 0 },
+    timeoutMs: { type: 'integer', minimum: 0 },
     action: { type: 'string' },
     commandDigest: { type: 'string' },
     cwd: { type: 'string' },
@@ -417,11 +419,27 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
         return undefined;
       }
     }
+    let leaseTtlMs = ttlMs;
+    if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
+      try {
+        const resolved = resolveShellTimeout({
+          command: typeof request?.command === 'string' ? request.command : '',
+          args: Array.isArray(request?.args) ? request.args : [],
+          requested: request?.timeoutMs
+        });
+        // The lease does not kill the child. It must still outlive the command
+        // so the workspace lock is not dropped in the middle of a build.
+        leaseTtlMs = Math.max(ttlMs ?? 60 * 1000, resolved.timeoutMs);
+      } catch (error) {
+        if (error?.code === 'SAFETY_COMMAND_INVALID') throw new SafetyError(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
+        throw error;
+      }
+    }
     const lease = monitor.issueLease({
       capabilities: [capability],
       ...(approvedCommands.length ? { commands: approvedCommands } : {}),
       ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
-      ...(ttlMs === undefined ? {} : { ttlMs })
+      ...(leaseTtlMs === undefined ? {} : { ttlMs: leaseTtlMs })
     });
     await onLeaseIssued?.({ capability, request, lease, context });
     return lease;
@@ -491,7 +509,7 @@ export const registerExecutorTools = (registry, executor, {
 
   registry.register({
     name: 'shell.execute',
-    description: 'Run one explicitly approved executable in the authorized workspace.' + commandGuidance,
+    description: 'Run one explicitly approved executable in the authorized workspace. cargo build, cargo test, npm/pnpm/yarn install, npm run build, and tauri build use DDA_BUILD_TIMEOUT_MS (default 15 minutes, hard cap 60 minutes). A timeout failure includes that enforced millisecond limit. Other commands stay within 60 seconds.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
@@ -643,7 +661,7 @@ export const registerExecutorTools = (registry, executor, {
   }
   registry.register({
     name: 'test.execute',
-    description: 'Run one explicitly approved test command in the authorized workspace.' + commandGuidance,
+    description: 'Run one explicitly approved test command in the authorized workspace. cargo test and other build-class commands use DDA_BUILD_TIMEOUT_MS (default 15 minutes). A timeout failure includes that enforced millisecond limit.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,

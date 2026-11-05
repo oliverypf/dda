@@ -16,8 +16,14 @@ import {
 } from '../runtime-safety-monitor.mjs';
 import { buildChildEnv } from './environment-policy.mjs';
 import { isLinuxCliPlatform } from './paths.mjs';
-
-const MAX_TIMEOUT_MS = 60 * 1000;
+import { planChildSpawn } from '../windows-cmd-spawn.mjs';
+import {
+  annotateProcessFailure,
+  defaultProbeLock,
+  detectBuildOutputLock,
+  hostExecutableCandidates,
+  resolveShellTimeout
+} from '../shell-timeout.mjs';
 const BLOCKED_PREFIXES = [/^\/proc(?:\/|$)/u, /^\/sys(?:\/|$)/u, /^\/dev(?:\/|$)/u, /^\/run\/secrets(?:\/|$)/u];
 const CREDENTIAL_SUFFIXES = ['.ssh', '.gnupg', '.aws', '.config/gcloud'];
 const BASE_ENV_KEYS = ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'TZ'];
@@ -50,17 +56,26 @@ const boundedLimit = (value, maximum, fallback) => {
   return value;
 };
 
-const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal, maxOutputBytes, maxOutputChars }) => new Promise((resolve, reject) => {
+const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, build = false, hostPath = '', input, signal, maxOutputBytes, maxOutputChars, spawnImpl = spawn, platform = process.platform, fileExists }) => new Promise((resolve, reject) => {
   let child;
+  let planned;
   try {
-    child = spawn(command, args, {
+    planned = planChildSpawn({ command, args, platform, env, fileExists });
+  } catch (error) {
+    reject(error instanceof SafetyError ? error : new SafetyError('EXECUTOR_SPAWN_FAILED'));
+    return;
+  }
+  try {
+    const spawnOptions = {
       cwd,
       env,
       shell: false,
-      detached: process.platform !== 'win32',
+      detached: platform !== 'win32',
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
-    });
+    };
+    if (planned.windowsVerbatimArguments === true) spawnOptions.windowsVerbatimArguments = true;
+    child = spawnImpl(planned.file, planned.args, spawnOptions);
   } catch {
     reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
     return;
@@ -92,6 +107,7 @@ const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal,
     truncated = true;
     killGroup('SIGKILL');
   }, timeoutMs);
+  timer.unref?.();
   const onAbort = () => {
     aborted = true;
     truncated = true;
@@ -126,8 +142,16 @@ const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal,
       state: unknown ? 'UNKNOWN' : 'OBSERVED',
       truncated: truncated || stdoutBound.truncated || stderrBound.truncated,
       stdout: stdoutBound.text,
-      stderr: stderrBound.text,
-      durationMs: Math.max(0, Math.round(performance.now() - startedAt))
+      stderr: annotateProcessFailure({
+        stderr: stderrBound.text,
+        stdout: stdoutBound.text,
+        timedOut,
+        timeoutMs,
+        build,
+        hostPath
+      }),
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      timeoutMs
     });
   });
   if (input !== undefined) child.stdin.end(input);
@@ -136,9 +160,15 @@ const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal,
 
 export class LinuxPosixExecutor extends ExecutorPort {
   #monitor;
+  #spawnImpl;
+  #platform;
+  #fileExists;
 
-  constructor({ monitor, workspaceRoot, ...options } = {}) {
+  constructor({ monitor, workspaceRoot, spawnImpl, platform, fileExists, ...options } = {}) {
     super();
+    this.#spawnImpl = typeof spawnImpl === 'function' ? spawnImpl : spawn;
+    this.#platform = typeof platform === 'string' ? platform : process.platform;
+    this.#fileExists = typeof fileExists === 'function' ? fileExists : undefined;
     this.#monitor = monitor instanceof RuntimeSafetyMonitor
       ? monitor
       : new RuntimeSafetyMonitor({ workspaceRoot, ...options });
@@ -193,24 +223,67 @@ export class LinuxPosixExecutor extends ExecutorPort {
 
   async #process(authorization, request, options = {}) {
     const limits = this.#monitor.limits;
+    let resolvedTimeout;
+    try {
+      resolvedTimeout = resolveShellTimeout({
+        command: authorization.command.command,
+        args: authorization.command.args,
+        requested: request.timeoutMs
+      });
+    } catch (error) {
+      if (error?.code === 'SAFETY_COMMAND_INVALID') throw new SafetyError(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
+      throw error;
+    }
+    const hostExecutables = Array.isArray(options.hostExecutables)
+      ? options.hostExecutables
+      : hostExecutableCandidates(process.env, options.execPath ?? process.execPath);
+    const collision = detectBuildOutputLock({
+      command: authorization.command.command,
+      args: authorization.command.args,
+      cwd: authorization.cwd.absolutePath,
+      hostExecutables,
+      probeLock: options.probeLock ?? (this.#platform === 'win32' ? defaultProbeLock : undefined),
+      platform: this.#platform
+    });
+    const described = {
+      action: authorization.action,
+      commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
+      cwd: authorization.cwd.path || '.',
+      lease: authorization.lease?.id ?? null,
+      timeoutMs: resolvedTimeout.timeoutMs
+    };
+    if (collision) {
+      return {
+        ok: false,
+        exitCode: 1,
+        signal: null,
+        aborted: false,
+        timedOut: false,
+        state: 'OBSERVED',
+        truncated: false,
+        stdout: '',
+        stderr: collision.message,
+        durationMs: 0,
+        ...described
+      };
+    }
     const result = await collectPosixOutput({
       command: nodeSpawnCommand(authorization.command.command),
       args: authorization.command.args,
       cwd: authorization.cwd.absolutePath,
       env: executionEnv(request.env),
-      timeoutMs: boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, 15 * 1000),
+      timeoutMs: resolvedTimeout.timeoutMs,
+      build: resolvedTimeout.build,
+      hostPath: hostExecutables[0] ?? '',
       input: request.input,
       signal: options.signal,
       maxOutputBytes: boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes),
-      maxOutputChars: boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars)
+      maxOutputChars: boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars),
+      spawnImpl: this.#spawnImpl,
+      platform: this.#platform,
+      fileExists: this.#fileExists
     });
-    return {
-      ...result,
-      action: authorization.action,
-      commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
-      cwd: authorization.cwd.path || '.',
-      lease: authorization.lease?.id ?? null
-    };
+    return { ...result, ...described };
   }
 }
 

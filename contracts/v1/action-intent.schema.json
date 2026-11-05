@@ -36,7 +36,7 @@
     "ownerPid": { "type": "integer", "minimum": 1 },
     "runtimeInstanceId": { "type": "string", "minLength": 1, "maxLength": 240 },
     "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "requestSummary": { "type": "object", "maxProperties": 16 },
+    "requestSummary": { "type": "object", "maxProperties": 24 },
     "state": {
       "enum": ["PROPOSED", "SAFETY_EVALUATING", "WAITING_APPROVAL", "APPROVED", "EXECUTING", "COMPLETED", "FAILED", "REJECTED"]
     },
@@ -66,11 +66,15 @@
     "requestSummary": {
       "type": "object",
       "additionalProperties": false,
-      "maxProperties": 16,
+      "maxProperties": 24,
       "properties": {
         "command": { "type": "string", "maxLength": 4096 },
+        "args": { "type": "array", "maxItems": 64, "items": { "type": "string", "maxLength": 500 } },
         "argsDigest": { "$ref": "#/$defs/digest" },
         "argCount": { "type": "integer", "minimum": 0 },
+        "commandLine": { "type": "string", "maxLength": 4096 },
+        "summaryZh": { "type": "string", "maxLength": 240 },
+        "riskReasons": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 120 } },
         "path": { "type": "string", "maxLength": 2000 },
         "cwd": { "type": "string", "maxLength": 2000 },
         "host": { "type": "string", "maxLength": 253 },

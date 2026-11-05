@@ -29,7 +29,28 @@ test('persists intent approval and one-shot lease lifecycle summaries', async ()
   assert.equal(reopened.get(approval.recordId).state, 'APPROVED');
   assert.equal(reopened.get(lease.recordId).state, 'CONSUMED');
   const persisted = await readFile(storagePath, 'utf8');
-  assert.doesNotMatch(persisted, /"-e"|"ok"/);
+  assert.match(persisted, /"-e"/);
+  assert.match(persisted, /"ok"/);
+  const secretDirectory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-redact-'));
+  const secretPath = join(secretDirectory, 'execution.json');
+  const secretStore = createExecutionStateStore({ storagePath: secretPath });
+  await secretStore.createIntent({
+    runId: 'run-redact',
+    capability: 'shell.execute',
+    request: {
+      command: 'npm',
+      args: ['install', '--token', 'sk-live-secret', 'API_KEY=plain-secret-ZZ'],
+      env: { API_KEY: 'super-secret-value' },
+      cwd: 'desktop'
+    }
+  });
+  const redacted = await readFile(secretPath, 'utf8');
+  assert.match(redacted, /"--token"/);
+  assert.match(redacted, /\[REDACTED\]/);
+  assert.match(redacted, /将安装项目依赖/);
+  assert.doesNotMatch(redacted, /sk-live-secret/);
+  assert.doesNotMatch(redacted, /super-secret-value/);
+  assert.doesNotMatch(redacted, /plain-secret-ZZ/);
 });
 
 test('commits execution state changes into the Harness Event Store without raw request content', async () => {

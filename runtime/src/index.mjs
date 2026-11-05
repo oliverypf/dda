@@ -172,6 +172,7 @@ import { assessBayesian, rankSafeCandidates } from './bayesian-assessment.mjs';
 import { createModelScenarioProfileRegistry } from './model-scenario-profile.mjs';
 import { evaluateDecisionTrace, exportLearningSample } from './decision-evaluation.mjs';
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegistry } from './runtime-safety-monitor.mjs';
+import { shellTimeoutConfig } from './shell-timeout.mjs';
 import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
 import { legacyRootKernelEffectJournalPath, resolveKernelEffectJournalPath, resolveKernelSessionPath, resolveStoreFile } from './platform/paths.mjs';
@@ -2067,18 +2068,19 @@ async function runTask() {
   root = new Context();
   const workspace = new ReadonlyWorkspace(workspaceRoot, { excludedPaths: workspaceExcludedPaths });
   const workspaceLeaseRegistry = new WorkspaceLeaseRegistry();
+  const leaseTtlRaw = arg('--lease-ttl-ms', process.env.DDA_LEASE_TTL_MS);
+  const leaseTtlMs = leaseTtlRaw === undefined ? undefined : Number(leaseTtlRaw);
+  if (leaseTtlRaw !== undefined && (!Number.isInteger(leaseTtlMs) || leaseTtlMs < 1)) throw new Error('LEASE_TTL_INVALID');
   const monitor = new RuntimeSafetyMonitor({
     workspaceRoot,
     releaseChannel,
     workspaceLeaseRegistry,
+    maxLeaseMs: Math.max(5 * 60 * 1000, shellTimeoutConfig(process.env).buildMaxMs, Number.isInteger(leaseTtlMs) ? leaseTtlMs : 0),
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...executionOptions(mode)
   });
   const executor = createPlatformExecutor({ monitor });
   const networkAdapter = new RestrictedNetworkAdapter({ monitor });
-  const leaseTtlRaw = arg('--lease-ttl-ms', process.env.DDA_LEASE_TTL_MS);
-  const leaseTtlMs = leaseTtlRaw === undefined ? undefined : Number(leaseTtlRaw);
-  if (leaseTtlRaw !== undefined && (!Number.isInteger(leaseTtlMs) || leaseTtlMs < 1)) throw new Error('LEASE_TTL_INVALID');
   const leaseProvider = createExplicitLeaseProvider({
     monitor,
     capabilities: approvedCapabilities,

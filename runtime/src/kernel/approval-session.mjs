@@ -4,6 +4,7 @@ import { executionDigest } from '../execution-state-store.mjs';
 import { CAPABILITIES } from '../runtime-safety-monitor.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
 import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome } from '../controlled-tools.mjs';
+import { publicCommandFields } from '../approval-command.mjs';
 
 const DEFAULT_APPROVAL_TTL_MS = 900_000;
 
@@ -255,15 +256,16 @@ export const createApprovalSession = (deps) => {
     const activeSnapshot = deps.activeSnapshotDigest?.();
     // approvalExpiresAt is assigned after the per-cell FIFO gate admits.
     // Queue wait must not consume the displayed TTL.
+    const commandView = publicCommandFields(request);
     const safeRequest = {
       capability,
       requestDigest,
       risk,
       policyVersion: 'runtime-safety-1',
       scope: { snapshotDigest: activeSnapshot, capability },
-      ...(typeof request?.command === 'string' ? { command: request.command.slice(0, 4096) } : {}),
+      ...commandView,
       ...(typeof request?.path === 'string' ? { path: request.path.slice(0, 512) } : {}),
-      ...(typeof request?.cwd === 'string' ? { cwd: request.cwd.slice(0, 512) } : {}),
+      ...(typeof request?.cwd === 'string' && commandView.cwd === undefined ? { cwd: request.cwd.slice(0, 512) } : {}),
       ...(Array.isArray(request?.kernelBatchItems) ? {
         kernelBatch: {
           batchId: String(request.kernelBatchId ?? '').slice(0, 80),

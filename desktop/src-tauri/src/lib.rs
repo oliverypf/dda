@@ -2864,6 +2864,10 @@ fn runtime_command_for(
         .unwrap_or(false);
     let plan = plan_desktop_spawn_env(cells_enabled, mode, local_app_data_dir().as_deref());
     apply_desktop_spawn_env(&mut command, &plan);
+    // The Node child is node.exe. The locked build output is this desktop process.
+    if let Ok(executable) = std::env::current_exe() {
+        command.env("DDA_HOST_EXECUTABLE", executable);
+    }
     if let Some(parent) = runtime.parent().and_then(Path::parent) {
         // Keep module resolution and any relative runtime data anchored at the
         // bundled runtime directory when the app is started from a shortcut.
@@ -3847,6 +3851,8 @@ mod tests {
             Some(Some("windows-desktop".to_string()))
         );
         assert_eq!(runtime_creation_flags(TASK_RUNTIME_SPAWN_MODE), runtime_creation_flags(DesktopSpawnMode::SessionKeep));
+        let host = resident(&task, "DDA_HOST_EXECUTABLE");
+        assert!(host.as_ref().is_some_and(|value| value.as_ref().is_some_and(|path| !path.is_empty())));
     }
 
     #[test]

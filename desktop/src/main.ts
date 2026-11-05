@@ -53,6 +53,7 @@ import {
   sessionBannerHtml,
   unknownJournalHtml
 } from './domain/windows-desktop-cells';
+import { approvalAuditHtml, approvalCardLeadHtml, approvalConfirmationText } from './domain/approval-card';
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
 import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, remapProjectArchiveIds, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
@@ -2214,14 +2215,12 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
     <article class="approval-card${cancelled}" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
       ${approvalCellDetailsHtml(approval)}
-      <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
+      ${approvalCardLeadHtml(approval)}
       <div class="approval-meta">
-        ${approval.risk ? `<span class="approval-risk approval-risk-${approval.risk.toLowerCase()}">${escapeHtml(riskDisplayLabel(approval.risk))}风险</span>` : ''}
-        ${approval.policyVersion ? `<span>策略 ${escapeHtml(approval.policyVersion)}</span>` : ''}
-        ${approval.approvalExpiresAt ? `<span>有效至 ${escapeHtml(formatTime(approval.approvalExpiresAt))}</span>` : ''}
+        <span>${escapeHtml(toolDisplayLabel(approval.capability))}</span>
         <span>仅本次 · Windows 受限执行器</span>
       </div>
-      ${panelDetails(`approval:${approval.requestId}`, '查看审批核对信息', panelPurpose('这些编号用于核对本次操作与授权是否对应。') + panelFields([['工作区快照摘要', approval.scope?.snapshotDigest], ['动作摘要', approval.requestDigest], ['审批编号', approval.requestId]]))}
+      ${panelDetails(`approval:${approval.requestId}`, '查看审批核对信息', panelPurpose('这些编号用于核对本次操作与授权是否对应。') + approvalAuditHtml(approval, approval.risk ? riskDisplayLabel(approval.risk) : undefined, approval.approvalExpiresAt ? formatTime(approval.approvalExpiresAt) : undefined))}
       ${requested ? `<div class="approval-actions">
         <button class="secondary-button" data-action="resolve-approval" data-approved="false" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>拒绝操作</button>
         <button class="primary-action approval-approve" data-action="resolve-approval" data-approved="true" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>${pendingApprovalResolutions.has(approval.requestId) ? '处理中…' : '批准一次'}</button>
@@ -2259,9 +2258,7 @@ const confirmHighRiskApproval = (approval: ApprovalReadModel, trigger: HTMLEleme
       <button class="secondary-button" data-confirmation="reject">拒绝操作</button>
       <button class="primary-action" data-confirmation="approve">确认批准一次</button>
     </div>`;
-  dialog.querySelector('pre')!.textContent = [approval.capability, approval.command, approval.path,
-    approval.cwd && 'cwd=' + approval.cwd, approval.host && (approval.method ?? 'GET') + ' ' + (approval.scheme ?? 'https') + '://' + approval.host + (approval.port ? ':' + approval.port : ''),
-    approval.requestDigest && '动作摘要 ' + approval.requestDigest].filter(Boolean).join('\n');
+  dialog.querySelector('pre')!.textContent = approvalConfirmationText(approval);
   const close = (): void => {
     if (approvalConfirmation?.requestId === approval.requestId) approvalConfirmation = undefined;
     dialog.close();
@@ -4535,6 +4532,10 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(typeof payload.policyVersion === 'string' ? { policyVersion: payload.policyVersion } : {}),
       ...(typeof payload.approvalExpiresAt === 'number' ? { approvalExpiresAt: payload.approvalExpiresAt } : {}),
       ...(typeof payload.command === 'string' ? { command: payload.command } : {}),
+      ...(Array.isArray(payload.args) ? { args: payload.args.filter((item): item is string => typeof item === 'string').slice(0, 64).map((item) => item.slice(0, 500)) } : {}),
+      ...(typeof payload.commandLine === 'string' ? { commandLine: payload.commandLine.slice(0, 4096) } : {}),
+      ...(typeof payload.summaryZh === 'string' ? { summaryZh: payload.summaryZh.slice(0, 240) } : {}),
+      ...(Array.isArray(payload.riskReasons) ? { riskReasons: payload.riskReasons.filter((item): item is string => typeof item === 'string').slice(0, 8).map((item) => item.slice(0, 120)) } : {}),
       ...(typeof payload.path === 'string' ? { path: payload.path } : {}),
       ...(typeof payload.cwd === 'string' ? { cwd: payload.cwd } : {}),
       ...(typeof payload.host === 'string' ? { host: payload.host } : {}),

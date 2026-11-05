@@ -245,6 +245,8 @@ test('test execution is scoped to a child directory and timeout is bounded', asy
   const timed = await executor.test({ command: nodeCommand, args: ['-e', 'setTimeout(() => {}, 1000)'], timeoutMs: 40 }, { lease: timeoutLease });
   assert.equal(timed.ok, false);
   assert.equal(timed.timedOut, true);
+  assert.match(timed.stderr, /EXECUTOR_TIMEOUT/);
+  assert.match(timed.stderr, /40/);
 
   const abortController = new AbortController();
   const abortLease = monitor.issueLease({ capabilities: [CAPABILITIES.TEST], commands: ['node'] });

@@ -62,5 +62,7 @@ test('browser.open uses the isolated worker interface and host allowlist', async
   const result = await registry.invoke('browser.open', { url: 'https://docs.example.test/start' });
   assert.equal(result.text, 'docs');
   assert.equal(calls[0].runId, 'run-1');
-  await assert.rejects(registry.invoke('browser.open', { url: 'https://other.example.test/' }), /TOOL_HANDLER_FAILED/);
+  // Host allowlist refusals keep their structured domain code (playwright-host.mjs)
+  // instead of collapsing to the generic TOOL_HANDLER_FAILED.
+  await assert.rejects(registry.invoke('browser.open', { url: 'https://other.example.test/' }), /BROWSER_TARGET_FORBIDDEN/);
 });

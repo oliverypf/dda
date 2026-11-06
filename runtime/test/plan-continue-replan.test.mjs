@@ -201,7 +201,8 @@ test('T-pc-4: zero writes continues the task; sole SAFETY/lease DENY does not tr
     alreadyReplanned: false
   }), false);
 
-  // 0 writes live
+  // 0 writes live: zero-write CONTINUE is eligible since a98a013, so it behaves
+  // like the writes case — re-executes until the continuation budget, then stops.
   {
     const { coordinator } = makeCoordinator();
     const events = [];
@@ -220,9 +221,18 @@ test('T-pc-4: zero writes continues the task; sole SAFETY/lease DENY does not tr
       },
       verifyStep: async () => continueReport()
     });
-    assert.equal(events.length, 0);
-    assert.equal(executions, 1);
+    assert.equal(events.length, PLAN_CONTINUE_REPLAN_LIMIT);
+    assert.equal(events[0].status, 'CONTINUE');
+    assert.equal(events[0].nextAction, 'CONTINUE_EXECUTION');
+    assert.equal(events[0].writesApplied, 0);
+    assert.equal(executions, PLAN_CONTINUE_REPLAN_LIMIT + 1);
     assert.equal(result.ok, false);
+    assert.equal(result.failedStepId, 'execute');
+    assert.equal(result.report?.status, 'CONTINUE');
+    assert.equal(isOpenPlanContinuation(result.report), true);
+    assert.equal(result.results.length, PLAN_CONTINUE_REPLAN_LIMIT + 1);
+    assert.equal(result.plan.steps[0].status, 'FAILED');
+    assert.equal(result.plan.steps[0].errorCode, 'CONTINUE');
   }
 
   // sole SAFETY live

@@ -158,7 +158,11 @@ test('process supervisor terminates the child process group', async () => {
   assert.throws(() => process.kill(record.pid, 0));
 });
 
-test('reclaim only signals a recorded pid whose command line contains the marker', async () => {
+// Windows process records are not reclaimed through /proc cmdline: reclaimRecordedProcesses
+// returns an empty result on win32 by design, and the supervisor cancels with taskkill instead.
+test('reclaim only signals a recorded pid whose command line contains the marker', {
+  skip: process.platform === 'win32' ? 'process reclaim reads /proc and is POSIX-only today' : false
+}, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-reclaim-'));
   const registryPath = join(directory, 'processes.json');
   const marker = `hmcodex-reclaim-${process.pid}`;
@@ -177,6 +181,9 @@ test('reclaim only signals a recorded pid whose command line contains the marker
     await exited;
     assert.notEqual(child.exitCode ?? child.signalCode, null);
   } finally {
-    try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+    // A live detached child keeps this file's event loop alive and would hang the whole
+    // test run, so clean up through both the POSIX group and the direct pid.
+    try { process.kill(-child.pid, 'SIGKILL'); } catch { /* group already gone */ }
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
   }
 });

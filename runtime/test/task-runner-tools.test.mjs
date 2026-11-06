@@ -60,20 +60,23 @@ for (const scenario of [
 }
 
 for (const sample of [
-  { name: 'test.execute', output: { ok: false, exitCode: 1, stdout: 'assertion failed', stderr: '', timedOut: false, aborted: false }, code: 'TEST_CHECK_FAILED', verifierStatus: 'CONTINUE' },
-  { name: 'test.execute', output: { ok: false, exitCode: null, stdout: '', stderr: '', timedOut: true, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },
-  { name: 'shell.execute', output: { ok: false, exitCode: 1, stdout: '', stderr: 'command failed', timedOut: false, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' }
+  { name: 'test.execute', args: {}, output: { ok: false, exitCode: 1, stdout: 'assertion failed', stderr: '', timedOut: false, aborted: false }, code: 'TEST_CHECK_FAILED', verifierStatus: 'CONTINUE' },
+  { name: 'test.execute', args: {}, output: { ok: false, exitCode: null, stdout: '', stderr: '', timedOut: true, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },
+  { name: 'shell.execute', args: { command: 'fixture' }, output: { ok: false, exitCode: 1, stdout: '', stderr: 'command failed', timedOut: false, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' }
 ]) {
   test(`an unsuccessful ${sample.name} result is a failure (${sample.code}) despite a completed invocation`, async () => {
     const registry = new ToolRegistry({ allowSideEffects: true });
     registry.register({ name: sample.name, description: 'Process fixture', readOnly: false,
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false }, handler: () => sample.output });
+      inputSchema: sample.name === 'shell.execute'
+        ? { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }
+        : { type: 'object', properties: {}, additionalProperties: false },
+      handler: () => sample.output });
     const events = [], requests = [];
     const providerPlugin = cordisPlugin(ctx => ctx.provide('modelProvider', {
       provider: 'fixture', protocol: 'fixture', model: 'process-result-fixture',
       async *stream(request) {
         requests.push(request);
-        if (requests.length === 1) yield { type: 'tool-call', id: 'process-call', name: sample.name, arguments: '{}' };
+        if (requests.length === 1) yield { type: 'tool-call', id: 'process-call', name: sample.name, arguments: JSON.stringify(sample.args) };
         else yield { type: 'text-delta', text: 'The process failed; more work is required.' };
         yield { type: 'finish', reason: { kind: requests.length === 1 ? 'tool-calls' : 'stop' } };
       }
@@ -289,7 +292,9 @@ test('stops repeated workspace requests after four rounds without new evidence',
   await root.plugin(taskRunnerPlugin);
   try {
     await assert.rejects(root.taskRunner.run({ prompt: 'inspect', workspace, onEvent: (event) => events.push(event) }), /TOOL_NO_NEW_EVIDENCE/);
-    assert.equal(events.filter((event) => event.kind === 'tool.result').length, 5);
+    // #66 added a one-shot focus vacuum escape: 4 no-evidence rounds, 1 escape,
+    // then 4 more before TOOL_NO_NEW_EVIDENCE. 9 tool results in total.
+    assert.equal(events.filter((event) => event.kind === 'tool.result').length, 9);
   } finally {
     await root.fiber.dispose();
   }

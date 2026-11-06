@@ -116,7 +116,7 @@ test('T-dpr-1: DGR-eligible FAIL after #68 does not fire post_agent_miss_termina
 
 // ——— T-dpr-2 ———
 
-test('T-dpr-2: non-DGR-eligible FAIL after #68 still gets exactly one post-agent-miss-terminal replan', async () => {
+test('T-dpr-2: non-DGR-eligible FAIL after #68 stops without post-agent-miss-terminal replan', async () => {
   const testsFailed = {
     status: 'FAIL',
     summary: 'tests failed',
@@ -145,15 +145,15 @@ test('T-dpr-2: non-DGR-eligible FAIL after #68 still gets exactly one post-agent
     verify: async () => {
       i += 1;
       if (i === 1) return uncertainReport();
-      // after amt bonus execute, stay FAIL
+      // second verification stays FAIL → stop (no terminal replan)
       return testsFailed;
     }
   });
 
   assert.equal(bag.agentEvents.length, 1);
-  assert.equal(bag.amtEvents.length, 1, 'non-DGR FAIL must still get post_agent_miss_terminal');
-  assert.equal(bag.amtEvents[0].status, 'FAIL');
-  assert.equal(result.postAgentMissTerminalReplanned, true);
+  assert.equal(bag.amtEvents.length, 0, 'no post_agent_miss_terminal: two executions then stop');
+  assert.equal(result.attempts, 2);
+  assert.equal(result.postAgentMissTerminalReplanned, undefined);
   assert.equal(result.report.status, 'FAIL');
   assert.ok(result.report.failureCodes.includes('TESTS_FAILED') || result.report.failureCodes.includes(JEV_BEHAVIOR_REJECTED));
 });

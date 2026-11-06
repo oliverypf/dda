@@ -27,7 +27,16 @@ const run = (args, env) => new Promise((resolve, reject) => {
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   child.once('error', reject);
-  child.once('close', (code) => resolve({ code, stdout, stderr }));
+  // A failed assertion in onRequest can leave the CLI waiting for a model
+  // response. Bound the child so the suite never hangs on an open server.
+  const timer = setTimeout(() => {
+    child.kill('SIGKILL');
+    reject(new Error(`KERNEL_GATE_TEST_TIMEOUT\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+  }, 30000);
+  child.once('close', (code) => {
+    clearTimeout(timer);
+    resolve({ code, stdout, stderr });
+  });
 });
 
 const emitChat = (response, frames) => {

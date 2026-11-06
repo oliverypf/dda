@@ -121,37 +121,9 @@ export const postMissTerminalReplanHostNote = () => [
   'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force. No fourth recovery of this kind.'
 ].join(' ');
 
-/**
- * freeze-harness-post-agent-miss-terminal-r1 §1.1: after #68 agent-miss latch already
- * fired AND #69 post-miss UNCERTAIN has NOT fired, allow exactly one terminal REPLAN
- * when verification is FAIL or STALLED with writes≥1 (not sole SAFETY/lease DENY).
- * Independent latch from #70 (which still requires #69). Never for UNCERTAIN.
- */
-export const isPostAgentMissTerminalReplanEligible = ({
-  writesApplied = 0,
-  successfulWrites = 0,
-  failureCodes = [],
-  agentMissAlreadyReplanned = false,
-  postMissUncertainAlreadyReplanned = false,
-  postAgentMissTerminalAlreadyReplanned = false
-} = {}) => {
-  if (!agentMissAlreadyReplanned) return false;
-  // Skip when #69 already used — that path stays on #70.
-  if (postMissUncertainAlreadyReplanned) return false;
-  if (postAgentMissTerminalAlreadyReplanned) return false;
-  if (Number(writesApplied) < 1 && Number(successfulWrites) < 1) return false;
-  const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
-  if (isSoleHardDenyFailure(codes)) return false;
-  return true;
-};
-
-export const postAgentMissTerminalReplanHostNote = () => [
-  'HOST_POST_AGENT_MISS_TERMINAL_REPLAN: After agent-miss replan, verification went straight to FAIL or STALLED (post_amt / post_agent_miss_terminal_replan; no post-miss UNCERTAIN latch).',
-  'Carry this terminal-miss evidence into the next plan: status and failureCodes remain true and must be treated as given.',
-  'Stop repeating the same recovery probes (read/list/focus), failed actions or fingerprint digests from prior attempts.',
-  'Next: prefer a concrete bounded file.write/file.patch or shell.execute/test.execute/verify step with fresh tool evidence.',
-  'Do not claim PASS without fresh tool evidence. SAFETY / lease hard denies remain in force. No second recovery of this kind.'
-].join(' ');
+// NOTE (2026-11-05, user decision): no post-agent-miss terminal replan. After an
+// agent-miss replan, a second FAIL/STALLED ends the run — the retry budget is two
+// executions, no third attempt. The #74 latch was removed for this reason.
 
 /**
  * freeze-harness-post-miss-evidence-delta-r1 §1.1: after #69 post-miss UNCERTAIN latch,
@@ -660,16 +632,14 @@ export const recoveryContinuationText = (recovery) => recovery ? [
     ? [postMissUncertainExhaustedReplanHostNote()]
     : (recovery.postMissEvidenceDeltaReplan === true
       ? [postMissEvidenceDeltaReplanHostNote()]
-      : (recovery.postAgentMissTerminalReplan === true
-        ? [postAgentMissTerminalReplanHostNote()]
-        : (recovery.postMissTerminalReplan === true
-          ? [postMissTerminalReplanHostNote()]
-          : (recovery.postMissUncertainReplan === true
-            ? [postMissUncertainReplanHostNote()]
-            : (recovery.zeroWriteJevReplan === true
-              ? [zeroWriteJevReplanHostNote()]
-              : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
-                ? [agentMissReplanHostNote()] : [])))))))
+      : (recovery.postMissTerminalReplan === true
+        ? [postMissTerminalReplanHostNote()]
+        : (recovery.postMissUncertainReplan === true
+          ? [postMissUncertainReplanHostNote()]
+          : (recovery.zeroWriteJevReplan === true
+            ? [zeroWriteJevReplanHostNote()]
+            : (recovery.agentMissReplan === true || recovery.recoveryDirection === 'REPLAN_STEP'
+              ? [agentMissReplanHostNote()] : []))))))
 ].join('\n') : '';
 
 /** Bound verifier checks so diagnose sticky suppress can see probe-budget signals (run62 miss). */
@@ -768,7 +738,6 @@ export const runVerifierRecovery = async ({
   let preflightRequireWriteIntercepts = 0;
   let postMissUncertainReplanned = false;
   let postMissTerminalReplanned = false;
-  let postAgentMissTerminalReplanned = false;
   let postMissEvidenceDeltaReplanned = false;
   let postMissUncertainExhaustedReplanned = false;
   let writesAtPostMiss = undefined;
@@ -1140,56 +1109,6 @@ export const runVerifierRecovery = async ({
       }
     }
 
-    // freeze-harness-post-agent-miss-terminal-r1: after #68 without #69, one FAIL|STALLED REPLAN.
-    let postAgentMissTerminalJustFired = false;
-    if (
-      !zeroWriteJevJustFired
-      && !agentMissJustFired
-      && !postMissJustFired
-      && !postMissEvidenceDeltaJustFired
-      && !postMissUncertainExhaustedJustFired
-      && !postMissTerminalJustFired
-      && (report.status === 'FAIL' || report.status === 'STALLED')
-      // freeze-harness-dgr-before-post-miss-replan-r1: preserve DGR FAIL for coordinator promotion.
-      && !isDeterministicGreenJevBehaviorReject(report)
-      && agentMiss
-      && agentMissReplanned
-      && !postMissUncertainReplanned
-      && !postAgentMissTerminalReplanned
-    ) {
-      const counts = typeof agentMiss.getWriteCounts === 'function'
-        ? (agentMiss.getWriteCounts() ?? {})
-        : {};
-      if (isPostAgentMissTerminalReplanEligible({
-        writesApplied: counts.writesApplied ?? 0,
-        successfulWrites: counts.successfulWrites ?? 0,
-        failureCodes: report.failureCodes,
-        agentMissAlreadyReplanned: agentMissReplanned,
-        postMissUncertainAlreadyReplanned: postMissUncertainReplanned,
-        postAgentMissTerminalAlreadyReplanned: postAgentMissTerminalReplanned
-      })) {
-        postAgentMissTerminalReplanned = true;
-        postAgentMissTerminalJustFired = true;
-        const originalStatus = report.status;
-        const writesApplied = Number(counts.writesApplied ?? counts.successfulWrites ?? 0) || 0;
-        await agentMiss.onPostAgentMissTerminalReplan?.({
-          writesApplied,
-          failureCodes: [...report.failureCodes],
-          status: originalStatus,
-          priorAgentMissReplan: true
-        });
-        report = {
-          ...report,
-          status: 'CONTINUE',
-          nextAction: 'REPLAN_STEP',
-          summary: boundedText(`post-agent-miss terminal replan after writes: ${report.summary || `verification ${originalStatus}`}`),
-          postAgentMissTerminalReplan: true
-        };
-        effectiveMaxAttempts = Math.max(effectiveMaxAttempts, attempt + 1);
-        if (effectiveMaxAttempts > MAX_ATTEMPTS) effectiveMaxAttempts = MAX_ATTEMPTS;
-      }
-    }
-
     const recoverable = RECOVERABLE_VERIFIER_STATUSES.has(report.status);
     if (!recoverable || attempt >= effectiveMaxAttempts) {
       return {
@@ -1206,7 +1125,6 @@ export const runVerifierRecovery = async ({
           : {}),
         ...(postMissUncertainReplanned ? { postMissUncertainReplanned: true } : {}),
         ...(postMissTerminalReplanned ? { postMissTerminalReplanned: true } : {}),
-        ...(postAgentMissTerminalReplanned ? { postAgentMissTerminalReplanned: true } : {}),
         ...(postMissEvidenceDeltaReplanned ? { postMissEvidenceDeltaReplanned: true } : {}),
         ...(postMissUncertainExhaustedReplanned ? { postMissUncertainExhaustedReplanned: true } : {})
       };
@@ -1249,13 +1167,6 @@ export const runVerifierRecovery = async ({
         ...recovery,
         recoveryDirection: recovery.recoveryDirection || 'REPLAN_STEP',
         postMissTerminalReplan: true
-      };
-    }
-    if (postAgentMissTerminalJustFired) {
-      recovery = {
-        ...recovery,
-        recoveryDirection: recovery.recoveryDirection || 'REPLAN_STEP',
-        postAgentMissTerminalReplan: true
       };
     }
     if (postMissEvidenceDeltaJustFired) {

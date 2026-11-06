@@ -195,6 +195,13 @@ const actionDeferred = action => actionFailed(action)
   && action.errorCode === 'TOOL_ACTION_REQUIRES_EVIDENCE'
   && action.gateDecision === 'REQUEST_EVIDENCE' && action.invocationAttempted === false;
 
+// Security-boundary refusals must fail closed. Reading a sensitive path
+// (.env, credential files) is not a "probe miss" the model may retry around:
+// the step is a hard failure and the run stops.
+const NON_RECOVERABLE_TOOL_ERROR_CODES = new Set([
+  'WORKSPACE_SENSITIVE_PATH'
+]);
+
 // Tool errors that the model can recover from by choosing another path or
 // another file. They are evidence of progress (the model learned the request
 // was invalid), not a hard failure that must terminate the plan step.
@@ -224,6 +231,7 @@ export const RECOVERABLE_TOOL_ERROR_CODES = new Set([
 /** Structured probe / domain tool errors that must not hard-kill the run. */
 export const isRecoverableToolError = (errorCode) => {
   if (typeof errorCode !== 'string' || !errorCode) return false;
+  if (NON_RECOVERABLE_TOOL_ERROR_CODES.has(errorCode)) return false;
   return RECOVERABLE_TOOL_ERROR_CODES.has(errorCode)
     || errorCode.startsWith('WORKSPACE_')
     || errorCode.startsWith('EXCERPT_');
@@ -232,11 +240,7 @@ export const isRecoverableToolError = (errorCode) => {
 const actionRecoverableFailure = (action) => {
   const value = normalizeAction(action);
   const code = typeof value.errorCode === 'string' ? value.errorCode : '';
-  return actionFailed(value) && (
-    RECOVERABLE_TOOL_ERROR_CODES.has(code)
-    || code.startsWith('WORKSPACE_')
-    || code.startsWith('EXCERPT_')
-  );
+  return actionFailed(value) && isRecoverableToolError(code);
 };
 
 const actionPaths = (action) => {

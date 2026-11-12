@@ -594,7 +594,7 @@ export const runAgentPipeline = async ({
   verifierProvider,
   ruleVerify,
   contextIds = {},
-  mode = 'READ_ONLY',
+  mode = 'CONTROLLED',
   signal,
   onPhase,
   onEvent,

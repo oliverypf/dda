@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { approvalSubject, cellApprovalPresentation } from './cell-approval.mjs';
 import { executionDigest } from '../execution-state-store.mjs';
-import { CAPABILITIES } from '../runtime-safety-monitor.mjs';
+import { CAPABILITIES, parseCommand } from '../runtime-safety-monitor.mjs';
+import { currentAccessMode } from '../filesystem-access.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
-import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome } from '../controlled-tools.mjs';
+import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome, assessRequestRisk } from '../controlled-tools.mjs';
 
 const DEFAULT_APPROVAL_TTL_MS = 900_000;
 
@@ -239,7 +240,7 @@ export const createApprovalSession = (deps) => {
     }
   };
 
-  const requestApproval = async ({ capability, request, requireApproval = false, risk: providedRisk, context: approvalCallContext, onApprovalFailure } = {}) => {
+  const requestApproval = async ({ capability, request, requireApproval = false, mandatoryApproval = false, risk: providedRisk, dangerReasons, context: approvalCallContext, onApprovalFailure } = {}) => {
     const requestId = `approval-${randomUUID()}`;
     const batchGranted = requireApproval !== true
       && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
@@ -369,7 +370,16 @@ export const createApprovalSession = (deps) => {
       const bindingSnapshot = deps.bindingSnapshot();
       const bindingSnapshotDigest = sha256Digest(JSON.stringify(bindingSnapshot));
       const capabilitySnapshot = deps.capabilitySnapshot();
-      const scopeSnapshot = deps.buildScope({ capability, request, operationId, bindingSnapshotDigest });
+      const resolvedAccessMode = typeof deps.getWorkspaceAccessMode === 'function'
+        ? await deps.getWorkspaceAccessMode()
+        : undefined;
+      const scopeSnapshot = await deps.buildScope({
+        capability,
+        request,
+        operationId,
+        bindingSnapshotDigest,
+        accessMode: resolvedAccessMode
+      });
       safeRequest.scope = { snapshotDigest: scopeSnapshot.snapshotDigest, capability };
       intentRecord = await executionState().createIntent({
         runId: deps.runId,
@@ -420,8 +430,85 @@ export const createApprovalSession = (deps) => {
         capabilitySnapshot
       };
       approvalContexts.set(requestDigest, pending.context);
+      // A persisted FULL_ACCESS grant for this exact workspace covers ordinary
+      // controlled operations only: dangerous requests, mandatory gates, and
+      // anything the host cannot classify stay on the human path.
+      // A global FULL_ACCESS grant covers only ordinary controlled requests.
+      // The session re-assesses the request itself — caller-supplied flags are
+      // never trusted — and fails closed when the assessment cannot prove the
+      // request ordinary or the shape is not a known meaningful request.
+      const ORDINARY_CAPS = new Set(['shell.execute', 'file.write', 'test.execute', 'network.request']);
+      const kernelBatchOrdinary = async () => {
+        if (!Array.isArray(request?.kernelBatchItems)) return true;
+        for (const item of request.kernelBatchItems) {
+          let safe = false;
+          try {
+            safe = typeof deps.isSafeKernelBatchItem === 'function'
+              && await deps.isSafeKernelBatchItem(item) === true;
+          } catch { safe = false; }
+          if (!safe) return false;
+        }
+        return true;
+      };
+      const meaningfulRequest = () => {
+        if (!ORDINARY_CAPS.has(capability)) return false;
+        if (capability === CAPABILITIES.WRITE_FILE) {
+          return (typeof request?.path === 'string' && request.path.trim().length > 0)
+            || (Array.isArray(request?.kernelBatchItems) && request.kernelBatchItems.length > 0);
+        }
+        if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
+          return typeof request?.command === 'string' && request.command.trim().length > 0;
+        }
+        if (capability === CAPABILITIES.NETWORK) {
+          return typeof request?.host === 'string' && request.host.trim().length > 0;
+        }
+        return false;
+      };
+      const liveMode = await currentAccessMode(deps.getWorkspaceAccessMode);
+      let independent;
+      try {
+        const assessor = typeof deps.assessRequestRisk === 'function' ? deps.assessRequestRisk : assessRequestRisk;
+        independent = assessor({ capability, request, workspaceRoot: deps.workspaceRoot, accessMode: liveMode });
+      } catch { independent = undefined; }
+      const fullAccessAuto = !batchGranted && requireApproval !== true && mandatoryApproval !== true
+        && meaningfulRequest()
+        && independent?.dangerous === false
+        && liveMode === 'FULL_ACCESS'
+        && await kernelBatchOrdinary();
+      // Host-authored review reasons come only from the independent
+      // assessment — never the caller's claimed danger flags. The preview is
+      // JSON argv for human review, never re-evaluated as a shell line.
+      const reasonCodes = (() => {
+        const codes = [];
+        if (independent?.dangerous === true && Array.isArray(independent.reasons)) {
+          for (const code of independent.reasons) {
+            if (typeof code === 'string' && /^[A-Z_]{3,48}$/.test(code) && !codes.includes(code)) codes.push(code);
+            if (codes.length >= 8) break;
+          }
+        }
+        if (codes.length) return codes;
+        if (mandatoryApproval === true) return ['MANDATORY_SAFETY_REVIEW'];
+        if (!independent) return ['SAFETY_ASSESSMENT_UNAVAILABLE'];
+        return ['HOST_SAFETY_REVIEW_REQUIRED'];
+      })();
+      safeRequest.reasonCodes = reasonCodes;
+      if (independent?.dangerous === true) safeRequest.risk = 'HIGH';
+      if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
+        try {
+          const parsed = parseCommand(request);
+          if (parsed) {
+            const preview = JSON.stringify({ command: parsed.command, args: parsed.args, cwd: request.cwd ?? '.' }, null, 2);
+            if (preview.length <= 16384) {
+              safeRequest.commandPreview = preview;
+            } else {
+              safeRequest.commandPreview = preview.slice(0, 16384);
+              safeRequest.commandPreviewTruncated = true;
+            }
+          }
+        } catch { /* unparsed commands get no preview */ }
+      }
       const live = deps.hasLiveApprover() === true;
-      if (live && !batchGranted) {
+      if (live && !batchGranted && !fullAccessAuto) {
         setupHoldRelease = takeHold();
         if (coordinator().state === 'EXECUTING') {
           await coordinator().transitionAndFlush('WAITING_APPROVAL', {
@@ -462,6 +549,41 @@ export const createApprovalSession = (deps) => {
         intentState = 'APPROVED';
         if (await checkpoint('batchIntent')) return false;
         return true;
+      }
+      if (fullAccessAuto) {
+        // Re-read the grant one last time immediately before committing the
+        // auto-approve; a revocation between assessment and commit falls
+        // through to the normal pending path.
+        const grantNow = await currentAccessMode(deps.getWorkspaceAccessMode);
+        if (grantNow === 'FULL_ACCESS') {
+          await executionState().transition(approvalRecord.recordId, 'APPROVED', { reason: 'COMPUTER_FULL_ACCESS' });
+          approvalState = 'APPROVED';
+          if (await checkpoint('fullAccessApproval')) return false;
+          await executionState().transition(intentRecord.recordId, 'APPROVED', { reason: 'COMPUTER_FULL_ACCESS' });
+          intentState = 'APPROVED';
+          if (await checkpoint('fullAccessIntent')) return false;
+          deps.emitEvent('approval.auto_approved', {
+            requestId,
+            approvalId: approvalRecord.recordId,
+            intentId: intentRecord.recordId,
+            requestDigest,
+            mode: 'FULL_ACCESS',
+            scope: 'USER_FILESYSTEM',
+            workspaceRootDigest: sha256Digest(String(deps.workspaceRoot ?? ''))
+          });
+          return true;
+        }
+        // Revoked between assessment and commit: acquire the hold the early
+        // check skipped so the UI/run state matches a real pending approval.
+        if (live) {
+          setupHoldRelease = takeHold();
+          if (coordinator().state === 'EXECUTING') {
+            await coordinator().transitionAndFlush('WAITING_APPROVAL', {
+              reason: 'APPROVAL_REQUIRED',
+              metadata: { requestId, capability }
+            });
+          }
+        }
       }
       if (!live) {
         if (resolveApprovalOutcome({ requireApproval, hasLiveApprover: false }) === APPROVAL_OUTCOMES.REFUSE) {

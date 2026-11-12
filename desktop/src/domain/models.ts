@@ -2,7 +2,7 @@ import type { ContinuousVerifierConfig } from './verifier-config';
 
 export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'READY' | 'ERROR';
 export type ConnectionMode = 'MOCK' | 'LOCAL_RUNTIME';
-export type RuntimeExecutionMode = 'READ_ONLY' | 'CONTROLLED';
+export type RuntimeExecutionMode = 'CONTROLLED';
 export type RunState =
   | 'CREATED'
   | 'CLASSIFYING'
@@ -36,7 +36,8 @@ export interface RuntimeReadModel {
   releaseChannel?: string;
   platform: 'WINDOWS' | 'WEB_PREVIEW';
   version: string;
-  readOnly: true;
+  /** Legacy capability field, independent of the execution mode. */
+  readOnly: boolean;
   workspaceRead: boolean;
   commandExecution: boolean;
   networkSideEffects: boolean;
@@ -146,6 +147,10 @@ export interface ThreadReadModel {
   turnCount: number;
   resumable?: boolean;
   resumeMode?: 'NONE' | 'PREPARATION' | 'PLAN' | 'INVALID';
+  recoveryBlock?: {
+    reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
+    stepIds: string[];
+  };
   createdAtMs: number;
   updatedAtMs: number;
   forkedFrom?: string;
@@ -158,7 +163,7 @@ export interface ThreadReadModel {
   };
 }
 
-export type SubAgentState = 'STARTING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+export type SubAgentState = 'STARTING' | 'RUNNING' | 'WAITING' | 'SKIPPED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CLOSED';
 
 export interface SubAgentReadModel {
   agentId: string;
@@ -167,6 +172,11 @@ export interface SubAgentReadModel {
   state: SubAgentState;
   startedAtMs: number;
   updatedAtMs: number;
+  runtimeRole?: string;
+  runtimeRunId?: string;
+  executionKind?: 'MODEL' | 'RULE' | 'SYSTEM';
+  workStarted?: boolean;
+  activityStopped?: boolean;
 }
 
 export interface TimelineItem {
@@ -186,6 +196,10 @@ export interface TimelineItem {
   pluginVersion?: string;
   digest?: string;
   commandText?: string;
+  /** Bounded stderr/stdout tail shown under a failed process tool's message. */
+  outputTail?: string;
+  /** Structured workspace-relative path from the tool payload; never extracted from body text. */
+  targetPath?: string;
   toolName?: string;
   evidenceKind?: string;
   truncated?: boolean;
@@ -266,6 +280,9 @@ export interface ApprovalReadModel {
   toolName?: string;
   warning?: string;
   sandbox?: string;
+  reasonCodes?: string[];
+  commandPreview?: string;
+  commandPreviewTruncated?: boolean;
 }
 
 export interface WorkspaceEntry {
@@ -300,6 +317,10 @@ export interface ComposerReadModel {
   placeholder: string;
 }
 
+export type RuntimePluginGovernanceStatus =
+  | { state: 'AVAILABLE' }
+  | { state: 'BLOCKED'; errorCode: 'PLUGIN_GOVERNANCE_INVALID' | 'PLUGIN_GOVERNANCE_READ_FAILED' };
+
 export interface HarnessReadModel {
   schemaVersion: '1.0';
   projectionVersion: number;
@@ -316,6 +337,7 @@ export interface HarnessReadModel {
   dreamRuns: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
   pluginVersions: RuntimePluginVersionSummary[];
+  pluginGovernanceStatus?: RuntimePluginGovernanceStatus;
   evolutionProposals: RuntimeEvolutionProposal[];
   evolutionReports: RuntimeEvolutionReport[];
   evolutionControl?: EvolutionControlState;
@@ -382,9 +404,9 @@ export interface RuntimeSnapshot {
   releaseChannel?: string;
   platform: 'WINDOWS';
   version: string;
-  readOnly: true;
+  readOnly: boolean;
   workspaceRead: true;
-  commandExecution: false;
+  commandExecution: boolean;
   networkSideEffects: false;
   runtimeReady?: boolean;
   nodeVersion?: string | null;
@@ -524,6 +546,10 @@ export interface RuntimeTaskOptions {
   leaseCapabilities?: string[];
   leaseCommands?: string[];
   leaseNetworkTargets?: NetworkTargetOption[];
+  /** Stable frontend session id; the host reserves its own runtime slot for it. */
+  clientSessionId?: string;
+  /** Workspace root frozen at launch so later project switches can't move it. */
+  workspacePath?: string;
 }
 
 export interface NetworkTargetOption {
@@ -638,6 +664,7 @@ export interface RuntimeDashboardResponse {
   dreams: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
   pluginVersions?: RuntimePluginVersionSummary[];
+  pluginGovernanceStatus?: RuntimePluginGovernanceStatus;
   evolution: {
     proposals: RuntimeEvolutionProposal[];
     reports: RuntimeEvolutionReport[];
@@ -821,6 +848,8 @@ export interface RuntimeEvent {
   type: 'runtime_event';
   schemaVersion: '1.0';
   eventId?: string;
+  /** Owning frontend session injected by the native host per runtime slot. */
+  clientSessionId?: string;
   runId: string;
   sequence: number;
   kind: string;
@@ -853,7 +882,7 @@ export type RuntimeTaskResponse =
       reasoningChars: number;
       toolRounds?: number;
       toolCallCount?: number;
-      executionMode?: 'READ_ONLY' | 'CONTROLLED';
+      executionMode?: RuntimeExecutionMode;
       plugins: RuntimePluginSummary[];
       tools?: RuntimeToolSummary[];
       workspace: RuntimeWorkspaceSummary;

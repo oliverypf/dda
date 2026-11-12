@@ -75,7 +75,7 @@ const scenario = async (t, {
   stopChoice,
   kernel = false,
   prompt = 'Read README.md and report its marker.',
-  executionMode = 'READ_ONLY',
+  executionMode = 'CONTROLLED',
   leaseCapabilities = '',
   leaseCommands = '',
   maxRecoveryAttempts = 1,
@@ -251,14 +251,15 @@ test('READONLY_FAST_PATH skips the gate for allowlisted in-workspace reads only'
   assert.equal(fastDecisions.length, 3);
 });
 
-test('READONLY_FAST_PATH never fast-paths kernel.host_request; READ_ONLY hard block stays first', async (t) => {
+test('READONLY_FAST_PATH never fast-paths kernel.host_request; kernel effects stay disabled', async (t) => {
   const { result, jev, model } = await scenario(t, {
     env: { DDA_JEV_READONLY_FAST_PATH: '1' }, kernel: true,
-    toolCalls: [['kernel.host_request', { kind: 'host.ping' }]]
+    toolCalls: [['kernel.host_request', { kind: 'shell.exec', payload: { command: 'echo never' } }]]
   });
-  assert.ok(model.toolContents.some((content) => /TOOL_NOT_ALLOWED_IN_MODE/u.test(content)), `${result.stderr}\n${model.toolContents.join('\n')}`);
+  assert.ok(model.toolContents.some((content) => /KERNEL_SIDE_EFFECT_REFUSED|KERNEL_EFFECTS_DISABLED|TOOL_ACTION_BLOCKED_BY_JEV/u.test(content)), `${result.stderr}\n${model.toolContents.join('\n')}`);
   assert.doesNotMatch(result.stdout, /jev\.action_gate_skipped/u);
-  assert.equal(jev.actionGateTools.includes('kernel.host_request'), false, 'hard block answers before Jev');
+  assert.equal(jev.actionGateTools.includes('kernel.host_request'), true,
+    'no mode-level block exists; the Jev gate answers for host_request');
 });
 
 test('multi flags off: planner then council heuristic as today, no tier decision', async (t) => {

@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DEFAULT_RELEASE_CHANNEL } from './release-channel.mjs';
 import { canonicalMappedPath, preferMappedPath } from './platform/workspace-path.mjs';
+import { resolveAuthorizedPath } from './filesystem-access.mjs';
+import { MAX_PROCESS_TIMEOUT_MS, PROCESS_LEASE_MARGIN_MS } from './process-limits.mjs';
 
 /**
  * The safety monitor is the policy boundary for every operation that can
@@ -12,7 +14,7 @@ import { canonicalMappedPath, preferMappedPath } from './platform/workspace-path
  * model and from Cordis: callers must present a normalized action and an
  * optional one-shot lease before an executor can do anything.
  */
-export const EXECUTION_MODES = Object.freeze({ READ_ONLY: 'READ_ONLY', CONTROLLED: 'CONTROLLED' });
+export const EXECUTION_MODES = Object.freeze({ CONTROLLED: 'CONTROLLED' });
 export const ACTIONS = Object.freeze({ SHELL: 'shell', WRITE_FILE: 'write_file', TEST: 'test', NETWORK: 'network_request' });
 export const CAPABILITIES = Object.freeze({
   SHELL: 'shell.execute',
@@ -24,7 +26,6 @@ export const SAFETY_POLICY_VERSION = 'runtime-safety-1';
 
 export const SAFETY_ERROR_CODES = Object.freeze({
   INVALID_OPTIONS: 'SAFETY_INVALID_OPTIONS',
-  READ_ONLY: 'SAFETY_READ_ONLY',
   INVALID_ACTION: 'SAFETY_INVALID_ACTION',
   LEASE_REQUIRED: 'SAFETY_LEASE_REQUIRED',
   LEASE_INVALID: 'SAFETY_LEASE_INVALID',
@@ -517,6 +518,8 @@ export class RuntimeSafetyMonitor {
   #id = `monitor-${randomUUID()}`;
   #mode;
   #workspaceRoot;
+  #getAccessMode;
+  #protectedPaths;
   #allowedCommands;
   #maxFileBytes;
   #maxOutputBytes;
@@ -528,9 +531,13 @@ export class RuntimeSafetyMonitor {
 
   constructor(options = {}) {
     if (!isObject(options)) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS);
-    this.#mode = options.mode === undefined ? EXECUTION_MODES.READ_ONLY : options.mode;
+    this.#mode = options.mode === undefined ? EXECUTION_MODES.CONTROLLED : options.mode;
     if (!Object.values(EXECUTION_MODES).includes(this.#mode)) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'mode');
     this.#workspaceRoot = options.workspaceRoot ? resolve(String(options.workspaceRoot)) : undefined;
+    this.#getAccessMode = typeof options.getAccessMode === 'function' ? options.getAccessMode : undefined;
+    this.#protectedPaths = Array.isArray(options.protectedPaths)
+      ? options.protectedPaths.filter((value) => typeof value === 'string' && value.trim())
+      : [];
     this.#releaseChannel = typeof options.releaseChannel === 'string' && options.releaseChannel.trim()
       ? options.releaseChannel.trim().slice(0, 80)
       : DEFAULT_RELEASE_CHANNEL;
@@ -553,7 +560,8 @@ export class RuntimeSafetyMonitor {
     this.#maxFileBytes = Number.isInteger(options.maxFileBytes) ? options.maxFileBytes : 1024 * 1024;
     this.#maxOutputBytes = Number.isInteger(options.maxOutputBytes) ? options.maxOutputBytes : 64 * 1024;
     this.#maxOutputChars = Number.isInteger(options.maxOutputChars) ? options.maxOutputChars : 64 * 1024;
-    this.#maxLeaseMs = Number.isInteger(options.maxLeaseMs) ? options.maxLeaseMs : 5 * 60 * 1000;
+    this.#maxLeaseMs = Number.isInteger(options.maxLeaseMs) ? options.maxLeaseMs
+      : Math.max(5 * 60 * 1000, MAX_PROCESS_TIMEOUT_MS + PROCESS_LEASE_MARGIN_MS);
     if (this.#maxFileBytes < 1 || this.#maxOutputBytes < 1 || this.#maxOutputChars < 1 || this.#maxLeaseMs < 1) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'limits');
   }
 
@@ -561,11 +569,11 @@ export class RuntimeSafetyMonitor {
   get workspaceRoot() { return this.#workspaceRoot; }
   get policyVersion() { return SAFETY_POLICY_VERSION; }
   get releaseChannel() { return this.#releaseChannel; }
+  get maxLeaseMs() { return this.#maxLeaseMs; }
   get limits() { return Object.freeze({ maxFileBytes: this.#maxFileBytes, maxOutputBytes: this.#maxOutputBytes, maxOutputChars: this.#maxOutputChars }); }
   get networkTargets() { return clone(this.#networkTargets); }
 
   issueLease(options = {}) {
-    if (this.#mode !== EXECUTION_MODES.CONTROLLED) fail(SAFETY_ERROR_CODES.READ_ONLY);
     if (!isObject(options)) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS);
     const capabilities = normalizeStringList(options.capabilities ?? options.actions, 'capabilities').map(normalizeCapability);
     if (!capabilities.length || capabilities.some((capability) => !Object.values(CAPABILITIES).includes(capability))) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'capabilities');
@@ -603,6 +611,23 @@ export class RuntimeSafetyMonitor {
 
   async canonicalPath(value, { allowEmpty = false, forWrite = false } = {}) {
     if (!this.#workspaceRoot) fail(SAFETY_ERROR_CODES.WORKSPACE_REQUIRED);
+    const accessMode = await (async () => {
+      try { return await this.#getAccessMode?.(); } catch { return undefined; }
+    })();
+    if (accessMode === 'FULL_ACCESS') {
+      try {
+        return await resolveAuthorizedPath(value, {
+          workspaceRoot: this.#workspaceRoot,
+          getAccessMode: this.#getAccessMode,
+          protectedPaths: this.#protectedPaths,
+          forWrite,
+          allowEmpty
+        });
+      } catch (error) {
+        if (error?.code && typeof error.code === 'string') fail(error.code);
+        throw error;
+      }
+    }
     const root = await mappedRealpath(this.#workspaceRoot).catch(() => { throw new SafetyError(SAFETY_ERROR_CODES.WORKSPACE_NOT_FOUND); });
     const rootMetadata = await stat(root).catch(() => null);
     if (!rootMetadata?.isDirectory()) fail(SAFETY_ERROR_CODES.WORKSPACE_NOT_FOUND);
@@ -635,9 +660,8 @@ export class RuntimeSafetyMonitor {
 
   async authorize(action, request = {}, lease = undefined) {
     const normalizedAction = normalizeAction(action);
-    if (this.#mode !== EXECUTION_MODES.CONTROLLED) fail(SAFETY_ERROR_CODES.READ_ONLY);
-    // Controlled mode is an explicit elevation, but it is still not enough by
-    // itself: every state-changing or process-starting operation needs a
+    // The sole execution mode grants no authority by itself. Every
+    // state-changing or process-starting operation still needs a
     // one-shot lease so the caller can audit exactly what was approved.
     if (!(lease instanceof PolicyLease) || !lease[LEASE_OWNER](this.#id)) fail(SAFETY_ERROR_CODES.LEASE_REQUIRED);
     if (lease.releaseChannel !== this.#releaseChannel) fail(SAFETY_ERROR_CODES.RELEASE_CHANNEL_MISMATCH);

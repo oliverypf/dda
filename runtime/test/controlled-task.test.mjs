@@ -25,6 +25,7 @@ const run = (args, env) => new Promise((resolve, reject) => {
 
 test('runs a bounded OpenAI tool round through CONTROLLED executor approval', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-controlled-task-'));
+  await writeFile(join(workspace, 'script.js'), 'process.stdout.write("ok")', 'utf8');
   const trajectory = join(workspace, 'trajectory.jsonl');
   const evolution = join(workspace, 'evolution.json');
   await writeFile(join(workspace, 'README.md'), '# fixture\n', 'utf8');
@@ -39,7 +40,7 @@ test('runs a bounded OpenAI tool round through CONTROLLED executor approval', as
       // OpenAI-compatible gateways only accept ASCII tool names.  The runtime
       // keeps the provider-neutral id internally and encodes it on the wire.
       assert.ok(payload.tools.some((tool) => tool.function?.name === 'hmc_shell_x2e_execute'));
-      const argumentsText = JSON.stringify({ command: process.execPath, args: ['-e', 'process.stdout.write("ok")'] });
+      const argumentsText = JSON.stringify({ command: process.execPath, args: ['script.js'] });
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       response.end([
         `data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_shell', type: 'function', function: { name: 'shell.execute', arguments: argumentsText } }] }, finish_reason: null }] })}`,
@@ -84,6 +85,10 @@ test('runs a bounded OpenAI tool round through CONTROLLED executor approval', as
   assert.equal(payload.toolRounds, 1);
   assert.equal(payload.toolCallCount, 1);
   assert.equal(payload.text, '任务完成');
-  const events = await readFile(trajectory, 'utf8');
-  assert.doesNotMatch(events, /process\.stdout\.write|"args"/);
+  // Controlled channels persist authoritative events in the scoped SQLite
+  // store derived from --trajectory-store; dump them through the event-list
+  // command instead of reading a JSONL file that no longer exists.
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  assert.equal(listed.code, 0, `${listed.stderr}\n${listed.stdout}`);
+  assert.doesNotMatch(listed.stdout, /process\.stdout\.write|"args"/);
 });

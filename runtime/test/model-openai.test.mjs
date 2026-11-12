@@ -92,7 +92,7 @@ test('calls an OpenAI Responses endpoint and normalizes output_text deltas', asy
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     assert.equal(body.model, 'responses-model');
     assert.equal(body.stream, true);
-    assert.equal(body.instructions.includes('READ_ONLY'), true);
+    assert.equal(body.instructions.includes('CONTROLLED'), true);
     assert.equal(body.input[0].content[0].type, 'input_text');
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     response.write('event: response.output_text.delta\r\ndata: {"type":"response.output_text.delta","delta":"Responses "}\r\n\r\n');
@@ -159,7 +159,7 @@ test('loads the OpenAI Responses route from a JSON config file', async (t) => {
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     assert.equal(body.model, 'configured-model');
     assert.match(body.instructions, /每次回复都使用中文。\n先给结论。/);
-    assert.match(body.instructions, /READ_ONLY/);
+    assert.match(body.instructions, /CONTROLLED/);
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Configured."}\n\n');
     response.end('event: response.completed\ndata: {"type":"response.completed"}\n\n');
@@ -241,11 +241,11 @@ test('records a redacted failure event when model credentials are missing', asyn
   ]);
   assert.equal(result.code, 1);
   assert.match(result.stdout, /MISSING_CREDENTIAL:DDA_TEST_KEY_UNSET/);
-  const events = (await readFile(trajectoryPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const events = await createHarnessEventStore({ storagePath: `${trajectoryPath}.db` }).list();
   const failedEvent = events.find((event) => event.kind === 'TaskRunFailed');
   assert.ok(failedEvent);
   assert.equal(JSON.parse(result.stdout.trim()).runId, failedEvent.runId);
-  assert.equal(failedEvent.payload.code, 'MISSING_CREDENTIAL');
+  assert.equal((failedEvent.payload?.payload ?? failedEvent.payload).code, 'MISSING_CREDENTIAL');
   assert.equal(events.some((event) => JSON.stringify(event).includes('failure prompt must not be stored')), false);
 });
 

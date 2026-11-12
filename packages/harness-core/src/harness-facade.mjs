@@ -75,7 +75,7 @@ const parseStdout = (stdout) => {
  * It deliberately exposes a small, contract-shaped API (invoke + a few named
  * commands) and never reaches into runtime internals. Safety is owned by the
  * runtime: the facade only forwards caller intent. In particular it never
- * injects an auto-approval and defaults to READ_ONLY, preserving the
+ * injects an auto-approval and defaults to CONTROLLED without grants, preserving the
  * fail-closed approval semantics required by docs/LINUX_CLI_CONTRACT.md.
  */
 export class HarnessFacade {
@@ -198,13 +198,12 @@ export class HarnessFacade {
   }
 
   /**
-   * Run a task. Defaults to READ_ONLY and never supplies an approval decision;
-   * callers that need CONTROLLED execution must pass an explicit approvalMode
-   * and (for non-interactive use) a jsonl approval stream, exactly as the
-   * linux-cli contract requires.
+   * Run a CONTROLLED task without supplying grants or an approval decision.
+   * Callers own their approval transport; tool visibility is never authority.
    */
   task(task = {}, options = {}) {
-    const { prompt, workspace, executionMode = 'READ_ONLY', ...rest } = task;
+    const { prompt, workspace, executionMode = 'CONTROLLED', ...rest } = task;
+    if (executionMode !== 'CONTROLLED') throw new TypeError('EXECUTION_MODE_INVALID');
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new TypeError('HarnessFacade.task requires a non-empty prompt');
     }

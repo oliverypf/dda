@@ -20,6 +20,29 @@ export const checkpointResumeMode = (checkpoint) => {
   return 'INVALID';
 };
 
+// An uncertain side-effect step can never be resumed in place: the last
+// observed execution outcome is unknown, so both continue and retry would hit
+// the same reconciliation block again. Report the affected steps so readers
+// can present an explicit "verify first" path instead of a misleading resume.
+// This is a read projection only; checkpointResumeMode stays the shape
+// classifier and re-reconciliation on new evidence is still possible.
+export const checkpointRecoveryBlock = (checkpoint) => {
+  const plan = checkpoint?.plan;
+  const steps = plan && !Array.isArray(plan)
+    ? (Array.isArray(plan.steps) ? plan.steps : Array.isArray(plan.plan) ? plan.plan : undefined)
+    : undefined;
+  if (!steps) return undefined;
+  let blocked = false;
+  const stepIds = [];
+  for (const step of steps) {
+    if (step?.status !== 'BLOCKED' || step?.errorCode !== 'SIDE_EFFECT_OUTCOME_UNCERTAIN') continue;
+    blocked = true;
+    const stepId = typeof step.stepId === 'string' && step.stepId && step.stepId.length <= 160 ? step.stepId : undefined;
+    if (stepId && !stepIds.includes(stepId) && stepIds.length < 128) stepIds.push(stepId);
+  }
+  return blocked && stepIds.length ? { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds } : undefined;
+};
+
 // ThreadCreated stores only a title digest. The visible title in the local
 // snapshot is the original user task, recovered when its digest matches.
 export const recoverableThreadGoal = (thread) => {

@@ -9,7 +9,6 @@ import { readFile } from 'node:fs/promises';
  */
 export async function resolveTaskPrompt({
   options,
-  executionMode,
   approvalTTY,
   stdin,
   stdinIsTTY,
@@ -21,10 +20,7 @@ export async function resolveTaskPrompt({
     return { ok: false, code: 'ARGUMENT_INVALID' };
   }
 
-  let approvalMode;
-  if (executionMode === 'CONTROLLED') {
-    approvalMode = options.approvalMode ?? (approvalTTY ? 'prompt' : undefined);
-  }
+  const approvalMode = options.approvalMode ?? (approvalTTY ? 'prompt' : 'deny');
 
   if (hasFileFlag) {
     const path = options.promptFile;
@@ -49,28 +45,23 @@ export async function resolveTaskPrompt({
   }
 
   // Neither --prompt nor --prompt-file.
-  const mode = executionMode === 'CONTROLLED' ? approvalMode : undefined;
-  const denyOrReadOnly =
-    executionMode === 'READ_ONLY' || (executionMode === 'CONTROLLED' && mode === 'deny');
-
-  if (denyOrReadOnly) {
+  if (approvalMode === 'deny') {
     if (stdinIsTTY) return { ok: false, code: 'PROMPT_REQUIRED' };
     const text = await readStdin(stdin);
     if (!text.trim()) return { ok: false, code: 'PROMPT_REQUIRED' };
     return { ok: true, prompt: text, approvalMode };
   }
 
-  if (executionMode === 'CONTROLLED' && mode === 'jsonl') {
+  if (approvalMode === 'jsonl') {
     if (!stdinIsTTY) return { ok: false, code: 'ARGUMENT_INVALID' };
     return { ok: false, code: 'PROMPT_REQUIRED' };
   }
 
-  if (executionMode === 'CONTROLLED' && mode === 'prompt' && approvalTTY) {
+  if (approvalMode === 'prompt' && approvalTTY) {
     return { ok: false, code: 'PROMPT_REQUIRED' };
   }
 
-  // CONTROLLED with unset mode or prompt when stdin+stderr are not both TTYs.
-  if (executionMode === 'CONTROLLED' && (mode === undefined || mode === 'prompt') && !approvalTTY) {
+  if (approvalMode === 'prompt' && !approvalTTY) {
     return { ok: false, code: 'APPROVAL_UNAVAILABLE' };
   }
 

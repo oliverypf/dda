@@ -2,6 +2,7 @@ import { createResidentKernel } from './resident-kernel.mjs';
 import { createSessionStateStore } from './session-state.mjs';
 import { residentKernelAvailability } from './feature.mjs';
 import { parseHostRequestPayload } from './host-request-payload.mjs';
+import { BINARY_INSPECTION_DESCRIPTION } from '../binary-inspection-contract.mjs';
 
 /**
  * Model-facing tool surface for the resident kernel.
@@ -136,7 +137,7 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
   if (!registry || typeof registry.register !== 'function') throw new Error('KERNEL_TOOLS_REGISTRY_REQUIRED');
   if (!kernel || typeof kernel.request !== 'function') throw new Error('KERNEL_TOOLS_KERNEL_REQUIRED');
 
-  const kernelMeta = { actionClass: 'READ_ONLY', surface: 'resident-kernel' };
+  const kernelMeta = { actionClass: 'OBSERVE', surface: 'resident-kernel' };
 
   registry.register({
     name: 'kernel.workspace_list',
@@ -170,6 +171,14 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
       findText,
       ...(maxChars === undefined ? {} : { maxChars })
     })
+  });
+  registry.register({
+    name: 'kernel.workspace_inspect_binary',
+    description: BINARY_INSPECTION_DESCRIPTION,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', minLength: 1, maxLength: 512 } }, required: ['path'], additionalProperties: false },
+    readOnly: true,
+    metadata: kernelMeta,
+    handler: ({ path }) => kernel.request('workspace.inspect_binary', { path })
   });
   registry.register({
     name: 'kernel.session_get',
@@ -227,7 +236,7 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
         })[kind]).join('; ')
         + (batchOn ? `; fs.write_batch payload {items:[{op:'write'|'patch', path, content|replacements, expectedBaseDigest}]} (no item/byte/round business caps; stops at the first failure and never rolls back; transport ceilings still apply)` : '')
         + '. shell.exec and net.fetch are refused. Paths MUST be workspace-relative.'
-      : 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. Blocked in READ_ONLY even though the registry marks it readOnly (inert probes only); it is the Phase-2 side-effect bridge.',
+      : 'Phase-1 host bridge stub. Answers only inert probes (host.ping, host.capabilities). Any side-effecting request is refused with KERNEL_SIDE_EFFECT_REFUSED until Phase-2. This bridge is never eligible for the observation fast path.',
     inputSchema: hostRequestSchema,
     // With effects on the bridge is a side-effect tool (never read-only).
     readOnly: !effectsOn,
@@ -253,6 +262,8 @@ export const attachResidentKernel = async ({
   registry,
   workspaceRoot,
   excludedPaths = [],
+  enableUserFileAccess = false,
+  protectedPaths = [],
   sessionId,
   sessionStatePath,
   env = process.env,
@@ -271,6 +282,8 @@ export const attachResidentKernel = async ({
   const kernel = createResidentKernel({
     workspaceRoot,
     excludedPaths,
+    enableUserFileAccess,
+    protectedPaths,
     sessionId,
     sessionStore,
     env,
@@ -296,7 +309,7 @@ export const attachResidentKernel = async ({
 
 /**
  * Register kernel.exec (Phase-2b code cells). readOnly:false — never Jev readonly
- * fast path; READ_ONLY mode must never run it (I8).
+ * fast path; execution requires the host approval and lease boundary (I8).
  *
  * Windows unsandboxed registration must NOT claim OS sandbox (Prime-aligned).
  */

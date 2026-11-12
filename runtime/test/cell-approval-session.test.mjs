@@ -213,7 +213,7 @@ test('declined approval still fails the task and reports APPROVAL_DENIED', async
   assert.equal(events.some((event) => event.kind === 'approval.expired'), false);
 });
 
-test('the model observes APPROVAL_EXPIRED and retries with no effect until fresh approval', async (t) => {
+test('an APPROVAL_EXPIRED tool failure stops the run; a fresh approval needs a new explicit request', async (t) => {
   const { session, events, real } = harness({ ttlMs: 80 });
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'approval-expiry-continue-'));
   t.after(() => rm(workspaceRoot, { recursive: true, force: true }));
@@ -245,47 +245,33 @@ test('the model observes APPROVAL_EXPIRED and retries with no effect until fresh
     provider: 'fixture', protocol: 'fixture', model: 'approval-expiry',
     async *stream(request) {
       rounds += 1;
-      if (rounds === 2) {
-        const observation = request.messages.find((message) => message.source?.kind === 'tool');
-        assert.match(JSON.stringify(observation), /APPROVAL_EXPIRED/);
-        assert.equal(real.state, 'EXECUTING');
-        assert.deepEqual(effects, []);
-        assert.equal(leases, 0);
-      }
-      if (rounds <= 2) {
-        yield { type: 'tool-call', id: `write-${rounds}`, name: 'file.write',
+      if (rounds === 1) {
+        yield { type: 'tool-call', id: 'write-1', name: 'file.write',
           arguments: JSON.stringify({ path: 'retry.txt', content: 'ok' }) };
         yield { type: 'finish', reason: { kind: 'tool-calls' } };
       } else {
-        yield { type: 'text-delta', text: 'Fresh approval completed the write.' };
-        yield { type: 'finish', reason: { kind: 'stop' } };
+        // A terminal approval outcome must never reach another model turn.
+        yield { type: 'tool-call', id: `write-${rounds}`, name: 'file.write',
+          arguments: JSON.stringify({ path: 'retry.txt', content: 'ok' }) };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
       }
     }
   }), 'approval-expiry-fixture'));
   await root.plugin(taskRunnerPlugin);
   const observations = [];
-  const run = root.taskRunner.run({ prompt: 'Write the requested file.', mode: 'CONTROLLED',
+  const failure = await root.taskRunner.run({ prompt: 'Write the requested file.', mode: 'CONTROLLED',
     workspace: { granted: true, rootLabel: workspaceRoot, snapshotDigest: DIGEST, entries: [], sections: [] },
-    onEvent: (event) => observations.push(event) });
-  const approveRetry = async () => {
-    await waitFor(() => requested(events).length === 2);
-    const retry = requested(events)[1].payload;
-    assert.deepEqual(effects, []);
-    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: retry.requestId,
-      approved: true, displayedDigest: retry.requestDigest }));
-  };
-  const [result] = await Promise.all([run, approveRetry()]);
-  assert.equal(result.text, 'Fresh approval completed the write.');
-  assert.equal(rounds, 3);
-  assert.deepEqual(effects, ['write']);
-  assert.equal(leases, 1);
+    onEvent: (event) => observations.push(event) }).then(() => undefined, (error) => error);
+  assert.equal(failure?.code, 'APPROVAL_EXPIRED');
+  assert.equal(rounds, 1, 'the runner stops instead of re-planning around the expired approval');
+  assert.deepEqual(effects, []);
+  assert.equal(leases, 0);
+  assert.equal(requested(events).length, 1, 'no second approval request is issued');
   assert.equal(real.state, 'EXECUTING');
   assert.ok(observations.some((event) => event.kind === 'tool.result'
-    && event.id === 'write-1' && event.ok === false && event.errorCode === 'APPROVAL_EXPIRED'));
-  assert.ok(observations.some((event) => event.kind === 'tool.result' && event.id === 'write-2' && event.ok === true));
-  real.transition('VERIFYING');
-  real.transition('SUCCEEDED');
-  assert.equal(real.state, 'SUCCEEDED');
+    && event.id === 'write-1' && event.ok === false
+    && event.errorCode === 'APPROVAL_EXPIRED'
+    && event.nextAction === 'WAIT_FOR_USER_APPROVAL'));
 });
 
 test('cell and non-cell digests, and both paths stamp cellId on the pending entry', async () => {

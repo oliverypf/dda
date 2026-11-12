@@ -5,32 +5,46 @@ import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isControlledRelease, isReadOnlyRelease, resolveReleaseChannel, RELEASE_CHANNELS } from '../src/release-channel.mjs';
+import {
+  CONTROLLED_RELEASE_CHANNELS, RETIRED_RELEASE_CHANNELS,
+  assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isControlledRelease,
+  resolveReleaseChannel, RELEASE_CHANNELS
+} from '../src/release-channel.mjs';
 
-test('Phase 1 denies controlled modes and unknown channels fail closed', () => {
-  assert.equal(assertReleaseExecutionMode('READ_ONLY', 'WINDOWS_PHASE1_READ_ONLY'), 'READ_ONLY');
-  for (const mode of ['CONTROLLED', 'CONTROLLED_WRITE', 'unknown']) {
-    assert.throws(() => assertReleaseExecutionMode(mode, 'WINDOWS_PHASE1_READ_ONLY'), /RELEASE_CHANNEL_READ_ONLY/);
+test('controlled-only channels approve CONTROLLED and retired channels fail closed (ADR-0026)', () => {
+  for (const channel of CONTROLLED_RELEASE_CHANNELS) {
+    assert.equal(assertReleaseExecutionMode('CONTROLLED', channel), 'CONTROLLED');
   }
-  for (const channel of ['', 'phase1', 'WINDOWS_PHASE1_READ_ONlY']) {
+  assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'WINDOWS_PHASE1_READ_ONLY'), /RELEASE_CHANNEL_RETIRED/);
+  assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_RETIRED/);
+  assert.throws(() => assertReleaseExecutionMode('READ_ONLY', 'WINDOWS_PHASE1_5_CONTROLLED'), /EXECUTION_MODE_INVALID/);
+  for (const mode of ['READ_ONLY', 'UNKNOWN']) {
+    for (const channel of CONTROLLED_RELEASE_CHANNELS) {
+      assert.throws(() => assertReleaseExecutionMode(mode, channel), /EXECUTION_MODE_INVALID/);
+    }
+  }
+  for (const channel of ['', 'phase1', 'WINDOWS_PHASE1_5_CONTROlLED']) {
     assert.throws(() => resolveReleaseChannel(channel), /RELEASE_CHANNEL_INVALID/);
-    assert.throws(() => assertReleaseExecutionMode('READ_ONLY', channel), /RELEASE_CHANNEL_INVALID/);
   }
-  for (const channel of RELEASE_CHANNELS) assert.equal(resolveReleaseChannel(channel), channel);
-  assert.equal(resolveReleaseChannel('LINUX_CLI_READ_ONLY'), 'WINDOWS_PHASE1_READ_ONLY');
+  assert.throws(() => resolveReleaseChannel('WINDOWS_PHASE1_READ_ONLY'), /RELEASE_CHANNEL_RETIRED/);
+  assert.throws(() => resolveReleaseChannel('LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_RETIRED/);
   assert.equal(resolveReleaseChannel('LINUX_CLI_CONTROLLED'), 'WINDOWS_PHASE1_5_CONTROLLED');
-  assert.throws(() => assertReleaseExecutionMode('CONTROLLED', 'LINUX_CLI_READ_ONLY'), /RELEASE_CHANNEL_READ_ONLY/);
-  assert.equal(assertReleaseHarnessStore('hmcodex.db', 'LINUX_CLI_READ_ONLY'), 'hmcodex.db');
-  assert.equal(isReadOnlyRelease('LINUX_CLI_READ_ONLY'), true);
-  assert.equal(isReadOnlyRelease('WINDOWS_FULL_LOCAL'), false);
+  assert.equal(resolveReleaseChannel('WINDOWS_PHASE1_5_CONTROLLED'), 'WINDOWS_PHASE1_5_CONTROLLED');
+  for (const channel of RELEASE_CHANNELS) assert.equal(resolveReleaseChannel(channel), channel);
+  assert.equal(assertReleaseHarnessStore('hmcodex.db', 'WINDOWS_PHASE1_5_CONTROLLED'), 'hmcodex.db');
   assert.equal(isControlledRelease('LINUX_CLI_CONTROLLED'), true);
+  assert.equal(isControlledRelease('WINDOWS_PHASE1_5_CONTROLLED'), true);
+  assert.equal(isControlledRelease('WINDOWS_PHASE1_READ_ONLY'), false);
   assert.equal(isControlledRelease(undefined), false);
-  assert.equal(isApprovedRelease('WINDOWS_MVP_PRE_PHASE1'), false);
+  assert.equal(isApprovedRelease('WINDOWS_PHASE1_5_CONTROLLED'), true);
   assert.equal(isApprovedRelease('WINDOWS_FULL_LOCAL'), true);
+  assert.equal(isApprovedRelease('WINDOWS_PHASE1_READ_ONLY'), false);
+  for (const channel of RETIRED_RELEASE_CHANNELS) assert.equal(isApprovedRelease(channel), false);
+  for (const channel of RELEASE_CHANNELS) assert.equal(isApprovedRelease(channel), true);
 });
 
-test('Phase 1 requires a durable SQLite task store', async () => {
-  const channel = 'WINDOWS_PHASE1_READ_ONLY';
+test('controlled channels require a durable SQLite task store', async () => {
+  const channel = 'WINDOWS_PHASE1_5_CONTROLLED';
   for (const path of [undefined, '', 'events.json', 'trajectory.jsonl']) {
     assert.throws(() => assertReleaseHarnessStore(path, channel), /SQLITE_REQUIRED/);
   }
@@ -38,7 +52,7 @@ test('Phase 1 requires a durable SQLite task store', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-storage-gate-'));
   const result = spawnSync(process.execPath, ['src/index.mjs', 'task', '--prompt', 'test', '--harness-event-store', join(directory, 'events.json')], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, DDA_RELEASE_CHANNEL: channel, DDA_EXECUTION_MODE: 'READ_ONLY', DDA_DATA_DIR: directory },
+    env: { ...process.env, DDA_RELEASE_CHANNEL: channel, DDA_DATA_DIR: directory },
     encoding: 'utf8', windowsHide: true, timeout: 30000
   });
   assert.equal(result.status, 1, result.stderr);
@@ -46,12 +60,12 @@ test('Phase 1 requires a durable SQLite task store', async () => {
   assert.deepEqual(await readdir(directory), []);
 });
 
-test('Phase 1 recovery uses the same scoped SQLite authority as task execution', async () => {
+test('controlled recovery uses the same scoped SQLite authority as task execution', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-recovery-storage-'));
   const trajectory = join(directory, 'trajectory.jsonl');
   const storagePath = `${trajectory}.db`;
   await createHarnessEventStore({ storagePath }).append({ runId: 'existing', kind: 'TaskRunCreated' });
-  const recoveryEnv = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+  const recoveryEnv = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
     DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
   delete recoveryEnv.DDA_HARNESS_EVENT_STORE;
   const result = spawnSync(process.execPath, ['src/index.mjs', 'recovery'], {
@@ -66,27 +80,28 @@ test('Phase 1 recovery uses the same scoped SQLite authority as task execution',
   await assert.rejects(readFile(trajectory), { code: 'ENOENT' });
 });
 
-test('Phase 1 CLI denies all controlled entry forms before creating task stores', async () => {
+test('legacy execution-mode inputs are rejected before creating task stores', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-gate-'));
-  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
     DDA_TRAJECTORY_STORE: join(directory, 'trajectory.jsonl'), DDA_DATA_DIR: directory };
   for (const args of [
-    ['--execution-mode', 'CONTROLLED'], ['--execution-mode=CONTROLLED'],
-    ['--mode', 'CONTROLLED_WRITE'], []
+    ['--execution-mode', 'READ_ONLY'], ['--execution-mode=READ_ONLY'],
+    ['--mode', 'READ_ONLY'], []
   ]) {
     const result = spawnSync(process.execPath, ['src/index.mjs', 'task', '--prompt', 'test', ...args], {
-      cwd: new URL('..', import.meta.url), env: { ...env, DDA_EXECUTION_MODE: 'CONTROLLED' },
+      cwd: new URL('..', import.meta.url), env: { ...env, DDA_EXECUTION_MODE: 'READ_ONLY' },
       encoding: 'utf8', windowsHide: true, timeout: 30000
     });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 1, result.stderr);
-    assert.equal(JSON.parse(result.stdout.trim()).error, 'RELEASE_CHANNEL_READ_ONLY');
+    const error = JSON.parse(result.stdout.trim()).error;
+    assert.ok(['EXECUTION_MODE_INVALID', 'RELEASE_CHANNEL_RETIRED'].includes(error), error);
     assert.deepEqual(await readdir(directory), []);
   }
 });
 
-test('health exposes Phase 1 channel and rejects misspelled channels', () => {
-  for (const channel of ['WINDOWS_PHASE1_READ_ONLY', 'INVALID_CHANNEL']) {
+test('health rejects retired and misspelled channels while controlled channels respond', () => {
+  for (const channel of ['WINDOWS_PHASE1_5_CONTROLLED', 'LINUX_CLI_CONTROLLED', 'WINDOWS_PHASE1_READ_ONLY', 'LINUX_CLI_READ_ONLY', 'INVALID_CHANNEL']) {
     const result = spawnSync(process.execPath, ['src/index.mjs', 'health'], {
       cwd: new URL('..', import.meta.url), encoding: 'utf8', windowsHide: true, timeout: 30000,
       env: { ...process.env, DDA_RELEASE_CHANNEL: channel }
@@ -96,9 +111,12 @@ test('health exposes Phase 1 channel and rejects misspelled channels', () => {
     if (channel === 'INVALID_CHANNEL') {
       assert.equal(result.status, 1);
       assert.equal(payload.error, 'RELEASE_CHANNEL_INVALID');
+    } else if (RETIRED_RELEASE_CHANNELS.includes(channel)) {
+      assert.equal(result.status, 1);
+      assert.equal(payload.error, 'RELEASE_CHANNEL_RETIRED');
     } else {
       assert.equal(result.status, 0, result.stdout);
-      assert.equal(payload.runtime.releaseChannel, channel);
+      assert.equal(payload.runtime.releaseChannel, 'WINDOWS_PHASE1_5_CONTROLLED');
     }
   }
 });

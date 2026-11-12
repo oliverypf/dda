@@ -59,7 +59,7 @@ async function openFixture({ savedThread = 'a', savedPage = 'workbench', delaySu
         if (command === 'runtime_snapshot') {
           await gate('health');
           return { platform: 'WINDOWS', version: 'test', readOnly: true, workspaceRead: true,
-            commandExecution: false, networkSideEffects: false, runtimeReady: true, releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' };
+            commandExecution: false, networkSideEffects: false, runtimeReady: true, releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
         }
         if (command === 'reconcile_runtime_state') { await gate('recovery'); return { ok: true, reconciled: 0 }; }
         if (command === 'default_workspace') return { rootLabel: 'Fixture', rootPath: '/fixture' };

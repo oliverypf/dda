@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
+import { ProfileRegistry } from '../src/profile-registry.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -76,7 +77,7 @@ test('verifier recovery continues past the already observed initial failure inst
       // A model receiving only the original ordered prompt restarts its first
       // step. It continues only when the host supplies prior terminal facts.
       const facts = inputTextOf(body);
-      const continuation = /continuing verifier recovery/iu.test(String(body.instructions ?? ''))
+      const continuation = /continuing verifier recovery/iu.test(inputTextOf(body))
         && facts.includes('HOST_VERIFIER_CONTINUATION')
         && facts.includes('WORKSPACE_NOT_FOUND') && facts.includes('SUCCEEDED');
       if (!continuation) missingReads++;
@@ -94,7 +95,8 @@ test('verifier recovery continues past the already observed initial failure inst
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
   assert.equal(missingReads, 1, 'recovery does not repeat the original deliberately failing first step');
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map(line => JSON.parse(line));
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(listed.stdout.trim()).events;
   const outcomes = events.filter(event => event.kind === 'VerificationCompleted' && event.payload?.schemaVersion !== '1.0')
     .map(event => event.payload?.status ?? event.payload?.payload?.status).filter(Boolean);
   assert.deepEqual(outcomes, ['CONTINUE', 'PASS'], 'verification stays authoritative after fresh successful evidence');
@@ -192,10 +194,26 @@ test('definite failure retries through Jev and upgrades to the bound strong mode
     }
   }), 'utf8');
 
+  // Controlled executor bindings must carry eligible profile evidence before
+  // they may authorize a side effect; the prompt classifies as task.inspect.
+  const profilePath = join(workspace, 'profiles.json');
+  const profiles = new ProfileRegistry({ storagePath: profilePath });
+  for (const modelId of ['active-model', 'strong-model']) {
+    for (let index = 0; index < 3; index += 1) {
+      await profiles.recordEvidence({
+        kind: 'CAPABILITY', entityType: 'model', entityId: modelId, capabilityId: 'task.inspect',
+        runId: `seed-${modelId}-${index}`, sourceType: 'verifier', sourceId: `seed-verifier-${index}`,
+        outcome: 'SUCCEEDED', quality: 0.9, safety: 1
+      });
+    }
+  }
+  await profiles.flush();
+
   const result = await run([
     'task', '--agent-mode', 'multi', '--config', configPath,
     '--prompt', '检查工作区并给出可验证结果', '--workspace', workspace,
-    '--trajectory-store', trajectory, '--max-recovery-attempts', '2'
+    '--trajectory-store', trajectory, '--max-recovery-attempts', '2',
+    '--profile-store', profilePath
   ], { [keyName]: 'goal-upgrade-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}\nrequests=${JSON.stringify(requests.map((item) => ({ url: item.url, model: item.body.model, instructions: String(item.body.instructions ?? '').slice(0, 120) })))}`);
   const payload = JSON.parse(result.stdout.trim());
@@ -209,7 +227,8 @@ test('definite failure retries through Jev and upgrades to the bound strong mode
   assert.equal(strongExecutors.length, 2, `strong executor reads evidence and receives its result; stderr=${result.stderr}`);
   assert.ok(inputTextOf(strongExecutors[1].body).includes('Bounded workspace evidence'), 'strong model receives real workspace content');
 
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(listed.stdout.trim()).events;
   const verification = events.filter((event) => event.kind === 'VerificationCompleted' && event.payload?.schemaVersion !== '1.0')
     .map((event) => event.payload?.status ?? event.payload?.payload?.status)
     .filter(Boolean);
@@ -234,7 +253,8 @@ test('definite failure retries through Jev and upgrades to the bound strong mode
   const manualRetry = await run([
     'task', '--agent-mode', 'multi', '--config', configPath, '--executor-model', 'strong-model',
     '--prompt', '检查工作区并给出可验证结果', '--workspace', workspace,
-    '--trajectory-store', join(workspace, 'manual-retry.jsonl'), '--max-recovery-attempts', '2'
+    '--trajectory-store', join(workspace, 'manual-retry.jsonl'), '--max-recovery-attempts', '2',
+    '--profile-store', profilePath
   ], { [keyName]: 'goal-upgrade-key' });
   assert.equal(manualRetry.code, 0, `${manualRetry.stderr}\n${manualRetry.stdout}`);
   assert.equal(JSON.parse(manualRetry.stdout.trim()).ok, true);
@@ -250,7 +270,8 @@ test('definite failure retries through Jev and upgrades to the bound strong mode
   const requestsBeforeRejectedChoice = requests.length;
   const rejected = await run([
     'task', '--agent-mode', 'multi', '--config', constrainedPath, '--executor-model', 'strong-model',
-    '--prompt', '检查工作区', '--workspace', workspace, '--trajectory-store', join(workspace, 'rejected-choice.jsonl')
+    '--prompt', '检查工作区', '--workspace', workspace, '--trajectory-store', join(workspace, 'rejected-choice.jsonl'),
+    '--profile-store', profilePath
   ], { [keyName]: 'goal-upgrade-key' });
   assert.notEqual(rejected.code, 0, 'explicit retry selection cannot bypass the configured executor allowlist');
   assert.equal(requests.length, requestsBeforeRejectedChoice, 'rejected selection makes no model call');

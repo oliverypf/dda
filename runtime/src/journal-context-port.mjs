@@ -3,7 +3,16 @@ import { ContextPort } from './context-port.mjs';
 
 const clone = (value) => structuredClone(value);
 const bounded = (value, max = 500) => String(value ?? '').replace(/[\u0000-\u001f\u007f\r\n]+/gu, ' ').trim().slice(0, max);
-const tokenize = (value) => [...new Set(String(value ?? '').toLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) ?? [])];
+const tokenize = (value) => {
+  const lower = String(value ?? '').toLowerCase();
+  const out = new Set(lower.match(/[a-z0-9_.-]{2,}/gu) ?? []);
+  for (const run of lower.match(/\p{Script=Han}+/gu) ?? []) {
+    if (run.length === 1) continue;
+    if (run.length === 2) { out.add(run); continue; }
+    for (let i = 0; i <= run.length - 2; i += 1) out.add(run.slice(i, i + 2));
+  }
+  return [...out];
+};
 const digest = (value) => `sha256:${createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')}`;
 
 const scoreMemory = (memory, queryTokens) => {
@@ -32,15 +41,20 @@ export class JournalContextPort {
       throw new Error('CONTEXT_RECALL_OPTIONS_INVALID');
     }
     const queryTokens = tokenize(query);
-    const candidates = this.#journal.list('ACTIVE')
-      .filter((memory) => String(memory.scope).toLowerCase() === String(scope).toLowerCase())
-      .map((memory) => ({ memory, score: scoreMemory(memory, queryTokens) }))
-      .filter(({ score }) => score > 0 || !queryTokens.length)
-      .sort((left, right) => right.score - left.score || right.memory.updatedAtMs - left.memory.updatedAtMs)
+    const activeInScope = this.#journal.list('ACTIVE')
+      .filter((memory) => String(memory.scope).toLowerCase() === String(scope).toLowerCase());
+    const scored = activeInScope
+      .map((memory) => ({
+        memory,
+        score: scoreMemory(memory, queryTokens),
+        isProjectGuidance: String(memory.kind ?? 'PROJECT').toUpperCase() !== 'TASK_OUTCOME'
+      }))
+      .filter(({ score, isProjectGuidance }) => score > 0 || !queryTokens.length || isProjectGuidance)
+      .sort((left, right) => right.score - left.score || Number(right.isProjectGuidance) - Number(left.isProjectGuidance) || right.memory.updatedAtMs - left.memory.updatedAtMs)
       .slice(0, limit);
     const items = [];
     let chars = 0;
-    for (const { memory, score } of candidates) {
+    for (const { memory, score } of scored) {
       const item = {
         memoryId: memory.memoryId,
         scope: bounded(memory.scope, 160),

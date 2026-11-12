@@ -8,7 +8,8 @@ import { normalizePlannerPlan } from '../src/agent-turns.mjs';
 import { createEffectJournal } from '../src/kernel/effect-journal.mjs';
 import { createExecutionStateStore } from '../src/execution-state-store.mjs';
 import { createThreadStore } from '../src/thread-store.mjs';
-import { createTrajectoryStore, sha256Digest } from '../src/trajectory-store.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+import { sha256Digest } from '../src/trajectory-store.mjs';
 
 const runtimeRoot = new URL('..', import.meta.url);
 
@@ -56,7 +57,7 @@ const seedPreStartFailure = async (workspace, { journalState = 'empty' } = {}) =
   }, { objectiveDigest: sha256Digest('prestart objective') });
   const threads = createThreadStore({ storagePath: threadStorePath });
   const thread = await threads.create({ cwd: workspace, title: 'prestart failure' });
-  const trajectory = createTrajectoryStore(trajectoryPath);
+  const trajectory = createHarnessEventStore({ storagePath: `${trajectoryPath}.db` });
   const execution = createExecutionStateStore({ storagePath: executionPath });
   const intent = await execution.createIntent({
     runId: sourceRunId,
@@ -196,7 +197,7 @@ const resumeArgs = (seed) => [
   '--resume', '--thread-id', seed.thread.id
 ];
 
-const readEvents = async (trajectoryPath) => (await readFile(trajectoryPath, 'utf8')).trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+const readEvents = async (trajectoryPath) => createHarnessEventStore({ storagePath: `${trajectoryPath}.db` }).list();
 
 const stepErrorCodes = (events) => events
   .filter((event) => event.kind === 'PlanStepStateChanged')

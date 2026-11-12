@@ -450,3 +450,49 @@ test('memory deletion redacts content and marks the record untrainable', async (
   const deletedAgain = await journal.deleteDurably(memory.memoryId);
   assert.equal(deletedAgain.untrainableAtMs, 1000);
 });
+
+test('dream scheduler WAITING_GATE events persisted in SQLite event store reload without DREAM_STORE_INVALID', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-dream-waiting-gate-'));
+  const eventStore = createHarnessEventStore({ storagePath: join(directory, 'events.db') });
+  await eventStore.load();
+  const writer = new DreamScheduler({ projectId: 'deps', eventStore });
+  const blocked = await writer.run({
+    gates: { activeRuns: 1 },
+    gather: async () => [],
+    consolidate: async (items) => items,
+    verify: async (items) => items
+  });
+  assert.equal(blocked.status, 'WAITING_GATE');
+  assert.deepEqual(blocked.gateReasons, ['HIGH_PRIORITY_RUN_ACTIVE']);
+
+  const reader = new DreamScheduler({ projectId: 'deps', eventStore });
+  const runs = await reader.list();
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].state, 'WAITING_GATE');
+  assert.equal(runs[0].phase, undefined);
+  assert.deepEqual(runs[0].gateReasons, ['HIGH_PRIORITY_RUN_ACTIVE']);
+
+  // Legacy envelopes that persisted phase: null before this fix must also verify cleanly.
+  const legacyRecord = {
+    runId: 'dream-legacy-null-phase',
+    projectId: 'deps',
+    state: 'WAITING_GATE',
+    startedAtMs: 123456,
+    gateReasons: ['HIGH_PRIORITY_RUN_ACTIVE']
+  };
+  const recordDigest = dreamDigest(legacyRecord);
+  await eventStore.append({
+    runId: legacyRecord.runId,
+    aggregateType: 'DreamRun',
+    aggregateId: legacyRecord.runId,
+    kind: 'DreamRunStarted',
+    payload: { ...legacyRecord, phase: null, recordDigest },
+    sensitivity: 'INTERNAL'
+  });
+  const readerWithLegacy = new DreamScheduler({ projectId: 'deps', eventStore });
+  const allRuns = await readerWithLegacy.list();
+  assert.equal(allRuns.length, 2);
+  assert.equal(allRuns[1].runId, 'dream-legacy-null-phase');
+  await eventStore.close?.();
+});
+

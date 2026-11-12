@@ -9,7 +9,6 @@ import {
   setActiveThread,
   setThreads,
   setRunState,
-  setExecutionMode,
   setRuntimeReady,
   setContextSidecarStatus,
   setDreamMaintenanceStatus,
@@ -124,24 +123,23 @@ describe('HarnessReadModel store', () => {
     expect(model.timeline.find((entry) => entry.itemId === 'run-response')?.body).toBe(before);
     expect(model.timeline.find((entry) => entry.itemId === 'run-response')?.status).toBe('COMPLETE');
   });
-  it('resets a stale controlled selection on Phase 1 connection and rejects switching back', () => {
-    const selected = setExecutionMode(createInitialReadModel(), 'CONTROLLED');
+  it('projects legacy runtime capabilities without restoring a retired execution mode', () => {
+    const selected = createInitialReadModel();
     expect(selected.composer.mode).toBe('CONTROLLED');
     const connected = setRuntimeReady(selected, {
       platform: 'WINDOWS', version: '0.1.0', readOnly: true, workspaceRead: true,
       commandExecution: false, networkSideEffects: false,
       releaseChannel: 'WINDOWS_PHASE1_READ_ONLY'
     });
-    expect(connected.composer.mode).toBe('READ_ONLY');
-    const attempted = setExecutionMode(connected, 'CONTROLLED');
-    expect(attempted.composer.mode).toBe('READ_ONLY');
-    expect(attempted.runtime.commandExecution).toBe(false);
+    expect(connected.composer.mode).toBe('CONTROLLED');
+    expect(connected.runtime.commandExecution).toBe(false);
+    expect(connected.runtime.releaseChannel).toBe('WINDOWS_PHASE1_READ_ONLY');
   });
   it('starts in a side-effect-free connecting state', () => {
     const model = createInitialReadModel();
 
     expect(model.connection.state).toBe('CONNECTING');
-    expect(model.composer.mode).toBe('READ_ONLY');
+    expect(model.composer.mode).toBe('CONTROLLED');
     expect(model.runtime).toMatchObject({
       readOnly: true,
       commandExecution: false,
@@ -316,86 +314,93 @@ describe('HarnessReadModel store', () => {
 
   it('projects real Cordis role events into sub-agent status', () => {
     let model = beginRun(createInitialReadModel(), '执行多角色任务');
-    const event = (kind: string, payload: Record<string, unknown>, sequence: number): RuntimeEvent => ({
+    const event = (kind: string, payload: Record<string, unknown>, sequence: number, runId = 'run-runtime'): RuntimeEvent => ({
       type: 'runtime_event',
       schemaVersion: '1.0',
-      runId: 'run-runtime',
+      runId,
       sequence,
       kind,
       payload,
       emittedAtMs: sequence
     });
 
-    model = applyRuntimeSubAgentEvent(model, event('role.contexts_allocated', {
-      contexts: [
-        { contextId: 'ctx-planner', role: 'planner', model: 'test-model', isolation: 'DEDICATED' },
-        { contextId: 'ctx-verifier', role: 'semanticVerifier', model: 'test-model', isolation: 'DEDICATED' }
-      ]
-    }, 1));
-    expect(model.subAgents).toMatchObject([
-      { agentId: 'ctx-planner', name: '计划 Agent', state: 'STARTING' },
-      { agentId: 'ctx-verifier', name: '语义验证 Agent', state: 'STARTING' }
-    ]);
-
-    model = applyRuntimeSubAgentEvent(model, event('role.text_delta', {
-      role: 'planner', contextId: 'ctx-planner', chars: 12
-    }, 2));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-planner')).toMatchObject({
-      state: 'RUNNING',
-      task: '正在生成角色响应（已接收 12 字符）'
-    });
-
-    model = applyRuntimeSubAgentEvent(model, event('role.turn_completed', {
-      role: 'planner', contextId: 'ctx-planner', outputChars: 42
-    }, 3));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-planner')).toMatchObject({
-      state: 'SUCCEEDED',
-      task: '角色回合已完成（42 字符）'
-    });
-
-    model = applyRuntimeSubAgentEvent(model, event('planner.restored', { stepCount: 2 }, 4));
-    expect(model.subAgents).toHaveLength(2);
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-planner')).toMatchObject({
-      state: 'SUCCEEDED',
-      task: '已从 Thread checkpoint 恢复计划（2 步）'
-    });
-
-    model = applyRuntimeSubAgentEvent(model, event('RoleContextAllocated', {
-      contextId: 'ctx-executor', role: 'executor'
-    }, 5));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')).toMatchObject({
-      state: 'STARTING', name: '执行 Agent'
-    });
-    model = applyRuntimeSubAgentEvent(model, event('RoleContextStateChanged', {
-      contextId: 'ctx-executor', role: 'executor', from: 'READY', to: 'BUSY'
-    }, 6));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')?.state).toBe('RUNNING');
-    // The runtime persists and emits the aggregate allocation summary after
-    // the individual BUSY transitions. It must not regress live rows to the
-    // initial preparation state.
+    // Allocation creates STARTING rows keyed by runId+role; BUSY is not work.
     model = applyRuntimeSubAgentEvent(model, event('role.contexts_allocated', {
       contexts: [
         { contextId: 'ctx-executor', role: 'executor', model: 'test-model', isolation: 'DEDICATED' },
-        { contextId: 'ctx-critic', role: 'critic', model: 'test-model', isolation: 'DEDICATED' }
+        { contextId: 'ctx-verifier', role: 'verifier', model: 'rule', isolation: 'DEDICATED' }
       ]
-    }, 7));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')).toMatchObject({
-      state: 'RUNNING',
-      task: '等待执行已验证计划'
-    });
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-critic')?.state).toBe('STARTING');
-    model = applyRuntimeSubAgentEvent(model, event('RoleContextStateChanged', {
-      contextId: 'ctx-executor', role: 'executor', from: 'BUSY', to: 'CLOSED'
-    }, 8));
-    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')?.state).toBe('SUCCEEDED');
+    }, 1));
+    expect(model.subAgents).toMatchObject([
+      { agentId: 'ctx-executor', name: '执行 Agent', state: 'STARTING' },
+      { agentId: 'ctx-verifier', name: '结果验证（规则）', state: 'STARTING' }
+    ]);
 
+    // model.request_started moves only this run's executor to RUNNING.
+    model = applyRuntimeSubAgentEvent(model, event('model.request_started', {}, 2));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'RUNNING', workStarted: true });
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-verifier')).toMatchObject({ state: 'STARTING' });
+
+    // tool.call_requested / tool.result update the executor copy.
+    model = applyRuntimeSubAgentEvent(model, event('tool.call_requested', { name: 'shell.execute' }, 3));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'RUNNING' });
+    model = applyRuntimeSubAgentEvent(model, event('tool.result', { name: 'shell.execute', ok: true }, 4));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'WAITING' });
+
+    // verification.started: verifier RUNNING, executor WAITING.
+    model = applyRuntimeSubAgentEvent(model, event('verification.started', { attempt: 1 }, 5));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-verifier')).toMatchObject({ state: 'RUNNING', workStarted: true });
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'WAITING' });
+
+    // verification.completed PASS/FAIL.
+    model = applyRuntimeSubAgentEvent(model, event('verification.completed', { status: 'PASS' }, 6));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-verifier')).toMatchObject({ state: 'SUCCEEDED' });
+
+    // Events for a different runId change nothing.
+    const before = JSON.stringify(model.subAgents);
+    model = applyRuntimeSubAgentEvent(model, event('model.request_started', {}, 7, 'run-other'));
+    expect(JSON.stringify(model.subAgents)).toBe(before);
+
+    // Terminal run.state_changed: started rows settle, never-started rows SKIPPED.
+    model = applyRuntimeSubAgentEvent(model, event('run.state_changed', { to: 'SUCCEEDED' }, 8));
+    const term = model.subAgents;
+    expect(term.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'SUCCEEDED' });
+    expect(term.find((a) => a.agentId === 'ctx-verifier')).toMatchObject({ state: 'SUCCEEDED' });
+  });
+
+  it('approval DECLINED stops the executor and later events do not revive it', () => {
+    let model = beginRun(createInitialReadModel(), '任务');
+    const event = (kind: string, payload: Record<string, unknown>, sequence: number): RuntimeEvent => ({
+      type: 'runtime_event', schemaVersion: '1.0', runId: 'run-runtime', sequence, kind, payload, emittedAtMs: sequence
+    });
+    model = applyRuntimeSubAgentEvent(model, event('role.contexts_allocated', { contexts: [{ contextId: 'ctx-executor', role: 'executor', model: 'test-model', isolation: 'DEDICATED' }] }, 1));
+    model = applyRuntimeSubAgentEvent(model, event('model.request_started', {}, 2));
+    model = applyRuntimeSubAgentEvent(model, event('approval.resolved', { state: 'DECLINED' }, 3));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'FAILED' });
+    // Later events must not resurrect a failed role.
+    model = applyRuntimeSubAgentEvent(model, event('model.text_delta', {}, 4));
+    expect(model.subAgents.find((a) => a.agentId === 'ctx-executor')).toMatchObject({ state: 'FAILED' });
+  });
+
+  it('BUSY is not work evidence; reconciled crashed contexts fail', () => {
+    let model = beginRun(createInitialReadModel(), '任务');
+    const event = (kind: string, payload: Record<string, unknown>, sequence: number): RuntimeEvent => ({
+      type: 'runtime_event', schemaVersion: '1.0', runId: 'run-runtime', sequence, kind, payload, emittedAtMs: sequence
+    });
+    model = applyRuntimeSubAgentEvent(model, event('role.contexts_allocated', { contexts: [
+      { contextId: 'ctx-executor', role: 'executor', model: 'test-model', isolation: 'DEDICATED' },
+      { contextId: 'ctx-verifier', role: 'verifier', model: 'test-model', isolation: 'DEDICATED' }
+    ] }, 1));
+    model = applyRuntimeSubAgentEvent(model, event('RoleContextStateChanged', {
+      contextId: 'ctx-executor', role: 'executor', from: 'READY', to: 'BUSY'
+    }, 2));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-executor')?.state).toBe('STARTING');
     model = applyRuntimeSubAgentEvent(model, event('role.contexts_reconciled', {
       reconciled: 1,
-      contexts: [{ contextId: 'ctx-verifier', role: 'semanticVerifier', state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }]
-    }, 5));
+      contexts: [{ contextId: 'ctx-verifier', role: 'verifier', state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }]
+    }, 3));
     expect(model.subAgents.find((agent) => agent.agentId === 'ctx-verifier')).toMatchObject({
-      state: 'FAILED',
-      task: '上次运行进程已退出，角色上下文已标记失败'
+      state: 'FAILED'
     });
   });
 

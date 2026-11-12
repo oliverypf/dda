@@ -32,7 +32,7 @@
   "bundle": {
     "active": true,
     "publisher": "dda",
-    "targets": ["msi", "nsis"],
+    "targets": [],
     "windows": {
       "wix": {
         "upgradeCode": "10fec2aa-b588-528e-9951-92bb36312b9d"

@@ -951,3 +951,61 @@ svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .route-failure-notice .link-button:disabled { opacity: 0.55; cursor: default; text-decoration: none; }
 .routing-run-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .routing-run-list .active { outline: 2px solid currentColor; }
+
+/* Global access-mode pill / popover / risk dialog */
+.access-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-subtle); color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.access-pill.is-on { border-color: #a46500; color: #a46500; background: color-mix(in srgb, #a46500 8%, var(--surface-subtle)); }
+.access-pill:disabled { opacity: .6; cursor: not-allowed; }
+.access-popover { position: fixed; z-index: 60; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .22); }
+.access-popover-heading { margin: 0 0 4px; font-size: 12px; font-weight: 700; }
+.access-popover-scope { margin: 0 0 10px; font-size: 11px; color: var(--text-muted); }
+.access-popover-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.access-popover-error { margin: 8px 0 0; font-size: 11px; color: #b03a3a; }
+.access-switch { position: relative; width: 36px; height: 20px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-subtle); cursor: pointer; }
+.access-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-muted); transition: left .15s; }
+.access-switch.is-on { border-color: #a46500; background: #a46500; }
+.access-switch.is-on::after { left: 18px; background: #fff; }
+.access-switch:disabled { opacity: .6; cursor: not-allowed; }
+.access-settings-card { margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-subtle); font-size: 12px; }
+.access-settings-card p { margin: 4px 0 8px; color: var(--text-muted); }
+.access-modal { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); overflow: auto; }
+.access-modal::backdrop { background: rgb(0 0 0 / .45); }
+.access-modal-body { padding: 16px; }
+.access-modal-head { display: flex; align-items: center; justify-content: space-between; }
+.access-modal-head h3 { margin: 0; font-size: 15px; }
+.access-modal-close { border: 0; background: none; font-size: 18px; cursor: pointer; color: var(--text-muted); }
+.access-modal-intro { margin: 8px 0 12px; font-size: 12px; color: var(--text-muted); }
+.access-cards { display: grid; gap: 8px; margin-bottom: 12px; }
+.access-card { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.access-card-icon { flex: 0 0 auto; color: var(--text-muted); }
+.access-card strong { font-size: 12px; }
+.access-card p { margin: 2px 0 0; font-size: 11px; color: var(--text-muted); }
+.access-modal-boundary { margin: 0 0 12px; padding: 8px 10px; border-left: 3px solid #a46500; font-size: 11px; color: var(--text-muted); background: color-mix(in srgb, #a46500 6%, transparent); }
+.access-ack { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.access-ack input { width: 15px; height: 15px; }
+.access-modal-error { margin: 8px 0 0; font-size: 11px; color: #b03a3a; }
+.access-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.access-modal-actions button { padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); font-size: 12px; cursor: pointer; }
+.access-modal-actions .access-confirm { border-color: #a46500; background: #a46500; color: #fff; }
+.access-modal-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Approval review preview bounds — a long command preview must not blow out
+   the card or push the confirm dialog's actions off-screen. */
+.approval-preview { min-width: 0; max-width: 100%; }
+.approval-preview pre { max-width: 100%; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; background: var(--surface-subtle); font: 12px/1.5 Consolas, monospace; }
+.approval-confirmation { max-height: calc(100vh - 32px); overflow: auto; }
+.approval-confirmation pre { max-height: 40vh; overflow: auto; }
+
+/* Collapsed sub-agent panel — one compact 40-44px row, title + counts + toggle. */
+.subagent-panel.subagent-panel-collapsed { box-sizing: border-box; height: 44px; min-height: 0; padding: 0 12px; overflow: hidden; }
+.subagent-panel-collapsed .subagent-heading { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; height: 42px; margin: 0; }
+.subagent-panel-collapsed .subagent-title { flex: 0 0 auto; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.subagent-panel-collapsed .subagent-count { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-dim, #6b7280); }
+.subagent-panel-collapsed .secondary-button { flex: 0 0 auto; width: auto; height: 30px; min-height: 0; margin: 0; padding: 0 10px; font-size: 12px; line-height: 30px; white-space: nowrap; }
+.subagent-waiting .subagent-marker, .subagent-skipped .subagent-marker { animation: none; }
+.subagent-waiting .lucide, .subagent-skipped .lucide { animation: none; }
+
+.session-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; min-width: 0; gap: 3px 8px; text-align: left; }
+.session-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-row-state { grid-column: 1; color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-row-badge { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--text-muted); font-size: 11px; white-space: nowrap; }

@@ -118,7 +118,7 @@ const main = async () => {
       ...process.env,
       ...fixture.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_WORKSPACE_ROOT: fixture.workspaceRoot
     }
   });

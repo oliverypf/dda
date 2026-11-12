@@ -39,7 +39,7 @@ async function fixture(viewport = { width: 1440, height: 960 }, { controlled = f
         state.emit('run.completed');
         finish({ ok: true, runId, text, threadId: 'thread-fixture',
           thread: { id: 'thread-fixture', title: 'Fixture', turnCount: 1, state: 'COMPLETED', createdAtMs: 1, updatedAtMs: Date.now(), cwd: '/fixture' },
-          workspace: { entryCount: 0 }, executionMode: controlled ? 'CONTROLLED' : 'READ_ONLY', ...(verification === null ? {} : { verification }) });
+          workspace: { entryCount: 0 }, executionMode: 'CONTROLLED', ...(verification === null ? {} : { verification }) });
       },
       rejectBeforeStart() { finish({ ok: false, error: 'Fixture transport failed before acknowledgement', plugins: [] }); },
       fail(checks) { state.emit('run.failed', { message: 'Verifier rejected task', checks }); finish({ ok: false, runId, error: 'Verifier rejected task', plugins: [] }); },
@@ -60,7 +60,7 @@ async function fixture(viewport = { width: 1440, height: 960 }, { controlled = f
           return args.handler;
         }
         if (command.startsWith('plugin:event|')) return;
-        if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'test', runtimeReady: true, readOnly: true, workspaceRead: true, commandExecution: controlled, networkSideEffects: false, releaseChannel: controlled ? 'WINDOWS_PHASE1_5_CONTROLLED' : 'WINDOWS_PHASE1_READ_ONLY' };
+        if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'test', runtimeReady: true, readOnly: false, workspaceRead: true, commandExecution: controlled, networkSideEffects: false, releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
         if (command === 'reconcile_runtime_state') return { ok: true, reconciled: 0 };
         if (command === 'default_workspace') return { rootLabel: 'Fixture', rootPath: '/fixture' };
         if (command === 'list_workspace') return [];

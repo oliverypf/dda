@@ -12,8 +12,11 @@ import {
   digest,
   nodeSpawnCommand
 } from './runtime-safety-monitor.mjs';
+import { resolveWindowsProcessCommand } from './platform/windows-command.mjs';
+import { spawnErrorReason } from './platform/process-error.mjs';
+import { DEFAULT_PROCESS_TIMEOUT_MS, MAX_PROCESS_TIMEOUT_MS } from './process-limits.mjs';
 
-const MAX_TIMEOUT_MS = 60 * 1000;
+const MAX_TIMEOUT_MS = MAX_PROCESS_TIMEOUT_MS;
 const MAX_INPUT_BYTES = 64 * 1024;
 const SECRET_ENV = /(?:key|token|secret|password|credential|private|authorization)/i;
 
@@ -39,9 +42,12 @@ const safeEnvironment = (provided) => {
   return inherited;
 };
 
-const boundedLimit = (value, maximum, fallback) => {
+const boundedLimit = (value, maximum, fallback, fieldName = 'limit') => {
   if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || value < 1 || value > maximum) fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    fail(SAFETY_ERROR_CODES.COMMAND_INVALID,
+      `${fieldName} must be an integer between 1 and ${maximum}; received ${JSON.stringify(value)}`);
+  }
   return value;
 };
 
@@ -114,8 +120,8 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, input, signa
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
-  } catch {
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+  } catch (error) {
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
     return;
   }
   const rawLimit = Math.max(maxOutputBytes * 2, 128 * 1024);
@@ -152,12 +158,12 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, input, signa
   if (signal?.aborted) onAbort();
   child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
-  child.once('error', () => {
+  child.once('error', (error) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
   });
   child.once('close', async (exitCode, terminationSignal) => {
     if (settled) return;
@@ -259,12 +265,18 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
 
   async #process(authorization, request, options = {}) {
     const limits = this.#monitor.limits;
-    const timeoutMs = boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, 15 * 1000);
-    const maxOutputBytes = boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes);
-    const maxOutputChars = boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars);
+    const timeoutMs = boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, DEFAULT_PROCESS_TIMEOUT_MS, 'timeoutMs');
+    const maxOutputBytes = boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes, 'maxOutputBytes');
+    const maxOutputChars = boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars, 'maxOutputChars');
+    // npm/npx resolve to the provisioned Node CLI only after authorization, so
+    // the approved command name and lease scope stay anchored on the request.
+    const resolved = await resolveWindowsProcessCommand({
+      command: authorization.command.command,
+      args: authorization.command.args
+    });
     const result = await collectProcessOutput({
-      command: nodeSpawnCommand(authorization.command.command),
-      args: authorization.command.args,
+      command: nodeSpawnCommand(resolved.command),
+      args: resolved.args,
       cwd: authorization.cwd.absolutePath,
       env: safeEnvironment(request.env),
       timeoutMs,
@@ -278,6 +290,7 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
       action: authorization.action,
       commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
       cwd: authorization.cwd.path || '.',
+      timeoutMs,
       lease: authorization.lease?.id ?? null
     };
   }

@@ -32,7 +32,9 @@ const summarizeRun = (runEvents) => {
     outputDigest: completed ? digest(completed.outputDigest) : 'unavailable',
     toolRounds: completed && Number.isInteger(completed.toolRounds) ? completed.toolRounds : 0,
     toolCallCount: completed && Number.isInteger(completed.toolCallCount) ? completed.toolCallCount : 0,
-    executionMode: completed?.executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY',
+    // Summaries describe the current execution contract; persisted events keep
+    // their original mode and digest for historical replay.
+    executionMode: 'CONTROLLED',
     failureCode: failed ? oneLine(failed.code, 80) || 'RUNTIME_ERROR' : undefined
   };
 };

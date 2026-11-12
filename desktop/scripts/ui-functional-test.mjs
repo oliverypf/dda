@@ -162,7 +162,7 @@ const launchApp = (extraEnv = {}) => {
       ...process.env,
       ...extraEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_WORKSPACE_ROOT: extraEnv.DDA_WORKSPACE_ROOT ?? workspaceRoot
     }
   });
@@ -272,7 +272,7 @@ const waitForReady = async (client) => {
   // gate only accepted the phase-1.5 title, so it timed out after the runtime
   // was already ready and made the UI suite report a false startup failure.
   await runTest('T00 发布渠道标记', async () => {
-    await waitFor(client, `document.querySelector('#app')?.dataset.releaseChannel && /WINDOWS_(?:MVP_PRE_PHASE1|PHASE1_READ_ONLY|PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(document.querySelector('#app').dataset.releaseChannel)`, {
+    await waitFor(client, `document.querySelector('#app')?.dataset.releaseChannel && /WINDOWS_(?:PHASE1_5_CONTROLLED|FULL_LOCAL)/u.test(document.querySelector('#app').dataset.releaseChannel)`, {
       timeout: 5000, interval: 500, label: 'release channel'
     });
   });
@@ -290,7 +290,7 @@ const isControlledChannel = async (client) => /WINDOWS_(?:PHASE1_5_CONTROLLED|FU
 const suite = async (client) => {
   await waitForReady(client);
 
-  await runTest('T01 初始渲染与只读门控', async () => {
+  await runTest('T01 初始渲染与受控门控', async () => {
     assert((await client.evaluate('document.title')) === 'dda', 'title');
     assert((await text(client, '.brand-mark')) === 'dda', 'brand mark');
     assert((await text(client, '.brand-row strong')) === 'dda', 'product name');
@@ -300,9 +300,8 @@ const suite = async (client) => {
     assert(await exists(client, '.context-panel'), 'context-panel');
     assert((await text(client, '.connection-status')).length > 0, 'connection-status');
     assert(/等待任务|任务已完成|只读检查完成|任务未完成|任务已取消|历史会话/u.test(await text(client, '.run-status')), 'startup restores idle or saved terminal state');
-    const controlled = await isControlledChannel(client);
+    assert(await isControlledChannel(client), 'only controlled channels ship after ADR-0026');
     assert(await client.evaluate(`document.querySelector('.mode-pill') == null`), 'no mode status');
-    if (!controlled) assert(/WINDOWS_PHASE1_READ_ONLY/u.test(await attr(client, '#app', 'data-release-channel') ?? ''), 'phase1 channel stays marked');
     assert(await exists(client, 'textarea[name="prompt"]'), 'composer textarea');
     assert((await attr(client, 'textarea[name="prompt"]', 'disabled')) === null, 'composer enabled');
     assert(await exists(client, '.send-button'), 'send button');

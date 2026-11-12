@@ -26,6 +26,8 @@ import type {
   RuntimeTimelinePage
 } from '../domain/models';
 import type { ModelConfig, ModelConfigResponse } from '../domain/models';
+import type { DesktopNotice } from '../domain/desktop-notifications';
+import type { AccessMode, AccessStatus } from '../domain/computer-access';
 import {
   PROVIDER_CATALOG_COMMANDS,
   type ProviderCatalogFetchResult,
@@ -402,13 +404,41 @@ export const desktopBridge = {
     return listen<RuntimeDreamMaintenanceStatus>('dream-maintenance-status', (event) => handler(event.payload));
   },
 
-  async resolveRuntimeApproval(requestId: string, approved: boolean, displayedDigest: string): Promise<void> {
-    if (!isTauriRuntime()) return;
-    await invoke('resolve_runtime_approval', { requestId, approved, displayedDigest });
+  async showDesktopNotification(request: DesktopNotice): Promise<{ accepted: boolean; reason?: string }> {
+    if (!isTauriRuntime()) return { accepted: false, reason: 'unsupported' };
+    return invoke('show_desktop_notification', { request });
   },
 
-  async cancelModelTask(): Promise<RuntimeCancellation> {
+  async listenDesktopNotificationActivated(handler: (payload: { kind?: string; runId?: string; requestId?: string }) => void): Promise<UnlistenFn | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    return listen('desktop-notification-activated', (event) => handler(event.payload as { kind?: string; runId?: string; requestId?: string }));
+  },
+
+  async accessMode(): Promise<AccessStatus> {
+    if (!isTauriRuntime()) return { mode: 'REQUIRE_APPROVAL', scope: 'USER_FILESYSTEM' };
+    return invoke('access_mode');
+  },
+
+  async setAccessMode(mode: AccessMode, confirmed: boolean): Promise<AccessStatus> {
+    if (!isTauriRuntime()) throw new Error('ACCESS_MODE_UNAVAILABLE');
+    return invoke('set_access_mode', { mode, confirmed });
+  },
+
+  async resolveRuntimeApproval(requestId: string, approved: boolean, displayedDigest: string,
+    target?: { sessionId?: string; runId?: string }): Promise<void> {
+    if (!isTauriRuntime()) return;
+    await invoke('resolve_runtime_approval', {
+      requestId, approved, displayedDigest,
+      ...(target?.sessionId ? { sessionId: target.sessionId } : {}),
+      ...(target?.runId ? { runId: target.runId } : {})
+    });
+  },
+
+  async cancelModelTask(target?: { sessionId?: string; runId?: string }): Promise<RuntimeCancellation> {
     if (!isTauriRuntime()) return { cancelled: false };
-    return invoke<RuntimeCancellation>('cancel_model_task');
+    return invoke<RuntimeCancellation>('cancel_model_task', {
+      ...(target?.sessionId ? { sessionId: target.sessionId } : {}),
+      ...(target?.runId ? { runId: target.runId } : {})
+    });
   }
 };

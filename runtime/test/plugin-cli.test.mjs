@@ -1,18 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createTrajectoryStore } from '../src/trajectory-store.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { EvolutionRegistry } from '../src/plugins/evolution-registry.mjs';
 import { EvolutionEvaluator } from '../src/evolution-evaluator.mjs';
+import { PLUGIN_TRUST_KEY, signPluginManifest } from './helpers/sign-plugin.mjs';
 
-const run = (args, env = {}) => new Promise((resolve, reject) => {
+const run = (args, env = {}, base = process.env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, ...env },
+    env: { ...base, ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stdout = '';
@@ -49,15 +51,18 @@ test('plugin CLI persists governance and only loads ACTIVE plugins', async () =>
   await mkdir(pluginRoot, { recursive: true });
   await writeFile(entryPath, 'export const createPlugin = () => {}\n', 'utf8');
   await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf8');
+  const signature = signPluginManifest(manifest);
   const env = {
     DDA_PLUGIN_GOVERNANCE_STORE: governancePath,
     DDA_PLUGIN_ROOT: pluginRoot,
     DDA_EVOLUTION_STORE: evolutionPath,
-    DDA_EVALUATION_STORE: evaluationPath
+    DDA_EVALUATION_STORE: evaluationPath,
+    DDA_PLUGIN_TRUST_KEY: PLUGIN_TRUST_KEY
   };
 
   const discovered = await run([
-    'plugin', 'discover', '--manifest-path', manifestPath, '--entry-path', 'fixture.mjs'
+    'plugin', 'discover', '--manifest-path', manifestPath, '--entry-path', 'fixture.mjs',
+    `--plugin-signature=${signature.signature}`, `--plugin-public-key=${signature.publicKey}`
   ], env);
   assert.equal(discovered.code, 0, `${discovered.stderr}\n${discovered.stdout}`);
   const discoveredPayload = parse(discovered);
@@ -127,6 +132,68 @@ test('plugin CLI persists governance and only loads ACTIVE plugins', async () =>
   const persisted = JSON.parse(await readFile(governancePath, 'utf8'));
   assert.equal(persisted.plugins[0].state, 'ACTIVE');
   assert.equal(persisted.plugins[0].history.length, 4);
+});
+
+test('independent plugin stores keep discoveries in their own scoped audit databases', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-plugin-scope-'));
+  const localAppData = join(root, 'localappdata');
+  const pluginRoot = join(root, 'plugins');
+  const manifestPath = join(root, 'plugin.json');
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(join(pluginRoot, 'fixture.mjs'), 'export const createPlugin = () => {}\n', 'utf8');
+  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf8');
+  const signature = signPluginManifest(manifest);
+  // Inherited DDA_* settings could redirect the stores under test, so only
+  // the variables set here reach the child process.
+  const isolatedBase = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('DDA_')));
+  const scopedEnv = (name, extra = {}) => ({
+    LOCALAPPDATA: localAppData,
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_PLUGIN_ROOT: pluginRoot,
+    DDA_PLUGIN_TRUST_KEY: PLUGIN_TRUST_KEY,
+    DDA_EVOLUTION_STORE: join(root, name, 'evolution.json'),
+    DDA_EVALUATION_STORE: join(root, name, 'evaluations.json'),
+    DDA_PLUGIN_GOVERNANCE_STORE: join(root, name, 'plugin-governance.json'),
+    ...extra
+  });
+  const discover = (env) => run([
+    'plugin', 'discover', '--manifest-path', manifestPath, '--entry-path', 'fixture.mjs',
+    `--plugin-signature=${signature.signature}`, `--plugin-public-key=${signature.publicKey}`
+  ], env, isolatedBase);
+  const discoveryCount = async (storagePath) => {
+    const store = createHarnessEventStore({ storagePath });
+    await store.load();
+    return (await store.list({ aggregateType: 'PluginGovernance' })).filter((event) => event.kind === 'PluginDiscovered').length;
+  };
+  const storeA = join(root, 'store-a');
+  const storeB = join(root, 'store-b');
+  await mkdir(storeA, { recursive: true });
+  await mkdir(storeB, { recursive: true });
+  const first = await discover(scopedEnv('store-a'));
+  assert.equal(first.code, 0, `${first.stderr}\n${first.stdout}`);
+  const second = await discover(scopedEnv('store-b'));
+  assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
+
+  assert.equal(await discoveryCount(join(storeA, 'plugin-governance.json.harness-events.db')), 1);
+  assert.equal(await discoveryCount(join(storeB, 'plugin-governance.json.harness-events.db')), 1);
+  assert.equal(existsSync(join(localAppData, 'hmCodex', 'hmcodex.db')), false, 'scoped plugin stores must not write the global harness');
+
+  const explicitHarness = join(root, 'explicit', 'events.db');
+  await mkdir(join(root, 'explicit'), { recursive: true });
+  await mkdir(join(root, 'store-c'), { recursive: true });
+  const explicit = await discover(scopedEnv('store-c', { DDA_HARNESS_EVENT_STORE: explicitHarness }));
+  assert.equal(explicit.code, 0, `${explicit.stderr}\n${explicit.stdout}`);
+  assert.equal(await discoveryCount(explicitHarness), 1);
+  assert.equal(existsSync(join(root, 'store-c', 'plugin-governance.json.harness-events.db')), false);
+
+  const trajectoryPath = join(root, 'traj', 'trajectory.jsonl');
+  await mkdir(join(root, 'traj'), { recursive: true });
+  await mkdir(join(root, 'store-d'), { recursive: true });
+  const scoped = await discover(scopedEnv('store-d', { DDA_TRAJECTORY_STORE: trajectoryPath }));
+  assert.equal(scoped.code, 0, `${scoped.stderr}\n${scoped.stdout}`);
+  assert.equal(await discoveryCount(`${trajectoryPath}.db`), 1);
+  assert.equal(existsSync(join(root, 'store-d', 'plugin-governance.json.harness-events.db')), false);
+  assert.equal(existsSync(join(localAppData, 'hmCodex', 'hmcodex.db')), false);
 });
 
 test('plugin CLI rejects malformed metadata and missing plugin identity', async () => {
@@ -258,8 +325,8 @@ test('memory CLI requires source event ids to exist in the trajectory and match 
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-memory-cli-sources-'));
   const memoryPath = join(root, 'memory.json');
   const trajectoryPath = join(root, 'trajectory.jsonl');
-  const trajectory = createTrajectoryStore(trajectoryPath);
-  const event = await trajectory.append({ runId: 'run-source', kind: 'TaskRunCompleted', payload: { status: 'SUCCEEDED' } });
+  const events = createHarnessEventStore({ storagePath: `${trajectoryPath}.db` });
+  const { event } = await events.append({ runId: 'run-source', kind: 'TaskRunCompleted', payload: { status: 'SUCCEEDED' } });
   const env = {
     DDA_MEMORY_STORE: memoryPath,
     DDA_TRAJECTORY_STORE: trajectoryPath

@@ -43,15 +43,15 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
     'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace,
     '--evolution-store', join(workspace, 'evolution.json')
   ], {
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());
   assert.equal(payload.ok, true);
-  assert.equal(payload.executionMode, 'READ_ONLY');
+  assert.equal(payload.executionMode, 'CONTROLLED');
   assert.equal(await readFile(join(workspace, 'README.md'), 'utf8'), '# Test workspace\n');
   assert.equal(payload.text, 'Cordis task complete.');
   assert.equal(payload.workspace.granted, true);
@@ -63,7 +63,10 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
   const database = await readFile(`${result.trajectoryStore}.db`);
   assert.equal(database.subarray(0, 16).toString(), 'SQLite format 3\0');
   await assert.rejects(readFile(result.trajectoryStore), { code: 'ENOENT' });
-  assert.deepEqual(payload.tools.map((tool) => tool.name), ['workspace.list', 'workspace.read', 'workspace.focus']);
+  assert.deepEqual(payload.tools.map((tool) => tool.name), [
+    'workspace.list', 'workspace.read', 'workspace.focus',
+    'shell.execute', 'file.write', 'file.diff', 'file.patch', 'test.execute'
+  ]);
   assert.ok(payload.plugins.some((plugin) => plugin.id === 'model-deepseek'));
   const scopedThreads = JSON.parse(await readFile(`${result.trajectoryStore}.threads.json`, 'utf8'));
   assert.ok(scopedThreads.threads.some((thread) => thread.title === '检查 README'));
@@ -131,8 +134,8 @@ test('Phase 1 records memory conflict and supersession suggestions from recalled
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', '检查 README', '--workspace', workspace, '--cancel-poll-ms', '100'
   ], {
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DDA_TRAJECTORY_STORE: trajectory,
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
@@ -151,8 +154,8 @@ test('records a failed run when the model provider is unreachable', async () => 
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', 'provider down prompt', '--workspace', workspace
   ], {
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: 'http://127.0.0.1:1'
   });
@@ -182,8 +185,8 @@ test('task timeout aborts the model request and records a failed run', async (t)
   const result = await run([
     'task', '--provider', 'deepseek', '--prompt', 'timeout prompt', '--workspace', workspace, '--task-timeout-ms', '500'
   ], {
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   });
@@ -221,8 +224,8 @@ test('task cancel request aborts a running task and records a cancelled run', as
       ...process.env,
       DDA_CONTEXT_PROVIDER: 'journal',
       DDA_TRAJECTORY_STORE: trajectoryStore,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-      DDA_EXECUTION_MODE: 'READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+      DDA_EXECUTION_MODE: 'CONTROLLED',
       DEEPSEEK_API_KEY: 'test-key',
       DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
     },
@@ -279,8 +282,8 @@ test('storage hard limit blocks a new run while recovery and export remain avail
   await writeFile(trajectoryStore, 'x'.repeat(4096));
   const env = {
     DDA_TRAJECTORY_STORE: trajectoryStore,
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DEEPSEEK_API_KEY: 'test-key',
     DEEPSEEK_BASE_URL: 'http://127.0.0.1:1'
   };
@@ -532,9 +535,11 @@ test('aggregates dashboard state from the same scoped stores as a task run', asy
 });
 
 
-for (const extension of ['json', 'db']) {
+// JSONL event stores are retired on approved channels; only the
+// durable SQLite backend remains (ADR-0026 controlled-only release).
+for (const extension of ['db']) {
 test(`uses the Harness Event Store as the task event backend (${extension})`, async (t) => {
-  const channel = extension === 'db' ? 'WINDOWS_PHASE1_READ_ONLY' : 'WINDOWS_MVP_PRE_PHASE1';
+  const channel = 'WINDOWS_PHASE1_5_CONTROLLED';
   const invoke = (args, env) => run(args, { ...env, DDA_RELEASE_CHANNEL: channel });
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-harness-'));
   await writeFile(join(workspace, 'README.md'), '# Harness fixture\n');

@@ -336,11 +336,12 @@ export class RuleVerifier {
     workspace,
     toolRounds = 0,
     toolCallCount = 0,
-    executionMode = 'READ_ONLY',
+    executionMode = 'CONTROLLED',
     goal,
     objective,
     taskGoal,
     actions,
+    authorizedFilePaths = [],
     actionTrace,
     actionHistory,
     trajectory,
@@ -441,6 +442,26 @@ export class RuleVerifier {
       acceptanceCommands: acceptanceCommandsOption
     });
     const normalizedActions = asArray(actions ?? actionTrace ?? actionHistory ?? trajectory ?? toolCalls).map(normalizeAction);
+    const cumulativeActions = [
+      ...asArray(previousActions ?? priorActions).map(normalizeAction),
+      ...normalizedActions
+    ];
+    const scopeViolatedRefs = cumulativeActions.flatMap((action, index) =>
+      action?.errorCode === 'SCOPE_VIOLATION'
+        ? [`action:prior-or-current:${index}:${actionFingerprint(action).slice(7, 23)}`]
+        : []);
+    if (scopeViolatedRefs.length) {
+      add(check('actions.boundary', 'FAIL', `${scopeViolatedRefs.length} 个动作触发范围越界（SCOPE_VIOLATION）`, scopeViolatedRefs));
+      signals.hardFailure = true;
+    }
+    const uncertainSideEffectRefs = cumulativeActions.flatMap((action, index) =>
+      action?.errorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN' || action?.state === 'APPLIED_UNVERIFIED'
+        ? [`action:prior-or-current:${index}:${actionFingerprint(action).slice(7, 23)}`]
+        : []);
+    if (uncertainSideEffectRefs.length) {
+      add(check('actions.uncertain_side_effect', 'FAIL', `${uncertainSideEffectRefs.length} 个副作用结果不确定，需人工核对`, uncertainSideEffectRefs));
+      signals.hardFailure = true;
+    }
     const acceptanceGreen = hasAcceptanceGreen(normalizedActions, acceptanceCommands);
     let actionProgress;
     if (!normalizedActions.length) {
@@ -516,7 +537,7 @@ export class RuleVerifier {
         // The same read before and after a write can verify both the repair
         // and preservation of untouched tests. A changed actual read digest
         // is also new evidence. Side effects retain their original identity.
-        const readObservation = ['workspace.read', 'workspace.list', 'workspace.focus', 'file.diff'].includes(action.name ?? action.tool)
+        const readObservation = ['workspace.read', 'workspace.list', 'workspace.focus', 'file.diff', 'workspace.inspect_binary'].includes(action.name ?? action.tool)
           && actualOutput;
         const key = readObservation ? `${fingerprint}:${workspaceWriteEpoch}:${action.outputDigest}` : fingerprint;
         if (seen.has(key)) duplicateIndexes.push(`${seen.get(key)}-${index}`);
@@ -591,9 +612,28 @@ export class RuleVerifier {
     } else {
       const root = workspace?.rootPath ?? workspace?.root ?? workspace?.currentPath;
       const allowed = workspaceAllowedPaths(workspace ?? {});
+      // Host-owned authorization list: exact canonical absolute paths only —
+      // never a wildcard, ancestor, or prefix exemption.
+      const keyOf = (value) => {
+        const text = pathText(resolve(value));
+        return process.platform === 'win32' ? text.toLowerCase() : text;
+      };
+      const authorized = new Set(
+        (Array.isArray(authorizedFilePaths) ? authorizedFilePaths : [])
+          .filter((value) => typeof value === 'string' && isAbsolute(value))
+          .map(keyOf)
+      );
+      let usedAuthorized = false;
       const invalid = paths.filter((candidate) => {
         const candidateText = pathText(candidate);
         if (!candidateText || candidateText.includes('\0')) return true;
+        // Relative candidates resolve against the workspace root, never the
+        // process cwd; the host list stays absolute-only.
+        const candidateAbsolute = isAbsolute(candidateText)
+          ? candidateText
+          : (root ? resolve(pathText(root), candidateText) : candidateText);
+        const authorizedHit = isAbsolute(candidateAbsolute) && authorized.has(keyOf(candidateAbsolute));
+        if (authorizedHit) { usedAuthorized = true; return false; }
         if (candidateText.split('/').includes('..') && !root) return true;
         // An absolute path cannot be proven to belong to a workspace when the
         // caller omitted its canonical root. Fail closed instead of accepting
@@ -610,7 +650,9 @@ export class RuleVerifier {
         add(check('paths.scope', 'UNKNOWN', '工作区未授权，无法确认路径范围', paths.map((path) => digestRef('path', pathText(path)))));
         signals.uncertain = true;
       } else {
-        add(check('paths.scope', 'PASS', `${paths.length} 个路径均在工作区范围内`, [workspace.snapshotDigest].filter(Boolean)));
+        add(check('paths.scope', 'PASS', usedAuthorized
+          ? `${paths.length} 个路径均在已授权范围内`
+          : `${paths.length} 个路径均在工作区范围内`, [workspace.snapshotDigest].filter(Boolean)));
       }
     }
 
@@ -693,6 +735,8 @@ export class RuleVerifier {
       'tools.bounded_count': 'TOOL_CALLS_EXCEEDED',
       'goal.coverage': 'GOAL_NOT_MET',
       'actions.progress': 'ACTION_FAILED',
+      'actions.boundary': 'SCOPE_VIOLATION',
+      'actions.uncertain_side_effect': 'SIDE_EFFECT_OUTCOME_UNCERTAIN',
       'actions.duplicates': 'REPEATED_ACTION',
       'actions.new_evidence': 'NO_NEW_EVIDENCE',
       'paths.scope': 'PATH_OUT_OF_SCOPE',

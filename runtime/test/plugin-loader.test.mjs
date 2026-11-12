@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import { PluginRegistry } from '../src/plugins/registry.mjs';
 import { PluginGovernance } from '../src/plugin-governance.mjs';
 import { DynamicPluginLoader } from '../src/plugin-loader.mjs';
+import { installPluginTrustKey, signPluginManifest } from './helpers/sign-plugin.mjs';
+
+installPluginTrustKey();
 
 const manifest = {
   schemaVersion: '1.0',
@@ -30,7 +33,7 @@ test('dynamic plugin discovery does not execute until governed ACTIVE state', as
       return import(url);
     }
   });
-  const discovered = await loader.discover({ manifest, entryPath: 'plugin.mjs' });
+  const discovered = await loader.discover({ manifest, entryPath: 'plugin.mjs', signature: signPluginManifest(manifest) });
   assert.equal(discovered.state, 'DISCOVERED');
   assert.equal(imported, false);
   await assert.rejects(() => loader.load(discovered.pluginId), /PLUGIN_NOT_ACTIVE:DISCOVERED/);
@@ -51,7 +54,8 @@ test('dynamic plugin loader rejects traversal and digest mismatch', async () => 
   await writeFile(join(outside, 'plugin.mjs'), 'export const createPlugin = () => {};\n', 'utf8');
   const governance = new PluginGovernance();
   const loader = new DynamicPluginLoader({ rootDir: root, governance, registry: new PluginRegistry() });
-  await assert.rejects(() => loader.discover({ manifest, entryPath: join('..', outside.split('\\').pop(), 'plugin.mjs') }), /PLUGIN_ENTRYPOINT_OUTSIDE_ROOT|PLUGIN_ENTRYPOINT_UNAVAILABLE/);
-  await assert.rejects(() => loader.discover({ manifest, entryPath: 'missing.mjs', packageDigest: 'sha256:bad' }), /PLUGIN_ENTRYPOINT_UNAVAILABLE/);
+  const signature = signPluginManifest(manifest);
+  await assert.rejects(() => loader.discover({ manifest, entryPath: join('..', outside.split('\\').pop(), 'plugin.mjs'), signature }), /PLUGIN_ENTRYPOINT_OUTSIDE_ROOT|PLUGIN_ENTRYPOINT_UNAVAILABLE/);
+  await assert.rejects(() => loader.discover({ manifest, entryPath: 'missing.mjs', packageDigest: 'sha256:bad', signature }), /PLUGIN_ENTRYPOINT_UNAVAILABLE/);
 });
 

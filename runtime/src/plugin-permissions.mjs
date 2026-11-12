@@ -3,7 +3,7 @@
  *
  * A contribution's `permissionCeiling` is a hard upper bound on what that
  * contribution may declare. Previously the ceiling was only checked for being a
- * known enum value, so a READ_ONLY manifest could still declare
+ * known enum value, so an observation-only manifest could still declare
  * `executor.invoke.controlled` and receive the executor service through the
  * capability membrane. This module owns the intersection so the manifest
  * validator and the context membrane cannot disagree.
@@ -21,12 +21,12 @@ export const KNOWN_PERMISSIONS = Object.freeze([
   'plugin.manifest.read', 'plugin.registry.write'
 ]);
 
-export const PERMISSION_CEILINGS = Object.freeze(['READ_ONLY', 'CONTROLLED']);
+export const PERMISSION_CEILINGS = Object.freeze(['OBSERVE', 'CONTROLLED']);
 
-// READ_ONLY is observation only. Every mutating, executing or egress permission
+// OBSERVE is observation only. Every mutating, executing or egress permission
 // belongs to CONTROLLED; there is no ceiling above the known vocabulary.
 export const CEILING_PERMISSIONS = Object.freeze({
-  READ_ONLY: Object.freeze([
+  OBSERVE: Object.freeze([
     'workspace.read.metadata', 'workspace.read.content', 'workspace.read.snapshot',
     'trajectory.read.redacted', 'profile.read', 'ui.render.timeline-item',
     'thread.read', 'plugin.manifest.read'
@@ -35,12 +35,14 @@ export const CEILING_PERMISSIONS = Object.freeze({
 });
 
 const KNOWN = new Set(KNOWN_PERMISSIONS);
-const CEILING_RANK = Object.freeze({ READ_ONLY: 0, CONTROLLED: 1 });
+const CEILING_RANK = Object.freeze({ OBSERVE: 0, CONTROLLED: 1 });
+// Deprecated manifest input. Never widen the old ceiling to execution access.
+const normalizeCeiling = (value) => value === 'READ_ONLY' ? 'OBSERVE' : value;
 const contributionList = (manifest) => (Array.isArray(manifest?.contributions) ? manifest.contributions : []);
 
 export const isKnownPermission = (value) => typeof value === 'string' && KNOWN.has(value);
 
-export const isPermissionCeiling = (value) => typeof value === 'string' && PERMISSION_CEILINGS.includes(value);
+export const isPermissionCeiling = (value) => typeof value === 'string' && PERMISSION_CEILINGS.includes(normalizeCeiling(value));
 
 /** Permissions declared anywhere in the manifest that a ceiling does not allow. */
 export const permissionsExceedingCeiling = (manifest) => {
@@ -48,7 +50,7 @@ export const permissionsExceedingCeiling = (manifest) => {
   for (const contribution of contributionList(manifest)) {
     const ceiling = contribution?.permissionCeiling;
     if (!isPermissionCeiling(ceiling)) continue;
-    const allowed = new Set(CEILING_PERMISSIONS[ceiling]);
+    const allowed = new Set(CEILING_PERMISSIONS[normalizeCeiling(ceiling)]);
     for (const permission of Array.isArray(contribution?.permissions) ? contribution.permissions : []) {
       if (!allowed.has(permission)) violations.push({ contributionId: String(contribution?.id ?? ''), ceiling, permission });
     }
@@ -63,7 +65,7 @@ export const permissionsExceedingCeiling = (manifest) => {
 export const effectivePermissionCeiling = (manifest) => {
   let ceiling = 'CONTROLLED';
   for (const contribution of contributionList(manifest)) {
-    const declared = contribution?.permissionCeiling;
+    const declared = normalizeCeiling(contribution?.permissionCeiling);
     if (!isPermissionCeiling(declared)) continue;
     if (CEILING_RANK[declared] < CEILING_RANK[ceiling]) ceiling = declared;
   }

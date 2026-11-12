@@ -50,7 +50,7 @@ export class RoleBindingResolver {
     this.#defaultBindings = clone(bindings);
   }
 
-  resolve({ roles = {}, taskClass = 'unknown', defaultModelId, profileRegistry, mode = 'READ_ONLY', bindings = {}, requireEligible = false, risk = 'LOW' } = {}) {
+  resolve({ roles = {}, taskClass = 'unknown', defaultModelId, profileRegistry, mode = 'CONTROLLED', bindings = {}, requireEligible = false, risk = 'LOW' } = {}) {
     const resolvedRoles = {};
     const rejected = [];
     // Include explicitly configured bindings even when the static route does

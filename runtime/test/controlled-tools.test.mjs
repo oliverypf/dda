@@ -27,7 +27,7 @@ test('side-effect tools are registered behind the safety monitor and fail closed
   ]);
   await assert.rejects(
     registry.invoke('shell.execute', { command: nodeCommand, args: ['-e', ''] }),
-    /SAFETY_READ_ONLY/
+    /SAFETY_LEASE_REQUIRED/
   );
 });
 
@@ -52,9 +52,13 @@ test('explicit capability and command approval issues one lease per tool invocat
   const written = await registry.invoke('file.write', { path: 'result.txt', content: 'new' });
   assert.equal(written.bytesWritten, 3);
   assert.equal(await readFile(target, 'utf8'), 'new');
+  // Inline -e evaluation is opaque and requires an explicit approval; a
+  // project script stays on the ordinary approved-command lease path.
+  await writeFile(join(workspace, 'script.js'), 'process.stdout.write("ok")', 'utf8');
   const executed = await registry.invoke('shell.execute', {
     command: nodeCommand,
-    args: ['-e', 'process.stdout.write("ok")']
+    args: ['script.js'],
+    cwd: '.'
   });
   assert.equal(executed.ok, true);
   assert.equal(executed.stdout, 'ok');

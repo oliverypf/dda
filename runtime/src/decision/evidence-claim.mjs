@@ -125,7 +125,7 @@ export const proposedToolDecisionClaim = (name, request = {}) => {
 export const hostToolPolicyDecisionClaim = ({ name, registered, available, readOnly, capability, mode, configuredCapabilities = [], configuredCommands = [] }) => {
   const facts = { name: String(name ?? 'unknown').slice(0, 64), registered: registered === true,
     advertised: registered === true && available !== false, readOnly: readOnly === true,
-    executionMode: mode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY',
+    executionMode: mode ?? 'CONTROLLED',
     executionPolicy: readOnly === true ? 'HOST_WORKSPACE_CHECK_REQUIRED' : 'HOST_ONE_SHOT_LEASE_REQUIRED' };
   if (typeof capability === 'string' && /^[A-Za-z0-9_.-]{1,64}$/u.test(capability)) {
     facts.requiredCapability = capability;

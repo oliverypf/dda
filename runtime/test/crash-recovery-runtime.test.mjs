@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { normalizePlannerPlan } from '../src/agent-turns.mjs';
 import { createThreadStore } from '../src/thread-store.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -31,7 +32,7 @@ test('resume enters recovery and blocks an interrupted side effect', async (t) =
   }, { objectiveDigest: 'sha256:objective' });
   const threads = createThreadStore({ storagePath: threadStorePath });
   const thread = await threads.create({ cwd: workspace, title: 'interrupted task' });
-  await threads.setCheckpoint(thread.id, {
+  const seededCheckpoint = await threads.setCheckpoint(thread.id, {
     runId: 'run-before-crash',
     phase: 'EXECUTING',
     state: 'RUNNING',
@@ -47,6 +48,20 @@ test('resume enters recovery and blocks an interrupted side effect', async (t) =
     },
     pendingActions: ['reconcile interrupted plan step']
   });
+  // Controlled resume validates the lineage against the scoped SQLite store,
+  // so seed the source run's creation and checkpoint-commit events there.
+  const sourceEvents = createHarnessEventStore({ storagePath: `${trajectoryPath}.db` });
+  await sourceEvents.append({
+    runId: 'run-before-crash', kind: 'TaskRunCreated',
+    payload: { requestedMode: 'CONTROLLED', promptDigest: `sha256:${'0'.repeat(64)}` }
+  });
+  await sourceEvents.append({
+    runId: 'run-before-crash', kind: 'ThreadCheckpointCommitted',
+    payload: {
+      threadId: thread.id, runId: 'run-before-crash',
+      checkpointDigest: seededCheckpoint.checkpointDigest, checkpoint: { runId: 'run-before-crash' }
+    }
+  });
 
   const result = await run([
     'task', '--agent-mode', 'multi', '--provider', 'openai', '--model', 'crash-recovery-model',
@@ -56,8 +71,12 @@ test('resume enters recovery and blocks an interrupted side effect', async (t) =
     '--resume', '--thread-id', thread.id
   ], { DDA_CRASH_RECOVERY_KEY: 'crash-recovery-key' });
   assert.equal(result.code, 1, `${result.stderr}\n${result.stdout}`);
-  const events = (await readFile(trajectoryPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-  const created = events.find((event) => event.kind === 'TaskRunCreated');
+  // Controlled channels persist authoritative events in the scoped SQLite
+  // store; the JSONL path is no longer written. Read through the event list.
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectoryPath], {});
+  assert.equal(listed.code, 0, `${listed.stderr}\n${listed.stdout}`);
+  const events = JSON.parse(listed.stdout.trim()).events;
+  const created = events.find((event) => event.kind === 'TaskRunCreated' && event.payload?.sourceRunId);
   assert.equal(created.payload.sourceRunId, 'run-before-crash');
   assert.match(created.payload.sourceCheckpointDigest, /^sha256:[0-9a-f]{64}$/);
   const stateChanges = events.filter((event) => event.kind === 'RunStateChanged').map((event) => event.payload);

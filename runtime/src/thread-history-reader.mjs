@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import { openHarnessDatabase, readHarnessEventTail } from './harness-store-schema.mjs';
 import { createHarnessEventStore } from './harness-event-store.mjs';
 import { createThreadStore, THREAD_STATES, checkpointDigest, titleDigest,
-  compareThreadEvents as compare, checkpointClearApplies, checkpointResumeMode } from './thread-store.mjs';
+  compareThreadEvents as compare, checkpointClearApplies, checkpointResumeMode,
+  checkpointRecoveryBlock } from './thread-store.mjs';
 import { readPersistentJsonFile } from './persistent-json-store.mjs';
 import { createTrajectoryStore } from './trajectory-store.mjs';
 
@@ -31,10 +32,18 @@ const validate = (event) => {
 };
 const recoverySummary = (checkpoint) => {
   const resumeMode = checkpointResumeMode(checkpoint);
-  return { resumeMode, resumable: resumeMode === 'PLAN' || resumeMode === 'PREPARATION' };
+  const recoveryBlock = checkpointRecoveryBlock(checkpoint);
+  return {
+    resumeMode,
+    resumable: (resumeMode === 'PLAN' || resumeMode === 'PREPARATION') && !recoveryBlock,
+    ...(recoveryBlock ? { recoveryBlock } : {})
+  };
 };
-const summary = ({ turns = [], checkpoint, ...thread }) => ({ ...thread,
-  turnCount: turns.length, ...recoverySummary(checkpoint) });
+const summary = ({ turns = [], checkpoint, ...thread }) => {
+  // A stale block must never survive a checkpoint replacement or clear.
+  delete thread.recoveryBlock;
+  return { ...thread, turnCount: turns.length, ...recoverySummary(checkpoint) };
+};
 
 // Thread titles are local presentation metadata. The durable event keeps only
 // titleDigest so support bundles and event exports never contain the prompt.
@@ -108,12 +117,14 @@ function readSqliteMetadata(db, threadId, includeRuns, titles = new Map()) {
       if (typeof p.runId === 'string' && p.runId) thread.activeRunId = p.runId;
       if (p.checkpoint && p.checkpoint.checkpointDigest === checkpointDigest(p.checkpoint)) {
         record.checkpointRunId = p.checkpoint.runId;
+        delete thread.recoveryBlock;
         Object.assign(thread, recoverySummary(p.checkpoint));
         thread.state = THREAD_STATES.includes(p.checkpoint.state) ? p.checkpoint.state : 'RUNNING';
       }
     } else if (event.kind === 'ThreadCheckpointCleared') {
       if (!checkpointClearApplies(record.checkpointRunId, event)) continue;
       record.checkpointRunId = undefined;
+      delete thread.recoveryBlock;
       Object.assign(thread, recoverySummary(undefined));
       if (THREAD_STATES.includes(p.state)) thread.state = p.state;
       delete thread.activeRunId;

@@ -168,3 +168,45 @@ for (const extension of ['db', 'json']) {
     await events.purgeRun('with-response');
   });
 }
+
+test('a checkpoint with an uncertain side-effect step is reported blocked, not resumable, and clears on replace/clear', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-recovery-block-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const threads = createThreadStore({ eventStore: createHarnessEventStore({ storagePath: harnessPath }) });
+  const uncertainPlan = { steps: [
+    { stepId: 'inspect', actionKind: 'READ', dependencies: [], status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' },
+    { stepId: 'inspect', actionKind: 'READ', dependencies: [], status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' },
+    { stepId: 'build', actionKind: 'WRITE', dependencies: ['inspect'], status: 'BLOCKED', errorCode: 'OTHER_CODE' },
+    { stepId: 'pending', actionKind: 'WRITE', dependencies: ['inspect'], status: 'PENDING' }
+  ] };
+  const healthyPlan = { steps: [{ stepId: 'build', actionKind: 'WRITE', dependencies: [], status: 'FAILED', errorCode: 'EXECUTOR_SPAWN_FAILED' }] };
+  const expectedBlock = { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['inspect'] };
+  const thread = await threads.create({ cwd: directory, title: 'blocked-thread' });
+  await threads.setCheckpoint(thread.id, { runId: 'blocked-run', phase: 'EXECUTING', state: 'FAILED', plan: uncertainPlan });
+  const listed = (await readThreadHistory({ harnessPath, listOnly: true })).threads.find((item) => item.id === thread.id);
+  assert.equal(listed.resumeMode, 'PLAN');
+  assert.equal(listed.resumable, false);
+  assert.deepEqual(listed.recoveryBlock, expectedBlock);
+  const summariesOnly = (await readThreadHistory({ harnessPath, threadId: thread.id, summariesOnly: true })).thread;
+  assert.equal(summariesOnly.resumeMode, 'PLAN');
+  assert.equal(summariesOnly.resumable, false);
+  assert.deepEqual(summariesOnly.recoveryBlock, expectedBlock);
+  const full = (await readThreadHistory({ harnessPath, threadId: thread.id, limit: 5 })).thread;
+  assert.equal(full.resumable, false);
+  assert.deepEqual(full.recoveryBlock, expectedBlock);
+  // An ordinary failed plan keeps the previous resumable shape.
+  await threads.setCheckpoint(thread.id, { runId: 'healthy-run', phase: 'EXECUTING', state: 'FAILED', plan: healthyPlan });
+  const healthy = (await readThreadHistory({ harnessPath, threadId: thread.id, summariesOnly: true })).thread;
+  assert.equal(healthy.resumeMode, 'PLAN');
+  assert.equal(healthy.resumable, true);
+  assert.equal(healthy.recoveryBlock, undefined);
+  // Re-block, then clearing the checkpoint drops the stale block.
+  await threads.setCheckpoint(thread.id, { runId: 'blocked-run-2', phase: 'EXECUTING', state: 'FAILED', plan: uncertainPlan });
+  assert.deepEqual((await readThreadHistory({ harnessPath, threadId: thread.id, summariesOnly: true })).thread.recoveryBlock, expectedBlock);
+  await threads.clearCheckpoint(thread.id);
+  const cleared = (await readThreadHistory({ harnessPath, threadId: thread.id, summariesOnly: true })).thread;
+  assert.equal(cleared.resumeMode, 'NONE');
+  assert.equal(cleared.resumable, false);
+  assert.equal(cleared.recoveryBlock, undefined);
+});

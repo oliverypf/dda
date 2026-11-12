@@ -99,7 +99,8 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   // must not fan out a separate model verifier role for each step.
   assert.equal(requests.filter((item) => /Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 0);
   assert.equal(requests.filter((item) => !/Planner role|Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 2);
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(listed.stdout.trim()).events;
   const stepEvents = events.filter((event) => event.kind === 'PlanStepStateChanged');
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'first' && step.status === 'SUCCEEDED')));
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'second' && step.status === 'SUCCEEDED')));
@@ -111,8 +112,8 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   const decisionTrace = JSON.parse(await readFile(`${trajectory}.decision-trace.json`, 'utf8'));
   const plannerDecision = decisionTrace.decisions.find((decision) => decision.decisionType === 'CREATE_PLAN');
   assert.deepEqual(plannerDecision.assumptions.map((item) => item.statement), [
-    'README evidence is available',
-    'both steps produce evidence'
+    'ASSUMPTION_REDACTED',
+    'ASSUMPTION_REDACTED'
   ]);
   assert.deepEqual(plannerDecision.assumptions.map((item) => item.testable), [false, true]);
   assert.ok(plannerDecision.uncertaintyCodes.includes('PLAN_ASSUMPTIONS_UNVERIFIED'));
@@ -224,7 +225,7 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
   const councilDecision = decisionTrace.decisions.find((decision) => decision.decisionType === 'REVIEW_PLAN');
   assert.ok(councilDecision.outputRefs.some((ref) => ref.startsWith('council-ranking-')));
   assert.ok(councilDecision.assumptions.some((item) =>
-    item.statement === 'selected the bounded plan' && item.source === 'MODEL_INFERENCE'));
+    item.statement === 'ASSUMPTION_REDACTED' && item.source === 'MODEL_INFERENCE'));
   const selectedCouncilOption = councilDecision.options.find((option) => option.optionId === councilDecision.selectedOptionId);
   assert.equal(selectedCouncilOption.expectedQuality, 0.8);
   assert.ok(councilDecision.options.some((option) => option.rejectionReasonCodes.includes('RANK_2')));
@@ -293,8 +294,9 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.equal(evaluation.optionCoverage.percent, 100);
   assert.equal(evaluation.evidenceLinkRate.percent, 100);
   assert.equal(evaluation.decisionOutcomeLinkRate.percent, 100);
-  const failureEvents = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-  assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && event.payload?.code === 'EMPTY_MODEL_RESPONSE'));
+  const failureListed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const failureEvents = JSON.parse(failureListed.stdout.trim()).events;
+  assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && (event.payload?.payload ?? event.payload)?.code === 'EMPTY_MODEL_RESPONSE'));
   const beforeResumeRequests = requests.length;
   const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], { DDA_RESUME_KEY: 'resume-key' });
   assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
@@ -349,7 +351,8 @@ test('recovers from a binary workspace read and verifies a colored build log thr
   assert.match(firstOutput.output, /WORKSPACE_BINARY_FILE/);
   const recoveredOutput = requests[3].input.find((item) => item.type === 'function_call_output');
   assert.equal(JSON.parse(recoveredOutput.output).content, log);
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const verifiedListed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(verifiedListed.stdout.trim()).events;
   const verifications = events.filter((event) => event.kind === 'VerificationCompleted' && event.payload.status);
   assert.deepEqual(verifications.map((event) => event.payload.status), ['CONTINUE', 'PASS']);
   assert.equal(events.some((event) => event.kind === 'TaskRunFailed'), false);

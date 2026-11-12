@@ -12,33 +12,7 @@ import type {
   WorkspaceFile
 } from './models';
 import { sameWorkspaceRoot } from './workspace';
-
-const runtimeRoleLabel = (role: string): string => ({
-  planner: '计划 Agent',
-  executor: '执行 Agent',
-  verifier: '结果验证 Agent',
-  semanticVerifier: '语义验证 Agent',
-  'council-planner': '计划评审 Agent',
-  'council-critic': '安全评审 Agent'
-}[role] ?? `${role} Agent`);
-
-const runtimeRoleDisplayLabel = (role: string, contextId?: string): string => {
-  if (role === 'council' && contextId?.includes('critic')) return '安全评审 Agent';
-  if (role === 'council' && contextId?.includes('planner')) return '计划评审 Agent';
-  return runtimeRoleLabel(role);
-};
-
-const runtimeRoleTask = (role: string): string => ({
-  planner: '等待生成任务计划',
-  executor: '等待执行已验证计划',
-  verifier: '等待核对执行结果',
-  semanticVerifier: '等待语义验证结果',
-  'council-planner': '等待提交计划评审意见',
-  'council-critic': '等待提交安全评审意见'
-}[role] ?? '等待角色任务');
-
-const runtimeRoleAgentId = (runId: string, role: string, contextId?: string): string =>
-  contextId?.trim() || `${runId}-${role}`;
+import { projectRoleActivity } from './role-activity';
 
 const makeId = (prefix: string): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -49,7 +23,7 @@ export const createInitialReadModel = (): HarnessReadModel => ({
   connection: {
     state: 'CONNECTING',
     mode: 'MOCK',
-    label: '正在启动本地只读运行时'
+    label: '正在启动本地运行时'
   },
   runtime: {
     platform: 'WEB_PREVIEW',
@@ -88,9 +62,9 @@ export const createInitialReadModel = (): HarnessReadModel => ({
     stale: false
   },
   composer: {
-    mode: 'READ_ONLY',
+    mode: 'CONTROLLED',
     enabled: true,
-    placeholder: '描述需要检查或分析的任务'
+    placeholder: '描述任务，必要的副作用会逐项请求审批'
   }
 });
 
@@ -113,26 +87,6 @@ export const setActiveThread = (
   ...(threadId ? { activeThreadId: threadId } : { activeThreadId: undefined }),
   ...(threadId && resume ? { resumeThreadId: threadId } : { resumeThreadId: undefined })
 });
-
-export const setExecutionMode = (
-  model: HarnessReadModel,
-  mode: HarnessReadModel['composer']['mode']
-): HarnessReadModel => {
-  if (model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY') mode = 'READ_ONLY';
-  return ({
-  ...model,
-  projectionVersion: model.projectionVersion + 1,
-  runtime: {
-    ...model.runtime,
-    commandExecution: mode === 'CONTROLLED'
-  },
-  composer: {
-    ...model.composer,
-    mode,
-    placeholder: mode === 'CONTROLLED' ? '描述任务，必要的副作用会逐项请求审批' : '描述需要检查或分析的任务'
-  }
-  });
-};
 
 export const upsertApproval = (
   model: HarnessReadModel,
@@ -174,16 +128,14 @@ export const setRuntimeReady = (
   connection: {
     state: 'READY',
     mode: snapshot ? 'LOCAL_RUNTIME' : 'MOCK',
-    label: snapshot ? 'Windows 本地运行时已就绪' : 'Web 预览使用只读 Mock 运行时'
+    label: snapshot ? 'Windows 本地运行时已就绪' : 'Web 预览使用模拟运行时'
   },
   // Fresh health replaces runtime, including cellsAvailability. cellsSession
   // stays on the model so a per-invoke health check cannot erase a live session.
   runtime: snapshot ?? model.runtime,
-  composer: snapshot?.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY'
-    ? { ...model.composer, mode: 'READ_ONLY', placeholder: '描述需要检查或分析的任务' }
-    : snapshot?.releaseChannel
-      ? { ...model.composer, mode: 'CONTROLLED', placeholder: '描述任务，必要的副作用会逐项请求审批' }
-      : model.composer
+  // Historical snapshots may still carry the old mode. Never use it to grant
+  // capabilities or select a different execution path for the next task.
+  composer: { ...model.composer, mode: 'CONTROLLED', placeholder: '描述任务，必要的副作用会逐项请求审批' }
 });
 
 export const setCellsSession = (
@@ -252,7 +204,7 @@ export const beginRun = (model: HarnessReadModel, prompt: string): HarnessReadMo
   };
 };
 
-const isSubAgentActive = (state: SubAgentState): boolean => state === 'STARTING' || state === 'RUNNING';
+const isSubAgentActive = (state: SubAgentState): boolean => state === 'STARTING' || state === 'RUNNING' || state === 'WAITING';
 
 export const setRunState = (model: HarnessReadModel, state: RunState): HarnessReadModel => {
   if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(state)) model = cancelPendingApprovals(model);
@@ -270,7 +222,12 @@ export const setRunState = (model: HarnessReadModel, state: RunState): HarnessRe
     activeRun: model.activeRun ? { ...model.activeRun, state } : undefined,
     subAgents: terminalAgentState
       ? model.subAgents.map((agent) => isSubAgentActive(agent.state)
-        ? { ...agent, state: terminalAgentState, updatedAtMs: now }
+        ? { ...agent,
+            state: agent.runtimeRole && !agent.workStarted ? 'SKIPPED' : terminalAgentState,
+            ...(agent.runtimeRole ? { task: !agent.workStarted ? '本轮未调用'
+              : state === 'SUCCEEDED' ? '本轮执行已完成'
+                : state === 'CANCELLED' ? '任务已取消，角色工作已停止' : '任务未完成，角色工作已停止' } : {}),
+            updatedAtMs: now }
         : agent)
       : model.subAgents,
     composer: {
@@ -289,6 +246,7 @@ export const upsertSubAgent = (
   const nextSubAgents = model.subAgents.slice();
   if (index < 0) {
     nextSubAgents.push({
+      ...patch,
       agentId: patch.agentId,
       name: patch.name ?? '子 Agent',
       task: patch.task ?? '等待任务',
@@ -320,131 +278,7 @@ export const upsertSubAgent = (
 export const applyRuntimeSubAgentEvent = (
   model: HarnessReadModel,
   event: RuntimeEvent
-): HarnessReadModel => {
-  if (!event || typeof event.runId !== 'string' || !event.payload || typeof event.payload !== 'object') return model;
-  const payload = event.payload as Record<string, unknown>;
-  const role = typeof payload.role === 'string' ? payload.role : '';
-  const contextId = typeof payload.contextId === 'string' ? payload.contextId : undefined;
-
-  if (event.kind === 'RoleContextAllocated') {
-    const contextKey = typeof payload.contextId === 'string' ? payload.contextId : undefined;
-    if (!role || !contextKey) return model;
-    return upsertSubAgent(model, {
-      agentId: contextKey,
-      name: runtimeRoleDisplayLabel(role, contextKey),
-      task: runtimeRoleTask(role),
-      state: 'STARTING'
-    });
-  }
-
-  if (event.kind === 'RoleContextStateChanged') {
-    const contextKey = typeof payload.contextId === 'string' ? payload.contextId : undefined;
-    const nextState = typeof payload.to === 'string' ? payload.to.toUpperCase() : '';
-    const state: SubAgentState = nextState === 'BUSY' || nextState === 'INTERRUPTING' ? 'RUNNING'
-      : nextState === 'CLOSED' ? 'SUCCEEDED'
-        : nextState === 'FAILED' ? 'FAILED' : 'STARTING';
-    if (!contextKey) return model;
-    return upsertSubAgent(model, {
-      agentId: contextKey,
-      ...(role ? { name: runtimeRoleDisplayLabel(role, contextKey), task: runtimeRoleTask(role) } : {}),
-      state
-    });
-  }
-
-  if (event.kind === 'role.contexts_allocated') {
-    const contexts = Array.isArray(payload.contexts) ? payload.contexts : [];
-    let next = model;
-    for (const value of contexts) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-      const context = value as Record<string, unknown>;
-      const contextRole = typeof context.role === 'string' ? context.role : '';
-      if (!contextRole) continue;
-      const contextKey = typeof context.contextId === 'string' ? context.contextId : undefined;
-      const agentId = runtimeRoleAgentId(event.runId, contextRole, contextKey);
-      // Runtime emits the individual allocation/state frames before this
-      // aggregate summary.  The summary is descriptive and must not move an
-      // already BUSY or completed role back to STARTING (the exact ordering
-      // seen by the desktop is Allocated -> BUSY -> contexts_allocated).
-      const existing = next.subAgents.find((agent) => agent.agentId === agentId);
-      next = existing
-        ? upsertSubAgent(next, {
-            agentId,
-            name: runtimeRoleDisplayLabel(contextRole, contextKey)
-          })
-        : upsertSubAgent(next, {
-            agentId,
-            name: runtimeRoleDisplayLabel(contextRole, contextKey),
-            task: runtimeRoleTask(contextRole),
-            state: 'STARTING'
-          });
-    }
-    return next;
-  }
-
-  if (event.kind === 'role.contexts_reconciled') {
-    const contexts = Array.isArray(payload.contexts) ? payload.contexts : [];
-    let next = model;
-    for (const value of contexts) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-      const context = value as Record<string, unknown>;
-      const contextRole = typeof context.role === 'string' ? context.role : '';
-      const contextKey = typeof context.contextId === 'string' ? context.contextId : undefined;
-      if (!contextRole || !contextKey) continue;
-      next = upsertSubAgent(next, {
-        agentId: contextKey,
-        name: runtimeRoleDisplayLabel(contextRole, contextKey),
-        task: typeof context.reason === 'string' && context.reason === 'OWNER_PROCESS_LOST'
-          ? '上次运行进程已退出，角色上下文已标记失败'
-          : '上次运行未完成，角色上下文已标记失败',
-        state: 'FAILED'
-      });
-    }
-    return next;
-  }
-
-  if (!role && event.kind !== 'planner.restored') return model;
-  // planner.restored predates the current role context and therefore carries
-  // no contextId. Reuse the allocated planner row when available instead of
-  // creating a duplicate row for the same runtime role.
-  const restoredPlanner = event.kind === 'planner.restored' && !role && !contextId
-    ? model.subAgents.find((agent) => agent.name === runtimeRoleLabel('planner'))
-    : undefined;
-  const agentId = restoredPlanner?.agentId ?? runtimeRoleAgentId(event.runId, role || 'planner', contextId);
-  const existingName = model.subAgents.find((agent) => agent.agentId === agentId)?.name;
-  const displayName = existingName ?? runtimeRoleDisplayLabel(role || 'planner', contextId);
-  if (event.kind === 'role.text_delta') {
-    const chars = typeof payload.chars === 'number' && Number.isFinite(payload.chars) ? payload.chars : 0;
-    return upsertSubAgent(model, {
-      agentId,
-      name: displayName,
-      task: chars > 0 ? `正在生成角色响应（已接收 ${chars} 字符）` : '正在生成角色响应',
-      state: 'RUNNING'
-    });
-  }
-  if (event.kind === 'role.turn_completed') {
-    const outputChars = typeof payload.outputChars === 'number' && Number.isFinite(payload.outputChars)
-      ? payload.outputChars
-      : undefined;
-    return upsertSubAgent(model, {
-      agentId,
-      name: displayName,
-      task: outputChars === undefined ? '角色回合已完成' : `角色回合已完成（${outputChars} 字符）`,
-      state: 'SUCCEEDED'
-    });
-  }
-  if (event.kind === 'planner.restored') {
-    const stepCount = typeof payload.stepCount === 'number' && Number.isFinite(payload.stepCount)
-      ? payload.stepCount
-      : undefined;
-    return upsertSubAgent(model, {
-      agentId,
-      name: runtimeRoleLabel('planner'),
-      task: stepCount === undefined ? '已从 Thread checkpoint 恢复计划' : `已从 Thread checkpoint 恢复计划（${stepCount} 步）`,
-      state: 'SUCCEEDED'
-    });
-  }
-  return model;
-};
+): HarnessReadModel => projectRoleActivity(model, event, upsertSubAgent);
 
 export const upsertStreamingAgent = (
   model: HarnessReadModel,

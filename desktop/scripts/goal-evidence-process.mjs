@@ -11,15 +11,16 @@ export const findCodexCli = async (explicit = process.env.DDA_CODEX_CLI) => {
   throw Error('CODEX_CLI_NOT_FOUND: install the ordinary Codex CLI or set DDA_CODEX_CLI');
 };
 
-export const runEvidenceProcess = (command, args, { cwd, env = {}, dropEnv = [], inheritEnv = true, timeoutMs = 180000 } = {}) => new Promise((done, reject) => {
+export const runEvidenceProcess = (command, args, { cwd, env = {}, dropEnv = [], inheritEnv = true, timeoutMs = 180000, onStdoutLine } = {}) => new Promise((done, reject) => {
   const start = Date.now();
   const childEnv = { ...(inheritEnv ? process.env : {}), ...env };
   // A child is a separate run. Inheriting Node's private test-worker marker
   // makes `node --test` silently skip discovery instead of testing the task.
   delete childEnv.NODE_TEST_CONTEXT;
   for (const name of dropEnv) delete childEnv[name];
-  const child = spawn(command, args, { cwd, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  let stdout = '', stderr = '', timedOut = false, settled = false, drainTimer;
+  const interactive = typeof onStdoutLine === 'function';
+  const child = spawn(command, args, { cwd, env: childEnv, stdio: [interactive ? 'pipe' : 'ignore', 'pipe', 'pipe'], windowsHide: true });
+  let stdout = '', stderr = '', timedOut = false, settled = false, drainTimer, lineBuffer = '';
   const finish = (code, outputTruncated = false) => {
     if (settled) return;
     settled = true;
@@ -43,7 +44,18 @@ export const runEvidenceProcess = (command, args, { cwd, env = {}, dropEnv = [],
     }
     else child.kill('SIGTERM');
   }, timeoutMs);
-  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stdout.on('data', chunk => {
+    stdout += chunk;
+    if (!interactive) return;
+    lineBuffer += chunk;
+    let index;
+    while ((index = lineBuffer.indexOf('\n')) >= 0) {
+      const line = lineBuffer.slice(0, index);
+      lineBuffer = lineBuffer.slice(index + 1);
+      // A responder fault must not kill output collection or the child.
+      try { onStdoutLine(line, child); } catch { /* fixture responders guard themselves */ }
+    }
+  });
   child.stderr.on('data', chunk => { stderr += chunk; });
   child.once('error', error => {
     if (settled) return;
@@ -53,7 +65,7 @@ export const runEvidenceProcess = (command, args, { cwd, env = {}, dropEnv = [],
   child.once('close', code => finish(code));
 });
 
-export const codexEvidenceArgs = ({ prefix = [], endpoint, workspace, model = 'evidence-fixture', prompt, finalPath, mode = 'READ_ONLY' }) => [
+export const codexEvidenceArgs = ({ prefix = [], endpoint, workspace, model = 'evidence-fixture', prompt, finalPath, mode = 'CONTROLLED' }) => [
   ...prefix, 'exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '--json', '--color', 'never',
   '--disable', 'plugins', '--disable', 'remote_plugin',
   '--sandbox', mode === 'CONTROLLED' ? 'workspace-write' : 'read-only', '-C', workspace, '-m', model, '-o', finalPath,

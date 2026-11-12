@@ -3,10 +3,10 @@ import { realpath, readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pluginGovernanceDigest } from './plugin-governance.mjs';
-import { KNOWN_PERMISSIONS, PERMISSION_CEILINGS, permissionsExceedingCeiling } from './plugin-permissions.mjs';
+import { KNOWN_PERMISSIONS, isPermissionCeiling, permissionsExceedingCeiling } from './plugin-permissions.mjs';
 import { emptyPluginRevocations, pluginRevocationHit, readPluginRevocations } from './plugin-revocations.mjs';
 import { preferMappedPath } from './platform/workspace-path.mjs';
-import { isControlledRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
+import { isControlledRelease, resolveReleaseChannel } from './release-channel.mjs';
 
 const MAX_PLUGIN_BYTES = 2 * 1024 * 1024;
 const MODULE_EXTENSIONS = new Set(['.mjs', '.js', '.cjs']);
@@ -92,11 +92,11 @@ export const validatePluginManifest = (manifest) => {
     if (contribution.permissions?.some((value) => !validPermission(value))) {
       throw new Error('PLUGIN_PERMISSIONS_UNDECLARED');
     }
-    if (contribution.permissionCeiling !== undefined && !PERMISSION_CEILINGS.includes(contribution.permissionCeiling)) {
+    if (contribution.permissionCeiling !== undefined && !isPermissionCeiling(contribution.permissionCeiling)) {
       throw new Error('PLUGIN_PERMISSION_CEILING_INVALID');
     }
   }
-  // A declared ceiling is an upper bound, not a label: a READ_ONLY manifest that
+  // A declared ceiling is an upper bound, not a label: an OBSERVE manifest that
   // declares control-level permissions is rejected before it can be loaded.
   if (permissionsExceedingCeiling(manifest).length > 0) throw new Error('PLUGIN_PERMISSION_CEILING_EXCEEDED');
   if (manifest.dependencies !== undefined) {
@@ -259,9 +259,7 @@ export class DynamicPluginLoader {
   }
 
   async load(pluginId) {
-    if (isReadOnlyRelease()) {
-      throw new Error('RELEASE_CHANNEL_DYNAMIC_PLUGIN_DISABLED');
-    }
+    resolveReleaseChannel();
     this.#governance.assertLoadable(pluginId);
     const record = this.#governance.get(pluginId);
     if (!record) throw new Error('PLUGIN_NOT_FOUND');

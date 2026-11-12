@@ -9,7 +9,7 @@ test('commits intent before effect and commits a success outcome', async () => {
   const store = makeStore();
   const facade = createDurableCommitFacade({ eventStore: store, now: () => 10 });
   let observedIntent;
-  const result = await facade.commitBeforeEffect({ runId: 'run-1', intentPayload: { capability: 'READ_ONLY' }, effect: async ({ intent }) => {
+  const result = await facade.commitBeforeEffect({ runId: 'run-1', intentPayload: { capability: 'OBSERVE' }, effect: async ({ intent }) => {
     observedIntent = intent;
     return { ok: true };
   } });

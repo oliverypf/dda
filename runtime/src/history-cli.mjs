@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertReleaseHarnessStore, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
+import { assertReleaseHarnessStore, isControlledRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { readThreadHistory } from './thread-history-reader.mjs';
 import { resolveStoreFile } from './platform/paths.mjs';
 
@@ -25,7 +25,7 @@ export async function runHistoryCommand(command, args = process.argv.slice(3)) {
   const scopedTrajectory = value('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
   const harnessPath = assertReleaseHarnessStore(value('--harness-event-store') ?? process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultPath('hmcodex.db')
-      : isReadOnlyRelease(releaseChannel) && trajectoryPath ? `${trajectoryPath}.db` : undefined));
+      : isControlledRelease(releaseChannel) && trajectoryPath ? `${trajectoryPath}.db` : undefined));
   const explicitThreadStore = value('--thread-store') !== undefined || Boolean(process.env.DDA_THREAD_STORE?.trim());
   const threadPath = value('--thread-store') ?? process.env.DDA_THREAD_STORE
     ?? (command !== 'thread' && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultPath('threads.json'));

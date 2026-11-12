@@ -64,7 +64,7 @@ async function fixture({ deferRuntime = false, sidebar = false, duplicateRoots =
         if (command === 'runtime_snapshot' && deferRuntime) await gate('runtime');
         if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', runtimeReady: true,
           readOnly: true, workspaceRead: true, commandExecution: false, networkSideEffects: false,
-          releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' };
+          releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
         if (command === 'reconcile_runtime_state') return { ok: true, reconciled: 0 };
         if (command === 'default_workspace') return { rootLabel: 'A', rootPath: state.root };
         if (command === 'choose_workspace') {

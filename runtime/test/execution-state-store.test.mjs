@@ -177,7 +177,7 @@ test('binds approvals and leases to the persisted channel and capability snapsho
     requestDigest: intent.requestDigest,
     displayedDigest: intent.requestDigest,
     capabilitySnapshot,
-    releaseChannel: 'WINDOWS_PHASE1_READ_ONLY'
+    releaseChannel: 'WINDOWS_FULL_LOCAL'
   }), /EXECUTION_RELEASE_CHANNEL_MISMATCH/);
 
   const approval = await store.createApproval({

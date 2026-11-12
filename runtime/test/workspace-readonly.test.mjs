@@ -141,3 +141,65 @@ test('reads ANSI-colored build logs without changing file evidence or paging off
   await assert.rejects(workspace.read('control.log'), /WORKSPACE_BINARY_FILE/);
   await assert.rejects(workspace.read('escape.log'), /WORKSPACE_BINARY_FILE/);
 });
+
+test('snapshot walks breadth-first and skips hidden cache/build directories so monorepo manifests stay visible', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-bfs-'));
+  await mkdir(join(root, '.bitfun', '.deveco', '.cxx'), { recursive: true });
+  await mkdir(join(root, '.codex', '__pycache__'), { recursive: true });
+  await mkdir(join(root, 'desktop', 'src-tauri', 'target-b199'), { recursive: true });
+  await mkdir(join(root, 'runtime', 'src'), { recursive: true });
+  for (let i = 0; i < 60; i += 1) {
+    await writeFile(join(root, '.bitfun', '.deveco', '.cxx', `cache-${i}.json`), '{}');
+    await writeFile(join(root, 'desktop', 'src-tauri', 'target-b199', `artifact-${i}.d`), '');
+  }
+  await writeFile(join(root, '.codex', '__pycache__', 'mod.cpython-314.pyc'), 'pyc');
+  await writeFile(join(root, 'desktop', 'package.json'), '{"name":"desktop"}\n');
+  await writeFile(join(root, 'desktop', 'src-tauri', 'Cargo.toml'), '[package]\nname = "dda"\n');
+  await writeFile(join(root, 'runtime', 'package.json'), '{"name":"runtime"}\n');
+
+  const workspace = new ReadonlyWorkspace(root);
+  const snapshot = await workspace.snapshot();
+  const paths = snapshot.entries.map((entry) => entry.path);
+  assert.equal(paths.some((p) => p.startsWith('.bitfun')), false);
+  assert.equal(paths.some((p) => p.includes('__pycache__') || p.endsWith('.pyc')), false);
+  assert.equal(paths.some((p) => p.includes('target-b199')), false);
+  assert.equal(paths.includes('desktop/package.json'), true);
+  assert.equal(paths.includes('desktop/src-tauri/Cargo.toml'), true);
+  assert.equal(paths.includes('runtime/package.json'), true);
+});
+
+
+test('snapshot skips noisy cache dirs, ranks nested manifests, and stays bounded without fabricating root manifests', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-snapshot-'));
+  await mkdir(join(root, '.bitfun', 'logs'), { recursive: true });
+  await writeFile(join(root, '.bitfun', 'logs', 'trace.json'), '{}');
+  await mkdir(join(root, '.deveco', 'cache'), { recursive: true });
+  await writeFile(join(root, '.deveco', 'cache', 'idx.db'), 'x');
+  // Nested manifests only — the root itself has no package.json/Cargo.toml and
+  // the snapshot must not fabricate one.
+  await mkdir(join(root, 'desktop'), { recursive: true });
+  await writeFile(join(root, 'desktop', 'package.json'), '{}');
+  await mkdir(join(root, 'runtime'), { recursive: true });
+  await writeFile(join(root, 'runtime', 'Cargo.toml'), '[package]\n');
+  // A flood of plain files must not push the bounded snapshot past its cap.
+  await mkdir(join(root, 'zz-bulk'), { recursive: true });
+  for (let i = 0; i < 260; i += 1) await writeFile(join(root, 'zz-bulk', `f${String(i).padStart(3, '0')}.txt`), 'x');
+  const workspace = new ReadonlyWorkspace(root);
+
+  const snapshot = await workspace.snapshot();
+  const paths = snapshot.entries.map((entry) => entry.path);
+  assert.ok(snapshot.entries.length <= 200);
+  assert.equal(paths.some((path) => path.includes('.bitfun')), false);
+  assert.equal(paths.some((path) => path.includes('.deveco')), false);
+  assert.equal(paths.includes('package.json'), false, 'no fabricated root manifest');
+  assert.equal(paths.includes('Cargo.toml'), false, 'no fabricated root manifest');
+  assert.ok(paths.includes('desktop/package.json'));
+  assert.ok(paths.includes('runtime/Cargo.toml'));
+
+  // Explicit reads of an authorized cache-dir path still resolve; the ignore
+  // list only bounds the snapshot, it is not a permission boundary.
+  const cached = await workspace.read('.bitfun/logs/trace.json');
+  assert.equal(cached.path, '.bitfun/logs/trace.json');
+  const cachedList = await workspace.list('.deveco');
+  assert.ok(cachedList.entries.some((entry) => entry.path === '.deveco/cache'));
+});

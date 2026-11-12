@@ -40,7 +40,7 @@ The facade **forwards caller intent only**; the runtime remains the authority fo
 safety, approval, PolicyLease, Rule Verifier and the Jev decision plane.
 Specifically the facade:
 
-- defaults tasks to `READ_ONLY`;
+- defaults tasks to `CONTROLLED` and rejects retired mode names (ADR-0026);
 - never injects an approval decision or an auto-approve flag — fail-closed
   approval behaviour stays in the runtime;
 - is fail-closed when mapping results to exit codes: a missing/garbled result is

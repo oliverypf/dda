@@ -146,10 +146,10 @@ test('role context persistence rejects tampered identity and binding snapshots',
   assert.equal(context.threadId, 'thread-1');
 });
 
-test('rule router blocks modify tasks in read-only mode', () => {
+test('rule router rejects retired modes and routes observation tasks by default', () => {
   const router = new RuleRouter();
   assert.equal(router.resolve({ prompt: '请修改文件', mode: 'READ_ONLY' }).status, 'BLOCKED');
-  assert.equal(router.resolve({ prompt: '检查项目结构', mode: 'READ_ONLY' }).taskClass, 'inspect');
+  assert.equal(router.resolve({ prompt: '检查项目结构' }).taskClass, 'inspect');
 });
 
 test('rule router fails closed for invalid mode or role filters', () => {

@@ -40,7 +40,7 @@ export function openHarnessDatabase(storagePath, { readOnly = false, verifyInteg
   try {
     // secure_delete keeps purged prompt/source bytes out of freed pages; a
     // plain DELETE only unlinks rows and leaves the payload on disk.
-    db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
+    db.exec('PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
     // Interactive read-only projections validate returned envelopes. Audits and
     // every writable connection still run the complete integrity check.
     if (!readOnly || verifyIntegrity) {

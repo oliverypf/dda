@@ -126,7 +126,7 @@ test('CLI host detection follows Windows, Linux, and HarmonyOS markers', () => {
 
 test('platform identity stays windows-desktop until linux-cli is requested', () => {
   assert.equal(resolvePlatformIdentity({}).platform, 'windows-desktop');
-  assert.equal(resolvePlatformIdentity({ DDA_PLATFORM: 'linux-cli', DDA_RELEASE_CHANNEL: 'LINUX_CLI_READ_ONLY' }).executor, 'linux-posix');
+  assert.equal(resolvePlatformIdentity({ DDA_PLATFORM: 'linux-cli', DDA_RELEASE_CHANNEL: 'LINUX_CLI_CONTROLLED' }).executor, 'linux-posix');
   assert.equal(executorDescriptor({}).pluginId, 'executor-windows');
   assert.equal(executorDescriptor({ DDA_PLATFORM: 'linux-cli' }).id, 'linux-posix@0.1.0');
   assert.equal(executorDescriptor({ DDA_PLATFORM: 'harmonyos-cli' }).pluginId, 'executor-harmonyos');
@@ -134,7 +134,7 @@ test('platform identity stays windows-desktop until linux-cli is requested', () 
   assert.equal(scenarioPlatform({ DDA_PLATFORM: 'linux-cli' }), 'LINUX');
   assert.equal(scenarioPlatform({ DDA_PLATFORM: 'harmonyos-cli' }), 'HARMONYOS');
   assert.equal(policyChannelForRelease('LINUX_CLI_CONTROLLED'), 'CONTROLLED');
-  assert.equal(policyChannelForRelease('WINDOWS_PHASE1_READ_ONLY'), 'READ_ONLY');
+  assert.equal(policyChannelForRelease('WINDOWS_PHASE1_READ_ONLY'), 'UNSUPPORTED');
 });
 
 test('Linux executor rejects shell interpretation before any process starts', async () => {

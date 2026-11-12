@@ -378,21 +378,29 @@ test('explicit resume still retries an ordinary failed step', async () => {
   assert.equal(scheduler.plan.steps[0].errorCode, 'EXPLICIT_RESUME_RETRY');
 });
 
-test('read-only observation retry still readies a running step and leaves a persisted uncertain step blocked', async () => {
-  const evidence = controlledEvidence({ executed: true });
-  const readOnly = async ({ step }) => reconcileInterruptedPlanStep({
-    mode: 'READ_ONLY',
-    readOnlyObservationRetry: true,
+test('observation-only evidence retries a running step and leaves a persisted uncertain step blocked', async () => {
+  let sequence = 0;
+  const ev = (kind, payload) => ({ eventId: `obs-${++sequence}`, sequence, runId: 'run-a', kind, payload });
+  const observationEvents = [
+    ev('TaskRunCreated', { requestedMode: 'CONTROLLED' }),
+    ev('PlanStepStateChanged', { currentStepId: 'inspect', steps: [
+      { stepId: 'inspect', status: 'RUNNING', attempt: 1 },
+      { stepId: 'report', status: 'PENDING', attempt: 0 }
+    ] }),
+    ev('ToolInvocationCompleted', { name: 'workspace.read', ok: true, durationMs: 3, inputDigest: `sha256:${'a'.repeat(64)}` })
+  ];
+  const observe = async ({ step }) => reconcileInterruptedPlanStep({
+    mode: 'CONTROLLED',
     step,
-    events: evidence.events,
-    records: evidence.records,
-    sourceRunId: evidence.sourceRunId
+    events: observationEvents,
+    records: [],
+    sourceRunId: 'run-a'
   });
   const running = createPlanStepCoordinator({
     coordinator: makeCoordinator({ ...runningPlan, currentStepId: 'inspect' }).coordinator,
     plan,
     resumeFailed: true,
-    reconcileStep: readOnly
+    reconcileStep: observe
   });
   await running.initialize();
   assert.equal(running.plan.steps[0].status, 'READY');
@@ -402,7 +410,7 @@ test('read-only observation retry still readies a running step and leaves a pers
     coordinator: makeCoordinator().coordinator,
     plan: uncertainPlan,
     resumeFailed: true,
-    reconcileStep: readOnly
+    reconcileStep: observe
   });
   await stuck.initialize();
   assert.equal(stuck.plan.steps[0].status, 'BLOCKED');

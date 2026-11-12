@@ -85,12 +85,12 @@ export const classifyTask = (prompt) => {
 export class RuleRouter {
   #routes;
   constructor({ routes = DEFAULT_ROUTES } = {}) { this.#routes = structuredClone(routes); }
-  resolve({ prompt, taskClass: requestedTaskClass, mode = 'READ_ONLY', allowedRoles = ['planner', 'executor', 'verifier'] } = {}) {
+  resolve({ prompt, taskClass: requestedTaskClass, mode = 'CONTROLLED', allowedRoles = ['planner', 'executor', 'verifier'] } = {}) {
     const taskClass = typeof requestedTaskClass === 'string' && requestedTaskClass.trim()
       ? requestedTaskClass.trim()
       : classifyTask(prompt);
     const route = this.#routes[taskClass] ?? this.#routes.unknown ?? {};
-    if (!['READ_ONLY', 'CONTROLLED'].includes(mode)) {
+    if (mode !== 'CONTROLLED') {
       return { taskClass, status: 'BLOCKED', reason: 'INVALID_EXECUTION_MODE', roles: {} };
     }
     if (!Array.isArray(allowedRoles) || allowedRoles.some((role) => typeof role !== 'string' || !role.trim())) {
@@ -98,9 +98,6 @@ export class RuleRouter {
     }
     const routeObject = route && typeof route === 'object' && !Array.isArray(route) ? route : {};
     const roles = Object.fromEntries(Object.entries(routeObject).filter(([role]) => allowedRoles.includes(role)));
-    if (mode === 'READ_ONLY' && taskClass === 'modify') {
-      return { taskClass, status: 'BLOCKED', reason: 'READ_ONLY_MODE', roles };
-    }
     return { taskClass, status: 'SELECTED', reason: 'STATIC_RULE', roles };
   }
 }

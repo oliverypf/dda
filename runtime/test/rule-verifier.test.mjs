@@ -97,6 +97,29 @@ test('fresh reads and preservation checks after an observed write are not a stal
   assert.equal(verify([write, { ...write, outputDigest: digest('1'), newEvidence: true }]).status, 'STALLED', 'repeated side effects keep the same fingerprint regardless of their output');
 });
 
+test('workspace.inspect_binary observations classify changed results as new evidence', () => {
+  const digest = char => `sha256:${char.repeat(64)}`;
+  const inspect = { name: 'workspace.inspect_binary', path: 'build/app.exe', state: 'SUCCEEDED',
+    argumentsDigest: digest('a'), outputDigest: digest('b') };
+  const shell = { name: 'shell.execute', argumentsDigest: digest('c'), outputDigest: digest('d'), state: 'SUCCEEDED' };
+  const verify = actions => new RuleVerifier().verify({ output: 'inspected binaries and verified', workspace: { granted: true }, actions });
+  // Same arguments but a genuinely changed output digest is fresh evidence,
+  // e.g. a binary re-inspected after a rebuild.
+  const distinct = verify([inspect, shell, { ...inspect, outputDigest: digest('1') }]);
+  assert.equal(distinct.checks.find(item => item.id === 'actions.duplicates')?.status, 'PASS', 'distinct inspect output is not a repeat');
+  // Identical arguments AND identical output is still a stalled repetition.
+  const same = verify([inspect, { ...inspect }]);
+  assert.equal(same.checks.find(item => item.id === 'actions.duplicates')?.status, 'FAIL');
+  assert.ok(same.failureCodes.includes('REPEATED_ACTION'));
+  assert.equal(same.status, 'STALLED');
+  // A failed inspection cannot carry a changed digest into the exempt read set.
+  const failed = { ...inspect, state: 'FAILED', outputDigest: digest('2') };
+  const failedReport = verify([inspect, failed]);
+  assert.equal(failedReport.status, 'FAIL', 'failed inspect is never exempt read evidence');
+  // Side-effect tools keep their original fingerprint regardless of output.
+  assert.equal(verify([shell, { ...shell, outputDigest: digest('3') }]).status, 'STALLED', 'duplicate side effects still fail');
+});
+
 test('one repeated syntax diagnosis can recover only through a later actual full test', () => {
   const digest = char => `sha256:${char.repeat(64)}`;
   const actual = (kind, fingerprint, output) => ({ name: 'test.execute', state: 'SUCCEEDED', argumentsDigest: fingerprint,

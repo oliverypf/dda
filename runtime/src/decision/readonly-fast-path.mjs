@@ -42,8 +42,8 @@ const proposedInput = (claim) => {
 
 /**
  * Return a deterministic ACTION_GATE ALLOW for an eligible call, or undefined
- * when the call must keep its normal gate. The caller must apply the hard
- * READ_ONLY BLOCK first; this function never overrides a block.
+ * when the call must keep its normal gate. This only skips the semantic
+ * round-trip: registry, workspace and hard policy checks still apply.
  */
 export const readonlyFastPathDecision = ({ enabled, name, registered, toolReadOnly, request, proposedInputClaim } = {}) => {
   if (enabled !== true) return undefined;

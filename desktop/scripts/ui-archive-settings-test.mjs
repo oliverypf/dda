@@ -43,7 +43,7 @@ async function fixture(options = {}) {
       invoke: async (cmd, args = {}) => {
         window.__archiveSettings.calls.push({ cmd, args });
         if (cmd === 'plugin:event|listen') { listeners.set(args.event, args.handler); return ++id; }
-        if (cmd === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', readOnly: true, workspaceRead: true, commandExecution: false, networkSideEffects: false, runtimeReady: true, releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' };
+        if (cmd === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', readOnly: true, workspaceRead: true, commandExecution: false, networkSideEffects: false, runtimeReady: true, releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
         if (cmd === 'runtime_dashboard') return { summaryOnly: true, threads };
         if (cmd === 'default_workspace') return { rootPath: 'C:/fixture/A', rootLabel: 'A' };
         if (cmd === 'set_workspace') return { rootPath: args.path, rootLabel: args.path.split('/').pop() };

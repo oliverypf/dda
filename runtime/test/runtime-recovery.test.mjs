@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createExecutionStateStore } from '../src/execution-state-store.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { dreamDigest } from '../src/dream-scheduler.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
@@ -23,7 +24,7 @@ const run = (args, env) => new Promise((resolve, reject) => {
 
 test('recovery records a Git observer checkpoint in the Harness Store', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-recovery-git-'));
-  const harnessPath = join(directory, 'harness-events.json');
+  const harnessPath = join(directory, 'harness-events.db');
   const auditPath = join(directory, 'git-audit.json');
   const result = await run(['recovery', '--workspace', directory, '--harness-event-store', harnessPath, '--audit-store', auditPath, '--run-id', 'recovery-git'], {});
   assert.equal(result.code, 0, result.stderr);
@@ -33,7 +34,7 @@ test('recovery records a Git observer checkpoint in the Harness Store', async ()
   assert.equal(payload.workspace.status, 'NOT_A_REPOSITORY');
   assert.equal(typeof payload.workspace.observationDigest, 'string');
   assert.equal(typeof payload.workspace.changedFiles, 'number');
-  const events = JSON.parse(await readFile(harnessPath, 'utf8')).events;
+  const events = await createHarnessEventStore({ storagePath: harnessPath }).list();
   assert.deepEqual(events.map((event) => event.kind), ['RecoveryStarted', 'GitStateObserved', 'RecoveryCompleted']);
   const audit = JSON.parse(await readFile(auditPath, 'utf8'));
   assert.equal(audit.checkpoints.length, 1);

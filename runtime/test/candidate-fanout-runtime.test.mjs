@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+import { ProfileRegistry } from '../src/profile-registry.mjs';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const run = (args, env) => new Promise((resolve, reject) => {
@@ -131,10 +132,26 @@ test(`multi-agent candidate runtime audits ${scenario}`, async (t) => {
     } : {})
   }), 'utf8');
 
+  // Controlled executor bindings must carry eligible profile evidence before
+  // they may authorize a side effect; seed both candidates for task.unknown.
+  const profilePath = join(workspace, 'profiles.json');
+  const profiles = new ProfileRegistry({ storagePath: profilePath });
+  for (const modelId of ['model-a', 'model-b']) {
+    for (let index = 0; index < 3; index += 1) {
+      await profiles.recordEvidence({
+        kind: 'CAPABILITY', entityType: 'model', entityId: modelId, capabilityId: 'task.unknown',
+        runId: `seed-${modelId}-${index}`, sourceType: 'verifier', sourceId: `seed-verifier-${index}`,
+        outcome: 'SUCCEEDED', quality: 0.9, safety: 1
+      });
+    }
+  }
+  await profiles.flush();
+
   const result = await run([
     'task', '--agent-mode', 'multi', '--config', configPath,
     '--prompt', '请帮我处理一下这件事', '--workspace', workspace,
-    '--trajectory-store', trajectory, '--harness-event-store', harnessStore
+    '--trajectory-store', trajectory, '--harness-event-store', harnessStore,
+    '--profile-store', profilePath
   ], { [keyName]: 'candidate-test-key' });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());

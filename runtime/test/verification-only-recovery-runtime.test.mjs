@@ -59,7 +59,7 @@ test('semantic requests retain evidence once and preserve an actual negative cho
   assert.equal(actual.decision, 'FAIL'); assert.equal(actual.confidence, 0.05);
 });
 
-for (const [mode, eventual, delayed = false] of [['READ_ONLY', 'PASS'], ['CONTROLLED', 'PASS'], ['CONTROLLED', 'FAIL'], ['CONTROLLED', 'SERVICE_FAILURE'], ['CONTROLLED', 'PASS', true]]) {
+for (const [mode, eventual, delayed = false] of [['OBSERVE', 'PASS'], ['CONTROLLED', 'PASS'], ['CONTROLLED', 'FAIL'], ['CONTROLLED', 'SERVICE_FAILURE'], ['CONTROLLED', 'PASS', true]]) {
   test(`native ${mode} workflow verifies without another executor turn (${eventual}, delayed=${delayed})`, async t => {
     const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-verification-only-proof-'));
     const marker = 'GOAL_VERIFICATION_ONLY_ACTUAL_EVIDENCE';
@@ -95,11 +95,11 @@ for (const [mode, eventual, delayed = false] of [['READ_ONLY', 'PASS'], ['CONTRO
       }
       modelCalls++;
       const outputs = body.input.filter(item => item.type === 'function_call_output');
-      const calls = mode === 'READ_ONLY' ? [['workspace.read', { path: 'README.md' }]]
+      const calls = mode === 'OBSERVE' ? [['workspace.read', { path: 'README.md' }]]
         : [['file.write', { path: 'value.mjs', content: 'export const value = 1;\n' }], ['test.execute', { command: 'node --test --test-isolation=none' }]];
       const next = calls[outputs.length];
       emitGoalResponse(response, next ? [{ type: 'function_call', id: `call-${modelCalls}`, call_id: `call-${modelCalls}`, name: next[0], arguments: JSON.stringify(next[1]) }]
-        : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: mode === 'READ_ONLY' ? marker : 'Changed only value.mjs; the actual immutable test passed.' }] }]);
+        : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: mode === 'OBSERVE' ? marker : 'Changed only value.mjs; the actual immutable test passed.' }] }]);
     });
     t.after(() => { server.closeAllConnections(); server.close(); });
     const port = await listenOnFetchablePort(server);
@@ -107,22 +107,31 @@ for (const [mode, eventual, delayed = false] of [['READ_ONLY', 'PASS'], ['CONTRO
     await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'fixture', endpoint: `http://127.0.0.1:${port}/model`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY',
       decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'GOAL_VERIFY_ONLY_FIX_KEY', timeoutMs: delayed ? 200 : 5000, verificationTimeoutMs: 5000 } }));
     const env = { GOAL_VERIFY_ONLY_FIX_KEY: 'local-only-key', DDA_DATA_DIR: workspace, DDA_HARNESS_EVENT_STORE: store,
-      DDA_CONTEXT_PROVIDER: 'journal', DDA_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
+      DDA_CONTEXT_PROVIDER: 'journal', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
     const args = ['src/index.mjs', 'task', '--config', config, '--workspace', workspace, '--trajectory-store', trajectory, '--thread-store', join(workspace, 'threads.json'),
-      '--max-recovery-attempts', '2', '--prompt', mode === 'READ_ONLY' ? 'Read README.md with a real tool and report its marker.' : 'Change only value.mjs to export value=1, run the immutable tests and report the actual result.'];
-    if (mode === 'CONTROLLED') args.push('--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node');
+      '--max-recovery-attempts', '2', '--prompt', mode === 'OBSERVE' ? 'Read README.md with a real tool and report its marker.' : 'Change only value.mjs to export value=1, run the immutable tests and report the actual result.'];
+    if (mode === 'CONTROLLED') args.push('--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute,filesystem.write.workspace,workspace.write.patch', '--lease-commands', 'node');
     const result = await runEvidenceProcess(process.execPath, args, { cwd: stagedRuntime, env, timeoutMs: 60000 });
     const parseLines = text => text.split(/\r?\n/u).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
     const payload = parseLines(result.stdout).at(-1);
     assert.equal(result.timedOut, false, result.stderr);
-    assert.equal(payload?.ok, eventual === 'PASS', result.stdout.slice(-1000) + result.stderr);
-    assert.equal(modelCalls, mode === 'READ_ONLY' ? 2 : 3, 'transport verification recovery must not invoke the executor again');
+    // A terminal FAIL whose only failure is a bare Jev reject while the
+    // deterministic evidence (immutable tests, landed write) is green is
+    // promoted to PASS by the deterministic-green-behavior-reject rule; only
+    // SERVICE_FAILURE must stay failed.
+    assert.equal(payload?.ok, eventual !== 'SERVICE_FAILURE', result.stdout.slice(-1000) + result.stderr);
+    // Transport verification recovery must not invoke the executor again. A
+    // real FAIL verdict legitimately earns one bounded agent-miss replan after
+    // writes landed, so its executor count is two attempts, not one.
+    assert.equal(modelCalls, mode === 'OBSERVE' ? 2 : eventual === 'FAIL' ? 6 : 3, 'transport verification recovery must not invoke the executor again');
+    // The retried verification is served by the verifier alone; the replanned
+    // FAIL attempt short-circuits on RULE_VERIFIER_FAILED without a request.
     assert.equal(verifierCalls, delayed ? 1 : 2);
     const eventsResult = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'harness-events', 'list', '--trajectory-store', trajectory,
       '--harness-event-store', store, '--run-id', payload.runId, '--limit', '500'], { cwd: stagedRuntime, env, timeoutMs: 30000 });
     const events = parseLines(eventsResult.stdout).at(-1)?.events ?? [];
     assert.equal(events.filter(event => event.kind === 'VerificationRetryStarted').length, delayed ? 0 : 1);
-    assert.equal(events.filter(event => event.kind === 'ToolInvocationCompleted').length, mode === 'READ_ONLY' ? 1 : 2, 'durable native receipts are not duplicated');
+    assert.equal(events.filter(event => event.kind === 'ToolInvocationCompleted').length, mode === 'OBSERVE' ? 1 : eventual === 'FAIL' ? 4 : 2, 'durable native receipts are not duplicated');
     if (!delayed) assert.equal(verificationStates[1].evidence.length, verificationStates[0].evidence.length);
   });
 }

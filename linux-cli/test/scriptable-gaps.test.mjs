@@ -48,7 +48,6 @@ test('default --format follows stderr isTTY (--version, format omitted)', async 
 test('resolveTaskPrompt: --prompt and --prompt-file are mutually exclusive', async () => {
   const result = await resolveTaskPrompt({
     options: { prompt: 'a', promptFile: '/tmp/x' },
-    executionMode: 'READ_ONLY',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -64,7 +63,6 @@ test('resolveTaskPrompt: --prompt-file reads UTF-8 and trims one trailing newlin
   await writeFile(file, 'hello from file\n', 'utf8');
   const result = await resolveTaskPrompt({
     options: { promptFile: file },
-    executionMode: 'READ_ONLY',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -80,7 +78,6 @@ test('resolveTaskPrompt: empty or missing prompt-file is ARGUMENT_INVALID', asyn
   await writeFile(empty, '   \n', 'utf8');
   const emptyResult = await resolveTaskPrompt({
     options: { promptFile: empty },
-    executionMode: 'READ_ONLY',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -90,7 +87,6 @@ test('resolveTaskPrompt: empty or missing prompt-file is ARGUMENT_INVALID', asyn
 
   const missing = await resolveTaskPrompt({
     options: { promptFile: join(root, 'nope.txt') },
-    executionMode: 'READ_ONLY',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -99,10 +95,9 @@ test('resolveTaskPrompt: empty or missing prompt-file is ARGUMENT_INVALID', asyn
   assert.equal(missing.code, 'ARGUMENT_INVALID');
 });
 
-test('resolveTaskPrompt: READ_ONLY non-TTY reads stdin; TTY stays PROMPT_REQUIRED', async () => {
+test('resolveTaskPrompt: non-TTY reads stdin; TTY stays PROMPT_REQUIRED', async () => {
   const piped = await resolveTaskPrompt({
     options: {},
-    executionMode: 'READ_ONLY',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -113,7 +108,6 @@ test('resolveTaskPrompt: READ_ONLY non-TTY reads stdin; TTY stays PROMPT_REQUIRE
 
   const tty = await resolveTaskPrompt({
     options: {},
-    executionMode: 'READ_ONLY',
     approvalTTY: true,
     stdin: null,
     stdinIsTTY: true,
@@ -125,7 +119,6 @@ test('resolveTaskPrompt: READ_ONLY non-TTY reads stdin; TTY stays PROMPT_REQUIRE
 test('resolveTaskPrompt: CONTROLLED+jsonl non-TTY without flags is ARGUMENT_INVALID', async () => {
   const result = await resolveTaskPrompt({
     options: { approvalMode: 'jsonl' },
-    executionMode: 'CONTROLLED',
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -134,10 +127,9 @@ test('resolveTaskPrompt: CONTROLLED+jsonl non-TTY without flags is ARGUMENT_INVA
   assert.equal(result.code, 'ARGUMENT_INVALID');
 });
 
-test('resolveTaskPrompt: CONTROLLED without approval channel is APPROVAL_UNAVAILABLE', async () => {
+test('resolveTaskPrompt: prompt mode without a TTY is APPROVAL_UNAVAILABLE', async () => {
   const result = await resolveTaskPrompt({
-    options: {},
-    executionMode: 'CONTROLLED',
+    options: { approvalMode: 'prompt' },
     approvalTTY: false,
     stdin: null,
     stdinIsTTY: false,
@@ -153,9 +145,7 @@ test('task --prompt-file reaches runtime argv without consuming approval stdin',
   const promptFile = join(root, 'p.txt');
   await writeFile(promptFile, 'file prompt body\n', 'utf8');
 
-  // Deny CONTROLLED so we don't need a model; still validates CLI prompt wiring
-  // fails early on lease/model — use READ_ONLY health-level: missing model may
-  // still run. Prefer asserting CLI rejects mutual exclusivity via main.
+  // Prefer asserting CLI rejects mutual exclusivity via main.
   const both = await run([
     'task', '--workspace', workspace,
     '--prompt', 'a', '--prompt-file', promptFile,

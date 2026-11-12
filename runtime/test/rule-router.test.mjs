@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyTask, RuleRouter } from '../src/rule-router.mjs';
 
-test('positive modify still classifies and blocks in READ_ONLY', () => {
+test('modify tasks use the controlled route and retired execution modes are rejected', () => {
   const router = new RuleRouter();
   assert.equal(classifyTask('please modify the README'), 'modify');
   assert.equal(classifyTask('edit the config and write a patch'), 'modify');
@@ -13,9 +13,9 @@ test('positive modify still classifies and blocks in READ_ONLY', () => {
   const blocked = router.resolve({ prompt: 'please modify the README', mode: 'READ_ONLY' });
   assert.equal(blocked.taskClass, 'modify');
   assert.equal(blocked.status, 'BLOCKED');
-  assert.equal(blocked.reason, 'READ_ONLY_MODE');
+  assert.equal(blocked.reason, 'INVALID_EXECUTION_MODE');
   assert.equal(router.resolve({ prompt: 'please modify the README', mode: 'CONTROLLED' }).status, 'SELECTED');
-  assert.equal(router.resolve({ prompt: '请修改文件', mode: 'READ_ONLY' }).reason, 'READ_ONLY_MODE');
+  assert.equal(router.resolve({ prompt: '请修改文件' }).status, 'SELECTED');
 });
 
 test('negated modify verbs are not classified as modify', () => {
@@ -37,10 +37,10 @@ test('negated modify verbs are not classified as modify', () => {
   ];
   for (const prompt of negated) {
     assert.notEqual(classifyTask(prompt), 'modify', prompt);
-    const routed = router.resolve({ prompt, mode: 'READ_ONLY' });
+    const routed = router.resolve({ prompt });
     assert.notEqual(routed.taskClass, 'modify', prompt);
     assert.equal(routed.status, 'SELECTED', prompt);
-    assert.notEqual(routed.reason, 'READ_ONLY_MODE', prompt);
+    assert.equal(routed.reason, 'STATIC_RULE', prompt);
   }
 });
 
@@ -49,10 +49,10 @@ test('negated modify can still fall through to inspect or stay unknown', () => {
   assert.equal(classifyTask('Do not modify anything'), 'unknown');
   assert.equal(classifyTask('不要修改任何文件，只查看 README'), 'inspect');
   assert.equal(classifyTask('不要修改任何文件'), 'unknown');
-  const routed = new RuleRouter().resolve({ prompt: '不要修改任何文件，只查看 README', mode: 'READ_ONLY' });
+  const routed = new RuleRouter().resolve({ prompt: '不要修改任何文件，只查看 README' });
   assert.equal(routed.taskClass, 'inspect');
   assert.equal(routed.status, 'SELECTED');
-  assert.notEqual(routed.reason, 'READ_ONLY_MODE');
+  assert.equal(routed.reason, 'STATIC_RULE');
 });
 
 test('an unnegated modify later in the prompt still wins', () => {

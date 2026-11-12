@@ -5,7 +5,7 @@ import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, verifiedToolDeci
 import { toolWorkspaceDecisionEvidence } from './decision/workspace-context.mjs';
 import { readonlyRegistryObservation } from './decision/registry-observation.mjs';
 import { requestedProcessDecisionClaim } from './decision/process-intent.mjs';
-import { canRetryVerificationOnly, verificationProviderFailure } from './decision/verification-retry.mjs';
+import { canRetryVerificationOnly, classifyHostFailure, verificationProviderFailure } from './decision/verification-retry.mjs';
 import { createTaskProgress, validateTaskPrompt } from './task-harness.mjs';
 import { assertVerificationGate, extractAcceptanceCommands } from './acceptance-match.mjs';
 import { applySafetyProfileGate, SAFETY_PROFILE_REQUIRE_APPROVAL } from './safety-profile-gate.mjs';
@@ -115,9 +115,9 @@ import {
   runInitialTopologySelection,
   buildSelectTopologyDecisionRecord
 } from './initial-topology-selection.mjs';
-import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isReadOnlyRelease, resolveReleaseChannel } from './release-channel.mjs';
+import { assertReleaseExecutionMode, assertReleaseHarnessStore, isApprovedRelease, isControlledRelease, resolveReleaseChannel } from './release-channel.mjs';
 import { createInterface } from 'node:readline';
-import { join } from 'node:path';
+import { join, resolve, dirname, isAbsolute, relative, sep } from 'node:path';
 import { defaultModelConfigPath, isDecisionPlaneConfigured, loadModelConfig, resolveDecisionConfig, resolveModelConfig } from './model-config.mjs';
 import { logger } from './logger.mjs';
 import { createTrajectoryStore, sha256Digest, parseLegacyTrajectoryEvents } from './trajectory-store.mjs';
@@ -163,6 +163,7 @@ const candidateFanoutRisk = (taskClass, mode) => taskClass === 'inspect'
 import { assembleCheckpointContext, assembleMemoryContext, assembleTrajectoryContext } from './context-assembler.mjs';
 import { createMemoryJournal } from './memory-journal.mjs';
 import { createJournalContextPort } from './journal-context-port.mjs';
+import { extractRunReusableExperience, extractDreamExperienceCandidates } from './experience-extractor.mjs';
 import { createDreamScheduler } from './dream-scheduler.mjs';
 import { createDreamMaintenanceSupervisor, parseDreamActiveRuns, parseDreamMaintenanceFailureLimit, parseDreamMaintenanceInterval } from './dream-maintenance-supervisor.mjs';
 import { createMemoryVerifier } from './memory-verifier.mjs';
@@ -174,7 +175,7 @@ import { evaluateDecisionTrace, exportLearningSample } from './decision-evaluati
 import { CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor, WorkspaceLeaseRegistry } from './runtime-safety-monitor.mjs';
 import { createPlatformExecutor } from './platform/executor.mjs';
 import { executorDescriptor, scenarioPlatform } from './platform/platform-identity.mjs';
-import { legacyRootKernelEffectJournalPath, resolveKernelEffectJournalPath, resolveKernelSessionPath, resolveStoreFile } from './platform/paths.mjs';
+import { createPlatformPaths, legacyRootKernelEffectJournalPath, resolveKernelEffectJournalPath, resolveKernelSessionPath, resolveStoreFile } from './platform/paths.mjs';
 import { isResidentKernelEnabled } from './kernel/feature.mjs';
 import {
   createKernelEffectAuditLog, createKernelEffectDenylist, createKernelEffectsDispatcher,
@@ -187,7 +188,10 @@ import { approvalSubject } from './kernel/cell-approval.mjs';
 import { createApprovalSession } from './kernel/approval-session.mjs';
 import { registerKernelExecTool } from './kernel/kernel-tools.mjs';
 import { RestrictedNetworkAdapter } from './restricted-network-adapter.mjs';
-import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval } from './controlled-tools.mjs';
+import { createExplicitLeaseProvider, resolveApprovalOutcome, APPROVAL_OUTCOMES, verifierStateRequiresReapproval, assessRequestRisk } from './controlled-tools.mjs';
+import { readAccessMode, computerAccessInternals } from './computer-access.mjs';
+import { MAX_PROCESS_TIMEOUT_MS } from './process-limits.mjs';
+import { insideRoot } from './filesystem-access.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
@@ -335,8 +339,7 @@ const eventOutput = argValue('--events') ?? process.env.DDA_EVENTS ?? '';
 const csv = (value) => String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 
 const executionMode = () => {
-  const raw = arg('--execution-mode', arg('--mode', process.env.DDA_EXECUTION_MODE ?? EXECUTION_MODES.READ_ONLY));
-  if (raw === EXECUTION_MODES.READ_ONLY) return assertReleaseExecutionMode(EXECUTION_MODES.READ_ONLY);
+  const raw = arg('--execution-mode', arg('--mode', process.env.DDA_EXECUTION_MODE ?? EXECUTION_MODES.CONTROLLED));
   if (raw === EXECUTION_MODES.CONTROLLED || raw === 'CONTROLLED_WRITE') return assertReleaseExecutionMode(EXECUTION_MODES.CONTROLLED);
   throw new Error('EXECUTION_MODE_INVALID');
 };
@@ -394,11 +397,13 @@ const defaultGitAuditStore = () => resolveStoreFile('git-audit.json');
 const defaultHarnessEventStore = () => resolveStoreFile('hmcodex.db');
 
 // Task execution and recovery must resolve the same authority for an identical
-// trajectory scope. Legacy storage remains a pre-Phase-1 compatibility path.
+// trajectory scope. Controlled channels keep the durable SQLite store; an
+// explicitly scoped JSONL remains a legacy storage path only where no
+// controlled channel is active.
 const taskHarnessEventStore = (trajectoryPath, scopedTrajectory) => assertReleaseHarnessStore(
   arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
     ?? (!scopedTrajectory ? defaultHarnessEventStore()
-      : isReadOnlyRelease() && trajectoryPath ? `${trajectoryPath}.db` : undefined))
+      : isControlledRelease(resolveReleaseChannel()) && trajectoryPath ? `${trajectoryPath}.db` : undefined))
 );
 
 const defaultThreadStore = () => resolveStoreFile('threads.json');
@@ -680,11 +685,19 @@ async function runTask() {
     // Prime Phase-2a: a kernel host_request effect may ADD an approval
     // requirement (per-request policy, host denylist, uncertain kernel
     // outcome). It can never remove one.
-    const requireApproval = entry?.requireApproval === true || verifierReapproval.active === true
+    // Mandatory gates (verifier re-approval, explicit kernel policy) always
+    // force a human check; only the ordinary Jev require-approval signal can
+    // be covered by a persisted workspace FULL_ACCESS grant.
+    const mandatoryApproval = verifierReapproval.active === true
       || context?.kernelEffect?.requireApproval === true;
-    return requireApproval ? { requireApproval: true } : undefined;
+    const requireApproval = mandatoryApproval || entry?.requireApproval === true;
+    if (!requireApproval && !mandatoryApproval) return undefined;
+    return {
+      ...(requireApproval ? { requireApproval: true } : {}),
+      ...(mandatoryApproval ? { mandatoryApproval: true } : {})
+    };
   };
-  const approvalInterface = eventOutput === 'stdout' && mode === EXECUTION_MODES.CONTROLLED
+  const approvalInterface = eventOutput === 'stdout'
     ? createInterface({ input: process.stdin })
     : undefined;
   // Initialization can fail before the main task try/finally is entered (for
@@ -710,6 +723,14 @@ async function runTask() {
     logger,
     emitEvent,
     cellOpSinks,
+    workspaceRoot,
+    getWorkspaceAccessMode: () => readAccessMode(),
+    isSafeKernelBatchItem: async (item) => !assessRequestRisk({
+      capability: CAPABILITIES.WRITE_FILE,
+      request: { path: item?.path },
+      workspaceRoot,
+      accessMode: await getAccessMode()
+    }).dangerous,
     hasLiveApprover: () => Boolean(approvalInterface),
     executionState: () => executionState,
     coordinator: () => coordinator,
@@ -724,23 +745,44 @@ async function runTask() {
       commands: approvedCommands,
       ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {})
     }),
-    buildScope: ({ capability, request, operationId, bindingSnapshotDigest }) => createExecutionScopeSnapshot({
-      runId,
-      operationId,
-      workspaceRootDigest: activeSnapshotDigest,
-      canonicalRootDigest: activeSnapshotDigest,
-      repositoryRootDigest: initialGitObservation?.repositoryRootDigest,
-      beforeHead: initialGitObservation?.headDigest,
-      allowedCapabilities: [capability],
-      allowedPathRoots: typeof request?.path === 'string' ? [request.path] : [],
-      allowedCommands: typeof request?.command === 'string' ? [request.command] : [],
-      ...(approvedNetworkTargets.length ? { allowedNetworkTargets: approvedNetworkTargets.map((target) => target.host) } : {}),
-      executionMode: mode,
-      releaseChannel,
-      policyVersion: 'runtime-safety-1',
-      bindingSnapshotDigest,
-      createdAtMs: Date.now()
-    }),
+    buildScope: async ({ capability, request, operationId, bindingSnapshotDigest, accessMode }) => {
+      void (accessMode ?? await readAccessMode());
+      const normalizedPaths = [];
+      if (typeof request?.path === 'string' && request.path.trim()) {
+        const rawPath = request.path.trim();
+        normalizedPaths.push(rawPath);
+        if (workspaceRoot) {
+          const resolvedTarget = isAbsolute(rawPath) ? resolve(rawPath) : resolve(workspaceRoot, rawPath);
+          const rel = relative(resolve(workspaceRoot), resolvedTarget).replaceAll('\\', '/').replace(/^\.\//u, '');
+          if (rel && rel !== '.' && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)) {
+            normalizedPaths.push(process.platform === 'win32' ? rel.toLowerCase() : rel);
+          }
+        }
+      }
+      return createExecutionScopeSnapshot({
+        runId,
+        operationId,
+        workspaceRootDigest: activeSnapshotDigest,
+        canonicalRootDigest: activeSnapshotDigest,
+        repositoryRootDigest: initialGitObservation?.repositoryRootDigest,
+        beforeHead: initialGitObservation?.headDigest,
+        allowedCapabilities: [capability],
+        allowedPathRoots: normalizedPaths,
+        // Authorized process tools (FULL_ACCESS auto-approval or explicit human
+        // approval) have no target path field; repository working-tree changes
+        // are expected, while HEAD/staged-index/.git metadata changes still fail
+        // in compareGitObservations.
+        ...(['shell.execute', 'test.execute'].includes(capability)
+          ? { allowedPathScope: 'WORKSPACE' } : {}),
+        allowedCommands: typeof request?.command === 'string' ? [request.command] : [],
+        ...(approvedNetworkTargets.length ? { allowedNetworkTargets: approvedNetworkTargets.map((target) => target.host) } : {}),
+        executionMode: mode,
+        releaseChannel,
+        policyVersion: 'runtime-safety-1',
+        bindingSnapshotDigest,
+        createdAtMs: Date.now()
+      });
+    },
     appendGitAuditCheckpoint: (...args) => appendGitAuditCheckpoint(...args),
     appendActionEvent: (...args) => appendActionEvent(...args)
   });
@@ -1391,7 +1433,7 @@ async function runTask() {
     return feedbackRegistry.submit({
       runId, taskId: runId, threadId: thread.id, outcomeId,
       modelIdentity: identity,
-      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: mode === EXECUTION_MODES.READ_ONLY ? 'READ_ONLY' : 'CONTROLLED', platform: scenarioPlatform(), policyClass: resolveReleaseChannel() },
+      scenario: { taskClass: currentTaskClass ?? 'unknown', riskClass: 'unknown', operationClass: 'unknown', requiredCapabilities: [], workspaceCapabilityClass: 'CONTROLLED', platform: scenarioPlatform(), policyClass: resolveReleaseChannel() },
       sourceType: 'SYSTEM', outcomeStatus: status, dimensions,
       evidenceRefs: [event.eventId, ...(finalVerificationEventId ? [finalVerificationEventId] : [])],
       reasonCodes: [taskLevel ? 'TASK_LEVEL_ATTRIBUTION' : 'OBJECTIVE_OUTCOME'],
@@ -1502,14 +1544,38 @@ async function runTask() {
         const confidence = Number.isFinite(Number(verification.quality))
           ? Math.max(0, Math.min(1, Number(verification.quality)))
           : 0.5;
-        const response = await contextPort.record({
+        const extracted = extractRunReusableExperience({
           runId,
-          statement: `Verified task outcome: class=${taskClass}; verifier=PASS; outputDigest=${outputDigest}`,
-          sourceEventIds: [event.eventId],
-          scope: 'workspace',
-          kind: 'TASK_OUTCOME',
-          confidence
+          taskClass,
+          threadTitle: thread?.title,
+          threadCwd: workspaceRoot,
+          actions: result?.actions,
+          terminalEventId: event.eventId
         });
+        const existingKeys = new Set(
+          memoryJournal.list()
+            .filter((m) => m && ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(m.status) && typeof m.key === 'string')
+            .map((m) => `${String(m.scope ?? 'workspace').toLowerCase()}::${m.key}`)
+        );
+        const concrete = extracted.find((item) => !item.key || !existingKeys.has(`${String(item.scope ?? 'workspace').toLowerCase()}::${item.key}`));
+        const response = await contextPort.record(concrete
+          ? {
+              runId,
+              statement: concrete.statement,
+              sourceEventIds: [event.eventId],
+              scope: concrete.scope ?? 'workspace',
+              kind: concrete.kind ?? 'PROJECT',
+              ...(concrete.key ? { key: concrete.key } : {}),
+              confidence: Math.max(confidence, concrete.confidence ?? confidence)
+            }
+          : {
+              runId,
+              statement: `Verified task outcome: class=${taskClass}; verifier=PASS; outputDigest=${outputDigest}`,
+              sourceEventIds: [event.eventId],
+              scope: 'workspace',
+              kind: 'TASK_OUTCOME',
+              confidence
+            });
         recordedMemory = response?.memory;
       } catch (error) {
         failures.push({ operation: 'record', errorCode: String(error instanceof Error ? error.message : error).slice(0, 120) });
@@ -1812,7 +1878,7 @@ async function runTask() {
     // Explicit controlled executor bindings must be eligible before they can
     // authorize a side effect. The built-in default remains usable on its
     // first run, before profile evidence exists.
-    requireEligible: mode === EXECUTION_MODES.CONTROLLED
+    requireEligible: true
       && (Object.hasOwn(modelConfig.roleBindings ?? {}, 'executor') || Boolean(requestedExecutorRecord)),
     risk: candidateFanoutRisk(taskClass, mode)
   });
@@ -2065,12 +2131,49 @@ async function runTask() {
     import('./tool-registry.mjs')
   ]);
   root = new Context();
-  const workspace = new ReadonlyWorkspace(workspaceRoot, { excludedPaths: workspaceExcludedPaths });
+  // Host-owned FULL_ACCESS authority: re-read on every request. Protected
+  // host state stays denied even while the grant is enabled.
+  const getAccessMode = () => readAccessMode();
+  const runtimeInstallDir = (() => {
+    try {
+      const dir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+      const rel = relative(resolve(workspaceRoot), dir);
+      return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? dir : undefined;
+    } catch { return undefined; }
+  })();
+  const platformProtectedRoots = (env) => {
+    const roots = [];
+    try {
+      const paths = createPlatformPaths(env);
+      roots.push(paths.dataDir(), paths.stateDir(), paths.cacheDir());
+    } catch { /* paths must never break startup */ }
+    const local = env.LOCALAPPDATA ?? env.APPDATA;
+    if (local) roots.push(resolve(local, 'dda', 'desktop-builds'));
+    return roots;
+  };
+  const hostProtectedPaths = [
+    computerAccessInternals.configDir(process.env),
+    ...runtimeStorePaths,
+    ...runtimeStorePaths.flatMap((value) => [`${value}-wal`, `${value}-shm`, `${value}.lock`]),
+    ...(runtimeInstallDir ? [runtimeInstallDir] : []),
+    kernelSessionPath,
+    kernelEffectJournalPath,
+    kernelEffectAuditPath,
+    kernelEffectDenylistPath,
+    ...platformProtectedRoots(process.env)
+  ].filter((value) => typeof value === 'string' && value.trim());
+  const workspace = new ReadonlyWorkspace(workspaceRoot, {
+    excludedPaths: workspaceExcludedPaths,
+    getAccessMode,
+    protectedPaths: hostProtectedPaths
+  });
   const workspaceLeaseRegistry = new WorkspaceLeaseRegistry();
   const monitor = new RuntimeSafetyMonitor({
     workspaceRoot,
     releaseChannel,
     workspaceLeaseRegistry,
+    getAccessMode,
+    protectedPaths: hostProtectedPaths,
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...executionOptions(mode)
   });
@@ -2087,6 +2190,7 @@ async function runTask() {
     ...(leaseTtlMs === undefined ? {} : { ttlMs: leaseTtlMs }),
     requestApproval,
     gateDecisionFor,
+    getWorkspaceAccessMode: () => readAccessMode(),
     onLeaseIssued: async ({ capability, request, lease, context: leaseContext }) => {
       const context = approvalContexts.get(executionDigest(approvalSubject({ capability, request, context: leaseContext })));
       if (!context?.intent) return;
@@ -2233,6 +2337,8 @@ async function runTask() {
       registry: toolRegistry,
       workspaceRoot,
       excludedPaths: workspaceExcludedPaths,
+      enableUserFileAccess: true,
+      protectedPaths: hostProtectedPaths,
       sessionId: runId,
       sessionStatePath: kernelSessionPath,
       env: process.env
@@ -2381,7 +2487,7 @@ async function runTask() {
   }
   mcpHost = createMcpReadOnlyHost({ config: await loadMcpConfig(mcpConfigPath) });
   await mcpHost.connectAndRegister(toolRegistry);
-  if (mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0) {
+  if (approvedNetworkTargets.length > 0) {
     playwrightHost = createPlaywrightWorkerHost({ targets: approvedNetworkTargets });
     registerPlaywrightTools(toolRegistry, playwrightHost, {
       leaseProvider,
@@ -2397,12 +2503,12 @@ async function runTask() {
     executorToolsPlugin({
       leaseProvider,
       workspace,
-      includeReadOnlyPatchTools: mode === EXECUTION_MODES.CONTROLLED,
+      includeReadOnlyPatchTools: true,
       // Keep the network tool out of the model-facing surface until the host
       // has supplied at least one explicit target. The adapter still enforces
       // the same allowlist at execution time, but hiding the tool avoids
       // exposing a capability that is guaranteed to fail closed.
-      ...(mode === EXECUTION_MODES.CONTROLLED && approvedNetworkTargets.length > 0 ? { networkAdapter } : {}),
+      ...(approvedNetworkTargets.length > 0 ? { networkAdapter } : {}),
       onLeaseStarted: async (event) => {
         const context = approvalContexts.get(executionDigest(approvalSubject({ capability: event.capability, request: event.request, context: event.context })));
         if (!context?.leaseRecordId || !context.intent) throw new Error('EXECUTION_LEASE_CONTEXT_MISSING');
@@ -2584,8 +2690,11 @@ async function runTask() {
           capability: event.capability,
           ok,
           outcomeDigest,
-          ...(event.result?.timedOut ? { timedOut: true } : {}),
-          ...(event.result?.aborted ? { aborted: true } : {})
+          ...(event.result?.timedOut === true ? { timedOut: true } : {}),
+          ...(event.result?.aborted === true ? { aborted: true } : {}),
+          ...(Number.isInteger(event.result?.timeoutMs) && event.result.timeoutMs >= 0 && event.result.timeoutMs <= MAX_PROCESS_TIMEOUT_MS ? { timeoutMs: event.result.timeoutMs } : {}),
+          ...(Number.isInteger(event.result?.exitCode) ? { exitCode: event.result.exitCode } : {}),
+          ...(Number.isInteger(event.result?.processDurationMs) && event.result.processDurationMs >= 0 ? { processDurationMs: event.result.processDurationMs } : {})
         });
         await executionState.completeLease(context.leaseRecordId, {
           ok,
@@ -2699,14 +2808,7 @@ async function runTask() {
   await pluginGovernance.load();
   const dynamicRecords = pluginGovernance.list();
   const builtinPluginIds = manifests().map((manifest) => manifest.id);
-  if (isReadOnlyRelease()) {
-    // In-process dynamic modules can execute unrestricted code at import.
-    // Keep their governance records intact while the release gate is closed.
-    dynamicPluginResults = dynamicRecords.filter((record) => record.state === 'ACTIVE').map((record) => ({
-      pluginId: record.pluginId, version: record.version, state: 'DISABLED',
-      reason: 'RELEASE_CHANNEL_DYNAMIC_PLUGIN_DISABLED'
-    }));
-  } else if (dynamicRecords.length > 0 && !pluginRoot) {
+  if (dynamicRecords.length > 0 && !pluginRoot) {
     dynamicPluginResults = [];
     for (const record of dynamicRecords.filter((candidate) => candidate.state === 'ACTIVE')) {
       const result = {
@@ -3427,14 +3529,8 @@ async function runTask() {
         workspaceSnapshotDigest: snapshot.snapshotDigest
       });
     }
-    // A killed read-only run can repeat its interrupted observation safely,
-    // but the planner's READ label alone cannot prove that no write occurred.
-    // Require the durable source run's host mode and the current host mode to
-    // both enforce READ_ONLY. Missing/ambiguous source evidence stays blocked.
-    const sourceRunCreatedEvents = priorEvents.filter((event) => event.runId === resumeSourceRunId && event.kind === 'TaskRunCreated');
-    const sourceRunCreatedPayload = sourceRunCreatedEvents[0]?.payload?.payload ?? sourceRunCreatedEvents[0]?.payload;
-    const canRetryInterruptedObservation = resumeRequested && mode === EXECUTION_MODES.READ_ONLY
-      && sourceRunCreatedEvents.length === 1 && sourceRunCreatedPayload?.requestedMode === EXECUTION_MODES.READ_ONLY;
+    // Reuse host observations, never a mode label or a planner assertion of
+    // safety. Interrupted steps are reconciled against actual effect evidence.
     const resumedReadonlyActions = resumeRequested ? readonlyResumeObservations({ events: priorEvents,
       sourceRunId: resumeSourceRunId, checkpointDigest: resumeSourceCheckpointDigest, threadId: thread.id,
       promptDigest: sha256Digest(prompt), mode }) : [];
@@ -3467,7 +3563,6 @@ async function runTask() {
       }
       return reconcileInterruptedPlanStep({
         mode,
-        readOnlyObservationRetry: canRetryInterruptedObservation,
         step,
         events: priorEvents,
         records: executionState.list(),
@@ -3480,13 +3575,8 @@ async function runTask() {
       coordinator,
       plan: executionPlan,
       resumeFailed: resumeRequested,
-      // Read-only observations retry only when both runs are read-only.
-      // Controlled runs retry an interrupted step only when every recorded
-      // side-effect intent was rejected before execution. Already-persisted
-      // UNCERTAIN steps are fed through the same callback on explicit resume.
-      reconcileStep: resumeRequested && (canRetryInterruptedObservation || mode === EXECUTION_MODES.CONTROLLED)
-        ? reconcileInterruptedStep
-        : undefined,
+      // Already-persisted UNCERTAIN steps use the same evidence checks.
+      reconcileStep: resumeRequested ? reconcileInterruptedStep : undefined,
       onStateChange: async ({ reason, plan: statePlan, currentStepId }) => {
         const checkpointPlan = {
           planId: statePlan.planId,
@@ -3589,6 +3679,9 @@ async function runTask() {
         priorStepContext.length ? `Prior step outcomes (digests only): ${JSON.stringify(priorStepContext)}` : undefined,
         planContinueHostNote || undefined
       ].filter(Boolean).join('\n').slice(0, 6000);
+      // Host-owned authorized-outside path set shared by execute/verify for
+      // this step — populated only from real tool-result evidence.
+      const authorizedOutsidePaths = new Set();
       const recoveryRun = await runVerifierRecovery({
       maxAttempts: recoveryLimit,
       initialActions: resumedActions,
@@ -3763,6 +3856,7 @@ async function runTask() {
           recovery,
           mode,
           modelProvider: recoveryModelProvider,
+          filesystemAccess: await getAccessMode() === 'FULL_ACCESS' ? 'USER_FILESYSTEM' : 'WORKSPACE',
           ...(maxToolRounds ? { maxToolRounds } : {}),
           ...(maxTokens ? { maxTokens } : {}),
           ...(maxCost !== undefined ? { maxCost } : {}),
@@ -3771,19 +3865,9 @@ async function runTask() {
             const toolEvidence = await collectDecisionEvidence({ kinds: ['ToolInvocationCompleted', 'RoleTurnCompleted', 'TaskRunCreated'], limit: 8 });
             const terminalToolEvidence = actionDecisionEvidence([...previousActions, ...verificationActions], { includeReadPaths: true });
             const toolEvidenceIds = toolEvidence.map((ref) => ref.evidenceId);
-            // Derive from the registered tool flag so kernel.* inspection and
-            // session tools are allowed in READ_ONLY without a growing name
-            // list. kernel.host_request is registered readOnly:true because
-            // Phase-1 only answers inert probes, but it is the Phase-2
-            // side-effect bridge and must stay blocked in READ_ONLY.
+            // Observation is a tool property, not an execution mode. The host
+            // effect bridge is never eligible for the observation fast path.
             const toolReadOnly = call.toolPolicyFacts?.readOnly === true && call.name !== 'kernel.host_request';
-            // Hard READ_ONLY BLOCK is evaluated first and always wins.
-            const hardModeBlock = mode === EXECUTION_MODES.READ_ONLY && !toolReadOnly
-              ? {
-                  decision: 'BLOCK', confidence: 1, source: 'rule', fallbackUsed: false,
-                  reasonCode: 'TOOL_NOT_ALLOWED_IN_MODE', decisionType: 'ACTION_GATE'
-                }
-              : undefined;
             // Diagnose-topology budgets (writes/tools/probes). Never exempts hard BLOCK/lease.
             let topologyBudgetPending;
             let topologyBudgetBlock;
@@ -3794,13 +3878,9 @@ async function runTask() {
                 counters: topologyBudgetCounters,
                 budgets: topologyBudgets,
                 toolName: call.name,
-                toolReadOnly,
-                hardBlocked: Boolean(hardModeBlock),
-                hardDecision: hardModeBlock
+                toolReadOnly
               });
-              if (budgetAssert.preservedHardBlock) {
-                // keep hardModeBlock; do not invent a softer path
-              } else if (budgetAssert.blocked) {
+              if (budgetAssert.blocked) {
                 topologyBudgetBlock = budgetAssert.decision;
                 // freeze-harness-diagnose-probe-exhausted-recover-r1:
                 // DIAGNOSE + TOPOLOGY_BUDGET_PROBES → demote to PTE ≤2×/run.
@@ -3864,7 +3944,7 @@ async function runTask() {
             // in-workspace read-only inspection tools skips the Jev
             // round-trip and Jev-only evidence collection. kernel.session_*,
             // kernel.host_request, side effects and opaque paths keep the gate.
-            const fastPathDecision = hardModeBlock ? undefined : readonlyFastPathDecision({
+            const fastPathDecision = readonlyFastPathDecision({
               enabled: decisionEngine.enabled && decisionConfig?.readonlyFastPathEnabled === true,
               name: call.name,
               registered: call.toolPolicyFacts?.registered === true,
@@ -3916,7 +3996,7 @@ async function runTask() {
                 toolReadOnly,
                 action: { kind: call.name, summary: JSON.stringify(call.requestSummary ?? {}), stepId: step.stepId, attempt }
               },
-              hardDecision: hardModeBlock ?? topologyBudgetBlock ?? fastPathDecision
+              hardDecision: topologyBudgetBlock ?? fastPathDecision
             });
             // S1: SAFETY profile soft-tighten after decideActionGate. Default ON;
             // DDA_SAFETY_PROFILE_GATE=0 disables. Never demotes; elevates only.
@@ -4435,6 +4515,10 @@ async function runTask() {
                 name: call.name,
                 ...(call.name === 'kernel.exec' ? { toolName: 'kernel.exec', ...(kernelExecBadge ?? {}) } : {}),
                 argumentsDigest: call.argumentsDigest,
+                ...(typeof call.requestSummary?.command === 'string' ? { command: call.requestSummary.command.slice(0, 500) } : {}),
+                ...(Array.isArray(call.requestSummary?.args) ? { args: call.requestSummary.args.slice(0, 64).map((part) => String(part).slice(0, 300)) } : {}),
+                ...(typeof call.requestSummary?.cwd === 'string' && call.requestSummary.cwd ? { cwd: call.requestSummary.cwd.slice(0, 300) } : {}),
+                ...(typeof call.requestSummary?.path === 'string' && call.requestSummary.path ? { path: call.requestSummary.path.slice(0, 512) } : {}),
                 decisionId: toolDecision.decisionId,
                 // S4 spectrum telemetry (LIMIT/SANDBOX/QUARANTINE soft layer).
                 softOutcome: safetyStateApplied.softOutcome ?? 'NONE',
@@ -4547,6 +4631,21 @@ async function runTask() {
           onToolResult: async (evidence) => {
             const action = verificationActions.find(item => item.id === evidence.id);
             if (action && ['SUCCEEDED', 'FAILED'].includes(action.state)) action.verifiedResult = evidence;
+            // Host-owned scope evidence: only paths the action actually
+            // produced, revalidated through the live guard. Model-claimed
+            // authorized lists are never trusted.
+            if (action?.state === 'SUCCEEDED') {
+              const candidates = [action.path, action.cwd, evidence.writtenFile?.path,
+                ...(Array.isArray(action.paths) ? action.paths : [])].filter((v) => typeof v === 'string' && v.trim());
+              for (const candidate of candidates) {
+                let resolved;
+                try { resolved = await monitor.canonicalPath(candidate); }
+                catch { try { resolved = await monitor.canonicalPath(candidate, { forWrite: true }); } catch { resolved = undefined; } }
+                if (resolved?.absolutePath && !insideRoot(resolve(workspaceRoot), resolved.absolutePath)) {
+                  authorizedOutsidePaths.add(resolved.absolutePath);
+                }
+              }
+            }
             if (action?.state === 'SUCCEEDED' && evidence.writtenFile) {
               action.path = evidence.writtenFile.path;
               action.contentDigest = evidence.writtenFile.contentDigest;
@@ -4585,7 +4684,7 @@ async function runTask() {
               }
             }
             // Calls rejected before ToolRegistry.invoke (for example a
-            // side-effect tool guessed in READ_ONLY mode) have no registry
+            // unavailable or unregistered tool) have no registry
             // callback. Persist their bounded refusal so a historical task
             // shows the same reason as the live stream.
             if (event.kind === 'tool.result' && event.ok === false
@@ -4628,12 +4727,20 @@ async function runTask() {
               ...(event.outputChars !== undefined ? { outputChars: event.outputChars } : {}),
               ...(event.inspectionCount !== undefined ? { inspectionCount: event.inspectionCount } : {}),
               ...(event.ok !== undefined ? { ok: event.ok } : {}),
+              ...(event.timedOut === true ? { timedOut: true } : {}),
+              ...(event.aborted === true ? { aborted: true } : {}),
+              ...(Number.isInteger(event.timeoutMs) && event.timeoutMs >= 1 ? { timeoutMs: event.timeoutMs } : {}),
               ...(event.errorCode ? { errorCode: event.errorCode } : {}),
               ...(event.message ? { message: String(event.message).slice(0, 640) } : {}),
               ...(event.mode ? { mode: String(event.mode).slice(0, 40) } : {}),
               ...(event.nextAction ? { nextAction: String(event.nextAction).slice(0, 120) } : {}),
               ...(event.effectApplied === true ? { effectApplied: true } : {}),
               ...(event.idempotentReplay === true ? { idempotentReplay: true } : {}),
+              ...(typeof event.command === 'string' && event.command ? { command: event.command.slice(0, 500) } : {}),
+              ...(Array.isArray(event.args) ? { args: event.args.slice(0, 64).map((part) => String(part).slice(0, 300)) } : {}),
+              ...(typeof event.cwd === 'string' && event.cwd ? { cwd: event.cwd.slice(0, 300) } : {}),
+              ...(typeof event.outputTail === 'string' && event.outputTail ? { outputTail: event.outputTail.slice(0, 800) } : {}),
+              ...(typeof event.path === 'string' && event.path ? { path: event.path.slice(0, 512) } : {}),
               ...(event.kind === 'model.stream_retry' ? {
                 ...(event.streamAttempt !== undefined ? { streamAttempt: event.streamAttempt } : {}),
                 ...(event.nextStreamAttempt !== undefined ? { nextStreamAttempt: event.nextStreamAttempt } : {}),
@@ -4854,6 +4961,7 @@ async function runTask() {
           actionDigests: (result.actions ?? []).map((action) => action.argumentsDigest).filter(Boolean).slice(-16)
         });
         if (coordinator.state !== 'VERIFYING') await coordinator.transitionAndFlush('VERIFYING');
+        emitEvent('verification.started', { attempt, stepId: step.stepId });
         let verification = createRuleVerifier().verify({
           prompt: stepPrompt,
           output: result.text,
@@ -4862,6 +4970,7 @@ async function runTask() {
           toolCallCount: result.toolCallCount,
           executionMode: mode,
           actions: result.actions,
+          authorizedFilePaths: [...authorizedOutsidePaths],
           previousActions,
           acceptanceCriteria: plannerPlan?.acceptanceCriteria ?? executionPlan?.acceptanceCriteria,
           acceptanceCommands: extractAcceptanceCommands({
@@ -4922,11 +5031,27 @@ async function runTask() {
         if (semanticStatus === 'FAIL') {
           verification = { ...verification, status: 'FAIL', summary: `Jev rejected the observed behavior: ${behaviorDecision.reasonCode}`, failureCodes: [...new Set([...(verification.failureCodes ?? []), 'JEV_BEHAVIOR_REJECTED'])], checks: [...(verification.checks ?? []), { id: 'jev-behavior-judge', status: 'FAIL', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }] };
         } else if (semanticStatus === 'UNCERTAIN' && verification.status === 'PASS') {
-          // freeze-harness-uncertain-agent-miss-r1: stamp JEV_EVIDENCE_REQUIRED (no summary-only path)
-          verification = stampJevEvidenceRequired(verification, {
-            reasonCode: behaviorDecision.reasonCode,
-            evidenceIds: behaviorEvidence.map((item) => item.id)
-          });
+          // freeze-harness-uncertain-agent-miss-r1: stamp JEV_EVIDENCE_REQUIRED
+          // (no summary-only path) for a genuine evidence-gap verdict. A
+          // transient provider failure is not an evidence gap: keep the verdict
+          // UNCERTAIN with only the jev-behavior-judge UNKNOWN check so
+          // canRetryVerificationOnly re-verifies the same execution instead of
+          // arming the reapproval gate and replaying side effects.
+          const transientProviderFailure = classifyHostFailure(behaviorDecision.reasonCode)?.transient === true;
+          verification = transientProviderFailure
+            ? {
+                ...verification,
+                status: 'UNCERTAIN',
+                summary: `Deterministic checks passed but the semantic verifier is transiently unavailable (${behaviorDecision.reasonCode})`,
+                checks: [
+                  ...(verification.checks ?? []),
+                  { id: 'jev-behavior-judge', status: 'UNKNOWN', message: behaviorDecision.reasonCode, evidence: behaviorEvidence.map((item) => item.id) }
+                ]
+              }
+            : stampJevEvidenceRequired(verification, {
+                reasonCode: behaviorDecision.reasonCode,
+                evidenceIds: behaviorEvidence.map((item) => item.id)
+              });
         }
         await coordinator.recordEventAndFlush('SemanticVerificationCompleted', {
           attempt, stepId: step.stepId, status: semanticStatus,
@@ -5939,9 +6064,7 @@ async function runTask() {
           steps: plannerPlan.steps.map(({ stepId, summary, actionKind, dependencies, status }) => ({ stepId, summary, actionKind, dependencies, status }))
         }
       } : {}),
-      // Controlled tools stay registered for the CONTROLLED path, while
-      // READ_ONLY responses expose only the read-only capability list.
-      tools: root.toolRegistry.list().filter((tool) => mode === EXECUTION_MODES.CONTROLLED || tool.readOnly),
+      tools: root.toolRegistry.list(),
       plugins: manifests(),
       dynamicPlugins: dynamicPluginResults,
       workspace: {
@@ -6633,7 +6756,9 @@ async function runReleaseCheckCommand() {
   };
   let sideEffectRejection;
   try {
-    assertReleaseExecutionMode('CONTROLLED', releaseChannel);
+    // Exercise the authorization boundary without touching a file/process.
+    const monitor = new RuntimeSafetyMonitor({ releaseChannel });
+    await monitor.authorize('shell.execute', { command: 'node' });
     sideEffectRejection = { blocked: false };
   } catch (error) {
     sideEffectRejection = { blocked: true, errorCode: error instanceof Error ? error.message : String(error) };
@@ -6664,12 +6789,10 @@ async function runReleaseCheckCommand() {
   });
   const capacity = await assessStorageCapacity({ paths: [harnessPath], maxBytes: DEFAULT_MAX_BYTES });
   const checks = {
-    // Every channel in RELEASE_CHANNELS except the pre-phase-1 baseline is an
-    // approved release candidate: READ_ONLY, CONTROLLED and the phase-2 target
-    // WINDOWS_FULL_LOCAL. Excluding the target channel made the phase-2 release
-    // candidate fail its own gate on a passing report.
+    // Active channels still need all independent release gates.
     releaseChannel: isApprovedRelease(releaseChannel),
-    sideEffectRejection: isReadOnlyRelease(releaseChannel) ? sideEffectRejection.blocked : !sideEffectRejection.blocked,
+    sideEffectRejection: sideEffectRejection.blocked
+      && sideEffectRejection.errorCode === 'SAFETY_LEASE_REQUIRED',
     eventStore: verification.ok,
     readModelChecksum: typeof projection.projectionChecksum === 'string' && /^sha256:[0-9a-f]{64}$/u.test(projection.projectionChecksum),
     hasRuns: runIds.length > 0,
@@ -6832,10 +6955,10 @@ async function runHarnessEventStoreCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined
     || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
-  const harnessPath = isReadOnlyRelease()
-    ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
-    : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
-    ?? (!scopedTrajectory ? defaultHarnessEventStore() : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
+  const harnessPath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
+    ?? (!scopedTrajectory ? defaultHarnessEventStore()
+      : (isControlledRelease(resolveReleaseChannel()) && trajectoryPath ? `${trajectoryPath}.db`
+        : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore()))));
   const store = createHarnessEventStore({ storagePath: harnessPath });
   const operation = positionalOperation('summary');
   if (operation === 'checkpoint' || operation === 'restore') {
@@ -7041,11 +7164,13 @@ async function runGitAuditCommand() {
 async function runMemoryCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
-  const phase1 = isReadOnlyRelease();
+  const controlled = isControlledRelease(resolveReleaseChannel());
   const storagePath = arg('--memory-store', process.env.DDA_MEMORY_STORE
-    ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
-  const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
-    ?? (!scopedTrajectory ? defaultHarnessEventStore() : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
+  const harnessPath = controlled ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
+    : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
+    ?? (!scopedTrajectory ? defaultHarnessEventStore()
+      : (trajectoryPath ? `${trajectoryPath}.harness-events.json` : defaultHarnessEventStore())));
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const journal = createMemoryJournal({ storagePath, eventStore });
@@ -7060,7 +7185,7 @@ async function runMemoryCommand() {
   };
   const validateSourceEventIds = async (sourceEventIds, requestedRunId) => {
     if (sourceEventIds.length === 0) return;
-    const trajectory = scopedTrajectory && !phase1 ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
+    const trajectory = scopedTrajectory && !controlled ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
     const sourceEvents = await trajectory.list();
     const byId = new Map(sourceEvents.map((event) => [event.eventId, event]));
     const missing = sourceEventIds.filter((eventId) => typeof eventId !== 'string' || !byId.has(eventId));
@@ -7309,34 +7434,8 @@ async function runRecoveryCommand() {
   return result;
 }
 
-const dreamCandidatesFromEvents = (events) => {
-  const grouped = new Map();
-  for (const event of events) {
-    const list = grouped.get(event?.runId) ?? [];
-    if (event?.eventId) list.push(event);
-    grouped.set(event?.runId, list);
-  }
-  const candidates = [];
-  for (const [runId, runEvents] of grouped) {
-    if (typeof runId !== 'string' || !runEvents.some((event) => event.kind === 'TaskRunCompleted')) continue;
-    const route = runEvents.find((event) => event.kind === 'ModelRouteResolved')?.payload ?? {};
-    const snapshot = runEvents.find((event) => event.kind === 'WorkspaceSnapshotCreated')?.payload ?? {};
-    const completed = runEvents.find((event) => event.kind === 'TaskRunCompleted')?.payload ?? {};
-    const provider = typeof route.provider === 'string' ? route.provider.slice(0, 80) : 'unknown';
-    const protocol = typeof route.protocol === 'string' ? route.protocol.slice(0, 80) : 'unknown';
-    const model = typeof route.model === 'string' ? route.model.slice(0, 120) : 'unknown';
-    const entryCount = Number.isInteger(snapshot.entryCount) ? snapshot.entryCount : 0;
-    const toolCalls = Number.isInteger(completed.toolCallCount) ? completed.toolCallCount : 0;
-    candidates.push({
-      runId,
-      statement: `Verified run used ${provider}/${protocol}/${model}; workspace entries=${entryCount}; toolCalls=${toolCalls}.`,
-      sourceEventIds: runEvents.map((event) => event.eventId).slice(-8),
-      scope: 'workspace',
-      confidence: 0.5
-    });
-  }
-  return candidates.slice(-32);
-};
+const dreamCandidatesFromEvents = (events, { threads = [], existingMemories = [] } = {}) =>
+  extractDreamExperienceCandidates(events, { threads, existingMemories });
 
 const readDreamActiveRuns = async () => {
   const path = argValue('--active-runs-file') ?? process.env.DDA_DREAM_ACTIVE_RUNS_FILE;
@@ -7366,9 +7465,25 @@ const dreamGateOptions = (sourceEventCount, { daemon = false, activeRuns } = {})
   minIntervalMinutes: argValue('--min-interval-minutes') === undefined ? undefined : Number(argValue('--min-interval-minutes'))
 });
 
-const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, projectId, daemon = false }) => {
-  const sourceEvents = await trajectory.list();
+const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, projectId, threadStore, daemon = false }) => {
   const activeRuns = daemon ? await readDreamActiveRuns() : undefined;
+  if (daemon && Number.isFinite(activeRuns) && activeRuns > 0) {
+    return {
+      ok: true,
+      dream: { status: 'WAITING_GATE', gateReasons: ['HIGH_PRIORITY_RUN_ACTIVE'] },
+      proposedMemories: []
+    };
+  }
+  const sourceEvents = await trajectory.list();
+  let threads = [];
+  if (threadStore?.load && threadStore?.list) {
+    try {
+      await threadStore.load();
+      threads = await threadStore.list();
+    } catch {
+      threads = [];
+    }
+  }
   const result = await scheduler.run({
     projectId,
     gates: dreamGateOptions(sourceEvents.length, { daemon, activeRuns }),
@@ -7377,7 +7492,10 @@ const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, p
       activeMemoryCount: journal.list('ACTIVE').length,
       proposedMemoryCount: journal.list('PROPOSED').length
     }),
-    gather: async () => dreamCandidatesFromEvents(sourceEvents),
+    gather: async () => dreamCandidatesFromEvents(sourceEvents, {
+      threads,
+      existingMemories: journal.list()
+    }),
     consolidate: async (candidates) => {
       const seen = new Set();
       return candidates.filter((candidate) => {
@@ -7407,24 +7525,27 @@ const runDreamCycle = async ({ trajectory, journal, scheduler, memoryVerifier, p
 async function runDreamCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
-  const phase1 = isReadOnlyRelease();
+  const controlled = isControlledRelease(resolveReleaseChannel());
   const memoryPath = arg('--memory-store', process.env.DDA_MEMORY_STORE
-    ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.memory.json` : defaultMemoryStore()));
   const dreamPath = arg('--dream-store', process.env.DDA_DREAM_STORE
-    ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.dream.json` : defaultDreamStore()));
-  const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.dream.json` : defaultDreamStore()));
+  const threadPath = arg('--thread-store', process.env.DDA_THREAD_STORE
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.threads.json` : defaultThreadStore()));
+  const harnessPath = controlled ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
     : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
-  const trajectory = scopedTrajectory && !phase1 ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
-  const journal = createMemoryJournal({ storagePath: memoryPath, eventStore: scopedTrajectory && !phase1 ? undefined : eventStore });
+  const trajectory = scopedTrajectory && !controlled ? createTrajectoryStore(trajectoryPath) : createTrajectoryStore(trajectoryPath, { harnessEventStore: eventStore });
+  const journal = createMemoryJournal({ storagePath: memoryPath, eventStore: scopedTrajectory && !controlled ? undefined : eventStore });
+  const threadStore = createThreadStore({ storagePath: threadPath, eventStore: scopedTrajectory && !controlled ? undefined : eventStore });
   const projectId = arg('--project-id', process.env.DDA_PROJECT_ID ?? 'default');
   const scheduler = createDreamScheduler({ storagePath: dreamPath, projectId, eventStore });
   const memoryVerifier = createMemoryVerifier();
   await Promise.all([journal.load(), scheduler.load()]);
   const operation = positionalOperation('run');
   if (operation === 'list') return { ok: true, runs: await scheduler.list() };
-  if (operation === 'run') return runDreamCycle({ trajectory, journal, scheduler, memoryVerifier, projectId });
+  if (operation === 'run') return runDreamCycle({ trajectory, journal, scheduler, memoryVerifier, projectId, threadStore });
   if (operation !== 'daemon') throw new Error('DREAM_OPERATION_INVALID');
 
   const intervalMs = parseDreamMaintenanceInterval(arg('--interval-ms', process.env.DDA_DREAM_DAEMON_INTERVAL_MS));
@@ -7437,7 +7558,7 @@ async function runDreamCommand() {
     const supervisor = createDreamMaintenanceSupervisor({
       intervalMs,
       failureLimit,
-      runOnce: () => runDreamCycle({ trajectory, journal, scheduler, memoryVerifier, projectId, daemon: true }),
+      runOnce: () => runDreamCycle({ trajectory, journal, scheduler, memoryVerifier, projectId, threadStore, daemon: true }),
       emit: (event) => {
         writeStdout(`${JSON.stringify({ type: 'dream_maintenance', ...event })}\n`);
       }
@@ -7524,19 +7645,24 @@ const readPluginManifest = async () => {
 async function runPluginCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
-  const phase1 = isReadOnlyRelease();
+  const controlled = isControlledRelease(resolveReleaseChannel());
   const storagePath = arg(
     '--plugin-store',
     arg('--governance-store', process.env.DDA_PLUGIN_GOVERNANCE_STORE
       ?? process.env.DDA_PLUGIN_STORE
-      ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.plugin-governance.json` : defaultPluginGovernanceStore()))
+      ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.plugin-governance.json` : defaultPluginGovernanceStore()))
   );
   const scopedPluginStore = argValue('--plugin-store') !== undefined
     || argValue('--governance-store') !== undefined
     || Boolean(process.env.DDA_PLUGIN_GOVERNANCE_STORE?.trim() || process.env.DDA_PLUGIN_STORE?.trim());
+  // Precedence: explicit harness override > explicit trajectory scope > explicit
+  // plugin store scope > global default. An isolated plugin store must never
+  // fall through to the global harness, or its discoveries pollute global audit.
   const harnessPath = arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE
-    ?? (phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : scopedPluginStore ? storagePath + '.harness-events.db' : defaultHarnessEventStore()));
-  if (phase1) assertReleaseHarnessStore(harnessPath);
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.db`
+      : scopedPluginStore ? storagePath + '.harness-events.db'
+        : controlled ? taskHarnessEventStore(trajectoryPath, scopedTrajectory) : defaultHarnessEventStore()));
+  if (controlled) assertReleaseHarnessStore(harnessPath);
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
   const operation = pluginOperation();
@@ -7712,12 +7838,12 @@ const readJsonValue = async (name, { required = true } = {}) => {
 async function runEvolutionCommand() {
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
   const scopedTrajectory = argValue('--trajectory-store') !== undefined || Boolean(process.env.DDA_TRAJECTORY_STORE?.trim());
-  const phase1 = isReadOnlyRelease();
+  const controlled = isControlledRelease(resolveReleaseChannel());
   const proposalPath = arg('--evolution-store', process.env.DDA_EVOLUTION_STORE
-    ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-proposals.json` : defaultEvolutionStore()));
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-proposals.json` : defaultEvolutionStore()));
   const reportPath = arg('--evaluation-store', process.env.DDA_EVALUATION_STORE
-    ?? (phase1 && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-evaluations.json` : defaultEvolutionEvaluationStore()));
-  const harnessPath = phase1 ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
+    ?? (controlled && scopedTrajectory && trajectoryPath ? `${trajectoryPath}.evolution-evaluations.json` : defaultEvolutionEvaluationStore()));
+  const harnessPath = controlled ? taskHarnessEventStore(trajectoryPath, scopedTrajectory)
     : arg('--harness-event-store', process.env.DDA_HARNESS_EVENT_STORE ?? defaultHarnessEventStore());
   const eventStore = createHarnessEventStore({ storagePath: harnessPath });
   await eventStore.load();
@@ -8000,6 +8126,23 @@ async function runHealth() {
 // The desktop shell used to start one short-lived Node process for every
 // dashboard section during startup. Keep this read-only aggregate command
 // provider-neutral while sharing one module load and one set of file locks.
+// Only the two known read failures of the governance chain degrade the optional
+// plugin projection. Any other load failure still rejects the whole dashboard.
+const DASHBOARD_BLOCKING_PLUGIN_GOVERNANCE_CODES = new Set(['PLUGIN_GOVERNANCE_INVALID', 'PLUGIN_GOVERNANCE_READ_FAILED']);
+
+async function loadDashboardPluginGovernance(governance) {
+  try {
+    await governance.load();
+    return { state: 'AVAILABLE' };
+  } catch (error) {
+    const errorCode = error instanceof Error ? error.message : undefined;
+    if (errorCode && DASHBOARD_BLOCKING_PLUGIN_GOVERNANCE_CODES.has(errorCode)) {
+      return { state: 'BLOCKED', errorCode };
+    }
+    throw error;
+  }
+}
+
 async function runDashboardCommand() {
   const releaseChannel = resolveReleaseChannel();
   const trajectoryPath = arg('--trajectory-store', process.env.DDA_TRAJECTORY_STORE ?? defaultTrajectoryStore());
@@ -8047,12 +8190,12 @@ async function runDashboardCommand() {
   const evaluator = harnessEventStorePath
     ? new EvolutionEvaluator({ registry: evolution, eventStore: dashboardEventStore, control: evolutionControl })
     : new EvolutionEvaluator({ registry: evolution, storagePath: evaluationPath, control: evolutionControl });
-  await Promise.all([
+  const [, , , , pluginGovernanceStatus] = await Promise.all([
     dashboardEventStore.load(),
     execution.load(),
     memory.load(),
     dream.load(),
-    governance.load(),
+    loadDashboardPluginGovernance(governance),
     evolution.load(),
     evolutionControl.load(),
     modelEgress.load(),
@@ -8089,11 +8232,13 @@ async function runDashboardCommand() {
   const { threads: threadList } = await readThreadHistory({ harnessPath: harnessEventStorePath, threadPath, trajectoryPath,
     explicitThreadStore: argValue('--thread-store') !== undefined || Boolean(process.env.DDA_THREAD_STORE?.trim()), listOnly: true });
   const feedbackList = await feedback.listDurableSummaries().catch(() => []);
-  const pluginList = governance.list();
+  // A blocked chain was only partly replayed, so no plugin or version facts are
+  // read from it. The dashboard shows the block instead of an empty healthy list.
+  const pluginList = pluginGovernanceStatus.state === 'AVAILABLE' ? governance.list() : [];
   // Version lifecycle facts come from the same governance store. The desktop
   // panel shows installed/active/rolled-back versions and the quarantine
   // reason instead of inferring them from the governance state alone.
-  const pluginVersions = [...new Set(pluginList.map((plugin) => plugin.pluginId))]
+  const pluginVersions = pluginGovernanceStatus.state !== 'AVAILABLE' ? [] : [...new Set(pluginList.map((plugin) => plugin.pluginId))]
     .sort()
     .map((pluginId) => {
       const record = pluginList.find((item) => item.pluginId === pluginId);
@@ -8124,7 +8269,9 @@ async function runDashboardCommand() {
       threads: { count: threadList.length },
       feedback: { count: feedbackList.length },
       memories: { count: (projection?.memories ?? memory.list()).length },
-      plugins: { count: pluginList.length },
+      plugins: pluginGovernanceStatus.state === 'BLOCKED'
+        ? { status: 'BLOCKED', errorCode: pluginGovernanceStatus.errorCode, count: 0 }
+        : { status: 'AVAILABLE', count: pluginList.length },
       evolution: { proposals: proposalList.length, reports: reportList.length },
       decisions: { count: (projection?.decisions ?? []).length },
       modelEgress: modelEgress.summarize(),
@@ -8174,6 +8321,7 @@ async function runDashboardCommand() {
     dreams: await dream.list(),
     plugins: pluginList,
     pluginVersions,
+    pluginGovernanceStatus,
     evolution: {
       proposals: proposalList,
       reports: reportList,
@@ -8209,8 +8357,8 @@ try {
           releaseChannel: resolveReleaseChannel(),
           runtime: { node: process.version, platform: process.platform },
           gates: {
-            controlled: !isReadOnlyRelease(),
-            dynamicPlugins: !isReadOnlyRelease()
+            controlled: true,
+            dynamicPlugins: true
           },
           storage: {
             backend: 'HARNESS_EVENT_STORE_DEFAULT',

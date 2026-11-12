@@ -8,7 +8,9 @@ const s = readFileSync(resolve(root, 'src/main.ts'), 'utf8');
 const c = readFileSync(resolve(root, 'src/styles.css'), 'utf8');
 
 const checks = {
-  'S3-01-six-pages': s.includes('data-page="workbench"') && s.includes('data-page="runs"') && s.includes('data-page="workspace"') && s.includes('data-page="memory"') && s.includes('data-page="safety"') && s.includes('data-page="diagnostics"'),
+  'S3-01-six-pages': ['workbench', 'runs', 'workspace', 'memory', 'safety', 'diagnostics'].every(
+    (p) => s.includes(`data-page="${p}"`) || (s.includes('data-page="${page}"') && s.includes(`['${p}',`))
+  ),
   'S3-01-nav-state': s.includes("hmcodex.activePage") && s.includes("hmcodex.nav"),
   'S3-01-status-shell': s.includes('renderPageStatus') && c.includes('page-status-stale'),
   'S3-02-receipt': s.includes('lastSubmitReceipt') && s.includes('pending') && s.includes('accepted') && s.includes('rejected'),

@@ -26,7 +26,7 @@ const input = (overrides = {}) => ({
     riskClass: 'LOW',
     operationClass: 'ANALYZE',
     requiredCapabilities: ['workspace.read'],
-    workspaceCapabilityClass: 'READ_ONLY',
+    workspaceCapabilityClass: 'CONTROLLED',
     platform: 'WINDOWS',
     policyClass: 'phase1'
   },

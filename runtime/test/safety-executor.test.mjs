@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -18,15 +19,22 @@ import {
 
 const nodeCommand = process.execPath;
 
-test('defaults to READ_ONLY and refuses every side effect before spawning', async () => {
+test('defaults to CONTROLLED but refuses every side effect without a lease', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-readonly-'));
   const monitor = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  assert.equal(monitor.mode, 'CONTROLLED');
+  assert.deepEqual(EXECUTION_MODES, { CONTROLLED: 'CONTROLLED' });
+  assert.throws(() => new RuntimeSafetyMonitor({ workspaceRoot: workspace, mode: 'READ_ONLY' }), /SAFETY_INVALID_OPTIONS:mode/);
   const executor = new RestrictedWindowsExecutor({ monitor });
   await assert.rejects(executor.shell({ command: nodeCommand, args: ['-e', 'process.exit(0)'] }), (error) => {
-    assert.equal(error.code, SAFETY_ERROR_CODES.READ_ONLY);
+    assert.equal(error.code, SAFETY_ERROR_CODES.LEASE_REQUIRED);
     return true;
   });
-  assert.throws(() => monitor.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_READ_ONLY/);
+  for (const action of Object.values(ACTIONS)) {
+    await assert.rejects(monitor.authorize(action, {}), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  }
+  await assert.rejects(executor.writeFile({ path: 'must-not-exist.txt', content: 'denied' }), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  await assert.rejects(readFile(join(workspace, 'must-not-exist.txt')), { code: 'ENOENT' });
 });
 
 test('issues at most one workspace-mutating lease until execution releases it', async () => {
@@ -297,4 +305,46 @@ test('timeout clears a detached grandchild process tree', { skip: process.platfo
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.fail('detached grandchild survived the Windows process-tree cleanup');
+});
+
+const provisionedCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const provisionedNpxCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+const hostCliAvailable = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
+const windowsCliTest = { skip: process.platform !== 'win32' || !hostCliAvailable(provisionedCli) || !hostCliAvailable(provisionedNpxCli) };
+
+test('maps bare npm/npx commands to the provisioned Node CLI on Windows', windowsCliTest, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-npm-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: ['node'] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  for (const [command, leaseCommands] of [['npm', ['npm']], ['npm.cmd', ['npm']], ['npx.cmd', ['npx']]]) {
+    const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: leaseCommands });
+    const result = await executor.shell({ command, args: ['--version'], timeoutMs: 15000 }, { lease });
+    assert.equal(result.ok, true, command);
+    assert.match(result.stdout.trim(), /\d+\.\d+\.\d+/u, command);
+    // One-shot lease is consumed by the first authorized execution.
+    await assert.rejects(executor.shell({ command, args: ['--version'] }, { lease }), /SAFETY_LEASE_USED/);
+  }
+});
+
+test('a node-scoped lease cannot authorize npm before the CLI mapping', windowsCliTest, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-npm-deny-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: ['node'] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: ['node'] });
+  await assert.rejects(executor.shell({ command: 'npm', args: ['--version'] }, { lease }), { code: 'SAFETY_COMMAND_NOT_ALLOWED' });
+});
+
+test('spawn failures keep the generic code with a bounded OS reason only', { skip: process.platform !== 'win32' }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-spawn-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: [] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  const missing = 'dda-missing-tool-zz42';
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: [missing] });
+  await assert.rejects(executor.shell({ command: missing, args: ['--secret-arg', 'api_key=private-value'] }, { lease }), (error) => {
+    assert.equal(error.code, 'EXECUTOR_SPAWN_FAILED');
+    assert.equal(error.message, 'EXECUTOR_SPAWN_FAILED:ENOENT');
+    assert.equal(error.message.includes(workspace), false);
+    assert.equal(error.message.includes('private-value'), false);
+    return true;
+  });
 });

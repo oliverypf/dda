@@ -50,7 +50,7 @@ const normalizedInject = (plugin) => {
  */
 export const allowedPluginServices = (manifest) => {
   // The service grant is the manifest's declared permissions intersected with
-  // its effective ceiling, so a READ_ONLY contribution can never reach the
+  // its effective ceiling, so an OBSERVE contribution can never reach the
   // executor or tool-registry control surface even if a manifest slips past the
   // validator.
   const permissions = new Set(permissionsWithinCeiling(manifest));

@@ -16,8 +16,11 @@ import {
 } from '../runtime-safety-monitor.mjs';
 import { buildChildEnv } from './environment-policy.mjs';
 import { isLinuxCliPlatform } from './paths.mjs';
+import { spawnErrorReason } from './process-error.mjs';
 
-const MAX_TIMEOUT_MS = 60 * 1000;
+import { DEFAULT_PROCESS_TIMEOUT_MS, MAX_PROCESS_TIMEOUT_MS } from '../process-limits.mjs';
+
+const MAX_TIMEOUT_MS = MAX_PROCESS_TIMEOUT_MS;
 const BLOCKED_PREFIXES = [/^\/proc(?:\/|$)/u, /^\/sys(?:\/|$)/u, /^\/dev(?:\/|$)/u, /^\/run\/secrets(?:\/|$)/u];
 const CREDENTIAL_SUFFIXES = ['.ssh', '.gnupg', '.aws', '.config/gcloud'];
 const BASE_ENV_KEYS = ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'TZ'];
@@ -44,9 +47,12 @@ const executionEnv = (provided) => {
   return { ...base, ...buildChildEnv(provided) };
 };
 
-const boundedLimit = (value, maximum, fallback) => {
+const boundedLimit = (value, maximum, fallback, fieldName = 'limit') => {
   if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || value < 1 || value > maximum) fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    fail(SAFETY_ERROR_CODES.COMMAND_INVALID,
+      `${fieldName} must be an integer between 1 and ${maximum}; received ${JSON.stringify(value)}`);
+  }
   return value;
 };
 
@@ -61,8 +67,8 @@ const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
-  } catch {
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+  } catch (error) {
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
     return;
   }
   const startedAt = performance.now();
@@ -102,12 +108,12 @@ const collectPosixOutput = ({ command, args, cwd, env, timeoutMs, input, signal,
   if (signal?.aborted) onAbort();
   child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
-  child.once('error', () => {
+  child.once('error', (error) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
   });
   child.once('close', (exitCode, terminationSignal) => {
     if (settled) return;
@@ -198,17 +204,18 @@ export class LinuxPosixExecutor extends ExecutorPort {
       args: authorization.command.args,
       cwd: authorization.cwd.absolutePath,
       env: executionEnv(request.env),
-      timeoutMs: boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, 15 * 1000),
+      timeoutMs: boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, DEFAULT_PROCESS_TIMEOUT_MS, 'timeoutMs'),
       input: request.input,
       signal: options.signal,
-      maxOutputBytes: boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes),
-      maxOutputChars: boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars)
+      maxOutputBytes: boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes, 'maxOutputBytes'),
+      maxOutputChars: boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars, 'maxOutputChars')
     });
     return {
       ...result,
       action: authorization.action,
       commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
       cwd: authorization.cwd.path || '.',
+      timeoutMs: boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, DEFAULT_PROCESS_TIMEOUT_MS, 'timeoutMs'),
       lease: authorization.lease?.id ?? null
     };
   }

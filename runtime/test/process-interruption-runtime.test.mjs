@@ -41,7 +41,7 @@ const emitCall = (res, name, args, id) => emitGoalResponse(res, [{
   type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args)
 }]);
 
-const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_ONLY', releaseChannel = 'WINDOWS_FULL_LOCAL', expectLineageRejected = false } = {}) => {
+const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'CONTROLLED', releaseChannel = 'WINDOWS_FULL_LOCAL', expectLineageRejected = false, expectModeRejected = false } = {}) => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-process-interruption-'));
   t.diagnostic(`Evidence directory: ${root}`);
   const workspace = join(root, 'workspace');
@@ -93,7 +93,7 @@ const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_
     apiKeyEnv: 'DDA_PROCESS_TEST_KEY', decision: { enabled: false, enforce: false } }));
   const env = { DDA_PROCESS_TEST_KEY: 'local-fixture', DDA_JEV_ENABLED: '0',
     DDA_JEV_ENFORCE: '0', DDA_CONTEXT_PROVIDER: 'journal', DDA_DATA_DIR: root,
-    DDA_RELEASE_CHANNEL: releaseChannel, DDA_EXECUTION_MODE: 'READ_ONLY' };
+    DDA_RELEASE_CHANNEL: releaseChannel, DDA_EXECUTION_MODE: 'CONTROLLED' };
   const common = ['task', '--agent-mode', 'multi', '--config', config, '--workspace', workspace,
     '--trajectory-store', trajectory, '--thread-store', threads, '--max-recovery-attempts', '1'];
   const first = startRuntime([...common, '--prompt', sideEffect ? 'Inspect first.txt then write result.txt.' : 'Read both files in order.',
@@ -128,19 +128,21 @@ const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_
     cwd: new URL('..', import.meta.url), env, timeoutMs: 30000
   });
   let events;
-  if (releaseChannel === 'WINDOWS_PHASE1_READ_ONLY') {
+  {
     const listed = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'harness-events', 'list',
       '--trajectory-store', trajectory], { cwd: new URL('..', import.meta.url), env, timeoutMs: 30000 });
     assert.equal(listed.code, 0, listed.stderr + listed.stdout);
     events = JSON.parse(listed.stdout.trim()).events;
-  } else {
-    events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/u).map(line => JSON.parse(line));
   }
   const resumedRun = events.find(event => event.kind === 'TaskRunCreated' && event.payload?.sourceRunId === before.checkpoint.runId);
+  const resumeRequests = requests.slice(beforeResume);
+  if (expectModeRejected) {
+    assert.equal(resumedRun, undefined, 'a retired mode never reaches the checkpoint lineage');
+    return { resumed, events, requests: resumeRequests, workspace };
+  }
   assert.ok(resumedRun, 'a new process resumes the actual source run');
   assert.equal(resumedRun.payload.sourceCheckpointDigest, before.checkpoint.checkpointDigest);
   const after = JSON.parse(await readFile(threads, 'utf8')).threads.find(x => x.id === before.id);
-  const resumeRequests = requests.slice(beforeResume);
   assert.equal(resumeRequests.filter(x => /Planner role/iu.test(String(x.body.instructions ?? ''))).length, 0);
   assert.equal(resumeRequests.filter(x => inputText(x.body).includes('Current validated plan step: completed')).length, 0);
   const durablePlan = expectLineageRejected
@@ -157,7 +159,7 @@ const exerciseInterruption = async (t, { sideEffect = false, resumeMode = 'READ_
   return { resumed, after, completed, durablePlan, requests: resumeRequests, events, resumedRun, workspace };
 };
 
-test('a killed read-only runtime resumes pending work without repeating completed steps', { timeout: 60000 }, async t => {
+test('a killed controlled runtime resumes pending observation work without repeating completed steps', { timeout: 60000 }, async t => {
   const { resumed, events, resumedRun, requests, durablePlan } = await exerciseInterruption(t);
   assert.equal(resumed.code, 0, resumed.stderr + resumed.stdout);
   const payload = JSON.parse(resumed.stdout.trim());
@@ -177,7 +179,7 @@ test('a killed read-only runtime resumes pending work without repeating complete
   assert.equal(states[reconciliation + 1].reason, 'resume:interrupted');
 });
 
-test('a killed controlled write remains blocked when resumed in read-only mode', { timeout: 60000 }, async t => {
+test('a killed controlled write stays blocked even when the resume holds the write lease', { timeout: 60000 }, async t => {
   const { resumed, after, requests, workspace } = await exerciseInterruption(t, { sideEffect: true });
   assert.notEqual(resumed.code, 0);
   assert.equal(after.checkpoint.plan.steps[1].status, 'BLOCKED');
@@ -186,26 +188,21 @@ test('a killed controlled write remains blocked when resumed in read-only mode',
   assert.equal(await readFile(join(workspace, 'result.txt'), 'utf8'), 'ACTUAL_WRITE_BEFORE_KILL');
 });
 
-test('a read-only source does not authorize replay after upgrading the resume mode', { timeout: 60000 }, async t => {
-  const { resumed, after, requests, workspace } = await exerciseInterruption(t, { resumeMode: 'CONTROLLED', expectLineageRejected: true });
+test('a retired READ_ONLY resume mode is rejected before any replay', { timeout: 60000 }, async t => {
+  const { resumed, events, requests, workspace } = await exerciseInterruption(t, { resumeMode: 'READ_ONLY', expectModeRejected: true });
   assert.notEqual(resumed.code, 0);
   const payload = JSON.parse(resumed.stdout.trim());
   assert.equal(payload.ok, false);
-  // The controlled resume walks the checkpoint lineage and refuses closed: a
-  // read-only source run can never form a valid controlled lineage, so no
-  // written-file facts are replayed.
-  assert.equal(payload.error, 'RECOVERY_LINEAGE_INVALID');
-  // The rejection happens before any model turn or interrupted-step retry.
+  // The retired mode is rejected before the checkpoint lineage is walked, so
+  // no resumed run is created and no read or write can be replayed.
+  assert.equal(payload.error, 'EXECUTION_MODE_INVALID');
   assert.equal(requests.length, 0);
-  assert.notEqual(after.checkpoint.plan.steps[1].status, 'SUCCEEDED');
-  // No write is authorized into the read-only workspace and the pending read
-  // stays untouched.
   await assert.rejects(readFile(join(workspace, 'result.txt'), 'utf8'), { code: 'ENOENT' });
   assert.equal(await readFile(join(workspace, 'second.txt'), 'utf8'), 'SECOND_STEP_NATIVE_EVIDENCE');
 });
 
-test('a killed read-only runtime resumes with the phase-one SQLite event store', { timeout: 60000 }, async t => {
-  const { resumed, requests } = await exerciseInterruption(t, { releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' });
+test('a killed controlled runtime resumes with the scoped SQLite event store', { timeout: 60000 }, async t => {
+  const { resumed, requests } = await exerciseInterruption(t, { releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' });
   assert.equal(resumed.code, 0, resumed.stderr + resumed.stdout);
   const payload = JSON.parse(resumed.stdout.trim());
   assert.equal(payload.ok, true);

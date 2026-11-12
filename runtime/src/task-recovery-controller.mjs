@@ -53,6 +53,7 @@ export const isAgentMissReplanEligible = ({
   if (alreadyReplanned) return false;
   if (Number(writesApplied) < 1 && Number(successfulWrites) < 1) return false;
   const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
+  if (codes.includes('SCOPE_VIOLATION') || codes.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN')) return false;
   if (!codes.some((code) => AGENT_MISS_TRIGGER_CODES.has(code))) return false;
   if (isSoleHardDenyFailure(codes)) return false;
   return true;
@@ -276,6 +277,7 @@ export const isZeroWriteJevReplanEligible = ({
   // Non-finite → treat as ineligible (fail-closed).
   if (!Number.isFinite(Number(writesApplied)) || !Number.isFinite(Number(successfulWrites))) return false;
   const codes = (Array.isArray(failureCodes) ? failureCodes : []).map((code) => String(code ?? ''));
+  if (codes.includes('SCOPE_VIOLATION') || codes.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN')) return false;
   if (!codes.some((code) => ZERO_WRITE_JEV_TRIGGER_CODES.has(code))) return false;
   if (isSoleHardDenyFailure(codes)) return false;
   return true;

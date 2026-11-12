@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { CEILING_PERMISSIONS } from '../plugin-permissions.mjs';
 
 const canonicalJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -64,6 +65,7 @@ export const pluginManifest = (id, name, type, capabilities, permissions = []) =
     entrypoint: id,
     capabilities,
     permissions,
-    permissionCeiling: 'READ_ONLY'
+    permissionCeiling: permissions.every((permission) => CEILING_PERMISSIONS.OBSERVE.includes(permission))
+      ? 'OBSERVE' : 'CONTROLLED'
   }]
 });

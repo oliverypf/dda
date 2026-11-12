@@ -70,6 +70,10 @@ export const createKernelHandler = ({ workspace, state }) => {
       const maxChars = params.maxChars === undefined ? 2000 : params.maxChars;
       return requireWorkspace().readMatching(params.path, params.findText, maxChars, 0, true);
     },
+    'workspace.inspect_binary': async (params) => {
+      if (typeof params.path !== 'string') throw new Error('KERNEL_INVALID_PARAMS:path is required');
+      return requireWorkspace().inspectBinary(params.path);
+    },
     'session_state.get': async (params) => {
       if (typeof params.key !== 'string') throw new Error('KERNEL_INVALID_PARAMS:key is required');
       const found = state.has(params.key);
@@ -151,6 +155,7 @@ export const createStateMirror = () => {
 /** Start the stdio serving loop. Exported for completeness; invoked on run. */
 export const runWorker = async ({ input = process.stdin, output = process.stdout } = {}) => {
   const { ReadonlyWorkspace } = await import('../plugins/workspace-readonly.mjs');
+  const { readAccessMode } = await import('../computer-access.mjs');
 
   let ready = false;
   let handle = null;
@@ -182,7 +187,11 @@ export const runWorker = async ({ input = process.stdin, output = process.stdout
         return;
       }
       const workspace = typeof params.workspaceRoot === 'string' && params.workspaceRoot
-        ? new ReadonlyWorkspace(params.workspaceRoot, { excludedPaths: Array.isArray(params.excludedPaths) ? params.excludedPaths : [] })
+        ? new ReadonlyWorkspace(params.workspaceRoot, {
+            excludedPaths: Array.isArray(params.excludedPaths) ? params.excludedPaths : [],
+            getAccessMode: params.enableUserFileAccess === true ? readAccessMode : undefined,
+            protectedPaths: Array.isArray(params.protectedPaths) ? params.protectedPaths : []
+          })
         : null;
       const snapshot = isPlainObject(params.sessionState) ? params.sessionState : {};
       state.load(Array.isArray(snapshot.entries) ? snapshot.entries : [], snapshot.revision);

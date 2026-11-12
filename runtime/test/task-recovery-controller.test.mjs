@@ -110,3 +110,56 @@ test('T-smf-1: safeReport path preserves TOPOLOGY_BUDGET_PROBES checks into diag
     'actions.progress FAIL check must survive safeReport'
   );
 });
+
+test('SCOPE_VIOLATION in attempt 1 neither auto-replans nor clears to PASS on later attempts', async () => {
+  const { createRuleVerifier } = await import('../src/rule-verifier.mjs');
+  const verifier = createRuleVerifier();
+  let executions = 0;
+  const result = await runVerifierRecovery({
+    maxAttempts: 3,
+    agentMiss: {
+      getWriteCounts: () => ({ writesApplied: 0, successfulWrites: 0 }),
+      onZeroWriteJevReplan: () => { throw new Error('must not zero-write replan after SCOPE_VIOLATION'); },
+      onReplan: () => { throw new Error('must not agent-miss replan after SCOPE_VIOLATION'); }
+    },
+    execute: async ({ attempt }) => {
+      executions += 1;
+      return attempt === 1
+        ? {
+            text: 'partial run',
+            actions: [{ name: 'shell.execute', state: 'FAILED', errorCode: 'SCOPE_VIOLATION', argumentsDigest: 'sha256:' + '1'.repeat(64) }]
+          }
+        : {
+            text: 'clean retry',
+            actions: [{ name: 'shell.execute', state: 'SUCCEEDED', outputDigest: 'sha256:' + '2'.repeat(64), argumentsDigest: 'sha256:' + '3'.repeat(64) }]
+          };
+    },
+    verify: async ({ result: turnResult, previousActions }) => {
+      const report = verifier.verify({
+        prompt: 'build exe',
+        output: turnResult.text,
+        workspace: { granted: true, rootPath: 'C:/repo', snapshotDigest: 'sha256:' + 'a'.repeat(64) },
+        actions: turnResult.actions,
+        previousActions
+      });
+      return {
+        ...report,
+        failureCodes: [...new Set([...(report.failureCodes ?? []), 'JEV_BEHAVIOR_REJECTED'])]
+      };
+    }
+  });
+  assert.equal(result.ok, false, 'run with SCOPE_VIOLATION must not finish ok');
+  assert.equal(executions, 1, 'must stop immediately without auto-replan');
+  assert.ok(result.report.failureCodes.includes('SCOPE_VIOLATION'));
+
+  // Even if a caller directly invokes RuleVerifier with prior SCOPE_VIOLATION, attempt 2 stays FAIL.
+  const secondVerify = verifier.verify({
+    prompt: 'build exe',
+    output: 'clean retry',
+    workspace: { granted: true, rootPath: 'C:/repo', snapshotDigest: 'sha256:' + 'a'.repeat(64) },
+    previousActions: [{ name: 'shell.execute', state: 'FAILED', errorCode: 'SCOPE_VIOLATION', argumentsDigest: 'sha256:' + '1'.repeat(64) }],
+    actions: [{ name: 'shell.execute', state: 'SUCCEEDED', outputDigest: 'sha256:' + '2'.repeat(64), argumentsDigest: 'sha256:' + '3'.repeat(64) }]
+  });
+  assert.equal(secondVerify.status, 'FAIL');
+  assert.ok(secondVerify.failureCodes.includes('SCOPE_VIOLATION'));
+});

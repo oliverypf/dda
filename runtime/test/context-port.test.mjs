@@ -32,3 +32,32 @@ test('context port refuses unbounded recall and keeps proposed memory out of rec
   await assert.rejects(() => port.recall({ limit: 65 }), /CONTEXT_RECALL_OPTIONS_INVALID/);
   assert.equal((await port.used({ memoryIds: [record.memoryId] })).used.length, 0);
 });
+
+test('journal context port matches unspaced Chinese prompts and ranks matching lessons ahead of general project guidance', async () => {
+  const journal = createMemoryJournal({ now: () => 2000 });
+  const general = journal.propose({
+    runId: 'run-g',
+    statement: '安全边界经验：宿主受保护目录禁止读取。',
+    sourceEventIds: ['ev-g'],
+    scope: 'workspace',
+    kind: 'PROJECT',
+    confidence: 0.9
+  });
+  const buildLesson = journal.propose({
+    runId: 'run-b',
+    statement: '项目命令经验（编译exe）：在工作区 `desktop` 目录执行 `npm run build:windows:full-local` 已核验可成功完成命令/构建。',
+    sourceEventIds: ['ev-b'],
+    scope: 'workspace',
+    kind: 'PROJECT',
+    confidence: 0.9
+  });
+  for (const m of [general, buildLesson]) {
+    journal.verify(m.memoryId, { accepted: true });
+    journal.activate(m.memoryId);
+  }
+  const port = createJournalContextPort({ journal });
+  const recalled = await port.recall({ query: '帮我编译exe文件', scope: 'workspace' });
+  assert.equal(recalled.items.length, 2);
+  assert.equal(recalled.items[0].memoryId, buildLesson.memoryId, 'Chinese bigram + exe match ranks the build lesson first');
+  assert.ok(recalled.items[0].score > 0);
+});

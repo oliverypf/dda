@@ -3,6 +3,8 @@ import { renderMarkdown } from './markdown';
 import { syncRegionContent } from './keyed-list';
 
 // Keep completed rows untouched; append large bursts over several frames.
+const activeContainerTimeline = new WeakMap<HTMLElement, LiveTimeline>();
+
 export class LiveTimeline {
   private rows = new Map<string, { element: HTMLElement; item: TimelineItem; paintedAt: number }>();
   private items: TimelineItem[] = [];
@@ -10,7 +12,14 @@ export class LiveTimeline {
   private streamTimer: number | undefined;
 
   constructor(private container: HTMLElement, private html: (item: TimelineItem) => string,
-    private initialize: (element: HTMLElement) => void, private afterPaint: () => void) {}
+    private initialize: (element: HTMLElement) => void, private afterPaint: () => void) {
+    const previous = activeContainerTimeline.get(container);
+    if (previous && previous !== this) previous.pause();
+    activeContainerTimeline.set(container, this);
+    // Session switches reuse the live workbench container; clear any DOM nodes
+    // left by the previous session before mounting this session's items.
+    container.replaceChildren();
+  }
 
   update(items: TimelineItem[]): void {
     this.items = items;
@@ -24,10 +33,19 @@ export class LiveTimeline {
     this.streamTimer = undefined;
   }
 
+  clear(): void {
+    this.pause();
+    this.items = [];
+    this.rows.clear();
+    if (activeContainerTimeline.get(this.container) === this) {
+      this.container.replaceChildren();
+    }
+  }
+
   private flush(): void {
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
-    if (!this.container.isConnected) return;
+    if (!this.container.isConnected || activeContainerTimeline.get(this.container) !== this) return;
     const wanted = new Set(this.items.map((item) => item.itemId));
     for (const [id, row] of this.rows) {
       if (!wanted.has(id)) { row.element.remove(); this.rows.delete(id); }

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { PluginRegistry } from '../src/plugins/registry.mjs';
 import { PluginGovernance } from '../src/plugin-governance.mjs';
 import { DynamicPluginLoader } from '../src/plugin-loader.mjs';
+import { installPluginTrustKey, signPluginManifest } from './helpers/sign-plugin.mjs';
 import {
   PLUGIN_REVOCATIONS_ENV,
   PLUGIN_REVOCATION_FILE_ENV,
@@ -41,6 +42,9 @@ const activate = async (governance, pluginId) => {
     await governance.transition(pluginId, state);
   }
 };
+
+installPluginTrustKey();
+const signed = (extra = {}) => ({ manifest, entryPath: 'plugin.mjs', signature: signPluginManifest(manifest), ...extra });
 
 test('a revocation list accepts digests and id@version entries only', () => {
   const parsed = parsePluginRevocations(`${DIGEST.toUpperCase()}, ${'b'.repeat(64)};revocation-fixture@2.1.0`);
@@ -86,15 +90,15 @@ test('revocation sources merge and an unreadable file fails closed', async () =>
 test('a revoked artifact or version is refused before governance records it', async () => {
   const { root, governance, registry, entryDigest } = await fixture();
   const byDigest = new DynamicPluginLoader({ rootDir: root, governance, registry, revocations: parsePluginRevocations(entryDigest) });
-  await assert.rejects(() => byDigest.discover({ manifest, entryPath: 'plugin.mjs' }), /PLUGIN_PACKAGE_REVOKED/u);
+  await assert.rejects(() => byDigest.discover(signed()), /PLUGIN_PACKAGE_REVOKED/u);
   assert.equal(governance.list().length, 0);
 
   const byVersion = new DynamicPluginLoader({ rootDir: root, governance, registry, revocations: parsePluginRevocations('revocation-fixture@1.0.0') });
-  await assert.rejects(() => byVersion.discover({ manifest, entryPath: 'plugin.mjs' }), /PLUGIN_VERSION_REVOKED/u);
+  await assert.rejects(() => byVersion.discover(signed()), /PLUGIN_VERSION_REVOKED/u);
   assert.equal(governance.list().length, 0);
 
   const allowed = new DynamicPluginLoader({ rootDir: root, governance, registry, revocations: emptyPluginRevocations() });
-  const discovered = await allowed.discover({ manifest, entryPath: 'plugin.mjs' });
+  const discovered = await allowed.discover(signed());
   assert.equal(discovered.state, 'DISCOVERED');
   assert.equal(governance.list().length, 1);
 });
@@ -103,7 +107,7 @@ test('a revocation hit on load quarantines the active plugin', async () => {
   const { root, governance, registry, entryDigest } = await fixture();
   let revocations = emptyPluginRevocations();
   const loader = new DynamicPluginLoader({ rootDir: root, governance, registry, revocationProvider: () => revocations });
-  const discovered = await loader.discover({ manifest, entryPath: 'plugin.mjs' });
+  const discovered = await loader.discover(signed());
   await activate(governance, discovered.pluginId);
   // The plugin activates normally while the list is empty.
   await loader.load(discovered.pluginId);
@@ -116,6 +120,6 @@ test('a revocation hit on load quarantines the active plugin', async () => {
   assert.equal(revoked.transition.metadata.reason, 'PLUGIN_REVOCATION_HIT_DIGEST');
 
   // A revoked plugin cannot be re-discovered as a new side-by-side install.
-  await assert.rejects(() => loader.discover({ manifest, entryPath: 'plugin.mjs' }), /PLUGIN_PACKAGE_REVOKED/u);
+  await assert.rejects(() => loader.discover(signed()), /PLUGIN_PACKAGE_REVOKED/u);
 });
 

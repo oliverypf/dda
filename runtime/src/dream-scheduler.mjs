@@ -152,6 +152,7 @@ export class DreamScheduler {
         if (typeof record.startedAtMs !== 'number') continue;
         delete record.gateAllowed;
         if (record.state === 'RUNNING') delete record.gateReasons;
+        if (record.phase === null) delete record.phase;
         delete record.previousState;
         delete record.status;
         if (typeof record.runId !== 'string' || record.recordDigest !== runDigest(record)) throw new Error('DREAM_STORE_INVALID');
@@ -222,7 +223,7 @@ export class DreamScheduler {
       runId,
       projectId: String(projectId || this.#projectId).slice(0, 256),
       state: gateResult.allowed ? 'RUNNING' : 'WAITING_GATE',
-      phase: gateResult.allowed ? 'ORIENT' : undefined,
+      ...(gateResult.allowed ? { phase: 'ORIENT' } : {}),
       startedAtMs,
       ...(gateResult.allowed ? {
         ownerPid: this.#ownerPid,

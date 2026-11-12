@@ -126,7 +126,7 @@ const launch = (fixtureEnv, envOverrides = {}) => {
       ...process.env,
       ...fixtureEnv,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_WORKSPACE_ROOT: fixtureEnv?.DDA_WORKSPACE_ROOT ?? workspaceRoot,
       ...envOverrides
     }

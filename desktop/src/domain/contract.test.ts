@@ -37,6 +37,36 @@ describe('HarnessReadModel v1 contract', () => {
     expect(validate(fixture), JSON.stringify(validate.errors, null, 2)).toBe(true);
   });
 
+  it('accepts the optional plugin governance status only in its discriminated forms', () => {
+    const validate = new Ajv2020({ allErrors: true }).compile(schema);
+    expect(validate(fixture)).toBe(true);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'AVAILABLE' } }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({
+      ...fixture,
+      pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_INVALID' }
+    }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({
+      ...fixture,
+      pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_READ_FAILED' }
+    }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'BLOCKED' } })).toBe(false);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'AVAILABLE', errorCode: 'PLUGIN_GOVERNANCE_INVALID' } })).toBe(false);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'UNKNOWN_CODE' } })).toBe(false);
+  });
+
+  it('accepts an optional thread recovery block only in its strict shape', () => {
+    const validate = new Ajv2020({ allErrors: true }).compile(schema);
+    const thread = { id: 'thread-1', title: 't', cwd: 'c', turnCount: 0, createdAtMs: 1, updatedAtMs: 1 };
+    const block = { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['inspect'] };
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: block }] }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'OTHER_CODE', stepIds: ['inspect'] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: [] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['a', 'a'] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['a'], extra: true } }] })).toBe(false);
+  });
+
   it('accepts controlled execution but rejects external network side effects', () => {
     const validate = new Ajv2020({ allErrors: true }).compile(schema);
     const controlledFixture = {

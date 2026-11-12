@@ -201,21 +201,33 @@ const readHead = async (root, timeoutMs) => {
 };
 
 const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow']);
+// `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+// ordinary `git status` in IDEs/shells even when zero staged entries change;
+// actual staged content is already captured by `indexDigest` via `git diff --cached`),
+// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+// existence and symlink status without hashing volatile cache bytes/timestamps.
+const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
 const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
 
-const readMetadataEntry = async (filePath) => {
+const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
   const metadata = await lstat(filePath).catch(() => null);
   if (!metadata) return { exists: false };
+  const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+  if (volatileContent) {
+    return { exists: true, type };
+  }
   const entry = {
     exists: true,
-    type: metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other',
+    type,
     size: Number.isFinite(metadata.size) ? metadata.size : 0,
-    mode: metadata.mode,
-    mtimeMs: Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs) : 0
+    mode: metadata.mode
   };
   if (metadata.isFile() && metadata.size <= MAX_METADATA_FILE_BYTES) {
     const content = await readFile(filePath).catch(() => null);
     if (content) entry.contentDigest = digestBytes(content);
+    else entry.mtimeMs = Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs) : 0;
+  } else {
+    entry.mtimeMs = Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs) : 0;
   }
   return entry;
 };
@@ -229,7 +241,9 @@ const readGitMetadata = async (root, timeoutMs) => {
   const entries = {};
   let linkDetected = false;
   for (const name of METADATA_FILES) {
-    const entry = await readMetadataEntry(resolve(gitDir, name));
+    const entry = await readMetadataEntry(resolve(gitDir, name), {
+      volatileContent: VOLATILE_METADATA_FILES.has(name)
+    });
     entries[name] = entry;
     linkDetected ||= entry.type === 'link';
   }

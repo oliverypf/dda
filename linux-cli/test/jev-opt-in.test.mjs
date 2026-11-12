@@ -53,6 +53,18 @@ async function fixture(t) {
   t.after(() => Promise.all([model, jev].map((server) => new Promise((resolve) => server.close(resolve)))));
   const modelPort = await listenOnFetchablePort(model);
   const jevPort = await listenOnFetchablePort(jev);
+  // An explicit config file keeps the fixture hermetic: on hosts where the
+  // runtime's default config path resolves to a real model-config.json (for
+  // example %LOCALAPPDATA%\hmCodex on Windows), the file route wins over the
+  // DDA_MODEL_* fallbacks and the test still talks to this stub server. No
+  // `decision` block here so Jev opt-in stays governed by the test env.
+  const modelConfigPath = join(root, 'model-config.json');
+  await writeFile(modelConfigPath, `${JSON.stringify({
+    provider: 'openai-chat',
+    protocol: 'chat-completions',
+    endpoint: `http://127.0.0.1:${modelPort}/chat/completions`,
+    apiKeyEnv: 'DDA_TEST_MODEL_KEY'
+  })}\n`);
   const env = {
     PATH: process.env.PATH,
     HOME: join(root, 'home'),
@@ -63,7 +75,8 @@ async function fixture(t) {
     XDG_CACHE_HOME: join(root, 'cache'),
     DDA_TEST_MODEL_KEY: 'model-fixture-key',
     DDA_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
-    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/chat/completions`
+    DDA_MODEL_ENDPOINT: `http://127.0.0.1:${modelPort}/chat/completions`,
+    DDA_MODEL_CONFIG: modelConfigPath
   };
   await mkdir(env.HOME, { recursive: true });
   const jevEndpoint = `http://127.0.0.1:${jevPort}/v1/systemone`;

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { projectPaths } from './windows-path.mjs';
+import { stageDesktopBuild } from './stage-desktop-build.mjs';
 
 export const fullLocalBuildEnvironment = (environment) => {
   const next = { ...environment };
@@ -31,5 +32,10 @@ export function runFullLocalBuild({ desktopRoot = projectPaths(import.meta.url).
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = runFullLocalBuild({ fast: process.argv.includes('--fast') });
+  const fast = process.argv.includes('--fast');
+  process.exitCode = runFullLocalBuild({ fast });
+  if (process.exitCode === 0 && process.platform === 'win32') {
+    const staged = await stageDesktopBuild({ profile: fast ? 'debug' : 'release' });
+    console.log(`staged runnable desktop: ${staged.executable}`);
+  }
 }

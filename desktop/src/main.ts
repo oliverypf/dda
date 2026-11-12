@@ -56,8 +56,13 @@ import {
 import { parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
 import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, remapProjectArchiveIds, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
+import { threadRecoveryBlock } from './domain/thread-recovery';
+import { commandLineForToolEvent, outputTailForToolEvent, pathBadgeText, pathForToolEvent, WORKSPACE_REASON_LABELS } from './domain/tool-command';
+import { TaskSessionController, sessionIsPristineDraft, type ScopedRunState, type TaskSession } from './domain/task-session';
+import { DesktopNoticePolicy, deliverDesktopNotice, desktopNoticeActivation, type DesktopNotice } from './domain/desktop-notifications';
+import { approvalFailureHint } from './domain/approval-failure';
 import type { HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
-  ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
+  ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry, RuntimeDreamMaintenanceStatus } from './domain/models';
 import {
   appendTimelineItem,
   applyRuntimeSubAgentEvent,
@@ -72,7 +77,6 @@ import {
   setCellsSession,
   setContextSidecarStatus,
   setDreamMaintenanceStatus,
-  setExecutionMode,
   setActiveThread,
   setThreads,
   setWorkspace,
@@ -101,6 +105,10 @@ import { formatVerifierFormValues, parseVerifierFormValues } from './domain/veri
 import { syncKeyedList, syncKeyedListIncrementally, syncRegionContent } from './ui/keyed-list';
 import { LiveTimeline } from './ui/live-timeline';
 import { renderMarkdown } from './ui/markdown';
+import { ComputerAccessController } from './domain/computer-access-controller';
+import { createComputerAccessControls } from './ui/computer-access-controls';
+import { ACCESS_PILL_ON, ACCESS_PILL_OFF, ACCESS_COMPOSER_NOTE_ON } from './domain/computer-access';
+import { approvalReasonLabels, approvalPreviewText, approvalTruncatedText } from './domain/approval-review';
 
 type IconNode = [tag: string, attrs: Record<string, string>][];
 
@@ -151,7 +159,8 @@ const historyPageCache = new Map<string, {
 const historySummaryKey = (thread: ThreadEventPage['thread']): string | undefined => {
   if (!thread) return undefined;
   return JSON.stringify([thread.id, thread.updatedAtMs, thread.turnCount,
-    thread.state, thread.resumable, thread.resumeMode, thread.checkpoint?.runId ?? null]);
+    thread.state, thread.resumable, thread.resumeMode, thread.checkpoint?.runId ?? null,
+    thread.recoveryBlock ?? null]);
 };
 const reconcileHistoryPageCache = (threads: ThreadEventPage['thread'][]): void => {
   const summaries = new Map(threads.filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
@@ -194,14 +203,14 @@ const loadInitialHistoryPage = (threadId: string): Promise<ThreadEventPage> => {
 // Node/SQLite round trip behind the short pointer-to-click interval without
 // changing the selected thread or its workspace.
 const prefetchHistoryPage = (threadId: string): void => {
-  if (!threadId || running || workspaceChanging) return;
+  if (!threadId || anyTaskRunning() || workspaceChanging) return;
   const thread = model.threads.find((candidate) => candidate.id === threadId);
   if (!thread || !hasPersistedTurn(thread)) return;
   // Keep an immediate click indistinguishable from the old path (useful for
   // keyboard users and for transient rows), while a normal hover gets a head
   // start before the click lands.
   setTimeout(() => {
-    if (!running && !workspaceChanging) void loadInitialHistoryPage(threadId).catch(() => undefined);
+    if (!anyTaskRunning() && !workspaceChanging) void loadInitialHistoryPage(threadId).catch(() => undefined);
   }, 150);
 };
 const savedNavigationThreadId = (): string | undefined => {
@@ -252,6 +261,23 @@ document.addEventListener('click', (event) => {
 }, true);
 if (!app) throw new Error('Missing #app root');
 
+const accessController = new ComputerAccessController({
+  read: () => desktopBridge.accessMode(),
+  write: (mode, confirmed) => desktopBridge.setAccessMode(mode, confirmed),
+  onChange: () => {
+    // Sync the access-mode chrome immediately, then let the normal render
+    // coalesce the rest — the pill lives in a footer that render does not
+    // rebuild on its own.
+    if (typeof refreshModeControls === 'function') refreshModeControls();
+    if (typeof scheduleRender === 'function') scheduleRender();
+  }
+});
+const accessControls = createComputerAccessControls({
+  controller: accessController,
+  isNative: () => desktopBridge.isNative(),
+  onRender: () => { if (typeof scheduleRender === 'function') scheduleRender(); }
+});
+
 let model: HarnessReadModel = createInitialReadModel();
 let contextVisible = window.matchMedia('(min-width: 1121px)').matches;
 let running = false;
@@ -282,7 +308,7 @@ let projectionRuns: Array<{ runId: string; title: string; state: string; started
 // Keep an approval visually pending until the runtime acknowledges it. The
 // stdin write only means that the response reached the runtime; it does not
 // mean that the persisted Approval/ActionIntent transition succeeded.
-const pendingApprovalResolutions = new Set<string>();
+let pendingApprovalResolutions = new Set<string>();
 let cellOpTimer: ReturnType<typeof setInterval> | undefined;
 const ensureCellOpTimer = (): void => {
   const running = model.timeline.some((item) => item.rows?.some((row) => row.state === 'RUNNING'));
@@ -307,7 +333,7 @@ const ensureCellOpTimer = (): void => {
 const pendingRecoveryActions = new Set<string>();
 // Tauri events are delivered globally. Include the run and sequence when
 // de-duplicating so reconnects/re-renders cannot append the same event twice.
-const observedRuntimeEvents = new Set<string>();
+let observedRuntimeEvents = new Set<string>();
 // Network is a separately approved capability. The target allowlist remains
 // empty until the user supplies it in Settings, so adding the capability to
 // the controlled lease does not open a network path by itself.
@@ -326,6 +352,12 @@ interface SubmitReceipt { id: string; prompt: string; status: SubmitReceiptStatu
 let lastSubmitReceipt: SubmitReceipt | undefined;
 let memoryActionError = '';
 let governanceReadFailed = false;
+// Only an explicit server BLOCKED status counts; an older server without the
+// field is treated as having no status rather than as a blocked chain.
+const pluginGovernanceBlockedCode = (): string | undefined => {
+  const status = model.pluginGovernanceStatus;
+  return status?.state === 'BLOCKED' ? status.errorCode : undefined;
+};
 let governanceActionNotice: { key: string; text: string; error: boolean } | undefined;
 const pendingGovernanceActions = new Set<string>();
 const governanceBusyKey = (element: HTMLElement): string => element.dataset.memoryId ? `memory:${element.dataset.memoryId}`
@@ -390,6 +422,275 @@ const pinNoticeSession = createPinNoticeSession(localStorage);
 const runThreadIds = new Map<string, string | undefined>();
 let currentRunThreadId: string | undefined;
 let pinMigrationReady: Promise<void> = Promise.resolve();
+
+// Task sessions
+// Each session owns the per-invocation fields that used to be singletons.
+// The module-level `let`s above always hold the SELECTED session's live state;
+// withSession() swaps another session's state in for a synchronous projection
+// and restores it afterwards, so existing reducers keep working untouched.
+const sessionController = new TaskSessionController({ model });
+
+const captureScopedState = (): ScopedRunState => ({
+  running,
+  taskProgressMessage,
+  pendingCancellationRunId,
+  runtimeStreamObserved,
+  activeRuntimeRunId,
+  runtimeEventFloorMs,
+  lastRuntimeEventSequence,
+  currentRunThreadId,
+  pendingApprovalResolutions,
+  observedRuntimeEvents,
+  lastSubmitReceipt,
+  routeFailure,
+  model
+});
+
+const installScopedState = (state: ScopedRunState): void => {
+  running = state.running;
+  taskProgressMessage = state.taskProgressMessage;
+  pendingCancellationRunId = state.pendingCancellationRunId;
+  runtimeStreamObserved = state.runtimeStreamObserved;
+  activeRuntimeRunId = state.activeRuntimeRunId;
+  runtimeEventFloorMs = state.runtimeEventFloorMs;
+  lastRuntimeEventSequence = state.lastRuntimeEventSequence;
+  currentRunThreadId = state.currentRunThreadId;
+  pendingApprovalResolutions = state.pendingApprovalResolutions;
+  observedRuntimeEvents = state.observedRuntimeEvents;
+  lastSubmitReceipt = state.lastSubmitReceipt as SubmitReceipt | undefined;
+  routeFailure = state.routeFailure;
+  model = state.model;
+};
+
+/** >0 while a non-selected session's state is installed; suppresses DOM writes. */
+let scopedProjectionDepth = 0;
+
+/**
+ * Synchronously project `fn` against the session that owns it. Only the
+ * selected session's globals are installed when fn runs — a background
+ * settle/event can never leak into what the user is looking at. The callback
+ * must be synchronous: an async gap would let the swapped-out globals drift.
+ */
+const sessionRailSignature = (session: TaskSession): string =>
+  `${session.running ? 1 : 0}:${session.taskProgressMessage}:${sessionController.pendingApprovalCount(session)}:${session.threadId ?? session.currentRunThreadId ?? session.model.activeThreadId ?? ''}:${session.model.activeRun?.title ?? ''}:${session.model.activeRun?.state ?? ''}:${session.lastSubmitReceipt?.prompt ?? ''}`;
+
+const withSession = <T>(clientSessionId: string, fn: () => T): T => {
+  const session = sessionController.forClientSessionId(clientSessionId);
+  if (!session) throw new Error(`TASK_SESSION_UNKNOWN:${clientSessionId}`);
+  const selected = sessionController.selected();
+  if (!selected) throw new Error('TASK_SESSION_NONE_SELECTED');
+  const run = (): T => {
+    const result = fn();
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      throw new Error('withSession callback must be synchronous');
+    }
+    return result;
+  };
+  if (session === selected) {
+    try {
+      return run();
+    } finally {
+      // Keep the controller's copy of the selected state live so expiry scans,
+      // running counts and thread lookups never read a stale model.
+      Object.assign(selected, captureScopedState());
+    }
+  }
+  Object.assign(selected, captureScopedState());
+  const selectedThreadsBefore = selected.model.threads;
+  const approvalsBefore = session.model.approvals;
+  const railBefore = sessionRailSignature(session);
+  session.model = sharedProjection(session.model, selected.model);
+  installScopedState(session);
+  scopedProjectionDepth += 1;
+  try {
+    return run();
+  } finally {
+    scopedProjectionDepth -= 1;
+    Object.assign(session, captureScopedState());
+    installScopedState(selected);
+    model = mergeSharedThreads(model, session.model);
+    syncSelectedSession();
+    if (session.model.approvals !== approvalsBefore) scheduleApprovalExpiry();
+    if (sessionRailSignature(session) !== railBefore || model.threads !== selectedThreadsBefore) {
+      scheduleRender();
+    }
+  }
+};
+
+// The controller's stored copy can lag the live selected globals between
+// withSession calls; the live flag is authoritative for the selected session.
+const anyTaskRunning = (): boolean => {
+  if (scopedProjectionDepth === 0) syncSelectedSession();
+  return running || sessionController.anyTaskRunning();
+};
+
+// Threads are shared state: a background run finishing must surface its thread
+// in the selected session's catalog without waiting for a dashboard refresh.
+const mergeSharedThreads = (into: HarnessReadModel, from: HarnessReadModel): HarnessReadModel => {
+  if (into.threads === from.threads) return into;
+  const byId = new Map(into.threads.map((thread) => [thread.id, thread]));
+  for (const thread of from.threads) {
+    const existing = byId.get(thread.id);
+    if (!existing || (thread.updatedAtMs ?? 0) > (existing.updatedAtMs ?? 0)) byId.set(thread.id, thread);
+  }
+  return { ...into, threads: [...byId.values()] };
+};
+
+const sharedProjection = (target: HarnessReadModel, source: HarnessReadModel): HarnessReadModel => ({
+  ...mergeSharedThreads(target, source),
+  connection: source.connection,
+  runtime: source.runtime,
+  feedback: source.feedback,
+  memories: source.memories,
+  dreamRuns: source.dreamRuns,
+  plugins: source.plugins,
+  pluginVersions: source.pluginVersions,
+  pluginGovernanceStatus: source.pluginGovernanceStatus,
+  evolutionProposals: source.evolutionProposals,
+  evolutionReports: source.evolutionReports,
+  evolutionControl: source.evolutionControl,
+  supportBundle: source.supportBundle,
+  modelEgress: source.modelEgress,
+  modelUsage: source.modelUsage
+});
+
+const syncSelectedSession = (): void => {
+  const selected = sessionController.selected();
+  if (selected && scopedProjectionDepth === 0) Object.assign(selected, captureScopedState());
+};
+
+let sessionWorkspaceSyncSeq = 0;
+let sessionWorkspaceSyncInFlight = false;
+
+/**
+ * Park the selected session's live state and install another session's.
+ * The approval confirmation belongs to whichever session displayed it, so a
+ * switch always dismisses it — a hidden session can never be approved by a
+ * stale modal.
+ */
+const switchSession = (clientSessionId: string): boolean => {
+  if (workspaceChanging && !sessionWorkspaceSyncInFlight) return false;
+  const selected = sessionController.selected();
+  if (!selected) return false;
+  if (selected.clientSessionId === clientSessionId) {
+    if (activePage !== 'workbench' || settingsVisible || Boolean(historyView)) {
+      historyView = undefined;
+      historyRenderSerial++;
+      activePage = 'workbench';
+      settingsVisible = false;
+      render();
+      flushContextPanelImmediate();
+      return true;
+    }
+    return false;
+  }
+  const target = sessionController.select(clientSessionId);
+  if (!target) return false;
+  const previousRoot = (selected.model.workspace.rootPath || selected.workspacePath || '').trim();
+  const draft = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  selected.promptDraft = draft?.value ?? selected.promptDraft;
+  Object.assign(selected, captureScopedState());
+  if (draft) draft.value = target.promptDraft;
+  // The draft being left may be pristine — drop it rather than orphan a row.
+  sessionController.pruneIdleDrafts(target.clientSessionId);
+  target.model = sharedProjection(target.model, selected.model);
+  installScopedState(target);
+  approvalConfirmation?.close();
+  approvalConfirmation = undefined;
+  historyView = undefined;
+  historyRenderSerial++;
+  activePage = 'workbench';
+  settingsVisible = false;
+  focusedRunId = null;
+  executionGroupExpanded = false;
+  taskActionNotice = '';
+  transcriptStick = true;
+  transcriptScrollTop = 0;
+  resetLiveTimeline();
+  const targetRoot = (target.model.workspace.rootPath || target.workspacePath || '').trim();
+  const needsWorkspaceSync = desktopBridge.isNative() && Boolean(targetRoot)
+    && (!previousRoot || !sameWorkspaceRoot(previousRoot, targetRoot));
+  if (needsWorkspaceSync) {
+    const syncSeq = ++sessionWorkspaceSyncSeq;
+    sessionWorkspaceSyncInFlight = true;
+    workspaceChanging = true;
+    const previousWorkspaceReady = workspaceReady;
+    workspaceReady = previousWorkspaceReady.catch(() => undefined).then(async () => {
+      try {
+        await desktopBridge.setWorkspace(targetRoot);
+      } catch (error) {
+        withSession(target.clientSessionId, () => {
+          update(appendErrorTimelineItem({
+            ...model, workspace: { ...model.workspace, stale: true },
+            composer: { ...model.composer, enabled: false }
+          }, '会话工作区', error));
+        });
+      } finally {
+        if (syncSeq === sessionWorkspaceSyncSeq) {
+          sessionWorkspaceSyncInFlight = false;
+          workspaceChanging = false;
+          scheduleRender();
+        }
+      }
+    });
+  }
+  render();
+  const composer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  if (composer) composer.value = target.promptDraft;
+  flushContextPanelImmediate();
+  return true;
+};
+
+/** Park the running selected session and open a clean draft for a new task. */
+const parkForNewDraft = (): void => {
+  const selected = sessionController.selected();
+  const previousComposer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  const draftText = previousComposer?.value ?? '';
+  if (selected) {
+    selected.promptDraft = draftText;
+    Object.assign(selected, captureScopedState());
+  }
+  if (previousComposer) previousComposer.value = '';
+  // Derive the draft's model from the shared projection — workspace grant,
+  // runtime connection and threads stay; only the per-run state resets.
+  const base = model;
+  const clean: HarnessReadModel = {
+    ...base,
+    activeRun: undefined,
+    activeThreadId: undefined,
+    resumeThreadId: undefined,
+    timeline: [],
+    subAgents: [],
+    approvals: [],
+    decisions: [],
+    continuousVerification: [],
+    processVerification: undefined,
+    composer: { ...base.composer, enabled: true }
+  };
+  const cleared = setCellsSession(clean, undefined);
+  const draft = sessionController.ensureDraftSession(model.workspace.rootPath ?? '', { model: cleared });
+  // Repeated "new task" clicks must not stack up empty drafts in the rail.
+  sessionController.pruneIdleDrafts(draft.clientSessionId);
+  installScopedState(draft);
+  approvalConfirmation?.close();
+  approvalConfirmation = undefined;
+  historyView = undefined;
+  historyRenderSerial++;
+  activePage = 'workbench';
+  settingsVisible = false;
+  focusedRunId = null;
+  executionGroupExpanded = false;
+  taskActionNotice = '';
+  transcriptStick = true;
+  transcriptScrollTop = 0;
+  resetLiveTimeline();
+  syncSelectedSession();
+  scheduleApprovalExpiry();
+  render();
+  const composer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  if (composer) composer.value = '';
+  flushContextPanelImmediate();
+};
 interface TaskBudget {
   maxTokens?: number;
   maxToolRounds?: number;
@@ -409,6 +710,20 @@ let taskBudget: TaskBudget = (() => {
   } catch { return {}; }
 })();
 let taskActionNotice = '';
+const desktopNoticePolicy = new DesktopNoticePolicy();
+let desktopNoticeFailed = false;
+// Notification delivery is best-effort: a rejected invoke must never abort
+// the approval/task projection, and the in-app warning shows once per session.
+const sendDesktopNotice = (notice: DesktopNotice): void => {
+  if (!desktopBridge.isNative()) return;
+  void deliverDesktopNotice(notice, (item) => desktopBridge.showDesktopNotification(item)).then((outcome) => {
+    if (outcome !== 'failed' || desktopNoticeFailed) return;
+    desktopNoticeFailed = true;
+    console.warn('[desktop-notification] delivery failed');
+    taskActionNotice = 'Windows 通知未能发送，请留意应用内审批和任务状态。';
+    render();
+  });
+};
 let composerPromptError = '';
 const primaryPages: Record<string, { title: string; description: string }> = {
   workbench: { title: '工作台', description: '' },
@@ -431,7 +746,7 @@ const settingsSections = {
   catalog: { title: '模型目录', description: '查看当前模型连接这一家的模型目录，获取可用模型后勾选写入。', icon: 'database' },
   routing: { title: '模型与路由', description: '查看每次任务的路由决策、候选方案与未采用原因，以及累计缓存命中率和成本。', icon: 'list-tree' },
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
-  workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
+  workspace: { title: '工作区授权', description: '查看工作区授权目录、快照和项目来源。', icon: 'folder-open' },
   plugins: { title: '插件', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
   verifier: { title: '安全与质量检查', description: '调整自动质量检查设置，查看审批与安全策略的当前状态。', icon: 'shield-check' },
   memory: { title: '记忆与后台整理', description: '查看记忆状态、后台整理和治理数量。', icon: 'heart-pulse' },
@@ -506,7 +821,9 @@ const writeThreadArchive = (id: string, archived: boolean): boolean => {
     return false;
   }
 };
-const threadArchiveBlocked = (id: string): boolean => model.activeThreadId === id && (running || liveTaskRunning());
+const threadArchiveBlocked = (id: string): boolean => (model.activeThreadId === id && (running || liveTaskRunning()))
+  || [...sessionController.sessions.values()].some((session) => session.running
+    && (session.threadId === id || session.currentRunThreadId === id || session.model.activeThreadId === id));
 const PROJECT_ARCHIVE_STORAGE_KEY = 'hmcodex.projectArchives.v1';
 interface ProjectArchiveRecord { name: string; path: string; archivedAtMs: number; }
 const readProjectArchives = (): Record<string, ProjectArchiveRecord> => {
@@ -542,7 +859,8 @@ const writeProjectArchive = (id: string, record: ProjectArchiveRecord | null): b
     return false;
   }
 };
-const projectArchiveBlocked = (id: string): boolean => Boolean(id) && (running || liveTaskRunning()) && currentProjectId() === id;
+const projectArchiveBlocked = (id: string): boolean => Boolean(id) && ((running || liveTaskRunning()) && currentProjectId() === id
+  || [...sessionController.sessions.values()].some((session) => session.running && projectIdForPath(session.workspacePath) === id));
 const PROJECTLESS_ID = '__projectless__';
 const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: string[]; lastId: string; changed: boolean; idRemap: Record<string, string> } => {
   let raw: ProjectBookmark[] = [];
@@ -637,10 +955,12 @@ const rememberProject = (path: string, name?: string): ProjectBookmark | undefin
   persistProjectCatalog();
   return project;
 };
+const catalogProjectForPath = (path: string): ProjectBookmark | undefined =>
+  projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, path)));
 const projectForThread = (thread: HarnessReadModel['threads'][number]): ProjectBookmark | undefined => {
   const path = thread.cwd?.trim();
   if (!path) return undefined;
-  return projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, path)));
+  return catalogProjectForPath(path);
 };
 const hasPersistedTurn = (thread: HarnessReadModel['threads'][number]): boolean => thread.turnCount > 0;
 const projectGroups = (): ProjectGroup[] => {
@@ -662,6 +982,16 @@ const projectGroups = (): ProjectGroup[] => {
     const existing = discovered.get(id);
     if (existing) existing.threads.push(thread);
     else discovered.set(id, { id, name: projectNameForPath(path), path, threads: [thread], discovered: true });
+  }
+  // In-memory task sessions live inside their project too: a workspace used
+  // only by a running session still gets a discovered group so its row has a
+  // home instead of a separate global switcher block.
+  for (const session of sessionController.sessions.values()) {
+    const path = sessionWorkspacePath(session);
+    if (!path || catalogProjectForPath(path)) continue;
+    const id = projectIdForPath(path);
+    if (projectIds.has(id) || discovered.has(id) || isProjectArchived(id)) continue;
+    discovered.set(id, { id, name: projectNameForPath(path), path, threads: [], discovered: true });
   }
   groups.push(...discovered.values());
   groups.push(projectless);
@@ -934,20 +1264,26 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
       break;
     case 'workspace':
       rows = [
-        ['授权状态', model.workspace.granted ? '已授权（只读）' : '尚未授权'],
+        ['授权状态', model.workspace.granted ? '已授权（副作用需审批）' : '尚未授权'],
         ['授权 root', readOnlySettingsValue(model.workspace.rootPath ?? model.workspace.rootLabel)],
         ['快照状态', model.workspace.stale ? '快照已过期，需要刷新' : '当前快照'],
         ['当前目录', readOnlySettingsValue(model.workspace.currentPath || '.')]
       ];
       break;
-    case 'plugins':
+    case 'plugins': {
+      const governanceStatus = model.pluginGovernanceStatus;
+      const blockedCode = governanceStatus?.state === 'BLOCKED' ? governanceStatus.errorCode : undefined;
       rows = [
-        ['治理记录', `${model.plugins.length} 条`],
-        ['版本记录', `${model.pluginVersions.length} 条`],
+        ['治理状态', blockedCode
+          ? `审计记录校验未通过（${blockedCode}），插件状态与操作不可用`
+          : governanceStatus?.state === 'AVAILABLE' ? '校验通过' : '尚未读取'],
+        ['治理记录', blockedCode ? '不可读取' : `${model.plugins.length} 条`],
+        ['版本记录', blockedCode ? '不可读取' : `${model.pluginVersions.length} 条`],
         ['发布渠道', readOnlySettingsValue(model.runtime.releaseChannel)],
         ['写入策略', '插件变更仍需独立审批']
       ];
       break;
+    }
     case 'memory': {
       const active = experienceMemories().filter((item) => item.status === 'ACTIVE').length;
       const proposed = experienceMemories().filter((item) => item.status === 'PROPOSED').length;
@@ -1356,9 +1692,9 @@ const openSettings = async (): Promise<void> => {
 const compactError = (error: unknown): string => {
   const raw = error instanceof Error ? error.message : String(error);
   const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? '';
-  const recoveryCode = firstLine.match(/\b(?:THREAD_RESUME_GOAL_REQUIRED|THREAD_RESUME_PLAN_INVALID|THREAD_RESUME_CHECKPOINT_UNAVAILABLE|PERSISTENCE_LOCK_TIMEOUT)\b/u)?.[0];
+  const recoveryCode = firstLine.match(/\b(?:THREAD_RESUME_GOAL_REQUIRED|THREAD_RESUME_PLAN_INVALID|THREAD_RESUME_CHECKPOINT_UNAVAILABLE|PERSISTENCE_LOCK_TIMEOUT|RECOVERY_LINEAGE_INVALID)\b/u)?.[0];
   if (recoveryCode) return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
-  return firstLine.length > 240 ? `${firstLine.slice(0, 237)}...` : firstLine;
+  return firstLine.length > 800 ? `${firstLine.slice(0, 797)}...` : firstLine;
 };
 
 const appendErrorTimelineItem = (
@@ -1530,7 +1866,13 @@ const reasonDisplayLabel = (value: unknown): string => {
     COUNCIL_ACCEPT_PLAN: '审议通过计划', JUDGE_RETURNED_DECISION: '比较阶段返回决定', PROBE_SELECTED: '已选择探查方案',
     OWNER_PROCESS_LOST: '原执行进程已退出', CURRENT_RUNTIME_NOT_CONFIGURED: '当前运行时未配置',
     REMOTE_SOURCE_UNAVAILABLE: '远端恢复源不可用', POLICY_DENIED: '安全策略未允许',
-    INVALID_REQUEST: '请求格式不正确', TIMEOUT: '操作超时'
+    INVALID_REQUEST: '请求格式不正确', TIMEOUT: '操作超时',
+    EXECUTOR_SPAWN_FAILED: '命令进程未能启动，请检查工具安装、工作目录和系统权限。',
+    EXECUTOR_NODE_CLI_UNAVAILABLE: '当前 Node 安装缺少 npm/npx CLI，请修复 Node 安装后再试。',
+    RECOVERY_LINEAGE_INVALID: '恢复记录缺失或不一致，已阻止自动续跑。请先核对上次操作结果。',
+    SIDE_EFFECT_OUTCOME_UNCERTAIN: '上次操作结果不确定，已停止自动重放。请先核对文件或命令结果。',
+    SCOPE_VIOLATION: '执行范围校验未通过（命令或写入超出了授权范围，或执行期间 Git 元数据发生变化）。',
+    ...WORKSPACE_REASON_LABELS
   };
   return labels[key] ?? humanizeCode(value, '未提供原因');
 };
@@ -1571,14 +1913,17 @@ const timelineIcon = (item: TimelineItem): string => {
   if (item.kind === 'USER') return 'user-round';
   if (item.kind === 'WORKSPACE') return 'folder-open';
   if (item.kind === 'ERROR') return 'circle-alert';
-  if (item.kind === 'STATUS') return item.status === 'COMPLETE' ? 'check-circle-2' : 'loader-circle';
+  if (item.kind === 'STATUS') return item.status === 'ERROR' ? 'x-circle' : item.status === 'COMPLETE' ? 'check-circle-2' : 'loader-circle';
   return 'bot';
 };
 
 const subAgentStateLabel = (state: SubAgentReadModel['state']): string => {
   const labels: Record<SubAgentReadModel['state'], string> = {
-    STARTING: '准备中',
+    STARTING: '等待调用',
     RUNNING: '运行中',
+    WAITING: '等待中',
+    SKIPPED: '未调用',
+    CLOSED: '已关闭',
     SUCCEEDED: '已完成',
     FAILED: '失败',
     CANCELLED: '已取消'
@@ -1746,8 +2091,8 @@ const renderMemoryActivityArchive = (surface: 'panel' | 'page'): string => {
       : pageCount > 1 ? `<nav class="governance-actions" aria-label="技术记录分页"><button class="governance-button" data-action="memory-record-page" data-delta="-1" ${memoryRecordPage === 1 ? 'disabled' : ''}>上一页</button><span>第 ${memoryRecordPage} / ${pageCount} 页</span><button class="governance-button" data-action="memory-record-page" data-delta="1" ${memoryRecordPage === pageCount ? 'disabled' : ''}>下一页</button></nav>` : ''), `${records.length} 条 · 供维护人员查阅`);
 };
 
-// The dashboard reports version lifecycle facts directly; the plugin list
-// command is the fallback for the manual governance refresh path.
+// The dashboard reports version lifecycle facts directly; the lifecycle
+// snapshot remains only as a residual fallback when summaries are absent.
 const pluginVersionSummaries = (
   versions: RuntimePluginVersionSummary[] | undefined,
   snapshot: RuntimePluginVersionLifecycleSnapshot | undefined
@@ -1992,6 +2337,7 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
   const memories = experienceMemories().slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
   const dreams = model.dreamRuns.slice().sort((left, right) => right.startedAtMs - left.startedAtMs).slice(0, 6);
   const plugins = model.plugins.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
+  const pluginBlockedCode = pluginGovernanceBlockedCode();
   const proposals = model.evolutionProposals.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
   const native = desktopBridge.isNative();
   const maintenance = model.runtime.dreamMaintenance;
@@ -2133,7 +2479,9 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
     ${group('memory', '已保存的经验', `${experienceMemories().length} 条`, '这里保存的是以后仍有用的具体内容。先核对，再启用；启用后 Agent 才可以参考。运行次数、文件数量等统计单独保存在技术记录中。', `<button class="governance-button" data-action="navigate" data-page="memory">查看全部经验</button><p class="panel-note">显示最近 ${memories.length} 条，共 ${experienceMemories().length} 条经验。</p>${memoryRows || '<p class="empty-note">暂时没有可审核的具体经验。运行统计不需要你确认。<br>有用的经验可以是项目约定或已确认的解决方法，例如“本项目使用 pnpm 安装依赖”（仅为示例，不是本项目结论）。</p>'}`)}
     ${scope === 'memory' ? renderMemoryActivityArchive('panel') : ''}
     ${group('dream', '从历史任务整理经验', `${model.dreamRuns.length} 次`, '回看任务历史，去重并提炼记忆候选；整理完成后仍需审核候选。', `<div class="panel-card"><div class="panel-card-heading"><strong>自动整理</strong>${panelState(maintenance?.state ?? 'DISABLED', maintenanceState)}</div><p class="panel-note">${escapeHtml(maintenanceDetail || '可先手动整理一次，查看生成的候选。')}</p><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>整理一次</button>${maintenanceRunning ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">暂停自动整理</button>' : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>开启自动整理</button>`}</div></div>${panelActionNotice('dream')}<p class="panel-note">最近 ${dreams.length} 次整理</p>${dreamRows}`)}
-    ${group('plugins', '检查或停用插件', `${model.plugins.length} 个`, '插件提供模型、工具等扩展能力。检查来源与权限后，再决定是否继续使用；异常插件可以隔离。', pluginRows || '<p class="empty-note">暂无插件记录。</p>')}
+    ${group('plugins', '检查或停用插件', pluginBlockedCode ? '读取受阻' : `${model.plugins.length} 个`, '插件提供模型、工具等扩展能力。检查来源与权限后，再决定是否继续使用；异常插件可以隔离。', pluginBlockedCode
+      ? `<div class="panel-card"><p class="panel-error" role="alert">插件治理审计记录校验未通过，冲突记录未用于本页插件状态或操作。历史记录已保留；插件执行仍受原有安全校验约束。（${escapeHtml(pluginBlockedCode)}）</p></div>`
+      : (pluginRows || '<p class="empty-note">暂无插件记录。</p>'))}
     ${group('evolution', '评估 Agent 改进方案', `${model.evolutionProposals.length} 个候选`, '根据任务结果评估模型或策略的改进候选，逐步试用并监测效果。', `<div class="panel-card"><div class="panel-card-heading"><strong>是否允许自动评估改进方案</strong>${panelState(control ? control.enabled ? 'ACTIVE' : 'BLOCKED' : 'UNKNOWN', control ? control.enabled ? '流程开放' : '已暂停' : '尚未读取')}</div><p class="panel-note">${control ? control.enabled ? '允许进入评估流程；每个候选仍需分别通过发布条件。' : '新的评估和发布已暂停，已有候选仍可紧急回滚。' : '刷新记录后查看总闸状态。'}</p>${control?.reason ? `<p class="panel-note">原因：${escapeHtml(reasonDisplayLabel(control.reason))}</p>` : ''}</div><p class="panel-note">显示最近 ${proposals.length} 个候选，共 ${model.evolutionProposals.length} 个。</p>${proposalRows || '<p class="empty-note">暂无策略改进候选。</p>'}`)}
   </section>`;
 };
@@ -2141,6 +2489,7 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
 const subAgentIcon = (state: SubAgentReadModel['state']): string => {
   if (state === 'SUCCEEDED') return 'check-circle-2';
   if (state === 'FAILED' || state === 'CANCELLED') return 'circle-x';
+  if (state === 'WAITING' || state === 'SKIPPED' || state === 'CLOSED') return 'clock';
   return state === 'RUNNING' ? 'loader-circle' : 'bot';
 };
 
@@ -2215,6 +2564,17 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
       ${approvalCellDetailsHtml(approval)}
       <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
+      ${(() => {
+        const reasons = approvalReasonLabels(approval.reasonCodes);
+        const preview = approvalPreviewText(approval);
+        const reasonsHtml = reasons.length
+          ? `<div class="approval-reasons"><strong>需要单独确认的原因</strong><ul>${reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`
+          : '';
+        const previewHtml = preview.missing
+          ? `<div class="approval-preview approval-preview-missing"><strong>查看命令和参数</strong><p>${escapeHtml(preview.text)}</p></div>`
+          : `<details class="approval-preview"><summary>查看命令和参数${preview.truncated ? ` · ${escapeHtml(approvalTruncatedText)}` : ''}</summary><pre>${escapeHtml(preview.text)}</pre>${preview.truncated ? `<p class="approval-preview-note">${escapeHtml(approvalTruncatedText)}</p>` : ''}</details>`;
+        return reasonsHtml + previewHtml;
+      })()}
       <div class="approval-meta">
         ${approval.risk ? `<span class="approval-risk approval-risk-${approval.risk.toLowerCase()}">${escapeHtml(riskDisplayLabel(approval.risk))}风险</span>` : ''}
         ${approval.policyVersion ? `<span>策略 ${escapeHtml(approval.policyVersion)}</span>` : ''}
@@ -2236,11 +2596,18 @@ const dispatchApproval = (requestId: string, approved: boolean, digest?: string)
   update(expireRequestedApprovals(model));
   const current = model.approvals.find(item => item.requestId === requestId);
   if (current?.state !== 'REQUESTED' || current.requestDigest !== digest || pendingApprovalResolutions.has(requestId)) return;
+  const ownerSessionId = sessionController.selectedId;
   pendingApprovalResolutions.add(requestId);
   render();
-  void desktopBridge.resolveRuntimeApproval(requestId, approved, digest).catch(error => {
-    pendingApprovalResolutions.delete(requestId);
-    update(appendErrorTimelineItem(model, '审批回执', error));
+  void desktopBridge.resolveRuntimeApproval(requestId, approved, digest,
+    { sessionId: ownerSessionId, runId: activeRuntimeRunId }).catch(error => {
+    try {
+      withSession(ownerSessionId, () => {
+        pendingApprovalResolutions.delete(requestId);
+        update(appendErrorTimelineItem(model, '审批回执', error));
+      });
+    } catch { /* session closed mid-flight */ }
+    scheduleRender();
   });
 };
 
@@ -2259,9 +2626,14 @@ const confirmHighRiskApproval = (approval: ApprovalReadModel, trigger: HTMLEleme
       <button class="secondary-button" data-confirmation="reject">拒绝操作</button>
       <button class="primary-action" data-confirmation="approve">确认批准一次</button>
     </div>`;
-  dialog.querySelector('pre')!.textContent = [approval.capability, approval.command, approval.path,
-    approval.cwd && 'cwd=' + approval.cwd, approval.host && (approval.method ?? 'GET') + ' ' + (approval.scheme ?? 'https') + '://' + approval.host + (approval.port ? ':' + approval.port : ''),
-    approval.requestDigest && '动作摘要 ' + approval.requestDigest].filter(Boolean).join('\n');
+  const preview = approvalPreviewText(approval);
+  dialog.querySelector('pre')!.textContent = [
+    preview.text,
+    ...(preview.truncated ? [approvalTruncatedText] : []),
+    ...approvalReasonLabels(approval.reasonCodes),
+    approval.cwd && 'cwd=' + approval.cwd,
+    approval.requestDigest && '动作摘要 ' + approval.requestDigest
+  ].filter(Boolean).join('\n');
   const close = (): void => {
     if (approvalConfirmation?.requestId === approval.requestId) approvalConfirmation = undefined;
     dialog.close();
@@ -2287,23 +2659,22 @@ const renderSubAgents = (): string => {
   if (model.subAgents.length === 0) return '';
   const runningCount = model.subAgents.filter((agent) => agent.state === 'RUNNING').length;
   const startingCount = model.subAgents.filter((agent) => agent.state === 'STARTING').length;
-  const activeCount = runningCount + startingCount;
+  const waitingCount = model.subAgents.filter((agent) => agent.state === 'WAITING').length;
+  const activeCount = runningCount + startingCount + waitingCount;
   // 任务结束后隐藏面板，避免 sticky 面板挡住时间线里的执行结果；
   // 终态信息已由时间线事件记录，无需常驻展示。
   const runTerminal = !model.activeRun || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state);
   if (activeCount === 0 && runTerminal) return '';
+  const countText = activeCount > 0
+    ? [runningCount > 0 ? `${runningCount} 个运行中` : '', startingCount > 0 ? `${startingCount} 个等待调用` : '', waitingCount > 0 ? `${waitingCount} 个等待` : ''].filter(Boolean).join(' · ')
+    : '本次任务';
   return `
-    <section class="subagent-panel" aria-label="子 Agent 状态" aria-live="polite">
+    <section class="subagent-panel${subAgentsCollapsed ? ' subagent-panel-collapsed' : ''}" aria-label="子 Agent 状态" aria-live="polite">
       <div class="subagent-heading">
-        <div>
-          <span class="eyebrow">并行执行</span>
-          <h2>子 Agent</h2>
-        </div>
-        <span class="subagent-count">${activeCount > 0
-          ? [runningCount > 0 ? `${runningCount} 个运行中` : '', startingCount > 0 ? `${startingCount} 个准备中` : ''].filter(Boolean).join(' · ')
-          : '本次任务'}</span>
+        <span class="subagent-title">子 Agent</span>
+        <span class="subagent-count" title="${escapeHtml(countText)}">${escapeHtml(countText)}</span>
+        <button class="secondary-button" type="button" data-action="toggle-subagents" aria-expanded="${!subAgentsCollapsed}" aria-controls="subagent-list">${subAgentsCollapsed ? '展开子 Agent' : '收起子 Agent'}</button>
       </div>
-      <button class="secondary-button" type="button" data-action="toggle-subagents" aria-expanded="${!subAgentsCollapsed}" aria-controls="subagent-list">${subAgentsCollapsed ? "展开子 Agent" : "收起子 Agent"}</button>
       <div id="subagent-list" class="subagent-list" ${subAgentsCollapsed ? "hidden" : ""}>
         ${model.subAgents.map((agent) => `
           <article class="subagent-row subagent-${agent.state.toLowerCase()}" data-agent-id="${escapeHtml(agent.agentId)}">
@@ -2375,14 +2746,15 @@ const timelineItemHtml = (item: TimelineItem): string => {
     const isSuccess = item.status === 'COMPLETE';
     const isFailed = item.status === 'ERROR';
     
-    // 提取关键信息：文件名或命令
+    // 提取关键信息：文件名或命令 — structured fields only; a body-text
+    // filename regex produced misleading badges (e.g. cache-dir names from the
+    // failure message's available-paths hint), so no body fallback here.
     let targetInfo = '';
     if (item.commandText) {
       const cmd = item.commandText.split('\n')[0].trim();
       targetInfo = cmd.length > 60 ? cmd.substring(0, 60) + '...' : cmd;
-    } else if (item.body) {
-      const bodyMatch = item.body.match(/[\\/]([^\\/]+\.[a-z0-9]+)/i);
-      if (bodyMatch) targetInfo = bodyMatch[1];
+    } else if (item.targetPath) {
+      targetInfo = pathBadgeText(item.targetPath);
     }
     
     return `
@@ -2399,11 +2771,12 @@ const timelineItemHtml = (item: TimelineItem): string => {
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
               <time>${formatTime(item.createdAtMs)}</time>
             </div>
-            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && !targetInfo ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && (isFailed || !targetInfo) ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
             ${item.commandText ? `<details class="timeline-step-details">
               <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
               <pre><code>${escapeHtml(item.commandText)}</code></pre>
             </details>` : ''}
+            ${item.outputTail ? `<pre class="timeline-command timeline-output-tail"><code>${escapeHtml(item.outputTail)}</code></pre>` : ''}
           </div>
         </article>`;
   }
@@ -2422,25 +2795,94 @@ const timelineItemHtml = (item: TimelineItem): string => {
             </div>
             <div class="timeline-body${item.kind === 'AGENT' ? ' markdown-body' : ''}">${item.kind === 'AGENT' ? renderMarkdown(item.body) : escapeHtml(timelineBodyDisplay(item))}</div>
             ${item.commandText ? `<pre class="timeline-command"><code>${escapeHtml(item.commandText)}</code></pre>` : ''}
+            ${item.outputTail ? `<pre class="timeline-command timeline-output-tail"><code>${escapeHtml(item.outputTail)}</code></pre>` : ''}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
         </article>`;
 };
 
 const historyIcons = (root: ParentNode): void => createIcons({ icons: {
-  Bot, UserRound, CircleAlert, CheckCircle2, TerminalSquare, File, Folder,
+  Bot, UserRound, CircleAlert, CheckCircle2, TerminalSquare, SquareTerminal: TerminalSquare, File, Folder,
   ShieldCheck, LoaderCircle, History, ChevronDown, ChevronRight, ArrowLeft, FolderOpen,
   XCircle, Cpu, FileCog, PanelRight, Gauge, HeartPulse, ListTree, LayoutDashboard, Square,
-  RotateCcwClock: History, Database, Settings, Archive
+  RotateCcwClock: History, Database, Settings, Archive, Plus, Search, Send, Waypoints
 } }, root);
-const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project-thread-list">
-  ${group.threads.length ? group.threads.map((thread) => `<div class="project-thread-item"><button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
+/** The thread an in-memory session is bound to (created or resumed). */
+const sessionBoundThreadId = (session: TaskSession): string | undefined =>
+  session.threadId ?? session.currentRunThreadId ?? session.model.activeThreadId;
+const sessionWorkspacePath = (session: TaskSession): string =>
+  (session.model.workspace.rootPath || session.workspacePath || '').trim();
+/** Which sidebar project group a session belongs to — same logic as threads. */
+const sessionProjectId = (session: TaskSession): string => {
+  const path = sessionWorkspacePath(session);
+  if (!path) return PROJECTLESS_ID;
+  return catalogProjectForPath(path)?.id ?? projectIdForPath(path);
+};
+/** The selected session's live draft lives in the DOM between captures. */
+const sessionDraftText = (session: TaskSession): string =>
+  session.clientSessionId === sessionController.selectedId
+    ? (app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value ?? session.promptDraft)
+    : session.promptDraft;
+const sessionRowVisible = (session: TaskSession): boolean =>
+  !sessionIsPristineDraft(session) || Boolean(sessionDraftText(session).trim());
+/**
+ * Sessions rendered as their own row in this group. Pristine drafts are just
+ * the composer and get no row; a session bound to a thread already listed in
+ * the group merges into that thread's row instead of duplicating it.
+ */
+const groupSessions = (group: ProjectGroup): TaskSession[] => {
+  syncSelectedSession();
+  const bound = new Set(group.threads.map((thread) => thread.id));
+  return [...sessionController.sessions.values()].filter((session) =>
+    sessionRowVisible(session)
+    && sessionProjectId(session) === group.id
+    && !bound.has(sessionBoundThreadId(session) ?? ''));
+};
+const sessionRowHtml = (session: TaskSession): string => {
+  const title = session.model.activeRun?.title || session.lastSubmitReceipt?.prompt || '新任务草稿';
+  const status = session.taskProgressMessage || (session.running ? '任务进行中'
+    : session.model.activeRun ? statusDisplayLabel(session.model.activeRun.state) : '待发送');
+  const pending = sessionController.pendingApprovalCount(session);
+  const selected = session.clientSessionId === sessionController.selectedId;
+  const rowDisabled = workspaceChanging && !sessionWorkspaceSyncInFlight;
+  return `<div class="project-thread-item" data-key="session:${escapeHtml(session.clientSessionId)}"><button class="thread-row project-thread-row session-row ${selected ? 'active' : ''}" type="button" data-action="select-session" data-session-id="${escapeHtml(session.clientSessionId)}" aria-current="${selected}" ${rowDisabled ? 'disabled' : ''}>
+    <span class="session-row-label" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+    <small class="session-row-state">${escapeHtml(status)}</small>
+    ${pending ? `<span class="session-row-badge">${pending} 待批准</span>` : ''}
+  </button></div>`;
+};
+/** Live status a session contributes to its bound thread's row. */
+const sessionThreadStatus = (session: TaskSession | undefined): string => {
+  if (!session) return '';
+  const pending = sessionController.pendingApprovalCount(session);
+  const parts: string[] = [];
+  if (session.running || session.taskProgressMessage) parts.push(session.taskProgressMessage || '进行中');
+  if (pending) parts.push(`${pending} 待批准`);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+};
+/** Project groups that hold the selected or a running session stay expanded. */
+const liveSessionProjectIds = (): Set<string> => {
+  syncSelectedSession();
+  const ids = new Set<string>();
+  for (const session of sessionController.sessions.values()) {
+    if (session.running || session.clientSessionId === sessionController.selectedId) ids.add(sessionProjectId(session));
+  }
+  return ids;
+};
+const projectThreadsHtml = (group: ProjectGroup): string => {
+  const rows = [
+    ...groupSessions(group).map(sessionRowHtml),
+    ...group.threads.map((thread) => `<div class="project-thread-item" data-key="thread:${escapeHtml(thread.id)}"><button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
     <span class="thread-title">${escapeHtml(thread.title || '未命名会话')}</span>
-    <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}</span>
-  </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`).join('') : '<div class="project-empty">暂无会话</div>'}
+    <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryBlock(thread) ? ' · 需核对' : threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}${sessionThreadStatus(sessionController.sessionForThread(thread.id))}</span>
+  </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`)
+  ];
+  return `<div class="project-thread-list">
+  ${rows.length ? rows.join('') : '<div class="project-empty">暂无会话</div>'}
 </div>`;
+};
 const renderArchiveNotice = (): string => `${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" type="button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
-const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}`;
+const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}:${workspaceChanging && !sessionWorkspaceSyncInFlight}`;
 const renderProjectThreadList = (): string => {
   if (!projectThreadsSummaryReady) {
     return `<div class="project-list-skeleton" role="status" aria-live="polite" aria-busy="true">
@@ -2451,12 +2893,14 @@ const renderProjectThreadList = (): string => {
     </div>`;
   }
   const activeProjectId = currentProjectId();
+  const liveGroups = liveSessionProjectIds();
   return projectGroups().map((group) => {
-    const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId);
+    const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId || liveGroups.has(group.id));
     const edit = group.id !== PROJECTLESS_ID
       ? `<button class="icon-button small project-edit-button" type="button" data-action="edit-project" data-project-id="${escapeHtml(group.id)}" title="${group.discovered ? '保存并编辑项目' : '编辑项目'}" aria-label="${group.discovered ? '保存并编辑项目' : '编辑项目'}"><i data-lucide="settings"></i></button>` : '';
-    const countLabel = group.threads.length ? `${group.threads.length} 个会话` : '暂无会话';
-    return `<section class="project-group ${open ? 'open' : ''}" data-project-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}，${countLabel}">
+    const rowCount = group.threads.length + groupSessions(group).length;
+    const countLabel = rowCount ? `${rowCount} 个会话` : '暂无会话';
+    return `<section class="project-group ${open ? 'open' : ''}" data-key="group:${escapeHtml(group.id)}" data-project-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}，${countLabel}">
       <div class="project-header-row"><button class="project-header" type="button" data-action="toggle-project" data-project-id="${escapeHtml(group.id)}" aria-expanded="${open}" aria-label="${escapeHtml(group.name)}，${open ? '收起' : '展开'}">
         <i data-lucide="${open ? 'folder-open' : 'folder'}"></i>
         <span class="project-header-copy"><strong>${escapeHtml(group.name)}</strong></span>
@@ -2467,7 +2911,7 @@ const renderProjectThreadList = (): string => {
   }).join('');
 };
 
-const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string; summaryReady: boolean }>();
+const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string; sessionKey: string; summaryReady: boolean }>();
 const updateThreadList = (): void => {
   patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNotice);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
@@ -2477,12 +2921,16 @@ const updateThreadList = (): void => {
   const previous = threadListInputs.get(list);
   const catalogKey = projectCatalog.map((project) => `${project.id}:${project.lastUsedAtMs}`).join('|');
   const expansionKey = projectExpansionKey();
-  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey && previous.summaryReady === projectThreadsSummaryReady) return;
+  // Session rows live in the project groups now: status/progress/approval
+  // changes must repaint the rail even when the thread catalog is unchanged.
+  syncSelectedSession();
+  const sessionKey = `${sessionController.selectedId}::${[...sessionController.sessions.values()].map((session) =>
+    `${session.clientSessionId}:${session.running ? 1 : 0}:${session.taskProgressMessage}:${sessionController.pendingApprovalCount(session)}:${sessionBoundThreadId(session) ?? ''}:${sessionProjectId(session)}:${session.model.activeRun?.state ?? ''}:${session.model.activeRun?.title ?? session.lastSubmitReceipt?.prompt ?? sessionDraftText(session)}`).join('|')}`;
+  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey && previous.sessionKey === sessionKey && previous.summaryReady === projectThreadsSummaryReady) return;
   const scrollTop = list.scrollTop;
-  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey, summaryReady: projectThreadsSummaryReady });
-  list.innerHTML = renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>';
-  historyIcons(list);
-  // Selecting a thread changes the active-row class and rebuilds this list.
+  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey, sessionKey, summaryReady: projectThreadsSummaryReady });
+  syncRegionContent(list, renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>', historyIcons);
+  // Selecting a thread changes the active-row class and updates this list.
   // Restore the user's viewport so the sidebar does not jump to its top.
   list.scrollTop = scrollTop;
   requestAnimationFrame(() => {
@@ -2556,6 +3004,7 @@ const renderTaskValueSummary = (): string => {
   const terminal = !running && (!run || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED', 'PAUSED', 'PAUSED_UNSUPPORTED'].includes(run.state));
   const recoveryMode = threadRecoveryMode(thread);
   const resumable = recoveryMode === 'PLAN' || recoveryMode === 'PREPARATION';
+  const recoveryBlock = threadRecoveryBlock(thread);
   const usage = model.modelUsage;
   const egress = model.modelEgress;
   const tokenCount = usage && usage.status === 'REPORTED' && Number.isInteger(usage.inputTokens)
@@ -2571,10 +3020,12 @@ const renderTaskValueSummary = (): string => {
   const completed = run ? run.state === 'SUCCEEDED' : thread?.state === 'COMPLETED';
   const hasTask = Boolean(run || thread || historyView);
   const state = running ? taskProgressMessage || runStateLabel(run?.state)
+    : recoveryBlock ? '需要核对上次操作结果'
     : completed ? '任务已完成' : failed ? '任务未完成'
     : run ? runStateLabel(run.state) : thread?.state === 'PAUSED' ? '任务已暂停'
     : hasTask ? '已保存的任务' : '还没有开始任务';
   const nextStep = running ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
+    : recoveryBlock ? '上次操作结果不确定，直接继续或重试会再次被安全校验阻止。请先检查文件和构建产物；确认后可保留旧记录，新建任务从当前状态重新规划。旧检查点、审批和租约不会继承。'
     : failed ? '先查看对话中的失败原因，再决定是否继续或重试。'
     : completed ? '回答在中间的对话区。可以把结果保存为文件。'
     : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断。继续后，模型会结合已保存的任务和你的新消息决定下一步。'
@@ -2589,11 +3040,20 @@ const renderTaskValueSummary = (): string => {
   ].join(' · ');
   const actionRow = (action: string, title: string, hint: string, disabled = false, primary = false): string =>
     `<button class="task-action-row ${primary ? 'task-action-primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span aria-hidden="true">›</span></button>`;
-  const continueAction = resumable && terminal
+  const continueAction = !recoveryBlock && resumable && terminal
     ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', '把当前输入和已保存的任务交给模型，由模型决定下一步', false, !failed)
     : '';
-  const retryAction = failed && recoveryMode !== 'INVALID' && terminal
+  const retryAction = !recoveryBlock && failed && recoveryMode !== 'INVALID' && terminal
     ? actionRow('retry-task', '重试任务', '把当前输入和已保存的任务交给模型重试') : '';
+  // A blocked checkpoint means the previous unknown outcome was NOT resolved;
+  // this only stops the deterministic continue/retry failure loop.
+  const recoveryBlockAction = recoveryBlock && terminal
+    ? `<div class="panel-card" data-recovery-block>
+        <p class="panel-error" role="alert"><strong>需要核对上次操作结果（${escapeHtml(recoveryBlock.reasonCode)}）</strong></p>
+        <p class="panel-note">受影响步骤：${escapeHtml(recoveryBlock.stepIds.join('、'))}。这并不表示旧操作已成功或已清除。</p>
+      </div>`
+      + actionRow('new-task-from-blocked', '保留历史并新建任务', '从当前文件状态开始新任务，旧记录保留', false, true)
+    : '';
   const title = run?.title ?? (thread?.title && !/^Thread\s+[a-f\d]+$/i.test(thread.title) ? thread.title : undefined);
   return `<section class="context-section task-value-section" aria-label="当前任务与下一步">
           ${isThreadArchived(model.activeThreadId) ? `<div class="panel-next-step">此会话已归档。发送新消息或继续任务时会自动恢复。<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(model.activeThreadId!)}">恢复到列表</button></div>` : ''}
@@ -2606,6 +3066,7 @@ const renderTaskValueSummary = (): string => {
           ${!hasTask && !running ? actionRow('focus-task-input', '输入任务需求', '告诉 Agent 你想得到什么结果', false, true) : ''}
           ${continueAction}
           ${retryAction}
+          ${recoveryBlockAction}
           ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和审计记录（Markdown）' : '将回答和审计记录导出为 Markdown 文件', taskExportBusy) : ''}
           ${taskActionNotice ? `<div class="settings-message settings-message-success" role="status">${escapeHtml(taskActionNotice)}</div>` : ''}
           ${taskExportNotice ? `<div class="settings-message ${taskExportNotice.error ? 'settings-message-error' : 'settings-message-success'}" role="status" aria-live="polite" data-task-export-notice>${escapeHtml(taskExportNotice.text)}</div>` : ''}
@@ -2741,8 +3202,32 @@ const setTextIfChanged = (element: Node | null, text: string): void => {
 const refreshModeControls = (): void => {
   const version = app.querySelector<HTMLElement>('.version-label');
   setTextIfChanged(version, `v${model.runtime.version}`);
+  const { loading, saving, error } = accessController.state;
+  const full = accessController.mode === 'FULL_ACCESS';
+  const busy = loading || saving || !desktopBridge.isNative();
   const note = app.querySelector<HTMLElement>('.composer-note');
-  setTextIfChanged(note, '执行命令或修改文件前，会先询问你是否同意。');
+  setTextIfChanged(note, full ? ACCESS_COMPOSER_NOTE_ON : '执行命令或修改文件前，会先询问你是否同意。');
+  app.querySelectorAll<HTMLElement>('[data-action="access-mode"]').forEach((button) => {
+    setTextIfChanged(button, full ? ACCESS_PILL_ON : ACCESS_PILL_OFF);
+    button.classList.toggle('is-on', full);
+    if (button instanceof HTMLButtonElement) button.disabled = busy;
+    button.setAttribute('aria-pressed', String(full));
+    button.title = error ?? '';
+  });
+  const statusSpan = app.querySelector<HTMLElement>('[data-access-mode-status]');
+  if (statusSpan) {
+    setTextIfChanged(statusSpan, `当前状态：${full ? ACCESS_PILL_ON : ACCESS_PILL_OFF}${error ? ` · ${error}` : ''}${busy ? ' · 处理中' : ''}`);
+  }
+  // A body-anchored popover outlives the app render — keep its switch in sync.
+  const popover = document.querySelector<HTMLElement>('.access-popover');
+  const popSwitch = popover?.querySelector<HTMLButtonElement>('.access-switch');
+  if (popSwitch) {
+    popSwitch.setAttribute('aria-checked', String(full));
+    popSwitch.classList.toggle('is-on', full);
+    popSwitch.disabled = busy;
+  }
+  const popLabel = popover?.querySelector<HTMLElement>('.access-popover-row span');
+  if (popLabel) setTextIfChanged(popLabel, full ? ACCESS_PILL_ON : ACCESS_PILL_OFF);
 };
 
 const renderHistoryView = (timelineItems = model.timeline): void => {
@@ -2847,7 +3332,7 @@ const renderWorkspaceEntries = (): string => {
     return `
       <div class="empty-state compact-empty">
         <i data-lucide="folder-open"></i>
-        <p>正在加载默认工作区，可以直接开始只读分析。</p>
+        <p>正在加载默认工作区，可以直接开始分析，必要的修改会逐项请求审批。</p>
       </div>`;
   }
   if (model.workspace.entries.length === 0) {
@@ -2887,6 +3372,11 @@ const renderSelectedFile = (): string => {
 };
 
 const exportData = async (scope: string): Promise<void> => {
+  if (desktopBridge.isNative() && (anyTaskRunning() || liveTaskRunning())) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再导出数据。';
+    render();
+    return;
+  }
   exportNotice = '正在导出…'; render();
   try {
     const result = await desktopBridge.exportData(scope);
@@ -2922,7 +3412,7 @@ const exportTaskResult = async (): Promise<void> => {
       const cursors = new Set<string>();
       let before: string | undefined;
       do {
-        if (running) throw new Error('任务已开始运行，请稍后重新导出。');
+        if (anyTaskRunning()) throw new Error('任务已开始运行，请稍后重新导出。');
         const page = await desktopBridge.listThreadEvents(threadId, { limit: 500, before });
         runId ??= page.events.at(-1)?.runId;
         events.push(...page.events.filter(event => event.runId === runId));
@@ -3080,6 +3570,11 @@ const recordRecovery = (recovery: RuntimeRecoveryResponse): void => {
 
 const runRecoveryCheck = async (): Promise<void> => {
   if (!desktopBridge.isNative()) return;
+  if (anyTaskRunning() || liveTaskRunning()) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再执行恢复检查。';
+    render();
+    return;
+  }
   try {
     const recovery = await desktopBridge.reconcileRuntimeState();
     recordRecovery(recovery);
@@ -3096,6 +3591,11 @@ const runRecoveryCheck = async (): Promise<void> => {
 
 const runRecoveryRecordAction = async (element: HTMLElement): Promise<void> => {
   if (!desktopBridge.isNative()) return;
+  if (anyTaskRunning() || liveTaskRunning()) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再处理历史恢复记录。';
+    render();
+    return;
+  }
   const action = element.dataset.action;
   const recordId = element.dataset.recordId ?? '';
   const expectedDigest = element.dataset.recordDigest || undefined;
@@ -3257,6 +3757,7 @@ const renderSafetyPage = (): string => {
   ].map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('');
   const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
   return `<div class="page-placeholder"><span class="eyebrow">能力与安全</span><h1>能力与安全</h1>
+    ${accessControls.settingsHTML()}
     <div class="run-history-list">${rows}</div>
     <div class="route-heading"><div><span class="eyebrow">动作审批</span><h2>待审批动作信息</h2></div><span class="route-count">${actionRows.length ? '已记录' : '暂无'}</span></div>
     ${actionRows.length ? `<div class="run-history-list">${actionRows.map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('')}</div>` : '<div class="page-status page-status-empty"><strong>暂无待审批动作</strong><span>收到审批请求后显示已记录字段；未提供的策略信息保持未知。</span></div>'}
@@ -3433,8 +3934,28 @@ const patchContextPanel = (element: HTMLElement | null, inputs: unknown[], html:
     patchLiveRegion(pending.element, pending.inputs, pending.html);
   }, 700);
 };
+function flushContextPanelImmediate(): void {
+  if (contextPanelPatchTimer !== undefined) {
+    window.clearTimeout(contextPanelPatchTimer);
+    contextPanelPatchTimer = undefined;
+  }
+  pendingContextPanelPatch = undefined;
+  if (contextVisible) {
+    patchLiveRegion(app?.querySelector<HTMLElement>('.context-panel') ?? null, contextPanelInputs(), renderContextContent);
+  }
+}
 let liveTimeline: { container: HTMLElement; human: LiveTimeline; tools: LiveTimeline;
   source?: TimelineItem[]; focus?: string | null; expanded?: boolean } | undefined;
+function resetLiveTimeline(): void {
+  if (liveTimeline) {
+    liveTimeline.human.clear();
+    liveTimeline.tools.clear();
+    liveTimeline = undefined;
+  } else {
+    app?.querySelector<HTMLElement>('[data-live-human]')?.replaceChildren();
+    app?.querySelector<HTMLElement>('[data-live-tools]')?.replaceChildren();
+  }
+}
 const liveTaskRunning = (): boolean => Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
 let transcriptFollowFrame: number | undefined;
 const followLiveTranscript = (): void => {
@@ -3470,6 +3991,12 @@ const renderRunControls = (): void => {
     button.disabled = running || workspaceChanging;
     button.title = running || workspaceChanging ? '请等待当前任务或目录切换完成' : '';
   });
+  // Brand/version come from the hydrated runtime snapshot — the live patch
+  // path owns them too or a startup shell render stays 'Web 预览' forever.
+  const brand = app.querySelector<HTMLElement>('.brand-row strong + span');
+  if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览';
+  const version = app.querySelector<HTMLElement>('.version-label');
+  if (version) version.textContent = `v${model.runtime.version}`;
 };
 const refreshWorkspaceChrome = (): void => {
   const workspaceTitle = currentProjectName();
@@ -3508,7 +4035,7 @@ const renderLiveView = (): void => {
   const agents = slot('agents');
   patchLiveRegion(agents, [model.subAgents, model.activeRun?.state, subAgentsCollapsed], renderSubAgents, '.subagent-list');
   patchLiveRegion(slot('heading'), [model.activeRun?.title, focusedRunId], () => `
-    <div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1>${escapeHtml(model.activeRun?.title ?? 'Windows 只读工作台')}</h1>
+    <div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1>${escapeHtml(model.activeRun?.title ?? 'Windows 工作台')}</h1>
       ${focusedRunId ? '<button class="secondary-button" data-action="clear-run-focus">清除运行筛选</button>' : ''}</div></div>`);
   // The submit receipt card (cmd-… receipt) is no longer rendered; lastSubmitReceipt
   // state is still tracked for acknowledgement bookkeeping and evidence.
@@ -3543,6 +4070,39 @@ const renderLiveView = (): void => {
   if (projection) projection.textContent = `运行投影 v${model.projectionVersion}`;
   syncMemoryActionControls();
 };
+const renderSecondaryPageLive = (): void => {
+  renderRunControls();
+  refreshWorkspaceChrome();
+  syncCellsSessionBanner();
+  patchLiveRegion(app.querySelector('.connection-status'), [model.connection], () => `<span></span>${escapeHtml(model.connection.label)}`);
+  const connection = app.querySelector<HTMLElement>('.connection-status');
+  if (connection) connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
+  app.querySelector('.app-shell')?.classList.toggle('context-open', contextVisible);
+  updateThreadList();
+  if (contextVisible) patchContextPanel(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
+  const conversation = app.querySelector<HTMLElement>('[data-region="conversation"]');
+  if (conversation) {
+    const pageInputs = activePage === 'safety'
+      ? [activePage, model.approvals, [...pendingApprovalResolutions].join(','), executionRecords, model.composer.mode, accessController.mode, accessController.state.saving, accessController.state.loading, accessController.state.error, controlledNetworkTargets.text]
+      : activePage === 'memory'
+        ? [activePage, model.memories, model.dreamRuns, model.runtime.dreamMaintenance, memoryPage, memoryRecordPage, memoryEditState, memoryEditError, governanceReadFailed, memoryActionError, governanceActionNotice]
+        : activePage === 'workspace'
+          ? [activePage, model.workspace, running, workspaceChanging, executionRecords, model.processVerification, lastRecovery]
+          : activePage === 'runs'
+            ? [activePage, projectionRuns, runsPage]
+            : [activePage, model.runtime, model.connection, model.supportBundle, model.modelUsage, lastRecovery, exportNotice];
+    patchLiveRegion(conversation, pageInputs, () =>
+      activePage === 'runs' ? renderRunsPage()
+      : activePage === 'diagnostics' ? renderDiagnosticsPage()
+      : activePage === 'workspace' ? renderWorkspacePage()
+      : activePage === 'memory' ? renderMemoryPage()
+      : activePage === 'safety' ? renderSafetyPage()
+      : renderPageStatus(activePage)
+    );
+  }
+  syncMemoryActionControls();
+};
+
 const render = (): void => {
   if (model.runtime.releaseChannel) app.dataset.releaseChannel = model.runtime.releaseChannel;
   const promptError = app.querySelector<HTMLElement>('#composer-prompt-error');
@@ -3558,6 +4118,14 @@ const render = (): void => {
     && settingsVisible === Boolean(app.querySelector('[data-settings-dialog]')) && !settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog
     && !app.querySelector('.project-picker-backdrop')) {
     renderLiveView();
+    return;
+  }
+  if (activePage !== 'workbench'
+    && app.querySelector<HTMLElement>('.app-shell')?.dataset.activePage === activePage
+    && app.querySelector<HTMLElement>('.app-shell')?.dataset.composerMode === model.composer.mode
+    && settingsVisible === Boolean(app.querySelector('[data-settings-dialog]')) && !settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog
+    && !app.querySelector('.project-picker-backdrop')) {
+    renderSecondaryPageLive();
     return;
   }
   const focusedSetting = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-settings-dialog]')
@@ -3587,7 +4155,7 @@ const render = (): void => {
     : model.runtime.platform === 'WINDOWS' ? '模型路由未读取' : 'Web 预览无本地模型';
 
   app.innerHTML = `
-    <div class="app-shell ${contextVisible ? 'context-open' : ''}" data-composer-mode="${model.composer.mode}">
+    <div class="app-shell ${contextVisible ? 'context-open' : ''}" data-composer-mode="${model.composer.mode}" data-active-page="${escapeHtml(activePage)}">
       <aside class="navigation-rail" aria-label="项目与设置">
         <div class="brand-row">
         <div class="brand-mark">dda</div>
@@ -3662,6 +4230,7 @@ const render = (): void => {
             <div class="composer-bottom">
               <div class="composer-context">
                 <span class="composer-project">${escapeHtml(workspaceTitle)}</span><span class="composer-summary" title="${escapeHtml(runtimeRoute)}"><i data-lucide="cpu"></i>${escapeHtml(runtimeRoute)}</span>
+                ${accessControls.buttonHTML('access-mode-composer')}
               </div>
               <div class="composer-actions">
                 <button class="stop-button composer-stop" type="button" data-action="cancel-run" ${taskRunning ? '' : 'disabled'} title="${taskRunning ? '取消任务' : '当前没有运行中的任务'}" aria-label="取消任务"><i data-lucide="square"></i><span>取消任务</span></button>
@@ -3670,7 +4239,7 @@ const render = (): void => {
             </div>
           </form>
           <p id="composer-prompt-error" role="alert" class="settings-message settings-message-error" ${composerPromptError ? '' : 'hidden'}>${escapeHtml(composerPromptError)}</p>
-          <p class="composer-note">执行命令或修改文件前，会先询问你是否同意。</p>
+          <p class="composer-note">${accessController.mode === 'FULL_ACCESS' ? '允许完全访问 · 极高危操作仍需确认' : '执行命令或修改文件前，会先询问你是否同意。'}</p>
         </footer>
       </main>
 
@@ -3772,8 +4341,14 @@ const render = (): void => {
 
 const renderWithFallback = (background = false): void => {
   try {
+    if (background && (projectPickerVisible || Boolean(projectNameDialog) || Boolean(projectEditDialog))) {
+      renderRunControls();
+      updateThreadList();
+      return;
+    }
     if (background && (settingsVisible || activePage !== 'workbench')) {
       if (activePage === 'workbench' && (!historyView || model.activeRun)) renderLiveView();
+      else if (!settingsVisible && activePage !== 'workbench' && app.querySelector<HTMLElement>('.app-shell')?.dataset.activePage === activePage) renderSecondaryPageLive();
       else renderRunControls();
       return;
     }
@@ -3802,13 +4377,25 @@ const scheduleRender = (): void => {
 let approvalExpiryTimer: number | undefined;
 const scheduleApprovalExpiry = (): void => {
   window.clearTimeout(approvalExpiryTimer);
-  const deadlines = model.approvals.filter((approval) => approval.state === 'REQUESTED' && approval.approvalExpiresAt !== undefined)
+  // Every live session keeps its own pending set; the nearest deadline across
+  // all of them drives the single timer, and each expiry applies only to the
+  // session whose approvals actually reached their deadline.
+  const deadlines = [...sessionController.sessions.values()]
+    .flatMap((session) => session.model.approvals)
+    .filter((approval) => approval.state === 'REQUESTED' && approval.approvalExpiresAt !== undefined)
     .map((approval) => approval.approvalExpiresAt!);
   if (!deadlines.length) { approvalExpiryTimer = undefined; return; }
   approvalExpiryTimer = window.setTimeout(() => {
-    const next = expireRequestedApprovals(model);
-    if (next !== model) update(next);
-    else scheduleApprovalExpiry();
+    for (const session of sessionController.sessions.values()) {
+      const pending = session.model.approvals.some((approval) => approval.state === 'REQUESTED'
+        && approval.approvalExpiresAt !== undefined && approval.approvalExpiresAt <= Date.now());
+      if (!pending) continue;
+      withSession(session.clientSessionId, () => {
+        const next = expireRequestedApprovals(model);
+        if (next !== model) update(next);
+      });
+    }
+    scheduleApprovalExpiry();
   }, Math.min(2147483647, Math.max(0, Math.min(...deadlines) - Date.now())));
 };
 
@@ -3827,6 +4414,10 @@ const update = (next: HarnessReadModel, { coalesce = false }: { coalesce?: boole
     || next.activeRun?.runId !== model.activeRun?.runId
     || next.workspace.currentPath !== model.workspace.currentPath;
   model = next;
+  // While a background session's state is installed this update must not touch
+  // the DOM, navigation, or dialogs — those belong to the selected session.
+  if (scopedProjectionDepth > 0) return;
+  syncSelectedSession();
   if (approvalConfirmation) {
     const pending = model.approvals.find(item => item.requestId === approvalConfirmation!.requestId);
     if (pending?.state !== 'REQUESTED' || pending.requestDigest !== approvalConfirmation.digest
@@ -3844,7 +4435,7 @@ const update = (next: HarnessReadModel, { coalesce = false }: { coalesce?: boole
 
 const refreshExecutionState = async (options: { allowDuringRun?: boolean } = {}): Promise<void> => {
   if (!desktopBridge.isNative()) return;
-  if (running && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.allowDuringRun) {
     // The task owns the Harness database while it is running. The runtime
     // events already project the visible approval state, so defer this read
     // until the child exits instead of opening a competing SQLite connection.
@@ -3854,7 +4445,7 @@ const refreshExecutionState = async (options: { allowDuringRun?: boolean } = {})
   const runAtStart = model.activeRun?.runId;
   try {
     const records = await desktopBridge.listExecutionState();
-    if (running || model.activeRun?.runId !== runAtStart) return;
+    if (anyTaskRunning() || model.activeRun?.runId !== runAtStart) return;
     executionRecords = records;
     render();
   } catch (error) {
@@ -3870,7 +4461,7 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
     await dashboardRefreshInFlight;
     if (options.startup || dashboardDetailsLoaded) return;
   }
-  if (running && !options.startup && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.startup && !options.allowDuringRun) {
     // A dashboard read opens the same Harness SQLite database as a task. Do
     // not let a manual refresh overwrite a live run or block its first event.
     return;
@@ -3895,7 +4486,7 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
       // A non-startup refresh may have started before a task was submitted.
       // Drop its result rather than replacing live sub-agent rows with the
       // older dashboard projection.
-      if (!options.startup && (running || model.activeRun?.runId !== runAtStart)) return;
+      if (!options.startup && (anyTaskRunning() || model.activeRun?.runId !== runAtStart)) return;
       dashboardDetailsLoaded = true;
       reconcileHistoryPageCache(dashboard.threads);
       for (const runId of dashboard.deletedRunIds ?? []) deletedRuntimeRunIds.add(runId);
@@ -3914,8 +4505,9 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
         feedback: dashboard.feedback,
         memories: dashboard.memories,
         dreamRuns: dashboard.dreams,
-        plugins: dashboard.plugins,
-        pluginVersions: dashboard.pluginVersions ?? [],
+        plugins: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.plugins,
+        pluginVersions: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.pluginVersions ?? [],
+        pluginGovernanceStatus: dashboard.pluginGovernanceStatus,
         evolutionProposals: dashboard.evolution.proposals,
         evolutionReports: dashboard.evolution.reports,
         evolutionControl: dashboard.evolution.control,
@@ -3943,7 +4535,7 @@ const loadPageDetails = async (): Promise<void> => {
   if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics'].includes(activePage)) return;
   // Recovery must own the command slot before optional dashboard rebuilds.
   await Promise.all([historyStartupReady, runtimeHydrationReady]);
-  if (running) return;
+  if (anyTaskRunning()) return;
   if (!dashboardDetailsLoaded) await refreshDashboard();
 };
 
@@ -3951,7 +4543,7 @@ const scheduleBackgroundDetails = (): void => {
   window.clearTimeout(backgroundDetailsTimer);
   backgroundDetailsTimer = window.setTimeout(() => {
     backgroundDetailsTimer = undefined;
-    if (running) return;
+    if (anyTaskRunning()) return;
     if (executionRefreshQueued || governanceRefreshQueued) {
       executionRefreshQueued = false;
       governanceRefreshQueued = false;
@@ -3966,43 +4558,42 @@ const scheduleBackgroundDetails = (): void => {
 
 const refreshGovernance = async (options: { allowDuringRun?: boolean } = {}): Promise<void> => {
   if (!desktopBridge.isNative()) return;
-  if (running && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.allowDuringRun) {
     governanceRefreshQueued = true;
     return;
   }
   const runAtStart = model.activeRun?.runId;
   try {
-    const [memories, dreamRuns, pluginGovernance, evolution, dreamMaintenance, dashboard] = await Promise.all([
-      desktopBridge.listMemories(),
-      desktopBridge.listDreamRuns(),
-      desktopBridge.listPluginGovernance(),
-      desktopBridge.listEvolution(),
+    // The dashboard aggregate is the single authority for this read path. The
+    // strict plugin list command stays reserved for plugin actions, so a
+    // blocked governance projection no longer fails the whole refresh.
+    const [dreamMaintenance, dashboard] = await Promise.all([
       desktopBridge.dreamMaintenanceStatus(),
       desktopBridge.runtimeDashboard({ details: true })
     ]);
-    if (running || model.activeRun?.runId !== runAtStart) return;
-    const plugins = pluginGovernance.plugins;
-    pluginVersionSnapshot = pluginGovernance.versionLifecycle;
-    const pluginVersions = dashboard?.pluginVersions ?? pluginVersionSummaries(undefined, pluginGovernance.versionLifecycle);
+    if (anyTaskRunning() || model.activeRun?.runId !== runAtStart) return;
+    if (!dashboard) throw new Error('DASHBOARD_UNAVAILABLE: runtime dashboard returned no data');
+    pluginVersionSnapshot = undefined;
     governanceReadFailed = false;
     memoryActionsAwaitingRefresh.clear();
     update({
       ...model,
       projectionVersion: model.projectionVersion + 1,
-      memories,
-      dreamRuns,
-      plugins,
-      pluginVersions,
-      evolutionProposals: evolution.proposals,
-      evolutionReports: evolution.reports,
-      ...(dashboard ? { evolutionControl: dashboard.evolution.control } : {}),
-      ...(dashboard ? { feedback: dashboard.feedback } : {}),
-      ...(dashboard?.projection?.decisions ? { decisions: dashboard.projection.decisions } : {}),
-      ...(dashboard?.projection?.continuousVerification ? { continuousVerification: dashboard.projection.continuousVerification } : {}),
-      ...(dashboard?.projection?.verifier ? { processVerification: dashboard.projection.verifier as ProcessVerificationReadModel } : {}),
-      ...(dashboard?.supportBundle ? { supportBundle: dashboard.supportBundle } : {}),
-      ...(dashboard?.modelEgress ? { modelEgress: dashboard.modelEgress } : {}),
-      ...(dashboard?.modelUsage ? { modelUsage: dashboard.modelUsage } : {}),
+      memories: dashboard.memories,
+      dreamRuns: dashboard.dreams,
+      plugins: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.plugins,
+      pluginVersions: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.pluginVersions ?? [],
+      pluginGovernanceStatus: dashboard.pluginGovernanceStatus,
+      evolutionProposals: dashboard.evolution.proposals,
+      evolutionReports: dashboard.evolution.reports,
+      evolutionControl: dashboard.evolution.control,
+      feedback: dashboard.feedback,
+      ...(dashboard.projection?.decisions ? { decisions: dashboard.projection.decisions } : {}),
+      ...(dashboard.projection?.continuousVerification ? { continuousVerification: dashboard.projection.continuousVerification } : {}),
+      ...(dashboard.projection?.verifier ? { processVerification: dashboard.projection.verifier as ProcessVerificationReadModel } : {}),
+      ...(dashboard.supportBundle ? { supportBundle: dashboard.supportBundle } : {}),
+      ...(dashboard.modelEgress ? { modelEgress: dashboard.modelEgress } : {}),
+      ...(dashboard.modelUsage ? { modelUsage: dashboard.modelUsage } : {}),
       runtime: dreamMaintenance ? { ...model.runtime, dreamMaintenance } : model.runtime
     });
   } catch (error) {
@@ -4017,10 +4608,22 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
   const key = governanceBusyKey(element);
   if (pendingGovernanceActions.has(key)) return;
   const label = element.textContent?.trim() || '操作';
+  if ((anyTaskRunning() || liveTaskRunning()) && ['memory-action', 'run-dream', 'plugin-action', 'evolution-action'].includes(action)) {
+    governanceRefreshQueued = true;
+    governanceActionNotice = {
+      key,
+      text: `当前有任务正在运行，暂时无法执行「${label}」（运行时数据库由当前任务独占）。请等任务完成或取消后再试。`,
+      error: true
+    };
+    render();
+    return;
+  }
   pendingGovernanceActions.add(key);
   governanceActionNotice = { key, text: `${label}正在处理，请稍候。`, error: false };
   syncMemoryActionControls();
   let pendingMemoryId: string | undefined;
+  let dreamProposedCount: number | undefined;
+  let updatedMaintenance: RuntimeDreamMaintenanceStatus | undefined;
   try {
     if (action === 'memory-action') {
       const memoryId = element.dataset.memoryId;
@@ -4034,11 +4637,12 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
       await desktopBridge.memoryAction(operation, { memoryId, accepted, reason: operation === 'resolve-conflict' ? '用户从记忆页处理冲突' : undefined });
       memoryActionsAwaitingRefresh.add(memoryId);
     } else if (action === 'run-dream') {
-      await desktopBridge.runDream({ projectId: model.workspace.rootLabel, idle: true, safetyAllowed: true, activeRuns: 0 });
+      const dreamResult = await desktopBridge.runDream({ projectId: model.workspace.rootLabel, idle: !anyTaskRunning(), safetyAllowed: true, activeRuns: sessionController.runningSessions().length });
+      dreamProposedCount = Array.isArray(dreamResult?.proposedMemories) ? dreamResult.proposedMemories.length : undefined;
     } else if (action === 'start-dream-maintenance') {
-      await desktopBridge.startDreamMaintenance({ projectId: model.workspace.rootLabel });
+      updatedMaintenance = await desktopBridge.startDreamMaintenance({ projectId: model.workspace.rootLabel });
     } else if (action === 'stop-dream-maintenance') {
-      await desktopBridge.stopDreamMaintenance();
+      updatedMaintenance = await desktopBridge.stopDreamMaintenance();
     } else if (action === 'plugin-action') {
       const pluginId = element.dataset.pluginId;
       const operation = element.dataset.operation as 'validate' | 'transition' | undefined;
@@ -4054,10 +4658,21 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
         await desktopBridge.evolutionAction(proposalId, 'monitor');
       }
     }
+    if (updatedMaintenance) {
+      model = { ...model, runtime: { ...model.runtime, dreamMaintenance: updatedMaintenance } };
+    }
     await refreshGovernance();
     governanceActionNotice = governanceReadFailed
       ? { key, text: `${label}请求已返回，但最新记录未读到。请刷新后核对状态。`, error: true }
-      : { key, text: `${label}请求已完成，记录已刷新。`, error: false };
+      : dreamProposedCount !== undefined
+        ? {
+            key,
+            text: dreamProposedCount > 0
+              ? `后台整理完成，新增 ${dreamProposedCount} 条可复用经验候选（请在上方“待审核”列表核对并启用）。`
+              : '后台整理完成，没有发现新的可复用经验候选（已有候选已自动去重）。',
+            error: false
+          }
+        : { key, text: `${label}请求已完成，记录已刷新。`, error: false };
   } catch (error) {
     governanceActionNotice = { key, text: `${label}未确认成功。请刷新记录后核对，再决定是否重试。`, error: true };
     if (action === 'memory-action') memoryActionError = 'FAILED';
@@ -4075,8 +4690,14 @@ const runtimeFailureText = (event: RuntimeEvent): string => {
   const reason = typeof payload.error === 'string' ? payload.error : typeof payload.message === 'string' ? payload.message : typeof payload.text === 'string' ? payload.text : '';
   const code = typeof payload.errorCode === 'string' ? payload.errorCode : typeof payload.code === 'string' ? payload.code : '';
   const recoveryCode = code || reason;
-  if (['THREAD_RESUME_GOAL_REQUIRED', 'THREAD_RESUME_PLAN_INVALID', 'THREAD_RESUME_CHECKPOINT_UNAVAILABLE', 'PERSISTENCE_LOCK_TIMEOUT'].includes(recoveryCode)) {
+  if (['THREAD_RESUME_GOAL_REQUIRED', 'THREAD_RESUME_PLAN_INVALID', 'THREAD_RESUME_CHECKPOINT_UNAVAILABLE', 'PERSISTENCE_LOCK_TIMEOUT', 'RECOVERY_LINEAGE_INVALID'].includes(recoveryCode)) {
     return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
+  }
+  const uncertainStep = (Array.isArray(payload.failureCodes) && payload.failureCodes.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN'))
+    || code === 'SIDE_EFFECT_OUTCOME_UNCERTAIN' || payload.stepErrorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
+  if (uncertainStep) {
+    const stepId = typeof payload.stepId === 'string' && payload.stepId ? ` · 步骤 ${payload.stepId}` : '';
+    return `${reasonDisplayLabel('SIDE_EFFECT_OUTCOME_UNCERTAIN')}（SIDE_EFFECT_OUTCOME_UNCERTAIN）${stepId}`;
   }
   const phase = typeof payload.phase === 'string' ? payload.phase : '';
   const detailKeys = ['failurePhase', 'failureStatus', 'stepId', 'stepErrorCode', 'reasonCode', 'cause', 'status', 'reportStatus', 'nextAction'];
@@ -4091,7 +4712,8 @@ const runtimeFailureText = (event: RuntimeEvent): string => {
       })
     : [];
   const tool = typeof payload.toolName === 'string' ? `工具：${payload.toolName}` : typeof payload.name === 'string' ? `工具：${payload.name}` : '';
-  const parts = [phase && `阶段：${phase}`, tool, code && `错误码：${code}`, reason, ...details, ...failedChecks].filter(Boolean);
+  const approvalHint = approvalFailureHint(payload);
+  const parts = [approvalHint, phase && `阶段：${phase}`, tool, code && `错误码：${code}`, reason, ...details, ...failedChecks].filter(Boolean);
   if (parts.length) return parts.join(' · ');
   return details.length ? details.join(' · ') : '任务运行失败：运行时未提供具体原因，请检查对应工具结果和计划步骤。';
 };
@@ -4120,12 +4742,17 @@ const runtimeEventText = (event: RuntimeEvent): string => {
 
 const harnessProgressText = (payload: Record<string, unknown>): string => {
   const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const successfulWrites = count(payload.successfulWrites);
+  const inspections = count(payload.inspectionsSinceWrite);
+  const progress = successfulWrites > 0
+    ? `已完成 ${count(payload.toolResults)} 次工具调用，其中 ${successfulWrites} 次受控文件写入成功；最近一次成功文件写入后又读取 ${inspections} 次。`
+    : `已完成 ${count(payload.toolResults)} 次工具调用，尚未记录成功的受控文件写入；本轮已读取 ${inspections} 次。`;
   const verification = payload.verification && typeof payload.verification === 'object'
     ? payload.verification as Record<string, unknown> : undefined;
   const providerErrors = Array.isArray(verification?.providerErrors)
     ? verification.providerErrors.filter((value): value is string => typeof value === 'string') : [];
   return [
-    `已完成 ${count(payload.toolResults)} 次工具调用，其中 ${count(payload.successfulWrites)} 次写入成功；最近一次写入后又读取 ${count(payload.inspectionsSinceWrite)} 次。`,
+    progress,
     providerErrors.length ? `验证服务异常：${providerErrors.join('、')}。已保留改动和失败记录，尚未确认任务完成。` : '',
     verification?.nextAction === 'RESTORE_VERIFICATION_SERVICE' ? '请恢复验证服务后继续。' : ''
   ].filter(Boolean).join('\n');
@@ -4203,13 +4830,17 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       };
     case 'ToolCallRequested': {
       const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
+      const { commandLine: requestedCommandLine, display: requestedCommandDisplay } = commandLineForToolEvent(rawToolName, payload);
+      const requestedTargetPath = pathForToolEvent(payload);
       return {
         ...common,
         kind: 'STATUS',
         title: '工具调用',
-        body: `正在${toolDisplayLabel(rawToolName).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`,
+        body: `正在${toolDisplayLabel(rawToolName).replace(/^查看|^读取|^执行|^运行|^发送/, '')}${requestedCommandDisplay ? ` · ${requestedCommandDisplay}` : ''}`,
         status: 'PENDING',
-        toolName: rawToolName
+        toolName: rawToolName,
+        ...(requestedCommandLine ? { commandText: requestedCommandLine } : {}),
+        ...(requestedTargetPath ? { targetPath: requestedTargetPath } : {})
       };
     }
     case 'ToolInvocationCompleted': {
@@ -4219,6 +4850,9 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       const errorCode = text(payload.errorCode, '');
       const message = text(payload.message, '');
       const outputChars = number(payload.outputChars);
+      const { commandLine, display: commandDisplay } = commandLineForToolEvent(rawToolName, payload);
+      const outputTail = failure ? outputTailForToolEvent(payload) : '';
+      const completedTargetPath = pathForToolEvent(payload);
       const detail = failure
         ? ['失败', errorCode ? reasonDisplayLabel(errorCode) : '', message].filter(Boolean).join('：')
         : ['已完成', outputChars === undefined ? '' : `输出 ${outputChars.toLocaleString('zh-CN')} 字符`].filter(Boolean).join(' · ');
@@ -4226,10 +4860,12 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: failure ? 'ERROR' : 'STATUS',
         title: '工具结果',
-        body: `${failure ? '无法完成' : '已完成'}：${toolName}${detail ? ` · ${detail}` : ''}`,
+        body: `${failure ? '无法完成' : '已完成'}：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${detail ? ` · ${detail}` : ''}`,
         status: failure ? 'ERROR' : 'COMPLETE',
         toolName: rawToolName,
-        commandText: typeof payload.command === 'string' ? payload.command : undefined,
+        commandText: commandLine || (typeof payload.command === 'string' ? payload.command : undefined),
+        ...(outputTail ? { outputTail } : {}),
+        ...(completedTargetPath ? { targetPath: completedTargetPath } : {}),
         evidenceKind: 'terminal',
         truncated: payload.truncated === true
       };
@@ -4355,11 +4991,22 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
   const message = typeof payload.message === 'string' ? payload.message : '';
   const errorCode = typeof payload.errorCode === 'string' ? payload.errorCode : '';
   const digest = typeof payload.outputDigest === 'string' ? payload.outputDigest : undefined;
+  const timedOut = failed && payload.timedOut === true;
+  const timeoutMs = Number.isInteger(payload.timeoutMs) ? Number(payload.timeoutMs) : undefined;
+  const timeoutText = timedOut
+    ? `命令执行超时，已停止进程；可能已产生部分构建文件，请先核对结果。${timeoutMs ? `（上限 ${Math.round(timeoutMs / 1000)} 秒）` : ''}`
+    : '';
+  const { commandLine, display: commandDisplay } = commandLineForToolEvent(rawName, payload as Record<string, unknown>);
+  const outputTail = failed ? outputTailForToolEvent(payload as Record<string, unknown>) : '';
+  const targetPath = pathForToolEvent(payload as Record<string, unknown>);
+  const distinctMessage = message && message.trim() !== errorCode.trim() ? message : '';
   const body = !isResult
-    ? `正在${toolName.replace(/^查看|^读取|^执行|^运行|^发送/, '')}`
+    ? `正在${toolName.replace(/^查看|^读取|^执行|^运行|^发送/, '')}${commandDisplay ? ` · ${commandDisplay}` : ''}`
     : failed
-      ? `无法完成：${toolName}${errorCode ? ` · ${reasonDisplayLabel(errorCode)}` : ''}${message ? ` · ${message}` : ''}`
-      : `已完成：${toolName}${outputChars !== undefined ? ` · 输出 ${outputChars.toLocaleString('zh-CN')} 字符` : ''}`;
+      ? (timedOut
+          ? `无法完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''} · ${timeoutText}`
+          : `无法完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${errorCode ? ` · ${reasonDisplayLabel(errorCode)}` : ''}${distinctMessage ? ` · ${distinctMessage}` : ''}`)
+      : `已完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${outputChars !== undefined ? ` · 输出 ${outputChars.toLocaleString('zh-CN')} 字符` : ''}`;
   return {
     itemId: toolTimelineItemId(event, callId || rawName),
     eventId: event.eventId,
@@ -4379,7 +5026,9 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
     digest,
     evidenceKind: isResult ? 'terminal' : undefined,
     truncated: payload.truncated === true,
-    commandText: typeof payload.command === 'string' ? payload.command : undefined
+    commandText: commandLine || (typeof payload.command === 'string' ? payload.command : undefined),
+    ...(outputTail ? { outputTail } : {}),
+    ...(targetPath ? { targetPath } : {})
   };
 };
 
@@ -4407,6 +5056,10 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (observedRuntimeEvents.has(eventKey)) return;
   observedRuntimeEvents.add(eventKey);
   const payload = event.payload ?? {};
+  // Role activity rows reflect real runtime progress, applied once per
+  // filtered event; unrelated kinds return the model unchanged.
+  const roleProjection = applyRuntimeSubAgentEvent(model, event);
+  if (roleProjection !== model) { model = roleProjection; scheduleRender(); }
   if (event.kind === 'run.started' && lastSubmitReceipt) {
     lastSubmitReceipt.status = 'accepted';
     scheduleRender();
@@ -4451,18 +5104,18 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     return;
   }
   if (event.kind === 'role.text_delta' || event.kind === 'role.turn_completed' || event.kind === 'planner.restored') {
-    update(applyRuntimeSubAgentEvent(model, event));
+    scheduleRender();
     return;
   }
   if (event.kind === 'RoleContextAllocated' || event.kind === 'RoleContextStateChanged') {
-    update(applyRuntimeSubAgentEvent(model, event));
+    scheduleRender();
     return;
   }
   if (event.kind === 'role.contexts_reconciled') {
     const reconciled = typeof payload.reconciled === 'number' && Number.isFinite(payload.reconciled)
       ? payload.reconciled
       : Array.isArray(payload.contexts) ? payload.contexts.length : 0;
-    update(appendTimelineItem(applyRuntimeSubAgentEvent(model, event), {
+    update(appendTimelineItem(model, {
       itemId: `runtime-${eventKey}`,
       kind: reconciled > 0 ? 'ERROR' : 'STATUS',
       title: '角色上下文恢复',
@@ -4487,10 +5140,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
         : event.kind === 'route.selected'
           ? `${humanizeCode(payload.taskClass, '当前任务')} · ${payload.reason ? reasonDisplayLabel(payload.reason) : '已通过安全检查'}`
           : `已分配 ${Array.isArray(payload.contexts) ? payload.contexts.length : 0} 个独立上下文`;
-    const projected = event.kind === 'role.contexts_allocated'
-      ? applyRuntimeSubAgentEvent(model, event)
-      : model;
-    update(appendTimelineItem(projected, { kind: 'STATUS', title, body, status: 'COMPLETE' }));
+    update(appendTimelineItem(model, { kind: 'STATUS', title, body, status: 'COMPLETE' }));
     return;
   }
   if (event.kind === 'model.text_delta') {
@@ -4544,6 +5194,9 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(typeof payload.cellOpIndex === 'number' ? { cellOpIndex: payload.cellOpIndex } : {}),
       ...(typeof payload.fingerprint === 'string' ? { fingerprint: payload.fingerprint } : {}),
       ...(typeof payload.codePreview === 'string' ? { codePreview: payload.codePreview } : {}),
+      ...(Array.isArray(payload.reasonCodes) ? { reasonCodes: payload.reasonCodes.filter((c) => typeof c === 'string' && c.trim()).slice(0, 8) } : {}),
+      ...(typeof payload.commandPreview === 'string' ? { commandPreview: payload.commandPreview } : {}),
+      ...(payload.commandPreviewTruncated === true ? { commandPreviewTruncated: true } : {}),
       ...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {}),
       ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
       ...(typeof payload.sandbox === 'string' ? { sandbox: payload.sandbox } : {}),
@@ -4562,6 +5215,14 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} 请求一次性授权`,
       status: 'PENDING'
     }));
+    // Only notify when the projected model actually holds this request as
+    // pending: a re-emitted or already-resolved request must not re-notify.
+    const currentApproval = model.approvals.find((item) => item.requestId === requestId);
+    if (currentApproval?.state === 'REQUESTED'
+      && (currentApproval.approvalExpiresAt === undefined || currentApproval.approvalExpiresAt > Date.now())) {
+      const notice = desktopNoticePolicy.approvalRequested(event.runId, requestId);
+      if (notice) sendDesktopNotice(notice);
+    }
     void refreshExecutionState();
     return;
   }
@@ -4618,6 +5279,8 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     // runCordisTask will project the returned text once the final response is
     // available.  When a stream exists, this only flips its status to complete.
     update(setCellsSession(completeStreamingAgent(model, `${event.runId}-response`), undefined));
+    const notice = desktopNoticePolicy.runFinished(event.runId, false);
+    if (notice) sendDesktopNotice(notice);
     return;
   }
   if (event.kind === 'run.failed') {
@@ -4635,6 +5298,8 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       'Cordis runtime',
       runtimeFailureText(event)
     ), undefined));
+    const failureNotice = desktopNoticePolicy.runFinished(event.runId, true);
+    if (failureNotice) sendDesktopNotice(failureNotice);
     return;
   }
   if (event.kind === 'action_intent.created') {
@@ -4929,19 +5594,9 @@ window.addEventListener('storage', event => {
 });
 
 const resetToNewTask = (): void => {
-  running = false;
   executionGroupExpanded = false;
-  historyView = undefined;
-  historyRenderSerial++;
   historyPageCache.clear();
-  activePage = 'workbench';
-  settingsVisible = false;
-  lastSubmitReceipt = undefined;
-  model = { ...model, timeline: [], subAgents: [], approvals: [] };
-  scheduleApprovalExpiry();
-  let next: HarnessReadModel = { ...model, activeRun: undefined, composer: { ...model.composer, enabled: true } };
-  next = setActiveThread(next, undefined);
-  update(next);
+  parkForNewDraft();
   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus());
 };
 
@@ -4952,6 +5607,34 @@ const continueProjectPickerAction = async (projectId: string): Promise<void> => 
   const savedProject = projectId === PROJECTLESS_ID ? undefined : projectCatalog.find((item) => item.id === projectId);
   const discoveredProject = projectId === PROJECTLESS_ID ? undefined : projectGroups().find((item) => item.id === projectId && item.path);
   const projectPath = savedProject?.path ?? discoveredProject?.path;
+  if (mode === 'new-task') {
+    // Park a non-pristine session before changing workspace state so a finished
+    // or failed session keeps its own timeline and workspace root intact.
+    const selected = sessionController.selected();
+    if (selected && !sessionIsPristineDraft(selected)) {
+      const previousComposer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+      selected.promptDraft = previousComposer?.value ?? selected.promptDraft;
+      Object.assign(selected, captureScopedState());
+      if (previousComposer) previousComposer.value = '';
+      const clean: HarnessReadModel = setCellsSession({
+        ...model,
+        activeRun: undefined,
+        activeThreadId: undefined,
+        resumeThreadId: undefined,
+        timeline: [],
+        subAgents: [],
+        approvals: [],
+        decisions: [],
+        continuousVerification: [],
+        processVerification: undefined,
+        composer: { ...model.composer, enabled: true }
+      }, undefined);
+      const draft = sessionController.ensureDraftSession(projectPath ?? '', { model: clean });
+      sessionController.pruneIdleDrafts(draft.clientSessionId);
+      installScopedState(draft);
+      syncSelectedSession();
+    }
+  }
   projectPickerBusy = true;
   render();
   workspaceChanging = true;
@@ -5005,8 +5688,6 @@ const ensureThreadWorkspace = async (thread: HarnessReadModel['threads'][number]
       const next = setWorkspace(model, grant.rootLabel, '', [], grant.rootPath);
       update({ ...next, activeThreadId: model.activeThreadId, resumeThreadId: model.resumeThreadId,
         timeline: model.timeline, composer: model.composer });
-    } else if (!historyView) {
-      applyWorkspaceGrant(grant);
     }
     return true;
   } catch (error) {
@@ -5019,7 +5700,7 @@ const ensureThreadWorkspace = async (thread: HarnessReadModel['threads'][number]
 };
 
 const openWorkspace = async (): Promise<boolean> => {
-  if (running || workspaceChanging) return false;
+  if (running || liveTaskRunning() || workspaceChanging) return false;
   workspaceChanging = true;
   navigationTouched = true;
   render();
@@ -5031,7 +5712,7 @@ const openWorkspace = async (): Promise<boolean> => {
     update(appendTimelineItem(model, {
       kind: 'WORKSPACE',
       title: reset ? '工作区已切换' : '工作区授权',
-      body: `已以只读方式打开 ${grant.rootPath ?? grant.rootLabel}${reset ? '。下次发送将在此目录创建新会话，原会话保留在历史列表中。' : ''}`,
+      body: `已授权工作区 ${grant.rootPath ?? grant.rootLabel}${reset ? '。下次发送将在此目录创建新会话，原会话保留在历史列表中。' : ''}`,
       status: 'COMPLETE'
     }));
     const entries = await desktopBridge.listWorkspace('');
@@ -5184,7 +5865,7 @@ const loadDefaultWorkspace = async (): Promise<void> => {
     next = appendTimelineItem(next, {
       kind: 'WORKSPACE',
       title: '默认工作区',
-      body: `已自动使用 ${grant.rootPath ?? grant.rootLabel} 作为只读工作区。需要切换目录时可点击“打开项目”。`,
+      body: `已自动使用 ${grant.rootPath ?? grant.rootLabel} 作为工作区。需要切换目录时可点击“打开项目”。`,
       status: 'COMPLETE'
     });
     update(next);
@@ -5243,6 +5924,16 @@ const restoreSavedNavigation = async (): Promise<void> => {
 };
 
 const selectThread = async (threadId: string): Promise<void> => {
+  // A thread that owns a live in-memory session opens that session — its own
+  // timeline, sub-agents, progress and draft — instead of read-only history.
+  const owningSession = sessionController.sessionForThread(threadId);
+  if (owningSession) {
+    switchSession(owningSession.clientSessionId);
+    return;
+  }
+  // Reading another thread's history while a task is live parks the running
+  // session first — the invocation keeps running undisturbed.
+  if (running || liveTaskRunning()) parkForNewDraft();
   // `running` is a submission lock and can briefly outlive a task after the
   // runtime has already reached a terminal state. History navigation must be
   // gated by the authoritative active-run state, otherwise a stale lock makes
@@ -5434,7 +6125,7 @@ const runMockTask = async (prompt: string): Promise<void> => {
   next = upsertSubAgent(next, {
     agentId: safetyAgentId,
     name: '安全校验',
-    task: '准备核对只读能力边界',
+    task: '准备核对授权与审批边界',
     state: 'STARTING'
   });
   next = upsertSubAgent(next, {
@@ -5458,11 +6149,11 @@ const runMockTask = async (prompt: string): Promise<void> => {
     });
     next = upsertSubAgent(next, {
       agentId: safetyAgentId,
-      task: '核对路径范围与只读能力边界',
+      task: '核对路径范围与审批边界',
       state: 'RUNNING'
     });
     update(next);
-    const response = `我会在只读工作区“${model.workspace.rootLabel}”内进行检查。当前 Windows MVP 已建立稳定的 ReadModel、受限工作区接口和明确的安全能力边界。需要切换目录时可点击右上角“打开项目”。`;
+    const response = `我会在授权工作区“${model.workspace.rootLabel}”内进行检查。当前 Windows MVP 已建立稳定的 ReadModel、受限工作区接口和明确的安全能力边界。需要切换目录时可点击右上角“打开项目”。`;
     const streamId = `agent-${Date.now()}`;
     for (let index = 0; index < response.length; index += 3) {
       if (!isCurrentRunActive()) return;
@@ -5478,7 +6169,7 @@ const runMockTask = async (prompt: string): Promise<void> => {
     });
     next = upsertSubAgent(next, {
       agentId: safetyAgentId,
-      task: '只读边界核对完成',
+      task: '审批边界核对完成',
       state: 'SUCCEEDED'
     });
     next = upsertSubAgent(next, {
@@ -5504,9 +6195,6 @@ const runMockTask = async (prompt: string): Promise<void> => {
 
 const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
   if (running || workspaceChanging) return;
-  // The legacy pin must be migrated into the Settings model before any task.
-  await pinMigrationReady;
-  if (running || workspaceChanging) return;
   if (prompt.trim().length > 8000) {
     composerPromptError = `需求共有 ${prompt.trim().length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
     render();
@@ -5520,6 +6208,16 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
   // never un-archives anything or interrupts a task already in flight.
   const targetThreadId = extraOptions.threadId ?? model.activeThreadId;
   const targetThread = targetThreadId ? model.threads.find((thread) => thread.id === targetThreadId) : undefined;
+  // A checkpoint with an uncertain side effect must not be silently skipped:
+  // any send to that thread would hit the same reconciliation block after an
+  // expensive restart. Refuse to launch here; the typed input stays put.
+  if (threadRecoveryBlock(targetThread)) {
+    taskActionNotice = '此任务需要先核对上次执行结果。请使用“保留历史并新建任务”准备新任务；不会自动重试。';
+    render();
+    const draft = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+    if (draft && prompt && !draft.value.trim()) draft.value = prompt;
+    return;
+  }
   const archivedTargetId = archivedProjectIdForRoot(targetThread?.cwd) || archivedProjectIdForRoot(model.workspace.rootPath);
   if (archivedTargetId) {
     taskActionNotice = '此项目已归档，请先恢复项目后再开始任务。';
@@ -5530,49 +6228,65 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     return;
   }
   if (!restoreArchivedThreadForRun(extraOptions.threadId ?? model.activeThreadId)) return;
-  // Acquire the local run lock before awaiting event subscription setup. A
-  // rapid double-submit during startup must not create two overlapping
-  // runtime children or let the second display run replace the first.
+  syncSelectedSession();
+  if (targetThreadId && sessionController.runningSessions().some((session) =>
+    session.clientSessionId !== sessionController.selectedId
+    && (session.threadId === targetThreadId || session.currentRunThreadId === targetThreadId))) {
+    taskActionNotice = '此会话已有任务正在运行，请切回原任务查看。';
+    render();
+    return;
+  }
+  // A follow-up keeps its thread/checkpoint, but never reuses transport identity.
+  if (activeRuntimeRunId || model.activeRun) {
+    const previous = sessionController.selected()!;
+    Object.assign(previous, captureScopedState());
+    const receipt = lastSubmitReceipt;
+    const fresh = sessionController.create({
+      model, workspacePath: model.workspace.rootPath ?? '', threadId: targetThreadId
+    });
+    sessionController.select(fresh.clientSessionId);
+    installScopedState(fresh);
+    lastSubmitReceipt = receipt;
+  }
+  const ownerSessionId = sessionController.selectedId;
+  const taskOptions: RuntimeTaskOptions = {
+    executionMode: 'CONTROLLED',
+    ...(desktopBridge.isNative() ? {
+      leaseCapabilities: controlledCapabilities.slice(),
+      leaseCommands: controlledCommands.slice(),
+      ...(controlledNetworkTargets.parsed.length
+        ? { leaseNetworkTargets: controlledNetworkTargets.parsed.map((entry) => ({ ...entry })) } : {})
+    } : {}),
+    ...workspaceThreadOptions(model),
+    ...taskOptionsFromBudget(),
+    ...extraOptions,
+    clientSessionId: ownerSessionId,
+    workspacePath: model.workspace.rootPath ?? ''
+  };
+  const ownerSession = sessionController.selected()!;
+  ownerSession.workspacePath = taskOptions.workspacePath ?? '';
+  ownerSession.threadId = taskOptions.threadId;
+  currentRunThreadId = taskOptions.threadId;
+  // Lock and project the owner before the first await, including startup waits.
   running = true;
   window.clearTimeout(backgroundDetailsTimer);
   backgroundDetailsTimer = undefined;
   taskActionNotice = '';
   taskProgressMessage = extraOptions.resume || model.resumeThreadId ? '正在准备恢复任务…' : '正在准备任务…';
-  render();
-  // Context refreshes are normally throttled, but a click needs immediate acknowledgement.
-  patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
-  // Ensure the native event subscription is installed before spawning the
-  // runtime child. This prevents losing the first streamed delta or approval
-  // request when a user submits immediately after application launch.
-  try {
-    // Wait for the one-time runtime snapshot/recovery/dashboard hydration. The
-    // dashboard command reads the same Harness SQLite file that the task
-    // writes, so starting both processes from the first paint is unsafe.
-    await runtimeHydrationReady;
-    await runtimeEventsReady;
-    await workspaceReady;
-  } catch (error) {
-    running = false;
-    taskProgressMessage = '';
-    update(appendErrorTimelineItem(model, 'Cordis runtime 事件流', error));
-    scheduleBackgroundDetails();
-    return;
-  }
-  taskProgressMessage = '正在启动本地任务进程…';
   runtimeStreamObserved = false;
   activeRuntimeRunId = undefined;
   routeFailure = undefined;
   runtimeEventFloorMs = Date.now();
   lastRuntimeEventSequence = 0;
-  // Event keys include runId, but clearing this bounded-lifetime set avoids
-  // retaining every historical run for the lifetime of the desktop process.
   observedRuntimeEvents.clear();
+  const launchReady = Promise.all([pinMigrationReady, runtimeHydrationReady, runtimeEventsReady, workspaceReady]);
   enterLiveWorkbench();
   let next = beginRun(model, prompt);
   const runId = next.activeRun?.runId;
   if (!runId) {
     running = false;
     taskProgressMessage = '';
+    syncSelectedSession();
     return;
   }
   const hostAgentId = `${runId}-cordis-host`;
@@ -5590,30 +6304,34 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     Boolean(model.activeRun?.runId === runId && pendingCancellationRunId !== runId && model.activeRun.state !== 'CANCELLED'
       && (!activeRuntimeRunId || !deletedRuntimeRunIds.has(activeRuntimeRunId)));
   try {
-    next = setRunState(model, 'EXECUTING_READ');
-    next = upsertSubAgent(next, { agentId: hostAgentId, task: 'Cordis 服务注入已完成', state: 'SUCCEEDED' });
-    next = upsertSubAgent(next, { agentId: modelAgentId, task: '等待调用模型', state: 'STARTING' });
-    update(next);
-
-    const readOnlyRelease = !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
-    if (!readOnlyRelease && model.composer.mode !== 'CONTROLLED') update(setExecutionMode(model, 'CONTROLLED'));
-    const taskOptions: RuntimeTaskOptions = readOnlyRelease
-      ? { executionMode: 'READ_ONLY' as const }
-      : {
-          executionMode: 'CONTROLLED' as const,
-          leaseCapabilities: controlledCapabilities,
-          leaseCommands: controlledCommands,
-          ...(controlledNetworkTargets.parsed.length ? { leaseNetworkTargets: controlledNetworkTargets.parsed } : {})
-        };
-    Object.assign(taskOptions, workspaceThreadOptions(model));
-    Object.assign(taskOptions, taskOptionsFromBudget(), extraOptions);
-    if (model.activeThreadId && !taskOptions.threadId) update(setActiveThread(model, undefined));
-    currentRunThreadId = typeof taskOptions.threadId === 'string' ? taskOptions.threadId : model.activeThreadId;
+    await launchReady;
+    if (ownerSession.model.connection.state !== 'READY') {
+      const snapshot = await desktopBridge.runtimeSnapshot();
+      withSession(ownerSessionId, () => {
+        if (!snapshot) throw new Error('本地运行时尚未就绪，请稍后重试。');
+        update(setRuntimeReady(model, snapshot));
+      });
+    }
+    const canLaunch = withSession(ownerSessionId, () => {
+      if (!isCurrentRunActive()) return false;
+      taskProgressMessage = '正在启动本地任务进程…';
+      next = setRunState(model, 'EXECUTING_READ');
+      next = upsertSubAgent(next, { agentId: hostAgentId, task: 'Cordis 服务注入已完成', state: 'SUCCEEDED' });
+      update(next);
+      return true;
+    });
+    if (!canLaunch) return;
     const result = await desktopBridge.runModelTask(prompt, undefined, taskOptions);
+    // The owner session may no longer be selected; everything from here on
+    // settles inside its own state, never into the session the user switched to.
+    withSession(ownerSessionId, () => {
     {
       const resultThreadId = 'threadId' in result && typeof result.threadId === 'string' ? result.threadId : undefined;
       if (result.runId && resultThreadId) {
         runThreadIds.set(result.runId, resultThreadId);
+        const ownerSession = sessionController.forClientSessionId(ownerSessionId);
+        if (ownerSession && resultThreadId) ownerSession.threadId = resultThreadId;
+        sessionController.bindRunId(ownerSessionId, result.runId);
         const pending = routeFailure as (RouteFailureNotice & { threadId?: string }) | undefined;
         if (pending?.runId === result.runId && !pending.threadId) routeFailure = { ...pending, threadId: resultThreadId };
       }
@@ -5641,6 +6359,8 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
       if (!runtimeFailureEvents.has(result.runId ?? activeRuntimeRunId ?? '')) next = appendErrorTimelineItem(setRunState(next, 'FAILED'), 'Cordis runtime', result.error);
       else next = setRunState(next, 'FAILED');
       update(next);
+      const resultNotice = desktopNoticePolicy.runFinished(result.runId ?? activeRuntimeRunId ?? runId ?? '', true);
+      if (resultNotice) sendDesktopNotice(resultNotice);
       return;
     }
 
@@ -5737,7 +6457,13 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
       });
     }
     update(setRunState(next, verified ? 'SUCCEEDED' : 'FAILED'));
+    // Providers that omit a run.completed frame still get one terminal notice;
+    // the policy dedup keeps it exactly once when the frame did arrive.
+    const successNotice = desktopNoticePolicy.runFinished(result.runId ?? activeRuntimeRunId ?? runId ?? '', !verified);
+    if (successNotice) sendDesktopNotice(successNotice);
+    });
   } catch (error) {
+    withSession(ownerSessionId, () => {
     if (!isCurrentRunActive()) return;
     const message = error instanceof Error ? error.message : String(error);
     const compactMessage = compactError(message);
@@ -5745,35 +6471,37 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     next = upsertSubAgent(next, { agentId: modelAgentId, task: compactMessage, state: 'FAILED' });
     if (lastSubmitReceipt?.status === 'pending') lastSubmitReceipt.status = 'unconfirmed';
     update(appendErrorTimelineItem(setRunState(next, 'FAILED'), 'Cordis runtime', compactMessage));
+    const errorNotice = desktopNoticePolicy.runFinished(activeRuntimeRunId ?? runId ?? '', true);
+    if (errorNotice) sendDesktopNotice(errorNotice);
+    });
   } finally {
-    running = false;
-    taskProgressMessage = '';
-    // The runtime commits the thread turn immediately before its child exits.
-    // Refresh the durable thread summaries once the process is gone so the
-    // sidebar cannot lag behind a completed run when the result projection and
-    // thread-store write arrive in different event-loop turns.
-    if (desktopBridge.isNative()) {
-      try {
-        const persistedThreads = await desktopBridge.listThreads();
-        if (persistedThreads.length) update(setThreads(model, persistedThreads));
-      } catch (error) {
-        update(appendErrorTimelineItem(model, '线程列表刷新', error));
+    // The thread-list refresh is an async read — collect it outside the
+    // session scope, then fold it into the owner state synchronously.
+    const persistedThreads = desktopBridge.isNative()
+      ? await desktopBridge.listThreads().catch((error) => ({ error }))
+      : undefined;
+    withSession(ownerSessionId, () => {
+      running = false;
+      taskProgressMessage = '';
+      if (persistedThreads && 'error' in persistedThreads) {
+        update(appendErrorTimelineItem(model, '线程列表刷新', persistedThreads.error));
+      } else if (persistedThreads?.length) {
+        update(setThreads(model, persistedThreads));
       }
-    }
+      // A native cancellation acknowledges taskkill before the blocking
+      // runtime reader has necessarily drained and cleared its process state.
+      // Keep the composer disabled until this invocation has actually returned,
+      // then release it for the next task.
+      if (model.activeRun?.runId === runId && !model.composer.enabled) {
+        update({ ...model, composer: { ...model.composer, enabled: true }, projectionVersion: model.projectionVersion + 1 });
+      }
+    });
     scheduleRender();
     // Reads requested by approval events or manual refreshes are deferred
     // while the runtime owns the Harness database. Flush them only after the
     // child has exited, when the SQLite connection is no longer contested.
     scheduleBackgroundDetails();
-    // A native cancellation acknowledges taskkill before the blocking
-    // runtime reader has necessarily drained and cleared its process state.
-    // Keep the composer disabled until this invocation has actually returned,
-    // then release it for the next task.
-    if (model.activeRun?.runId === runId && !model.composer.enabled) {
-      update({ ...model, composer: { ...model.composer, enabled: true }, projectionVersion: model.projectionVersion + 1 });
-    } else {
-      renderWithFallback(true);
-    }
+    renderWithFallback(true);
   }
 };
 
@@ -5814,6 +6542,10 @@ app.addEventListener('click', (event) => {
   }
   const actionElement = target?.closest<HTMLElement>('[data-action]');
   const action = actionElement?.dataset.action;
+  if (action === 'access-mode' && actionElement instanceof HTMLElement) {
+    accessControls.open(actionElement);
+    return;
+  }
   if (action === 'toggle-experimental-cells') {
     const input = actionElement?.querySelector<HTMLInputElement>('input[type="checkbox"]')
       ?? (actionElement instanceof HTMLInputElement ? actionElement : undefined);
@@ -5957,6 +6689,7 @@ app.addEventListener('click', (event) => {
   if (action === 'toggle-subagents') {
     subAgentsCollapsed = !subAgentsCollapsed;
     const panel = actionElement?.closest('.subagent-panel');
+    panel?.classList.toggle('subagent-panel-collapsed', subAgentsCollapsed);
     const list = panel?.querySelector<HTMLElement>('.subagent-list');
     if (list) list.hidden = subAgentsCollapsed;
     actionElement?.setAttribute('aria-expanded', String(!subAgentsCollapsed));
@@ -6086,6 +6819,11 @@ app.addEventListener('click', (event) => {
     const thread = model.threads.find((item) => item.id === threadId);
     if (!threadId || !['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread))) return;
     if (running || workspaceChanging) return;
+    if (threadRecoveryBlock(thread)) {
+      taskActionNotice = '此任务需要先核对上次执行结果。请使用“保留历史并新建任务”准备新任务；不会自动重试。';
+      render();
+      return;
+    }
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
     update(setActiveThread(model, threadId, true));
@@ -6094,62 +6832,107 @@ app.addEventListener('click', (event) => {
   }
   if (action === 'retry-task') {
     if (running || workspaceChanging) return;
+    const thread = model.threads.find((item) => item.id === model.activeThreadId);
+    if (threadRecoveryBlock(thread)) {
+      taskActionNotice = '此任务需要先核对上次执行结果。请使用“保留历史并新建任务”准备新任务；不会自动重试。';
+      render();
+      return;
+    }
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
     taskActionNotice = '将使用设置中的模型重试任务。';
     render();
-    const thread = model.threads.find((item) => item.id === model.activeThreadId);
     const resume = ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread));
     void (desktopBridge.isNative() ? runCordisTask(prompt, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(prompt));
+    return;
+  }
+  if (action === 'new-task-from-blocked') {
+    if (running || workspaceChanging) return;
+    const thread = model.threads.find((item) => item.id === model.activeThreadId);
+    if (!threadRecoveryBlock(thread)) return;
+    const typed = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value.trim() ?? '';
+    const substantive = typed && !/^(?:继续|重试|continue|retry)$/iu.test(typed) ? typed : '';
+    const title = thread?.title?.trim() ?? '';
+    const generic = !title || /^(?:dda task|new thread)$/iu.test(title) || /^Thread\s+[a-f\d]{8,}$/iu.test(title);
+    const seed = substantive || (generic ? '' : title);
+    // The old checkpoint/history is left in place; only the working surface
+    // resets so a new task starts from the current files with fresh approvals.
+    resetToNewTask();
+    taskActionNotice = '旧任务与不确定执行记录已保留。请先核对当前文件和构建产物，再发送新任务；不会继承旧检查点、审批或租约。';
+    render();
+    const textarea = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+    if (textarea) {
+      if (seed) textarea.value = seed;
+      textarea.focus();
+    }
     return;
   }
   if (action === 'cancel-run') {
     void (async () => {
       const cancelRunId = model.activeRun?.runId;
       if (!cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
+      const ownerSessionId = sessionController.selectedId;
       try {
         pendingCancellationRunId = cancelRunId;
         const cancellation = desktopBridge.isNative()
-          ? await desktopBridge.cancelModelTask()
+          ? await desktopBridge.cancelModelTask({
+              sessionId: ownerSessionId,
+              // The runtime slot's runId is the real bound invocation id; the
+              // display runId only feeds the local guards below.
+              ...(activeRuntimeRunId ? { runId: activeRuntimeRunId } : {})
+            })
           : { cancelled: true };
-        if (!cancellation.cancelled) {
+        withSession(ownerSessionId, () => {
+          // Before the host reserves a slot, cancellation is local: the launch
+          // guard observes CANCELLED and never starts the delayed invocation.
+          if (!cancellation.cancelled && activeRuntimeRunId) {
+            if (model.activeRun?.runId !== cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
+            update(appendErrorTimelineItem(model, '运行时取消', '当前没有可取消的 Cordis runtime 任务'));
+            return;
+          }
+          // A terminal event can be delivered while the native cancel command
+          // is waiting for taskkill. Never regress that authoritative outcome
+          // to CANCELLED, and never mutate a newer run.
           if (model.activeRun?.runId !== cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
-          update(appendErrorTimelineItem(model, '运行时取消', '当前没有可取消的 Cordis runtime 任务'));
-          return;
-        }
-        // A terminal event can be delivered while the native cancel command
-        // is waiting for taskkill. Never regress that authoritative outcome
-        // to CANCELLED, and never mutate a newer run.
-        if (model.activeRun?.runId !== cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
-        pendingApprovalResolutions.clear();
-        const stopped = { ...model, timeline: model.timeline.map((item) => item.status === 'STREAMING'
-          ? { ...item, status: 'COMPLETE' as const } : item) };
-        const cancelled = cancelPendingApprovals(setRunState(stopped, 'CANCELLED'));
-        update(appendTimelineItem({
-          ...cancelled,
-          // The reader may already have settled before cancellation returns.
-          // Block only while that invocation still owns the submission lock.
-          composer: { ...cancelled.composer, enabled: !desktopBridge.isNative() || !running }
-        }, {
-          kind: 'STATUS',
-          title: '运行控制',
-          body: cancelled.composer.mode === 'CONTROLLED'
-            ? '任务已由用户取消。已经执行的操作不会自动撤销，请核对执行记录和工作区。'
-            : '任务已由用户取消。只读运行没有产生外部副作用。',
-          status: 'COMPLETE'
-        }));
+          pendingApprovalResolutions.clear();
+          const stopped = { ...model, timeline: model.timeline.map((item) => item.status === 'STREAMING'
+            ? { ...item, status: 'COMPLETE' as const } : item) };
+          const cancelled = cancelPendingApprovals(setRunState(stopped, 'CANCELLED'));
+          update(appendTimelineItem({
+            ...cancelled,
+            // The reader may already have settled before cancellation returns.
+            // Block only while that invocation still owns the submission lock.
+            composer: { ...cancelled.composer, enabled: !desktopBridge.isNative() || !running }
+          }, {
+            kind: 'STATUS',
+            title: '运行控制',
+            body: '任务已由用户取消。已经执行的操作不会自动撤销，请核对执行记录和工作区。',
+            status: 'COMPLETE'
+          }));
+        });
       } catch (error) {
-        update(appendErrorTimelineItem(model, '运行时取消', error));
+        withSession(ownerSessionId, () => update(appendErrorTimelineItem(model, '运行时取消', error)));
       } finally {
-        if (pendingCancellationRunId === cancelRunId) pendingCancellationRunId = undefined;
+        withSession(ownerSessionId, () => {
+          if (pendingCancellationRunId === cancelRunId) pendingCancellationRunId = undefined;
+        });
       }
+      scheduleRender();
     })();
   }
+  if (action === 'select-session') {
+    const sessionId = actionElement?.dataset?.sessionId ?? '';
+    if (sessionId) switchSession(sessionId);
+    return;
+  }
   if (action === 'new-task') {
-    if (workspaceChanging) return;
-    // A stale submission lock must not make the primary action inert. The
-    // active run state is authoritative for whether a task is actually live.
-    if (running && model.activeRun) return;
+    if (workspaceChanging && !sessionWorkspaceSyncInFlight) return;
+    // A live invocation keeps running in its own session; park it and open a
+    // clean draft instead of blocking the user's next task.
+    if (running || liveTaskRunning()) {
+      resetToNewTask();
+      return;
+    }
     projectPickerMode = 'new-task';
     projectPickerThreadId = '';
     projectPickerVisible = true;
@@ -6325,6 +7108,11 @@ app.addEventListener('submit', (event) => {
   if (form.matches('[data-form="memory-edit"]')) {
     event.preventDefault();
     if (!desktopBridge.isNative() || pendingMemoryActions.size > 0) return;
+    if (anyTaskRunning() || liveTaskRunning()) {
+      memoryEditError = '当前有任务正在运行，请等任务完成或取消后再保存新版本。';
+      render();
+      return;
+    }
     if (!form.reportValidity()) return;
     const memoryId = form.dataset.memoryId;
     if (!memoryId) return;
@@ -6448,24 +7236,90 @@ app.addEventListener('submit', (event) => {
   // A new run may append events to the currently selected thread. Do not
   // reuse a pre-run first page after the task completes.
   historyPageCache.clear();
-  void (async () => {
-    if (desktopBridge.isNative() && model.connection.state !== 'READY') {
-      try {
-        const snapshot = await desktopBridge.runtimeSnapshot();
-        if (snapshot) update(setRuntimeReady(model, snapshot));
-      } catch (error) {
-        update(appendErrorTimelineItem(model, 'Cordis runtime', error));
-        return;
-      }
-      if ((model.connection.state as string) !== 'READY') return;
-    }
-    await (desktopBridge.isNative() ? runCordisTask(prompt) : runMockTask(prompt));
-  })();
+  void (desktopBridge.isNative() ? runCordisTask(prompt) : runMockTask(prompt));
 });
 
 render();
+if (desktopBridge.isNative()) void accessController.load();
+window.addEventListener('focus', () => {
+  if (desktopBridge.isNative() && !accessController.state.saving && !accessControls.modalOpen()) void accessController.load();
+});
 
-const runtimeEventsReady = desktopBridge.listenRuntimeEvents(applyRuntimeEvent);
+// Events are attributed to exactly one session. A host-tagged clientSessionId
+// is authoritative; untagged frames only reach a session through a runId it
+// already owns — a run.started must never be bound by timestamp while more
+// than one session exists.
+const routeRuntimeEvent = (event: RuntimeEvent): void => {
+  if (!event || event.schemaVersion !== '1.0' || typeof event.kind !== 'string'
+    || typeof event.runId !== 'string' || !event.runId
+    || !Number.isInteger(event.sequence) || event.sequence < 1
+    || !Number.isFinite(event.emittedAtMs)) return;
+  const tagged = typeof event.clientSessionId === 'string' && event.clientSessionId
+    ? event.clientSessionId : undefined;
+  let session: TaskSession | undefined;
+  if (tagged) {
+    session = sessionController.forClientSessionId(tagged);
+    if (!session) return;
+    if (event.runId) {
+      // One invocation per session: frames for a different runId after the
+      // session's run is known are stale — drop before any binding side effect.
+      if (session.activeRuntimeRunId && session.activeRuntimeRunId !== event.runId) return;
+      const boundOwner = sessionController.forRunId(event.runId);
+      // A run can only ever belong to one session — foreign or re-bound
+      // frames are dropped instead of corrupting another invocation.
+      if (boundOwner && boundOwner.clientSessionId !== tagged) return;
+      if (!boundOwner) sessionController.bindRunId(tagged, event.runId);
+    }
+  } else {
+    // Untagged frames only reach the session that already owns this runId.
+    session = sessionController.forRunId(event.runId);
+    if (!session) return;
+  }
+  withSession(session.clientSessionId, () => {
+    // Reflect the session's bound run into the reducer's identity check so
+    // pre-run.started frames (runtime.phase, early text) are not discarded.
+    if (event.runId && session.running && !activeRuntimeRunId) activeRuntimeRunId = event.runId;
+    applyRuntimeEvent(event);
+  });
+};
+
+const runtimeEventsReady = desktopBridge.listenRuntimeEvents(routeRuntimeEvent);
+void desktopBridge.listenDesktopNotificationActivated((payload) => {
+  const noticeRunId = typeof payload?.runId === 'string' ? payload.runId : '';
+  // The notification belongs to whichever session owns the run — activate it
+  // first so the approval/thread it points at is the one the user sees.
+  if (noticeRunId) {
+    const owner = sessionController.forRunId(noticeRunId);
+    if (owner && owner.clientSessionId !== sessionController.selectedId) {
+      switchSession(owner.clientSessionId);
+    }
+  }
+  const action = desktopNoticeActivation(payload, {
+    activeRunId: activeRuntimeRunId ?? undefined,
+    running,
+    approvals: model.approvals,
+    threadId: noticeRunId ? runThreadIds.get(noticeRunId) : undefined,
+    nowMs: Date.now()
+  });
+  activePage = 'workbench';
+  contextVisible = true;
+  if (action.type === 'approval') {
+    render();
+    requestAnimationFrame(() => {
+      app.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(action.requestId)}"]`)?.scrollIntoView({ block: 'center' });
+    });
+    return;
+  }
+  if (action.type === 'changed') {
+    taskActionNotice = '通知对应的任务已变化，请在历史任务中查看。';
+    render();
+    return;
+  }
+  // 'none' (stale, resolved, expired, or unknown run): the click only raises
+  // the app; it must never resurrect, approve, or submit anything.
+  render();
+  if (action.type === 'thread') void selectThread(action.threadId);
+});
 void desktopBridge.listenContextSidecarStatus((status) => {
   update(setContextSidecarStatus(model, status));
 });

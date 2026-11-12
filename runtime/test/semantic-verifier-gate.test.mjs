@@ -9,9 +9,9 @@ const semanticBinding = { kind: 'MODEL', modelId: 'provider-b/model-2' };
 const executorModel = { provider: 'provider-a', model: 'model-1' };
 const semanticModel = { provider: 'provider-b', model: 'model-2' };
 
-test('low-risk read-only work does not require a separate semantic verifier', () => {
+test('low-risk observation work does not require a separate semantic verifier', () => {
   const gate = evaluateSemanticVerifierIndependence({
-    mode: 'READ_ONLY', taskClass: 'inspect', executorBinding, semanticBinding, executorProvider: providerA, semanticProvider: undefined
+    mode: 'CONTROLLED', taskClass: 'inspect', executorBinding, semanticBinding, executorProvider: providerA, semanticProvider: undefined
   });
   assert.equal(gate.required, false);
   assert.equal(gate.satisfied, true);

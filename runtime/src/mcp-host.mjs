@@ -140,7 +140,7 @@ export class McpReadOnlyHost {
             description: `Read-only MCP tool ${config.id}/${remoteName}.`,
             inputSchema: safeSchema(remote.inputSchema),
             readOnly: true,
-            metadata: { actionClass: 'READ_ONLY', mcpServer: config.id, mcpTool: remoteName },
+            metadata: { actionClass: 'OBSERVE', mcpServer: config.id, mcpTool: remoteName },
             handler: async (input) => {
               const result = await client.callTool({ name: remoteName, arguments: input });
               return {

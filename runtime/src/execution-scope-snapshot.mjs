@@ -4,7 +4,7 @@ const FIELDS = [
   'runId', 'operationId', 'workspaceRootDigest', 'canonicalRootDigest',
   'repositoryRootDigest', 'beforeHead', 'allowedPathRoots', 'allowedPathGlobs',
   'forbiddenPathGlobs', 'allowedCapabilities', 'allowedCommands',
-  'allowedNetworkTargets', 'executionMode', 'releaseChannel', 'policyVersion',
+  'allowedNetworkTargets', 'allowedPathScope', 'executionMode', 'releaseChannel', 'policyVersion',
   'bindingSnapshotDigest', 'approvalScopeDigest', 'leaseScopeDigest',
   'decisionIds', 'createdAtMs'
 ];
@@ -62,7 +62,12 @@ export function compareGitObservations(before, after, scopeSnapshot = {}) {
     ...[...beforePaths].filter((path) => !afterPaths.has(path))
   ])].sort();
   const allowedPathDigests = new Set(Array.isArray(scopeSnapshot.allowedPathRoots) ? scopeSnapshot.allowedPathRoots : []);
-  const outOfScopePathDigests = changedPathDigests.filter((path) => !allowedPathDigests.has(path));
+  // 'WORKSPACE' means the approved capability may change any repository path
+  // (e.g. FULL_ACCESS shell/test commands). Git status paths are already
+  // repository-relative, so every changed path is in scope; metadata checks
+  // below still fail the action.
+  const workspaceScope = scopeSnapshot.allowedPathScope === 'WORKSPACE';
+  const outOfScopePathDigests = workspaceScope ? [] : changedPathDigests.filter((path) => !allowedPathDigests.has(path));
   const observationComplete = before?.available === true && after?.available === true
     && beforeStatus.pathDigestTruncated !== true && afterStatus.pathDigestTruncated !== true;
   const metadataChanged = Boolean(

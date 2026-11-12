@@ -57,7 +57,7 @@ test('model-profile CLI rebuilds into the configured Harness store', async () =>
   await feedback.submit({
     runId: 'run-cli-profile', taskId: 'task-cli-profile', threadId: 'thread-cli-profile', decisionId: 'decision-cli-profile', outcomeId: 'outcome-cli-profile',
     modelIdentity: { provider: 'openai', protocol: 'responses', model: 'model-a', modelVersion: 'v1', modelRegistryDigest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', role: 'planner', pluginVersion: 'plugin-v1' },
-    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'READ_ONLY', platform: 'WINDOWS', policyClass: 'phase1' },
+    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'CONTROLLED', platform: 'WINDOWS', policyClass: 'phase1' },
     sourceType: 'USER', dimensions: { rating: 5, objectiveSuccess: true, verifierPass: true, quality: 1, safetyIncident: false, usable: true }, reasonCodes: ['RESULT_EXCELLENT'], evidenceRefs: ['event-cli-profile']
   });
   const cli = fileURLToPath(new URL('../src/index.mjs', import.meta.url));
@@ -77,7 +77,7 @@ test('model-profile CLI falls back to Harness feedback summaries', async () => {
   const feedback = createFeedbackRegistry({ eventStore, now: () => 100 });
   await feedback.submit({
     runId: 'run-durable-profile', outcomeId: 'outcome-durable-profile', modelIdentity: { provider: 'openai', protocol: 'responses', model: 'model-a', modelVersion: 'v1', modelRegistryDigest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', role: 'planner', pluginVersion: 'plugin-v1' },
-    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'READ_ONLY', platform: 'WINDOWS', policyClass: 'phase1' },
+    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'CONTROLLED', platform: 'WINDOWS', policyClass: 'phase1' },
     sourceType: 'USER', dimensions: { objectiveSuccess: true, verifierPass: true, userSatisfaction: 1, safetyIncident: false }, evidenceRefs: ['durable-profile']
   });
   const cli = fileURLToPath(new URL('../src/index.mjs', import.meta.url));
@@ -93,7 +93,7 @@ test('model-profile CLI excludes retracted Harness feedback', async () => {
   const feedback = createFeedbackRegistry({ eventStore, now: () => 100 });
   const submitted = await feedback.submit({
     runId: 'run-retracted-profile', outcomeId: 'outcome-retracted-profile', modelIdentity: { provider: 'openai', protocol: 'responses', model: 'model-a', modelVersion: 'v1', modelRegistryDigest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', role: 'planner', pluginVersion: 'plugin-v1' },
-    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'READ_ONLY', platform: 'WINDOWS', policyClass: 'phase1' },
+    scenario: { taskClass: 'READ', riskClass: 'LOW', operationClass: 'ANALYZE', requiredCapabilities: ['workspace.read'], workspaceCapabilityClass: 'CONTROLLED', platform: 'WINDOWS', policyClass: 'phase1' },
     sourceType: 'USER', dimensions: { objectiveSuccess: true, verifierPass: true, userSatisfaction: 1, safetyIncident: false }, evidenceRefs: ['retracted-profile']
   });
   await feedback.retract(submitted.feedback.feedbackId);

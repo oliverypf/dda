@@ -14,7 +14,7 @@ test('Phase 1 memory proposal reads evidence and writes facts in the scoped task
   const trajectory = join(directory, 'trajectory.jsonl');
   const events = createHarnessEventStore({ storagePath: `${trajectory}.db` });
   const { event } = await events.append({ runId: 'r1', kind: 'Observed', payload: {} });
-  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY', DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
+  const env = { ...process.env, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED', DDA_TRAJECTORY_STORE: trajectory, DDA_DATA_DIR: directory };
   delete env.DDA_HARNESS_EVENT_STORE;
   delete env.DDA_MEMORY_STORE;
   delete env.DDA_DREAM_STORE;

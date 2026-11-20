@@ -94,6 +94,8 @@ const normalizePlanSteps = (steps) => {
       summary,
       actionKind,
       dependencies,
+      ...(Array.isArray(raw.evidenceSources) && raw.evidenceSources.some(source => ['workspace', 'web'].includes(source))
+        ? { evidenceSources: [...new Set(raw.evidenceSources.filter(source => ['workspace', 'web'].includes(source)))] } : {}),
       status: 'PENDING'
     };
   });
@@ -276,6 +278,7 @@ const roleSystem = (role) => {
     'For a factual question about a current external product, plan a bounded READ of public sources if available. Do not search workspace files unless the user asks about them. If sources are unavailable, report the evidence gap. Do not plan writes or configuration changes for an informational question.',
     'Use CLARIFY as the first step only when the user request has two or more incompatible meanings that would change the work. That step summary is one concrete question in the user\'s language and names the choices you can already tell apart. Later steps may depend on it, but their summaries must follow the user\'s answer instead of assuming one choice. If the request is specific enough to investigate or carry out, do not add a CLARIFY step and do not invent the missing fact.',
     'Write summary, assumptions, acceptanceCriteria, and the reasoning text in the language the user requested. A custom instruction that names a reply language covers that reasoning text. Do not translate stepId, actionKind, or JSON keys.',
+    'For a READ step, identify its evidenceSources as an array containing workspace, web, or both. Put independent research in separate steps; a delivery step depends on the evidence it needs.',
     'Use 1 to 32 steps. dependencies may only name other stepId values in this plan, and the steps must not form a cycle.',
     'When an existing generator, build command, or script may already fulfill the request, make running it and obtaining the requested output one executable step. Inspect, create or repair it within that step if necessary. Its process result and observed output prove completion whether a source edit was needed or not. Schedule independent output validation afterward.',
     'A conditional edit should only be a separate prerequisite when that edit is itself a required deliverable with an independently observable completion condition.',
@@ -608,13 +611,13 @@ export const runCouncilMemberTurn = async ({ provider, member, input = {}, evide
 };
 
 /** Run the independent Council Judge turn without exposing tools or secrets. */
-export const runCouncilJudgeTurn = async ({ provider, taskClass = 'unknown', proposals = [], evidence = [], ...options } = {}) => {
+export const runCouncilJudgeTurn = async ({ provider, taskClass = 'unknown', objective, toolNames, proposals = [], evidence = [], ...options } = {}) => {
   const turn = await runIsolatedModelTurn({
     ...options,
     role: 'council',
     provider,
-    prompt: 'Act as the independent Council Judge. Return {"decision":"ACCEPT_PLAN|REQUEST_PROBE|ESCALATE|ABSTAIN","selectedProposalIds":[],"probe":"","rationale":"","reasonCode":""}. Select only supplied proposal IDs.',
-    context: JSON.stringify({ taskClass, proposals, evidence })
+    prompt: 'Act as the independent Council Judge. Return {"decision":"ACCEPT_PLAN|REQUEST_PROBE|ESCALATE|ABSTAIN","selectedProposalIds":[],"probe":"","rationale":"","reasonCode":""}. Select only supplied proposal IDs. Use REQUEST_PROBE only for one factual question answerable by read-only observation. For tool availability use exactly: Is `tool-id` registered in the runtime tool catalog? Tool IDs come from the supplied host catalog; a plan step ID is not a tool. A negative observation is valid. Put planning suggestions in proposal advice, never in the probe. Do not add user requirements, disallow authorized tools, or ask the probe to revise or execute the plan.',
+    context: JSON.stringify({ taskClass, objective, toolNames, proposals, evidence })
   });
   const parsed = parseJsonCandidate(turn.text);
   return parsed ?? { decision: 'ABSTAIN', reasonCode: 'COUNCIL_JUDGE_UNSTRUCTURED' };

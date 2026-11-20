@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -52,6 +52,38 @@ const inputTextOf = (body) => [
     ? body.input.flatMap((item) => Array.isArray(item?.content) ? item.content.map((block) => block?.text ?? '') : [])
     : [])
 ].join('\n');
+
+test('desktop can reselect the default executor on a fresh profile while an alternate still needs eligibility', async (t) => {
+  // Real project paths are eligible for experience extraction. Scratch
+  // workspaces under the system temp directory are intentionally excluded.
+  const workspace = await mkdtemp(join(process.cwd(), '.binding-test-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const modelsCalled = [];
+  const inputs = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    modelsCalled.push(body.model);
+    inputs.push(inputTextOf(body));
+    emit(response, 'Hello');
+  });
+  t.after(() => server.close());
+  const port = await listenOnFetchablePort(server);
+  const config = join(workspace, 'model-config.json');
+  await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'primary',
+    endpoint: `http://127.0.0.1:${port}`, apiKeyEnv: 'DDA_TEST_BINDING_KEY' }));
+  const select = model => run(['task', '--config', config, '--workspace', workspace,
+    '--model', model, '--executor-model', model, '--prompt', '检查所选模型的角色绑定。',
+    '--memory-store', join(workspace, 'memory.json'),
+    '--trajectory-store', join(workspace, model + '.jsonl')], { DDA_TEST_BINDING_KEY: 'local-key' });
+  const alternate = await select('alternate');
+  assert.match(JSON.parse(alternate.stdout).error, /^ROLE_BINDING_BLOCKED:/);
+  assert.deepEqual(modelsCalled, []);
+  const primary = await select('primary');
+  assert.ok(modelsCalled.includes('primary'), JSON.parse(primary.stdout).error);
+  assert.ok(inputs[0].includes('ROLE_BINDING_BLOCKED'), 'the next execution sees the failed run lesson before acting');
+});
 
 test('verifier recovery continues past the already observed initial failure instead of replaying it', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-goal-continuation-'));

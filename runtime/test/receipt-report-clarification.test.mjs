@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { prepareBuildTestVerification } from '../src/decision/build-test-verification.mjs';
-import { receiptReportClarification } from '../src/decision/receipt-report-clarification.mjs';
+import { applyDocumentReportRepair, documentReportRepair, receiptReportClarification } from '../src/decision/receipt-report-clarification.mjs';
 
 const step = { stepId: 'verify', actionKind: 'TEST', summary: 'Execute `npm test`', dependencies: [] };
 const receipt = { id: 'test-1', stepId: 'verify', kind: 'TEST', command: 'npm', args: ['test'], cwd: '.',
@@ -76,4 +76,63 @@ test('matches an unquoted planned command or an exact host-declared argv and cwd
   assert.equal(proposed({ plan, declaredCommand: { ...declaredCommand, cwd: 'another-project' } }), undefined);
   assert.equal(proposed({ plan, declaredCommand: { ...declaredCommand, args: ['test:other'] } }), undefined);
   assert.equal(proposed({ plan: { steps: [{ ...step, summary: 'Run `npm test --subset`' }] } }), undefined);
+});
+
+
+test('document-only report repair refuses conflicting, final, stale or unrelated observations', () => {
+  const text = '文件将在后续步骤单独验收。运行构建成功且采用了既有脚本。';
+  const sentence = '运行构建成功且采用了既有脚本';
+  const path = 'dda-overview.pptx', sha256 = 'sha256:' + '1'.repeat(64);
+  const receipt = { id: 'b1', stepId: 'build', kind: 'BUILD', outputDigest: sha256, exitCode: 0,
+    artifacts: [{ path, sha256, sizeBytes: 100, disposition: 'GENERATED', pptx: { slideCount: 5 } }] };
+  const input = { text, step: { stepId: 'build', actionKind: 'EXECUTE' }, isDeliveryStep: false, requestedBuildTest: {},
+    verifiedFiles: [{ path, digest: sha256 }], hostChecks: [{ status: 'PASS' }], ruleStatus: 'PASS',
+    checks: [{ id: 'c', status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING' }],
+    observedClaims: [{ id: 'c', kind: 'BUILD', statement: sentence }], receipts: [receipt] };
+  const repair = documentReportRepair(input);
+  assert.ok(repair);
+  for (const overrides of [{ isDeliveryStep: true }, { ruleStatus: 'FAIL' }, { hostChecks: [{ status: 'FAIL' }] },
+    { checks: [...input.checks, { status: 'FAIL' }] }, { requestedBuildTest: { test: true } }, { verifiedFiles: [] },
+    { verifiedFiles: [{ path, digest: 'sha256:' + '2'.repeat(64) }] }, { receipts: [{ ...receipt, stepId: 'other' }] }]) {
+    assert.equal(documentReportRepair({ ...input, ...overrides }), undefined);
+  }
+  assert.equal(applyDocumentReportRepair(text, repair, '["quality-guaranteed"]'), undefined);
+  assert.equal(applyDocumentReportRepair(text, repair, 'null'), undefined);
+  const result = applyDocumentReportRepair(text, repair, '["artifact"]');
+  assert.ok(result.revised.startsWith('文件将在后续步骤单独验收。'));
+  assert.ok(result.revised.includes(sha256.slice(7)));
+  assert.ok(result.revised.includes('尚待核实：“' + sentence + '”'));
+  for (const note of ['构建命令按要求生成每页独立图表', '构建成功并验证动画', '经接收方签字，确认视觉完整性',
+    '测试覆盖率为 99%', '构建生成 `second.pptx`', '输出 `专家审阅通过`', '输出署名签收文件']) {
+    assert.equal(documentReportRepair({ ...input, text: note, observedClaims: [{ id: 'c', kind: 'BUILD', statement: note }] }), undefined, note);
+  }
+  for (const [goal, note] of [['请报告耗时', '运行耗时 100 ms'], ['请提供 SHA-256', '文件 SHA-256 `'+sha256+'`'],
+    ['请执行指定命令', '指定命令已执行']]) {
+    assert.equal(documentReportRepair({ ...input, goal, text: note, observedClaims: [{ id: 'c', kind: 'BUILD', statement: note }] }), undefined);
+  }
+});
+
+
+test('replays the two unresolved clauses from the controlled same-thread PowerPoint run', () => {
+  const script = 'build-dda-overview.mjs', path = 'dda-overview.pptx';
+  const hash = 'c5e0e22060fbb0d8ee80490eff703576cf0046487a6c2abaf276e28a30ccf720';
+  const stdout = 'OK: dda-overview.pptx written';
+  const statements = ['`' + script + '`（9,278 字节，SHA-256 `' + hash + '`），此前已通过 file.write 写入并保留，本次恢复未重写脚本，仅实际执行了 node 运行这一剩余动作',
+    '`node build-dda-overview.mjs`（cwd 为工作区根目录），exit code 0，耗时 788 ms，stdout 输出 `' + stdout + '`'];
+  const sha256 = 'sha256:' + '4'.repeat(64);
+  const receipt = { stepId: 'build-pptx', id: 'b1', kind: 'BUILD', command: 'node', args: [script], exitCode: 0, outputDigest: sha256,
+    stdoutTextDigest: 'sha256:' + createHash('sha256').update(stdout).digest('hex'), artifacts: [{ path, sha256, sizeBytes: 106922,
+      disposition: 'GENERATED', pptx: { slideCount: 5 } }] };
+  const text = statements.join('。\n');
+  const input = { text, goal: '请实际生成可编辑的演示文稿。', step: { stepId: 'build-pptx', actionKind: 'EXECUTE' }, isDeliveryStep: false,
+    requestedBuildTest: {}, verifiedFiles: [{ path, digest: sha256 }], hostChecks: [{ status: 'PASS' }], ruleStatus: 'PASS',
+    checks: statements.map((_, id) => ({ id, status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING' })),
+    observedClaims: statements.map((statement, id) => ({ id, statement, kind: 'BUILD' })), receipts: [receipt] };
+  const repair = documentReportRepair(input);
+  assert.ok(repair);
+  const revised = applyDocumentReportRepair(text, repair, '["artifact","slides"]').revised;
+  assert.ok(statements.every(note => revised.includes('尚待核实：“' + note + '”')));
+  const verified = prepareBuildTestVerification(revised, [receipt]);
+  assert.deepEqual(verified.claims, []);
+  assert.deepEqual(verified.checks.map(check => check.status), ['PASS', 'PASS']);
 });

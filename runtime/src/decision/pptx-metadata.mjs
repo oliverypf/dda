@@ -18,7 +18,7 @@ function requirePart(condition) {
 
 // Read only the OPC parts that establish slide membership. Never resolve a
 // relationship outside the package, expand a DTD, or unpack media to disk.
-export async function readPptxMetadata(bytes, { includeSlideText = false } = {}) {
+export async function readPptxMetadata(bytes, { includeSlideText = false, includeSourceLinks = false } = {}) {
   requirePart(bytes.length <= MAX_PPTX_BYTES);
   const zip = await fromBufferPromise(bytes, { strictFileNames: true });
   try {
@@ -100,11 +100,27 @@ export async function readPptxMetadata(bytes, { includeSlideText = false } = {})
     const excerpts = [];
     for (const slide of slides) {
       let excerpt = '';
-      await visitPart(slide, presentationNS, 'sld', undefined, includeSlideText ? (text, tag) => {
-        if (tag?.uri !== drawingNS || tag.local !== 't' || excerpt.length >= 512) return;
+      const excerptLimit = includeSourceLinks ? maxPartBytes : 512;
+      const referencedLinks = new Set();
+      const collectLink = tag => {
+        if (tag.uri !== drawingNS || tag.local !== 'hlinkClick') return;
+        const id = Object.values(tag.attributes).find(attr => attr.uri === officeRelNS && attr.local === 'id');
+        if (id) referencedLinks.add(id.value);
+      };
+      await visitPart(slide, presentationNS, 'sld', includeSourceLinks ? collectLink : undefined, includeSlideText ? (text, tag) => {
+        if (tag?.uri !== drawingNS || tag.local !== 't' || excerpt.length >= excerptLimit) return;
         const run = text.trim().replace(/\s+/gu, ' ');
-        if (run) excerpt += ((excerpt ? ' ' : '') + run).slice(0, 512 - excerpt.length);
+        if (run) excerpt += ((excerpt ? ' ' : '') + run).slice(0, excerptLimit - excerpt.length);
       } : undefined);
+      if (referencedLinks.size) {
+        const separator = slide.lastIndexOf('/') + 1;
+        const rels = slide.slice(0, separator) + '_rels/' + slide.slice(separator) + '.rels';
+        if (entries.has(rels)) await visitPart(rels, packageNS + '/relationships', 'Relationships', (tag, stack) => {
+          const { Id, Type, TargetMode, Target } = tag.attributes;
+          if (stack.length === 1 && tag.uri === stack[0].uri && tag.local === 'Relationship' && referencedLinks.has(Id?.value)
+            && Type?.value === officeRelNS + '/hyperlink' && TargetMode?.value === 'External' && Target?.value) excerpt += ' ' + Target.value;
+        });
+      }
       if (includeSlideText) excerpts.push(excerpt);
     }
     return { slideCount: slides.size, entryCount: entries.size, ...(includeSlideText ? { excerpts } : {}) };

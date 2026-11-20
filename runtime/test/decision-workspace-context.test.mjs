@@ -54,6 +54,20 @@ test('verification supplements respect the decision state limit without evicting
   assert.equal(decision.decision, 'UNCERTAIN');
 });
 
+test('a host-verified presentation can still fail semantic review', async () => {
+  const presentationDelivery = { presentations: [{ path: 'report.pptx', digest: 'sha256:' + '1'.repeat(64),
+    slideCount: 1, pages: [{ page: 1, excerpt: 'The project runs on Mars', truncated: false }] }],
+    prerequisiteReads: 'README.md | The project runs locally' };
+  const engine = createDecisionEngine({ enabled: true, client: { async decide({ questions }) {
+    assert.deepEqual(questions.verification.context.presentationDelivery, presentationDelivery);
+    assert.deepEqual(questions.verification.choices, ['PASS', 'FAIL', 'UNCERTAIN']);
+    return { answers: { verification: { choice: 'FAIL' }, verificationReason: { choice: 'RESULT_CONTRADICTS_EVIDENCE' } } };
+  } } });
+  const result = await engine.judgeVerification({ state: { action: { kind: 'TEST', stepId: 'verify-deck' } }, ruleStatus: 'PASS', presentationDelivery });
+  assert.equal(result.source, 'jev');
+  assert.equal(result.decision, 'FAIL');
+});
+
 test('only bounded read-only Git argv receives a command classification', () => {
   const grep = ['grep', '-in', '--heading', '-e', 'glm'];
   for (const [args, operation] of [

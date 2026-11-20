@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { canonicalMappedPath } from '../src/platform/workspace-path.mjs';
 import { executorDescriptor } from '../src/platform/platform-identity.mjs';
 import { createSafetyStateStore, transitionTighten } from '../src/safety-state.mjs';
+import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { readThreadHistory } from '../src/thread-history-reader.mjs';
 import { runEvidenceProcess } from '../../desktop/scripts/goal-evidence-process.mjs';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
@@ -72,14 +73,19 @@ const scenario = async (t, {
   answerText = `The README marker is ${MARKER}.`,
   buildTestChoice,
   executionProfileChoice,
+  councilVerdict,
+  councilAdvice,
+  separateCritic = false,
   tierChoice = 'DIRECT',
   verificationChoice = 'PASS',
   actionGateChoice = 'ALLOW',
   actionGateReason = 'UNSPECIFIED',
   onStdoutLine,
+  onExecutorRequest,
+  toolCallId,
   stopChoice,
   kernel = false,
-  prompt = 'Read README.md and report its marker.',
+  prompt = agentMode === 'multi' ? 'Read README.md, then read note.txt, and report the marker.' : 'Read README.md and report its marker.',
   executionMode = 'CONTROLLED',
   leaseCapabilities = '',
   leaseCommands = '',
@@ -93,7 +99,7 @@ const scenario = async (t, {
   await writeFile(join(workspace, 'note.txt'), 'note\n', 'utf8');
   const jev = { actionGateTools: [], candidateKinds: [], tierChoices: undefined, verifications: [],
     verificationRequests: [], evidenceDecisionSteps: [], buildTestQuestions: [], order: [] };
-  const model = { planner: 0, council: 0, executor: 0, order: [], toolContents: [], executorAttempts: [] };
+  const model = { planner: 0, council: 0, executor: 0, order: [], toolContents: [], executorAttempts: [], executorInputs: [], councilModels: [] };
   const plannedCalls = typeof toolCalls === 'function' ? await toolCalls(workspace) : toolCalls;
   const recoveryCalls = typeof recoveryToolCalls === 'function' ? recoveryToolCalls(workspace)
     : (recoveryToolCalls ?? plannedCalls);
@@ -170,20 +176,23 @@ const scenario = async (t, {
       return;
     }
     if (/Council member or Judge/u.test(system)) {
+      model.councilModels.push(body.model);
       model.council += 1; model.order.push('council');
       const judge = /Council Judge/u.test(JSON.stringify(body.messages));
       emitChat(response, textFrames(judge
-        ? JSON.stringify({ decision: 'ACCEPT_PLAN', selectedProposalIds: [], rationale: 'ok', reasonCode: 'OK' })
-        : JSON.stringify({ summary: 'plan ok', claim: 'plan ok', evidenceRefs: [], risks: [], nextActions: [], confidence: 0.9 })));
+        ? JSON.stringify(councilVerdict ?? { decision: 'ACCEPT_PLAN', selectedProposalIds: [], rationale: 'ok', reasonCode: 'OK' })
+        : JSON.stringify({ summary: 'plan ok', claim: 'plan ok', evidenceRefs: [], risks: [], nextActions: councilAdvice ? [councilAdvice] : [], confidence: 0.9 })));
       return;
     }
     model.executor += 1;
     const toolMessages = (body.messages ?? []).filter((message) => message.role === 'tool');
+    await onExecutorRequest?.({ messages: body.messages, toolMessages });
     model.toolContents.push(...toolMessages.map((message) => String(message.content)));
     // A fresh executor turn with no tool results yet is a new execute attempt
     // (attempt 1, or recovery attempt 2+ after diagnosis). toolCalls may be a
     // flat list (one round) or an array of rounds for multi-turn scripting.
     if (toolMessages.length === 0) {
+      model.executorInputs.push(JSON.stringify(body.messages));
       executeAttempt += 1;
       model.executorAttempts.push(executeAttempt);
     }
@@ -194,7 +203,7 @@ const scenario = async (t, {
     // toolMessages.length counts completed rounds; propose the next round.
     const nextRound = rounds[toolMessages.length];
     if (nextRound?.length) {
-      emitChat(response, toolCallFrames(nextRound.map(([name, args], index) => [`call_${model.executor}_${index}`, name, args])));
+      emitChat(response, toolCallFrames(nextRound.map(([name, args], index) => [toolCallId?.(index) ?? `call_${model.executor}_${index}`, name, args])));
       return;
     }
     emitChat(response, textFrames(answerText));
@@ -218,6 +227,14 @@ const scenario = async (t, {
   if (executionMode === 'CONTROLLED') {
     args.push('--lease-capabilities', leaseCapabilities || 'file.write',
       '--lease-commands', leaseCommands || 'node');
+  }
+  if (separateCritic) {
+    const configPath = join(localAppData, 'models.json');
+    const base = { provider: 'openai-chat', protocol: 'chat-completions', endpoint: `http://127.0.0.1:${port}/chat/completions`, apiKeyEnv: keyName };
+    await writeFile(configPath, JSON.stringify({ ...base, schemaVersion: '1.0', model: 'reviewer',
+      models: ['reviewer', 'critic'].map(id => ({ ...base, id, model: id })),
+      roleBindings: { planner: { selector: 'PINNED', modelId: 'reviewer' }, critic: { selector: 'PINNED', modelId: 'critic' } } }));
+    args.push('--config', configPath);
   }
   const result = await run(args, {
     LOCALAPPDATA: localAppData,
@@ -305,6 +322,14 @@ test('a read prerequisite can finish a clean retry after a blocked shell proposa
   assert.equal(jev.verificationRequests.at(-1).stepId, 'report');
 });
 
+test('a semantic PASS cannot complete a missing named deliverable', async t => {
+  const { result } = await scenario(t, { prompt: 'Create output.json containing the report.',
+    answerText: 'I saved the report in output.json.', toolCalls: [], verificationChoice: 'PASS' });
+  const payload = lastJsonLine(result.stdout);
+  assert.equal(payload.ok, false, payload.text);
+  assert.equal(payload.harness?.verification?.nextAction, 'REPAIR_DELIVERABLE', JSON.stringify({ error: payload.error, verification: payload.harness?.verification }));
+});
+
 test('reporting a successful viewer installation without an installer receipt cannot complete the task', async (t) => {
   const { result } = await scenario(t, {
     prompt: '这台机子上需要安装查看pptx的软件，安装一个',
@@ -355,6 +380,23 @@ const buildTestFixtureAccess = async () => {
   }));
   return { LOCALAPPDATA: localAppData };
 };
+
+test('a real shell write provides a durable named delivery receipt', async t => {
+  const { result, trajectory } = await scenario(t, {
+    env: await buildTestFixtureAccess(), prompt: 'Create output.json containing the report.',
+    leaseCapabilities: 'shell.execute', answerText: 'Saved output.json.',
+    toolCalls: async workspace => {
+      await writeFile(join(workspace, 'writer.mjs'), "import { writeFileSync } from 'node:fs'; writeFileSync('output.json', '{}');");
+      return [['shell.execute', { command: 'node', args: ['writer.mjs'] }]];
+    }
+  });
+  const payload = lastJsonLine(result.stdout);
+  assert.equal(payload.ok, true, JSON.stringify(payload.harness?.verification ?? payload.error));
+  const store = createHarnessEventStore({ storagePath: `${trajectory}.db` });
+  const events = await store.list({ runId: payload.runId });
+  await store.close?.();
+  assert.ok(events.some(event => event.kind === 'DeliverableFileVerified' && event.payload?.path === 'output.json'));
+});
 
 test('a requested exe build can collect prerequisite evidence and execute its build step', async (t) => {
   const target = 'desktop/src-tauri/target';
@@ -609,19 +651,83 @@ test('multi flags off: planner then council heuristic as today, no tier decision
   assert.equal(jev.candidateKinds.includes('SELECT_PLAN_TIER'), false);
 });
 
-test('multi PLAN_TIER DIRECT: tier is chosen before the planner, planner still runs, council skipped', async (t) => {
-  const { result, jev, model, decisionTrace } = await scenario(t, { agentMode: 'multi', env: { DDA_JEV_PLAN_TIER_ENABLED: '1' } });
+test('multi directly reads a named file when the optional tier selector is off', async t => {
+  const { result, model, jev } = await scenario(t, { agentMode: 'multi', prompt: 'Read README.md and report its marker.' });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(model.planner, 0);
+  assert.equal(model.council, 0);
+  assert.deepEqual(jev.actionGateTools, ['workspace.read']);
+});
+
+test('a council probe reads first and hands the observed finding and selected advice to the next executor', async t => {
+  const advice = 'Check the marker format before reporting.';
+  const question = 'Which marker is present in README.md?';
+  const { result, model, jev } = await scenario(t, { agentMode: 'multi',
+    env: { DDA_JEV_PLAN_REVIEW_ENABLED: '0' },
+    councilVerdict: { decision: 'REQUEST_PROBE', selectedProposalIds: ['proposal-plan-reviewer'], probe: question },
+    councilAdvice: advice });
+  assert.equal(result.code, 0, result.stderr + result.stdout.slice(0, 1200));
+  assert.equal(lastJsonLine(result.stdout).council?.decision, 'REQUEST_PROBE', result.stderr + result.stdout.slice(-3200));
+  assert.ok(model.executorInputs[0].includes(question));
+  assert.ok(model.executorInputs[1].includes('Completed read-only review probe'));
+  assert.ok(model.executorInputs[1].includes(MARKER));
+  assert.ok(model.executorInputs[1].includes(advice));
+  assert.equal(jev.actionGateTools[0], 'workspace.read');
+});
+
+test('registry probe uses host registration, scopes the judgment, and respects adverse verification', async t => {
+  const probe = 'Is `my-plan-step` registered in the runtime tool catalog?';
+  const options = { agentMode: 'multi', env: { DDA_JEV_PLAN_REVIEW_ENABLED: '0' },
+    councilVerdict: { decision: 'REQUEST_PROBE', probe }, answerText: 'The exact tool ID my-plan-step is absent.' };
+  const accepted = await scenario(t, options);
+  assert.equal(accepted.result.code, 0, accepted.result.stderr);
+  const evidence = accepted.jev.verificationRequests.find(request => request.stepId === 'council-probe').context.councilObservation;
+  assert.equal(evidence.question, probe);
+  assert.equal(evidence.catalog.registered, false);
+  assert.match(accepted.model.executorInputs[1], /does not contain the exact tool ID my-plan-step/);
+  const rejected = await scenario(t, { ...options, answerText: 'my-plan-step is registered and can be invoked.',
+    verificationChoice: (_, state) => {
+      if (state.action?.stepId !== 'council-probe') return 'PASS';
+      assert.equal(state.goal, probe);
+      return 'FAIL';
+    } });
+  assert.equal(lastJsonLine(rejected.result.stdout).ok, false);
+  assert.match(lastJsonLine(rejected.result.stdout).error, /council-probe/);
+});
+
+test('a report receives the verified findings of its preceding read through the normal task entry', async t => {
+  const { result, model } = await scenario(t, { agentMode: 'multi',
+    plan: JSON.stringify({ steps: [{ stepId: 'read-input', actionKind: 'READ', summary: 'Read README.md' },
+      { stepId: 'report', actionKind: 'REPORT', summary: 'Report its marker', dependencies: ['read-input'] }] }), recoveryToolCalls: [] });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(model.executorInputs[1], /Evidence from prerequisite reads/);
+  assert.match(model.executorInputs[1], /read-input \| README.md/);
+  assert.ok(model.executorInputs[1].includes(MARKER));
+});
+
+test('a council escalation stops before executor actions', async t => {
+  const { result, model } = await scenario(t, { agentMode: 'multi',
+    separateCritic: true, env: { DDA_JEV_PLAN_REVIEW_ENABLED: '0' }, councilVerdict: { decision: 'ESCALATE', rationale: 'The scope conflicts.' } });
+  assert.equal(lastJsonLine(result.stdout).error, 'COUNCIL_ESCALATION_REQUIRED', result.stderr);
+  assert.ok(model.councilModels.includes('critic'));
+  assert.ok(model.councilModels.includes('reviewer'));
+  assert.equal(model.executor, 0);
+});
+
+test('multi PLAN_TIER DIRECT reads one named file without a planner or council call', async (t) => {
+  const { result, jev, model, decisionTrace } = await scenario(t, { agentMode: 'multi', prompt: 'Read README.md and report its marker.', env: { DDA_JEV_PLAN_TIER_ENABLED: '1' } });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = lastJsonLine(result.stdout);
   assert.equal(payload.ok, true);
   assert.deepEqual(jev.tierChoices, ['DIRECT', 'PLAN', 'PLAN_COUNCIL']);
-  assert.ok(jev.order.indexOf('SELECT_PLAN_TIER') < jev.order.indexOf('MODEL:planner'), jev.order.join(','));
-  assert.equal(model.planner, 1, 'DIRECT never skips the planner');
+  assert.equal(model.planner, 0);
+  assert.ok(jev.actionGateTools.includes('workspace.read'));
   assert.equal(model.council, 0);
   assert.equal(payload.council, undefined);
   assert.equal(payload.decisionLayer.metrics.planTier.tier, 'DIRECT');
-  assert.ok(payload.decisionLayer.metrics.stages.planner.count === 1);
+  assert.equal(payload.decisionLayer.metrics.stages.planner?.count ?? 0, 0);
   assert.ok(decisionTrace.decisions.some((decision) => decision.decisionType === 'SELECT_PLAN_TIER' && decision.selectedOptionId === 'DIRECT'));
+  assert.ok(decisionTrace.decisions.some(decision => decision.decisionType === 'CREATE_PLAN' && decision.reasonCodes.includes('DIRECT_OBSERVATION')));
 });
 
 test('multi PLAN_TIER unknown Jev choice falls back to the existing heuristic', async (t) => {
@@ -645,7 +751,7 @@ test('multi PLAN_TIER is mutually exclusive with DDA_JEV_TOPOLOGY_ENABLED', asyn
   assert.equal(payload.decisionLayer.metrics.planTier.reasonCode, 'PLAN_TIER_TOPOLOGY_EXCLUSIVE');
 });
 
-test('multi PLAN_TIER PLAN: planner runs, council skipped (same effect as DIRECT today)', async (t) => {
+test('multi PLAN_TIER PLAN uses the planner and skips council', async (t) => {
   const { result, jev, model, decisionTrace } = await scenario(t, {
     agentMode: 'multi', env: { DDA_JEV_PLAN_TIER_ENABLED: '1' }, tierChoice: 'PLAN'
   });
@@ -952,3 +1058,37 @@ for (const verdict of ['UNCERTAIN', 'STALLED']) {
     }
   });
 }
+
+
+test('independent reads both finish a gated tool call before either executor reports', async t => {
+  const observed = new Set();
+  const both = Promise.withResolvers();
+  let timedOut = false;
+  const spec = JSON.parse(THREE_STEP_PLAN);
+  spec.steps[1].dependencies = [];
+  spec.steps[2].dependencies = ['read-a', 'read-b'];
+  let timer;
+  t.after(() => clearTimeout(timer));
+  const { result, jev, decisionTrace } = await scenario(t, {
+    agentMode: 'multi', plan: JSON.stringify(spec), toolCallId: () => 'same-provider-id',
+    onExecutorRequest: async ({ messages, toolMessages }) => {
+      if (!toolMessages.length) return;
+      const step = JSON.stringify(messages).match(/Current validated plan step: (read-[ab])/u)?.[1];
+      if (!step) return;
+      observed.add(step);
+      if (observed.size === 2) both.resolve();
+      timer ??= setTimeout(() => { timedOut = true; both.resolve(); }, 8000);
+      await both.promise;
+      if (observed.size === 2) clearTimeout(timer);
+    }
+  });
+  assert.equal(result.code, 0, result.stderr + result.stdout.slice(-3000));
+  const decisions = decisionTrace.decisions.filter(d => d.decisionType === 'SELECT_TOOL_ACTION' && /^read-[ab]-tool/u.test(d.stepId));
+  assert.equal(decisions.length, 2);
+  assert.equal(new Set(decisions.map(d => d.roleContextId)).size, 2);
+  assert.deepEqual(decisions[0].parentDecisionIds, decisions[1].parentDecisionIds);
+  assert.deepEqual([...observed].sort(), ['read-a', 'read-b']);
+  assert.equal(timedOut, false, 'a read waited for its independent sibling to finish');
+  assert.deepEqual(jev.verificationRequests.map(request => request.stepId), ['read-a', 'read-b', 'report']);
+  assert.ok(jev.actionGateTools.filter(tool => tool === 'workspace.read').length >= 2);
+});

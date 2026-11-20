@@ -602,3 +602,23 @@ npm run build:windows:full-local # 完整本地构建：Tauri CLI build --target
   - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`runtime/src/controlled-tools.mjs`、`runtime/src/decision/build-test-verification.mjs`、`runtime/src/safety-policy.mjs`、`runtime/src/kernel/approval-session.mjs`、`runtime/src/rule-router.mjs`
   - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
 - 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 11:20 那批 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第二十五次编译（当前最新产物，2026-11-20T07:23:27Z）
+
+> 判断当前产物以本节为准。
+
+- 触发：用户要求"再编译exe"。编译前 exe 为 11-20 14:14 的外部构建，前端 chunk `index-8zo4-Rds.js`（14:08，已进 exe）。源码时间线：`desktop/src`（最新 `main.ts` 10:56）与 Rust 源码（`lib.rs` 10:45）均早于 14:14 exe；真正的新改动是 14:46 的 `runtime/src/index.mjs`（bundle resources）。`lib.rs` 警告行号从 1024 变 1028，说明 Rust 源码有实质变化被本次重编纳入。
+- 占用检查：`dda-desktop` 进程（PID 20388，14:22 启动）在运行，独占打开测试 OK（未锁 exe），无需改名备份；一次编译通过。
+- 命令：在 `desktop/` 执行 `npm run build:exe`（VsDevCmd `-arch=x64` → `tauri build --target x86_64-pc-windows-msvc --no-bundle`），退出码 0，耗时 8m11s；Rust 增量 `Finished release profile [optimized] target(s) in 7m 22s`。
+- 前端重建：`dist/assets/index-8zo4-Rds.js`（477.35 kB）、`dist/assets/index-DJ_-lfQd.css`（73.12 kB），vite `built in 3.65s`（83 modules）；chunk 名与 14:14 版一致（前端源码未再变化）。vite 插件耗时提示为信息性警告。
+- Rust 侧本轮重新编译了较多 crate（`vswhom-sys`、`embed-resource`、`tauri-build`、`tauri` 等，缓存仍失效），`lib.rs` 警告行号 1024→1028；仍只有原有 2 条警告。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 11,965,440 字节（上一版 11,951,616，+13,824 B），文件时间 2026-11-20T07:23:27Z（15:23:27 +08:00）
+  - PE Machine `0x8664`（X64），ProductName `dda`，FileVersion `0.1.0`
+  - SHA-256 `91e004c1b6e966050987c9ddcb85b058da16c3bd0c2f61413312e8d9e44c4a45`
+  - 内嵌前端校验：exe 内可检索到 `index-8zo4-Rds.js`
+- staged 可运行目录（含 runtime / harness-model 资源）：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-KCefO2\dda-desktop.exe`
+  - staged exe SHA-256 `91e004c1…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`runtime/src/decision/plan-tier.mjs`、`runtime/src/decision/pptx-metadata.mjs`、`runtime/src/kernel/resident-kernel.mjs`、`runtime/src/deliverable-verifier.mjs`、`runtime/src/memory-verifier.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 14:46 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。

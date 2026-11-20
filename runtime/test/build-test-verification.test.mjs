@@ -234,3 +234,75 @@ test('a complete machine-readable test report carries run counts and the execute
   assert.deepEqual(incorrect.checks.map(check => check.code), ['BUILD_TEST_CONCLUSION_CONFLICT', 'BUILD_TEST_CONCLUSION_CONFLICT']);
   assert.equal(processReceipt('test.execute', command, stdout.replace('"tests":3', '"tests":9')).testCounts, undefined);
 });
+
+
+test('reconciles generated document, script receipt and step heading without accepting an unobserved binary', () => {
+  const path = 'dda-overview.pptx';
+  const hash = 'sha256:' + 'a'.repeat(64);
+  const file = { id: 'build-1-artifact-1', path, sha256: hash, sizeBytes: 93660, disposition: 'GENERATED', pptx: { slideCount: 5, entryCount: 40 } };
+  const receipt = { id: 'build-1', kind: 'BUILD', command: 'node', args: ['build-dda-overview.mjs'], stepId: 'build-pptx', exitCode: 0, artifacts: [file] };
+  const options = { currentStepId: 'build-pptx', actions: [{ name: 'file.write', state: 'SUCCEEDED', path: 'build-dda-overview.mjs', contentDigest: hash }] };
+  const text = 'build-pptx 步骤已完成，证据如下：\n生成脚本：`build-dda-overview.mjs`（file.write 成功，内容摘要 ' + hash + '）\n产物：`dda-overview.pptx`，大小 93660 字节，文件摘要 ' + hash;
+  const header = '✅ 目标达成——`dda-overview.pptx` 已生成并验证：';
+  const host = { path, digest: hash };
+  const summary = (receipts, facts) => prepareBuildTestVerification(header, receipts, facts).checks[0]?.status;
+  assert.equal(summary([receipt], { verifiedFiles: [host] }), 'PASS');
+  assert.equal(summary([], { verifiedFiles: [host], previousGeneratedFiles: [host] }), 'PASS');
+  assert.equal(summary([receipt], {}), 'UNKNOWN');
+  assert.equal(summary([], { verifiedFiles: [host] }), 'UNKNOWN');
+  assert.equal(summary([receipt], { verifiedFiles: [{ path, digest: 'sha256:' + 'b'.repeat(64) }] }), 'UNKNOWN');
+  assert.equal(summary([receipt], { verifiedFiles: [{ path: 'elsewhere/' + path, digest: hash }] }), 'UNKNOWN');
+  const review = prepareBuildTestVerification(text, [receipt], options);
+  assert.deepEqual(review.claims, []);
+  assert.deepEqual(review.checks.map(c => c.status), ['PASS', 'PASS']);
+  assert.ok(prepareBuildTestVerification(text.replace('93660', '93661'), [receipt], options).checks.some(c => c.status === 'FAIL'));
+  assert.ok(prepareBuildTestVerification(text.replace('dda-overview.pptx`', 'output.exe`'), [receipt], options).checks.some(c => c.code === 'BUILD_ARTIFACT_RECORD_MISSING'));
+});
+
+
+test('checks independently recorded shell fields and grouped document measurements; extra assertions stay open', async () => {
+  const hash = 'sha256:' + '6'.repeat(64);
+  const stdout = 'OK: dda-overview.pptx written';
+  const receipt = { ...processReceipt('shell.execute', { command: 'node', args: ['build-dda-overview.mjs'], cwd: '.' }, stdout,
+    { stderr: '', durationMs: 1162, lease: 'lease-1b8c76b0', truncated: false }), id: 'build-1', stepId: 'build-pptx', stepAttempt: 1,
+    artifacts: [{ path: 'dda-overview.pptx', sha256: hash, sizeBytes: 106922, disposition: 'GENERATED', id: 'ppt', pptx: { slideCount: 5, entryCount: 55 } }] };
+  const command = '运行命令：`node build-dda-overview.mjs`（cwd=`.`，lease-1b8c76b0），退出码 0，stderr 为空，输出 "OK: dda-overview.pptx written"，耗时 1162ms，一次成功';
+  const artifact = '产物：`dda-overview.pptx`，106,922 字节，' + hash + '，PPTX 结构检查显示 5 页、55 个 ZIP 条目';
+  const review = (text, receipts = [receipt]) => prepareBuildTestVerification(text, receipts);
+  for (const text of [command, artifact]) {
+    assert.deepEqual(review(text).claims, []);
+    assert.deepEqual(review(text).checks.map(c => c.status), ['PASS']);
+  }
+  assert.deepEqual(review('build-pptx 步骤已完成，无需修复重跑'), { claims: [], checks: [] });
+  for (const [before, after] of [['1162ms', '1163ms'], ['lease-1b8c76b0', 'lease-12345678'], ['OK:', 'BAD:']]) {
+    assert.equal(review(command.replace(before, after)).checks[0].status, 'FAIL');
+  }
+  assert.equal(review(artifact.replace('106,922', '106,923')).checks[0].status, 'FAIL');
+  assert.equal(review(command, [receipt, { ...receipt, id: 'build-2', endedAtMs: receipt.endedAtMs + 1 }]).checks[0].status, 'FAIL');
+  assert.deepEqual(review(command + '，用户已经验收').claims[0].remainingFields, ['用户已经验收']);
+});
+
+
+test('verifies each process field in the reported Chinese command summary', () => {
+  const text = '命令：`node build-dda-overview.mjs`，工作目录 `.`，退出码 `0`，stdout 为 `OK: dda-overview.pptx written`，无报错、无超时';
+  const command = { command: 'node', args: ['build-dda-overview.mjs'], cwd: '.' };
+  const receipt = { ...processReceipt('shell.execute', command, 'OK: dda-overview.pptx written\n', {
+    stderr: '', timedOut: false, aborted: false, truncated: false
+  }), id: 'build-1', artifacts: [] };
+  const review = (body = text, changes = {}) => prepareBuildTestVerification(body, [{ ...receipt, ...changes }]);
+  assert.deepEqual(review().checks.map(c => c.status), ['PASS']);
+  for (const changes of [{ exitCode: 1 }, { stderrEmpty: false }, { timedOut: true }, { aborted: true }, { signal: 'SIGTERM' }]) {
+    assert.equal(review(text, changes).checks[0].status, 'FAIL');
+  }
+  for (const [from, to] of [['build-dda-overview', 'build-other'], ['`.`', '`tmp`'], ['`0`', '`1`'], ['OK:', 'ok:']]) {
+    assert.equal(review(text.replace(from, to)).checks[0].status, 'FAIL');
+  }
+  const other = { ...receipt, ...processReceipt('shell.execute', { command: 'node build-other.mjs' }, 'unrelated'), id: 'build-2' };
+  assert.deepEqual(prepareBuildTestVerification(text, [other, receipt]).checks.map(c => c.status), ['PASS']);
+  assert.match(review(text, { cwd: undefined }).checks[0].message, /缺少工作目录/u);
+  const incomplete = review(text, { stdoutTextDigest: undefined, stderrEmpty: undefined, timedOut: undefined, aborted: undefined }).checks[0];
+  assert.equal(incomplete.status, 'UNKNOWN');
+  for (const label of ['标准输出', '标准错误', '进程超时', '进程中止']) assert.ok(incomplete.message.includes(label));
+  const partial = review(text + '，说明整体业务已经恢复');
+  assert.deepEqual(partial.claims[0].remainingFields, ['说明整体业务已经恢复']);
+});

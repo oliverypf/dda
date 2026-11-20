@@ -4,7 +4,7 @@ import { experiencePlacement, experienceTakesEffect } from '../src/experience-pl
 
 test('project procedures are skills and general rules stay memories', () => {
   assert.equal(experiencePlacement({ key: 'workflow:cmd:desktop:npm run build:windows' }), 'skill');
-  assert.equal(experiencePlacement({ key: 'workflow:skip:desktop:npm run runtime:install', statement: '本轮经验（编译exe）：`npm run runtime:install` 已失败（EINVAL）。下一轮不要再执行这条命令。' }), 'skill');
+  assert.equal(experiencePlacement({ key: 'workflow:skip:desktop:npm run runtime:install', statement: '本轮经验（编译exe）：`npm run runtime:install` 已失败（EINVAL）。下一轮不要再执行这条命令。' }), 'skip');
   assert.equal(experiencePlacement({ key: 'workflow:timeout:编译exe' }), 'skill');
   assert.equal(experiencePlacement({ key: 'project:files:编译exe', statement: '项目改动经验（编译exe）：关键修改文件包括 `desktop/package.json`。' }), 'skill');
   assert.equal(experiencePlacement({ key: 'pitfall:safety-protected-path', statement: '安全边界经验：宿主受保护目录仍禁止访问。' }), 'memory');

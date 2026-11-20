@@ -1,3 +1,4 @@
+import { memoryLessonKey, memoryWorkspaceKey } from './memory-workspace.mjs';
 import { experiencePlacement } from './experience-placement.mjs';
 
 const SECRET_TEXT = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|authorization|bearer|private\s+key|secret)\s*[:=]/i;
@@ -213,47 +214,32 @@ export const extractRunReusableExperience = ({
   }
 
   const results = [];
-  const skipLessons = [];
+  const diagnostics = [];
   const label = cleanTitle(threadTitle, taskClass);
   const pushLesson = (candidate, target = results) => {
     if (!candidate) return;
     const placement = experiencePlacement(candidate);
     if (placement === 'skip') return;
-    const workspacePath = placement === 'skill' ? clean(threadCwd, 1024) : '';
+    const workspacePath = clean(threadCwd, 1024);
     target.push({
       ...candidate,
       kind: placement === 'skill' ? 'SKILL' : 'MEMORY',
       ...(workspacePath ? { workspacePath } : {})
     });
   };
-  const failurePhrase = (item) => {
-    const blob = clean(`${item.errorCode ?? ''} ${item.message ?? ''} ${item.outputTail ?? ''}`, 400);
-    if (/EINVAL/i.test(blob)) return 'EINVAL';
-    if (item.timedOut === true) {
-      const seconds = Math.round((Number(item.timeoutMs) || 0) / 1000);
-      return seconds > 0 ? `超时 timeoutMs=${seconds}s` : '超时';
-    }
-    const code = item.errorCode ? clean(item.errorCode, 60) : '';
-    const exit = Number.isInteger(item.exitCode) ? `exit ${item.exitCode}` : '';
-    return [code, exit].filter(Boolean).join('，') || '执行失败';
-  };
-  const seenFailures = new Set();
-  for (let index = failedCommands.length - 1; index >= 0 && skipLessons.length < 3; index -= 1) {
-    const item = failedCommands[index];
+  // A failing test or ordinary nonzero exit is a task observation. A concrete
+  // launcher diagnostic can be reused after its environment is checked.
+  for (const item of failedCommands) {
+    if (item.name !== 'shell.execute' || item.timedOut || !/\bspawn(?:Sync)?\b[^\n]{0,160}\bEINVAL\b/iu.test([item.message, item.outputTail].join(' '))) continue;
     const cmdLine = formatCommandLine(item.command, item.args);
     if (!isReusableCommand(cmdLine)) continue;
-    const cwdLabel = cleanRelativeCwd(item.cwd);
-    const mapKey = `${cwdLabel}::${cmdLine.toLowerCase()}`;
-    if (seenFailures.has(mapKey) || succeededCommandKeys.has(mapKey)) continue;
-    seenFailures.add(mapKey);
-    const reason = failurePhrase(item);
+    const key = cleanRelativeCwd(item.cwd) + '::' + cmdLine.toLowerCase();
+    if (succeededCommandKeys.has(key)) continue;
     pushLesson(makeCandidate({
-      runId,
-      statement: `本轮经验${label ? `（${label}）` : ''}：\`${cmdLine}\` 已失败（${reason}）。下一轮不要再执行这条命令；先确认这一步要得到的东西是否已经在，已经在就跳过。`,
-      sourceEventIds: [item.eventId, ...fallbackIds],
-      key: `workflow:skip:${cwdLabel}:${cmdLine.toLowerCase().slice(0, 120)}`,
-      confidence: 0.9
-    }), skipLessons);
+      runId, key: 'pitfall:spawn-einval:' + key,
+      statement: '当 ' + cmdLine + ' 启动时报告 spawn EINVAL，请核对启动器与参数。修正后重新运行原命令验证。',
+      sourceEventIds: [item.eventId, ...fallbackIds]
+    }), diagnostics);
   }
 
   // 1. Verified build/test commands (highest reusability).
@@ -377,27 +363,61 @@ export const extractRunReusableExperience = ({
     }));
   }
 
-  return [...skipLessons, ...results];
+  const terminal = events.findLast(event => event?.kind === 'TaskRunFailed');
+  if (terminal && (terminal.payload?.outcomeStatus ?? 'FAILED') === 'FAILED') {
+    const payload = terminal.payload ?? {};
+    const verification = events.findLast(event => event?.kind === 'VerificationCompleted');
+    const missingSources = [payload.failureCodes, verification?.payload?.failureCodes]
+      .some(codes => Array.isArray(codes) && codes.includes('EXTERNAL_EVIDENCE_MISSING'));
+    // Persist machine identifiers only. Error messages can include provider
+    // responses, paths, credentials or user-controlled text.
+    const code = typeof payload.code === 'string' && /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u.test(payload.code) && payload.code.length <= 80
+      ? payload.code : undefined;
+    const taskLabel = cleanTitle('', taskClass);
+    const detail = missingSources
+      ? '外部资料检索缺少可核验来源。筛选帖子或文章前，先打开候选页面，核对正文与链接，再依据已读内容回答。'
+      : code === 'ROLE_BINDING_BLOCKED'
+        ? '执行前先核对所选模型、角色绑定和该任务类别的可用资格，确认绑定成功后再继续。'
+        : '重试前先检查失败步骤的输入与执行记录，确认触发条件已经改变，再用小范围验证决定是否继续。';
+    if (missingSources || code) pushLesson(makeCandidate({
+      runId, key: 'pitfall:terminal:' + (missingSources ? 'EXTERNAL_EVIDENCE_MISSING' : code) + (taskLabel ? ':' + taskClass : ''),
+      statement: (taskLabel || '任务') + '曾因 ' + (missingSources ? 'EXTERNAL_EVIDENCE_MISSING' : code) + ' 未完成。' + detail,
+      sourceEventIds: [terminal.eventId, ...(missingSources ? [verification?.eventId] : [])]
+    }), diagnostics);
+  }
+  return [...results, ...diagnostics];
 };
 
-const lessonScopeKey = (item) => `${String(item?.scope ?? 'workspace').toLowerCase()}::${item?.key ?? ''}`;
+// Count only recommendations visible in the selected model context with
+// corroborating tool receipts. Recalling a statement alone proves no use.
+export const appliedMemoryIds = (memories, historyContext, actions = []) => {
+  const commands = new Set();
+  const tools = new Set();
+  for (const action of actions) {
+    if (action.state !== 'SUCCEEDED' || action.invocationAttempted === false) continue;
+    tools.add(action.name);
+    if (action.name !== 'shell.execute' && action.name !== 'test.execute') continue;
+    const line = formatCommandLine(action.command, action.args).toLowerCase();
+    if (line && line.length <= 120) commands.add('workflow:cmd:' + cleanRelativeCwd(action.cwd) + ':' + line);
+  }
+  return memories.filter(memory => memory.statement && historyContext.includes(memory.statement)
+    && (commands.has(memory.key) || (memory.key === 'tool:workspace.inspect_binary'
+      && (tools.has('workspace.inspect_binary') || tools.has('kernel.workspace_inspect_binary')))))
+    .map(memory => memory.memoryId);
+};
 
-/** One new lesson per finished run. A failed command the run did not later
- * complete comes first, so the next run skips it before repeating a known
- * successful command. */
 export const selectRunLesson = (candidates = [], { existingKeys = new Set(), verified = true } = {}) => {
   const fresh = [];
   for (const item of Array.isArray(candidates) ? candidates : []) {
     if (!item?.statement) continue;
-    if (item.key && existingKeys.has(lessonScopeKey(item))) continue;
+    if (item.key && existingKeys.has(memoryLessonKey(item))) continue;
     fresh.push(item);
   }
   if (!fresh.length) return undefined;
   if (!verified) {
-    return fresh.find((item) => String(item.key ?? '').startsWith('workflow:skip:') || String(item.key ?? '').startsWith('pitfall:'));
+    return fresh.find((item) => String(item.key ?? '').startsWith('pitfall:'));
   }
-  return fresh.find((item) => String(item.key ?? '').startsWith('workflow:skip:'))
-    ?? fresh.find((item) => item.kind === 'SKILL')
+  return fresh.find((item) => item.kind === 'SKILL')
     ?? fresh[0];
 };
 
@@ -406,11 +426,14 @@ export const extractDreamExperienceCandidates = (events = [], { threads = [], ex
   const activeKeys = new Set(
     (Array.isArray(existingMemories) ? existingMemories : [])
       .filter((m) => m && ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(m.status) && typeof m.key === 'string' && m.key.trim())
-      .map((m) => `${String(m.scope ?? 'workspace').toLowerCase()}::${m.key.trim()}`)
+      .map(memoryLessonKey)
   );
   const threadByRunId = new Map();
   for (const thread of Array.isArray(threads) ? threads : []) {
     if (!thread || typeof thread !== 'object') continue;
+    for (const runId of [...(Array.isArray(thread.runIds) ? thread.runIds : []), thread.checkpoint?.runId]) {
+      if (typeof runId === 'string') threadByRunId.set(runId, { title: thread.title, cwd: thread.cwd });
+    }
     for (const turn of Array.isArray(thread.turns) ? thread.turns : []) {
       if (typeof turn?.runId === 'string') {
         threadByRunId.set(turn.runId, { title: thread.title, cwd: thread.cwd });
@@ -440,7 +463,8 @@ export const extractDreamExperienceCandidates = (events = [], { threads = [], ex
 
     if (!completedEvent) {
       // Only extract deterministic tool/safety pitfall lessons from non-completed real runs when thread metadata confirms a real workspace.
-      if (!threadMeta?.cwd) continue;
+      const terminal = runEvents.findLast(event => event.kind === 'TaskRunFailed');
+      if (!threadMeta?.cwd || !terminal || terminal.payload?.outcomeStatus === 'CANCELLED') continue;
       const classified = runEvents.find((e) => e.kind === 'TaskClassified')?.payload?.taskClass;
       const lesson = selectRunLesson(extractRunReusableExperience({
         runId,
@@ -448,11 +472,11 @@ export const extractDreamExperienceCandidates = (events = [], { threads = [], ex
         threadTitle: threadMeta.title,
         threadCwd: threadMeta.cwd,
         events: runEvents,
-        terminalEventId: runEvents.at(-1)?.eventId
+        terminalEventId: terminal.eventId
       }), { existingKeys: activeKeys, verified: false });
       if (lesson) {
-        if (lesson.key) activeKeys.add(lessonScopeKey(lesson));
-        byKey.set(lesson.key ?? lesson.statement, lesson);
+        if (lesson.key) activeKeys.add(memoryLessonKey(lesson));
+        byKey.set(memoryLessonKey(lesson), lesson);
       }
       continue;
     }
@@ -467,8 +491,8 @@ export const extractDreamExperienceCandidates = (events = [], { threads = [], ex
       terminalEventId: completedEvent.eventId
     }), { existingKeys: activeKeys, verified: true });
     if (lesson) {
-      if (lesson.key) activeKeys.add(lessonScopeKey(lesson));
-      byKey.set(lesson.key ?? lesson.statement, lesson);
+      if (lesson.key) activeKeys.add(memoryLessonKey(lesson));
+      byKey.set(memoryLessonKey(lesson), lesson);
     }
   }
 
@@ -482,14 +506,16 @@ export const attachMemoryWorkspacePaths = (memories, threads = []) => {
   for (const thread of Array.isArray(threads) ? threads : []) {
     const cwd = clean(thread?.cwd, 1024);
     if (!cwd || FIXTURE_PATH_RE.test(cwd)) continue;
-    const runIds = [];
+    const runIds = [...(Array.isArray(thread.runIds) ? thread.runIds : [])];
     if (typeof thread?.activeRunId === 'string') runIds.push(thread.activeRunId);
     if (typeof thread?.checkpoint?.runId === 'string') runIds.push(thread.checkpoint.runId);
     for (const turn of Array.isArray(thread?.turns) ? thread.turns : []) {
       if (typeof turn?.runId === 'string') runIds.push(turn.runId);
     }
     for (const runId of runIds) {
-      if (runId && !byRun.has(runId)) byRun.set(runId, cwd);
+      if (!runId) continue;
+      if (!byRun.has(runId)) byRun.set(runId, cwd);
+      else if (memoryWorkspaceKey(byRun.get(runId)) !== memoryWorkspaceKey(cwd)) byRun.set(runId, undefined);
     }
   }
   return (Array.isArray(memories) ? memories : []).map((memory) => {

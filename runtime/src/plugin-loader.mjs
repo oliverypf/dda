@@ -8,6 +8,8 @@ import { emptyPluginRevocations, pluginRevocationHit, readPluginRevocations } fr
 import { preferMappedPath } from './platform/workspace-path.mjs';
 import { isControlledRelease, resolveReleaseChannel } from './release-channel.mjs';
 
+import { validateWorkflow } from './role-workflows.mjs';
+
 const MAX_PLUGIN_BYTES = 2 * 1024 * 1024;
 const MODULE_EXTENSIONS = new Set(['.mjs', '.js', '.cjs']);
 const CONTRIBUTION_TYPES = new Set([
@@ -74,6 +76,7 @@ export const validatePluginManifest = (manifest) => {
       throw new Error('PLUGIN_CONTRIBUTION_ID_INVALID');
     }
     seenContributions.add(contribution.id);
+    validateWorkflow(contribution);
     if (typeof contribution.type !== 'string' || !CONTRIBUTION_TYPES.has(contribution.type)) {
       throw new Error('PLUGIN_CONTRIBUTION_TYPE_INVALID');
     }

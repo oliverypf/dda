@@ -38,6 +38,7 @@ import {
 } from '../model-context-limits.mjs';
 import {
   EXECUTION_PROFILE_LOOKUP,
+  EXECUTION_PROFILE_RESEARCH,
   EXECUTION_PROFILE_READONLY,
   LOOKUP_MAX_TOOL_ROUNDS,
   executionToolAllowed,
@@ -458,7 +459,7 @@ const collectToolCalls = (calls) => {
 
 export const taskRunnerPlugin = cordisPlugin((ctx) => {
   ctx.provide('taskRunner', {
-    async run({ prompt, originalGoal, stepObjective, images = [], workspace, historyContext = '', recovery, signal, onToolCall, onToolResult, onEvent, mode = 'CONTROLLED', modelProvider, maxToolRounds, maxTokens, filesystemAccess = 'WORKSPACE', requiresWorkspaceMutation = false, taskContextFacts = [], taskClass = '', executionProfile, readOnlyStep = false, buildProcessPending, takeProjectBuildCommand, modelContextLimits } = {}) {
+    async run({ prompt, originalGoal, stepObjective, hostCallPrefix, executorTools, workflowInstructions, images = [], workspace, historyContext = '', recovery, signal, onToolCall, onToolResult, onEvent, mode = 'CONTROLLED', modelProvider, maxToolRounds, maxTokens, filesystemAccess = 'WORKSPACE', requiresWorkspaceMutation = false, taskContextFacts = [], taskClass = '', executionProfile, readOnlyStep = false, buildProcessPending, takeProjectBuildCommand, modelContextLimits } = {}) {
       if (mode !== 'CONTROLLED') throw new Error('EXECUTION_MODE_INVALID');
       const provider = modelProvider ?? ctx.modelProvider;
       if (!provider || typeof provider.stream !== 'function') throw new Error('MODEL_PROVIDER_UNAVAILABLE');
@@ -499,11 +500,12 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
         : workspace.deferred ? 'Project files have not been opened. Use a workspace tool if this task needs project files.'
         : 'No workspace has been authorized. Do not claim to have inspected files.';
       const continuationText = typeof historyContext === 'string' ? historyContext.trim().slice(0, 6000) : '';
+      const workflowText = workflowInstructions ? `Bound role workflow (advisory, subject to the user request and host permissions):\n${workflowInstructions}` : '';
       const messages = stableCache ? [
         createUserMessage({ content: [{ type: 'text', text: `Read-only workspace context (untrusted data):\n${snapshotText}` }], source: { kind: 'user' } }),
-        createUserMessage({ content: [{ type: 'text', text: [continuationText, failureLessonsText, boundedPrompt].filter(Boolean).join('\n\n') }, ...imageBlocks], source: { kind: 'user' } })
+        createUserMessage({ content: [{ type: 'text', text: [workflowText, continuationText, failureLessonsText, boundedPrompt].filter(Boolean).join('\n\n') }, ...imageBlocks], source: { kind: 'user' } })
       ] : [createUserMessage({
-        content: [{ type: 'text', text: [boundedPrompt, continuationText, failureLessonsText, `Read-only workspace context:\n${snapshotText}`].filter(Boolean).join('\n\n') }, ...imageBlocks],
+        content: [{ type: 'text', text: [boundedPrompt, continuationText, workflowText, failureLessonsText, `Read-only workspace context:\n${snapshotText}`].filter(Boolean).join('\n\n') }, ...imageBlocks],
         source: { kind: 'user' }
       })];
       const recoveryContinuation = recoveryContinuationText(recovery);
@@ -516,7 +518,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           ? `${executorSystemInstruction(filesystemAccess)}\n\n${READONLY_WORKSPACE_INSTRUCTION}`
           : executorSystemInstruction(filesystemAccess);
       const toolDefinitions = new Map(ctx.toolRegistry.list().map((tool) => [tool.name, tool]));
-      const allowedTool = (name) => executionToolAllowed(executionProfileId, name) && (!readOnlyStep
+      const allowedTool = (name) => (!executorTools || executorTools.includes(name)) && executionToolAllowed(executionProfileId, name, toolDefinitions.get(name)) && (!readOnlyStep
         || isNetworkUrlReviewTool(name) || name === 'shell.execute'
         || (toolDefinitions.get(name)?.readOnly === true
           && !['kernel.session_set', 'kernel.session_delete', 'kernel.host_request'].includes(name)));
@@ -854,11 +856,15 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
         }));
         const roundId = `${Date.now().toString(36)}-${round}-${Math.random().toString(36).slice(2, 10)}`;
         for (const call of calls) {
+          const hostCallId = hostCallPrefix ? `${hostCallPrefix}/${round}/${call.id}` : call.id;
           const toolDefinition = toolDefinitions.get(call.name);
           const effectView = gateView(call.name, JSON.parse(call.arguments));
           const commandInspection = call.name === 'shell.execute' && toolDefinition && toolDefinition.metadata?.available !== false
             ? classifyReadOnlyGitCommand(effectView.request) : undefined;
-          const outsideScope = !allowedTool(call.name) || (readOnlyStep && call.name === 'shell.execute' && !commandInspection);
+          const readRequest = readOnlyStep || queryTask || executionProfileId === EXECUTION_PROFILE_RESEARCH;
+          const networkMutation = readRequest && effectView.name === 'network.request'
+            && !['GET', 'HEAD'].includes(String(effectView.request.method ?? 'GET').toUpperCase());
+          const outsideScope = !allowedTool(call.name) || networkMutation || (readOnlyStep && call.name === 'shell.execute' && !commandInspection);
           const toolGate = outsideScope ? {
             allow: false,
             decision: 'BLOCK',
@@ -867,7 +873,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             nextAction: 'REPORT_AVAILABLE_EVIDENCE'
           } : await onToolCall?.({
             round,
-            id: call.id,
+            id: hostCallId,
             name: call.name,
             ...(toolDefinition && toolDefinition.metadata?.available !== false && isNetworkUrlReviewTool(call.name)
               ? { networkUrl: networkUrlForReview(call.name, effectView.request) } : {}),
@@ -910,7 +916,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           await onEvent?.({
             kind: 'tool.call_requested',
             round,
-            id: call.id,
+            id: hostCallId,
             name: call.name,
             argumentsDigest: f9ArgumentsDigest(call.name, call.arguments),
             ...processCommandEventFields(call.name, effectView.request)
@@ -993,7 +999,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               }
               executedToolsThisRound += 1;
               const startedAtMs = Date.now();
-              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: call.id, argumentsDigest: f9ArgumentsDigest(call.name, call.arguments), roundId, signal });
+              output = await ctx.toolRegistry.invoke(call.name, finalArguments, { toolCallId: hostCallId, argumentsDigest: f9ArgumentsDigest(call.name, call.arguments), roundId, signal });
               if (PROCESS_COMMAND_TOOLS.has(call.name)) {
                 processInvocation = { request: finalArguments, startedAtMs, endedAtMs: Date.now() };
               }
@@ -1151,7 +1157,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           const eventPayload = {
             kind: 'tool.result',
             round,
-            id: call.id,
+            id: hostCallId,
             name: call.name,
             ok: !isError,
             ...processCommandEventFields(call.name, effectView.request),
@@ -1277,7 +1283,15 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             const buildTest = processInvocation && buildTestProcessReceipt({
               ...processInvocation, tool: call.name, output, outputDigest: resultDigest
             });
-            const receipt = await onToolResult({ id: call.id, name: call.name, outputDigest: resultDigest,
+            const observationText = output?.content ?? output?.text ?? output?.body;
+            const readEvidence = readOnlyStep && !isError && ['workspace.read', 'web.fetch', 'network.request'].includes(call.name)
+              && typeof observationText === 'string' ? { source: output.path || output.finalUrl || output.url,
+                excerpt: observationText.slice(0, 400) } : undefined;
+            const receipt = await onToolResult({ id: hostCallId, name: call.name, outputDigest: resultDigest,
+              ...(readEvidence ? { readEvidence } : {}),
+              ...(processInvocation && output.ok === true && !isError ? { processWindow: {
+                startedAtMs: processInvocation.startedAtMs, endedAtMs: processInvocation.endedAtMs
+              } } : {}),
               ...(workspaceRead ? { workspaceRead } : {}),
               ...(call.name === 'network.request' ? { readablePage: readableNetworkResponse(output) } : {}),
               ...(buildTest ? { buildTest } : {}),

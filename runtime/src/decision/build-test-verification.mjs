@@ -11,6 +11,7 @@ const buildScripts = /^(?:build|compile|bundle|package)(?:$|[:-])/iu;
 const testScripts = /^test(?:$|[:-])/iu;
 const testRunners = /^(?:vitest|jest|mocha|pytest|ctest)$/iu;
 
+const outputTextDigest = text => 'sha256:' + createHash('sha256').update(text.replace(/(?:\r?\n)+$/u, '')).digest('hex');
 const clean = (value, limit) => sanitizeOutput(value)
   .replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, limit);
 
@@ -130,9 +131,14 @@ export function buildTestProcessReceipt({ tool, request, output, startedAtMs, en
     cwd, invocationKey,
     exitCode: Number.isInteger(output.exitCode) ? output.exitCode : null,
     ...(/^SIG[A-Z0-9]+$/u.test(output.signal ?? '') ? { signal: output.signal } : {}),
-    timedOut: output.timedOut === true, aborted: output.aborted === true,
+    ...(typeof output.timedOut === 'boolean' ? { timedOut: output.timedOut } : {}),
+    ...(typeof output.aborted === 'boolean' ? { aborted: output.aborted } : {}),
     outputTruncated: output.truncated === true, outputDigest,
     startedAtMs, endedAtMs,
+    ...(Number.isSafeInteger(output.durationMs) ? { durationMs: output.durationMs } : {}),
+    ...(typeof output.stdout === 'string' && !output.truncated ? { stdoutTextDigest: outputTextDigest(output.stdout) } : {}),
+    ...(typeof output.stderr === 'string' && !output.truncated ? { stderrEmpty: output.stderr.length === 0, stderrTextDigest: outputTextDigest(output.stderr) } : {}),
+    ...(/^lease-[a-f0-9-]{8,64}$/iu.test(output.lease ?? '') ? { lease: output.lease } : {}),
     ...(testCounts ? { testCounts } : {}),
     ...(testReport ? { testReportKind: 'STRUCTURED' } : {}),
     ...(testReport?.suites.length ? { testSuites: testReport.suites } : {}),
@@ -293,11 +299,11 @@ function claimArtifacts(claim, receipt) {
 function matchesInvocation(receipt, commandLine) {
   let parsed;
   try { parsed = parseCommand({ command: commandLine }); } catch { return false; }
-  if (receipt.invocationKey) {
+  if (receipt.invocationKey && typeof receipt.cwd === 'string') {
     const key = createHash('sha256').update(JSON.stringify([receipt.kind, receipt.cwd, parsed.command, parsed.args])).digest('hex');
     return key === receipt.invocationKey;
   }
-  return parsed.command === receipt.command && !receipt.args.includes('[已隐藏]') && JSON.stringify(parsed.args) === JSON.stringify(receipt.args);
+  return parsed.command === receipt.command && Array.isArray(receipt.args) && !receipt.args.includes('[已隐藏]') && JSON.stringify(parsed.args) === JSON.stringify(receipt.args);
 }
 
 function extractClaims(text) {
@@ -315,7 +321,8 @@ function extractClaims(text) {
       || paths.length && artifactField.test(statement)) {
       add('ARTIFACT', paths);
     }
-    if (buildTopic.test(statement) && outcome.test(statement)) add('BUILD', paths);
+    const topicText = statement.replace(/^`?[\w.-]+`?\s*(?=步骤)/u, '');
+    if (buildTopic.test(topicText) && outcome.test(statement)) add('BUILD', paths);
     if (testTopic.test(statement) && outcome.test(statement)) add(processOnly.test(statement) ? 'TEST_PROCESS' : 'TEST_RESULT');
   }
   return [...claims.values()];
@@ -335,9 +342,54 @@ const matchesPath = (artifact, requested) => {
   return name.includes('/') ? path === name || path.endsWith(`/${name}`) : basename(path) === name;
 };
 
+const processLabels = new Map([
+  ['命令', 'command'], ['执行命令', 'command'], ['运行命令', 'command'], ['command', 'command'],
+  ['工作目录', 'cwd'], ['cwd', 'cwd'], ['退出码', 'exit'], ['exit code', 'exit'], ['exitcode', 'exit'], ['exit', 'exit'], ['exited with code', 'exit'],
+  ['标准输出', 'stdout'], ['stdout', 'stdout'], ['输出', 'stdout'],
+  ['标准错误', 'stderr'], ['stderr', 'stderr'], ['超时', 'timedOut'], ['timedout', 'timedOut'],
+  ['中止', 'aborted'], ['aborted', 'aborted']
+]);
+const processField = new RegExp(`^(${[...processLabels.keys()].join('|')})(?:\\s*[:：=为是]\\s*|\\s+)(.+)$`, 'iu');
+
+function checkProcessField(part, receipt, check) {
+  if (/^(?:无报错|无错误)$/u.test(part)) {
+    check('退出码', 0, receipt.exitCode ?? undefined);
+    check('标准错误为空', true, receipt.stderrEmpty);
+    check('进程中止', false, receipt.aborted);
+    check('进程超时', false, receipt.timedOut);
+    if (receipt.signal) check('终止信号', '无', receipt.signal);
+    return true;
+  }
+  if (/^(?:无|未)(?:超时|中止)$/u.test(part)) {
+    const timeout = part.endsWith('超时');
+    check(timeout ? '进程超时' : '进程中止', false, timeout ? receipt.timedOut : receipt.aborted);
+    return true;
+  }
+  const match = processField.exec(part);
+  if (!match) return false;
+  const field = processLabels.get(match[1].toLowerCase());
+  const raw = match[2].trim();
+  const wrapped = /^(?:`([^`]*)`|"([^"]*)"|“([^”]*)”)$/u.exec(raw);
+  // A backticked path following 输出 denotes a delivered file in existing summaries.
+  if (match[1] === '输出' && raw.startsWith('`')) return false;
+  const value = wrapped ? wrapped.slice(1).find(text => text !== undefined) : raw;
+  if (field === 'exit' && /^-?\d+$/u.test(value)) check('退出码', Number(value), receipt.exitCode ?? undefined);
+  else if (field === 'command' && wrapped) {
+    const comparable = (receipt.invocationKey && typeof receipt.cwd === 'string') || (receipt.command && Array.isArray(receipt.args) && !receipt.args.includes('[已隐藏]'));
+    check('命令匹配', true, comparable ? matchesInvocation(receipt, value) : undefined);
+  } else if (field === 'cwd' && wrapped) check('工作目录', value, receipt.cwd === '' ? '.' : receipt.cwd);
+  else if (field === 'stderr' && ((!wrapped && value === '空') || (wrapped && value === ''))) check('标准错误为空', true, receipt.stderrEmpty);
+  else if ((field === 'stdout' || field === 'stderr') && wrapped) {
+    check(field === 'stdout' ? '标准输出摘要' : '标准错误摘要', outputTextDigest(value), field === 'stdout' ? receipt.stdoutTextDigest : receipt.stderrTextDigest);
+  } else if ((field === 'timedOut' || field === 'aborted') && /^(?:true|false|是|否)$/iu.test(value)) {
+    check(field === 'timedOut' ? '进程超时' : '进程中止', /^(?:true|是)$/iu.test(value), receipt[field]);
+  } else return false;
+  return true;
+}
+
 // A receipt can settle a complete, literal statement. Free-form assertions,
 // qualifiers and ambiguous invocations stay with the semantic verifier.
-function literalReceiptCheck(claim, evidence, completedSteps) {
+function literalReceiptCheck(claim, evidence, completedSteps, history) {
   if (evidence.length !== 1 || claim.possiblyTruncated) return undefined;
   const receipt = evidence[0];
   const fields = [];
@@ -350,7 +402,13 @@ function literalReceiptCheck(claim, evidence, completedSteps) {
     if (stepLabel[1] !== receipt.stepId || !completedSteps.includes(stepLabel[1])) return undefined;
     text = text.slice(stepLabel[0].length);
   }
-  const parts = text.split(/[,，、()（）]|\s+\/\s+/u).map(part => part.trim()).filter(Boolean);
+  // Keep quoted paths and output intact. Commas inside grouped byte counts are numeric punctuation.
+  text = text.replace(/\b\d{1,3}(?:,\d{3})+(?=\s*(?:字节|bytes?))/giu, number => number.replaceAll(',', ''));
+  if ((text.match(/`/gu)?.length ?? 0) % 2 || (text.match(/"/gu)?.length ?? 0) % 2
+    || (text.match(/“/gu)?.length ?? 0) !== (text.match(/”/gu)?.length ?? 0)) return undefined;
+  const parts = (text.match(/(?:`[^`]*`|"[^"\n]*"|“[^”\n]*”|[^,，、()（）`"“])+/gu) ?? []).flatMap(
+    part => part.trim().startsWith('`') || part.includes('"') || part.includes('“') ? [part] : part.split(/\s+\/\s+/u)).map(part => part.trim()).filter(Boolean);
+  const remaining = [];
   // Bind file properties to a single, explicitly named artifact. A sibling
   // file in the same build can have different bytes or a different digest.
   const files = claimArtifacts(claim, receipt);
@@ -361,17 +419,17 @@ function literalReceiptCheck(claim, evidence, completedSteps) {
     if (file) citedFiles.add(file.id);
     check(label, claimed, observed);
   };
-  for (const part of parts) {
+  for (const original of parts) {
+    const part = original.replace(/^(?:PPTX|ZIP)\s*结构检查(?:显示|结果为)\s*(?=\d)/iu, '');
     let match;
-    if ((match = /^(?:退出码|exit(?:ed with)?(?: code)?)[\s:=：]*(?:为|是)?\s*(-?\d+)$/iu.exec(part))) {
-      check('退出码', Number(match[1]), receipt.exitCode ?? undefined);
-    } else if ((match = /^(\d+)\s*(?:字节|bytes?)$/iu.exec(part))) {
+    if (checkProcessField(part, receipt, check)) continue;
+    if ((match = /^(?:大小\s*)?(\d+)\s*(?:字节|bytes?)$/iu.exec(part))) {
       checkFile('字节数', Number(match[1]), file?.sizeBytes);
     } else if ((match = /^(\d+)\s*(?:页(?:幻灯片)?|张幻灯片|slides?)$/iu.exec(part))) {
       checkFile('幻灯片页数', Number(match[1]), file?.pptx?.slideCount);
     } else if ((match = /^(\d+)\s*(?:个\s*)?(?:zip\s*)?(?:条目|entries)$/iu.exec(part))) {
       checkFile('归档条目数', Number(match[1]), file?.pptx?.entryCount);
-    } else if ((match = /^sha-?256\s*[:=：]?\s*`?(?:sha256:)?([a-f\d]{64})`?$/iu.exec(part))) {
+    } else if ((match = /^(?:(?:文件|内容)?摘要\s*)?sha-?256\s*[:=：]?\s*`?(?:sha256:)?([a-f\d]{64})`?$/iu.exec(part))) {
       checkFile('SHA-256', `sha256:${match[1].toLowerCase()}`, file?.sha256);
     } else if ((match = /^(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例|tests?)?\s*(全部|均)?\s*(通过|失败|跳过|passed|failed|skipped)$/iu.exec(part))) {
       const label = match[3].toLowerCase();
@@ -382,6 +440,14 @@ function literalReceiptCheck(claim, evidence, completedSteps) {
       && matchesInvocation(receipt, match[2])) {
       if (match[1]) check('工作目录', '.', receipt.cwd === '' ? '.' : receipt.cwd);
       check('命令', match[2], match[2]);
+    } else if (/^lease-[a-f\d-]{8,64}$/iu.test(part)) {
+      const actual = receipt.lease;
+      check('租约', part, actual && (actual === part || actual.startsWith(part + '-') ? part : actual));
+    } else if ((match = /^(?:耗时|duration)\s*[:：]?\s*(\d+)\s*(?:ms|毫秒)$/iu.exec(part))) {
+      check('进程耗时（毫秒）', Number(match[1]), receipt.durationMs);
+    } else if (part === '一次成功' && receipt.invocationKey && receipt.stepAttempt === 1) {
+      check('调用次数', 1, history.filter(r => r.stepId === receipt.stepId && r.invocationKey === receipt.invocationKey).length);
+      check('进程结果', 'SUCCEEDED', executionStatus(receipt));
     } else if (genericPresentationClause.test(part)) {
       if (file) citedFiles.add(file.id);
       check('PPTX 生成记录', 'GENERATED', file?.disposition === 'OBSERVED' ? undefined : file?.disposition);
@@ -389,7 +455,7 @@ function literalReceiptCheck(claim, evidence, completedSteps) {
       check('进程结果', 'SUCCEEDED', executionStatus(receipt));
     } else if (file) {
       const target = /^(?:(?:产物为|文件为|已输出|输出|已生成|生成|已重新生成|重新生成)\s*)?`?([^`]+?)`?$/u.exec(part);
-      if (!target || !matchesPath(file, target[1].trim())) return undefined;
+      if (!target || !matchesPath(file, target[1].trim())) { remaining.push(original); continue; }
       checkFile('产物路径', file.path, file.path);
       if (/^(?:已)?(?:重新)?生成/u.test(part) || /^生成[:：]/u.test(claim.statement)) {
         // Older builders report a fresh observed path without explicitly
@@ -397,17 +463,18 @@ function literalReceiptCheck(claim, evidence, completedSteps) {
         if (file.disposition === 'OBSERVED' && !/重新生成/u.test(part)) return undefined;
         checkFile('生成方式', 'GENERATED', file.disposition === 'OBSERVED' ? undefined : file.disposition);
       }
-    } else return undefined;
+    } else remaining.push(original);
   }
   if (!fields.length) return undefined;
   const mismatch = fields.find(field => field.observed !== undefined && field.claimed !== field.observed);
-  const missing = fields.find(field => field.observed === undefined);
+  const missing = [...new Set(fields.filter(field => field.observed === undefined).map(field => field.label))];
   const refs = [...citation(receipt), ...citedFiles];
   if (mismatch) return { id: claim.id, status: 'FAIL', code: 'BUILD_TEST_CONCLUSION_CONFLICT',
     message: `${mismatch.label}实际记录为 ${mismatch.observed}（${claim.statement}）`, evidence: refs };
-  if (missing) return { id: claim.id, status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING',
-    message: `缺少${missing.label}的执行证据（${claim.statement}）`, evidence: refs };
-  return { id: claim.id, status: 'PASS', message: `已通过执行记录核对（${claim.statement}）`, evidence: refs };
+  if (missing.length) return { id: claim.id, status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING',
+    message: `缺少${missing.join('、')}的执行证据（${claim.statement}）`, evidence: refs };
+  return { id: claim.id, status: 'PASS', message: remaining.length ? `已核对${fields.map(f => f.label).join('、')}` : `已通过执行记录核对（${claim.statement}）`, evidence: refs,
+    ...(remaining.length ? { remaining } : {}) };
 }
 
 function exactClaimConflict(claim, evidence) {
@@ -431,12 +498,15 @@ function exactClaimConflict(claim, evidence) {
   return undefined;
 }
 
-export function prepareBuildTestVerification(text, receipts, { completedSteps = [] } = {}) {
+const verifiedDeliveryHeader = /^(?:✅\s*)?(?:目标达成\s*(?:[—–-]+|[:：])\s*)?`([^`]+\.pptx)`\s*已生成并验证\s*[:：]?$/iu;
+
+export function prepareBuildTestVerification(text, receipts, { completedSteps = [], currentStepId, actions = [], verifiedFiles = [], previousGeneratedFiles = [], onClaim } = {}) {
   const commandKind = claim => claim.kind.startsWith('TEST') ? 'TEST' : 'BUILD';
   const receiptKinds = new Set(receipts.map(receipt => receipt.kind));
   // The task-level report checks for missing required commands. Step prose
   // only provides conclusions to compare with recorded invocations.
-  const extracted = extractClaims(text).filter(claim => receiptKinds.has(commandKind(claim)));
+  const extracted = extractClaims(text).filter(claim => receiptKinds.has(commandKind(claim))
+    || verifiedDeliveryHeader.test(normalizedStatement(claim.statement)));
   const checks = [];
   const claims = [];
   if (extracted.length > MAX_CLAIMS) {
@@ -446,11 +516,40 @@ export function prepareBuildTestVerification(text, receipts, { completedSteps = 
   const chronological = [...receipts].sort((a, b) => a.endedAtMs - b.endedAtMs);
   for (const [index, entry] of extracted.slice(0, MAX_CLAIMS).entries()) {
     const claim = { ...entry, id: `build-test-claim-${index + 1}` };
+    onClaim?.(claim);
+    const statement = normalizedStatement(claim.statement);
+    const verifiedPath = verifiedDeliveryHeader.exec(statement)?.[1];
+    if (verifiedPath) {
+      const host = verifiedFiles.find(file => pathKey(file.path) === pathKey(verifiedPath) && /^sha256:[a-f\d]{64}$/iu.test(file.digest));
+      const generated = host && (receipts.some(r => r.kind === 'BUILD' && r.exitCode === 0 && !r.aborted && !r.timedOut && r.artifacts?.some(
+        f => f.disposition === 'GENERATED' && pathKey(f.path) === pathKey(host.path) && f.sha256 === host.digest))
+        || previousGeneratedFiles.some(f => pathKey(f.path) === pathKey(host.path) && f.digest === host.digest));
+      checks.push(generated ? { id: claim.id, status: 'PASS', message: `已核对生成回执和当前文件（${verifiedPath}）`, evidence: [host.digest] }
+        : missingCheck(claim, 'BUILD_TEST_CLAIM_EVIDENCE_MISSING', '缺少同一文件版本的生成与验收记录'));
+      continue;
+    }
+    const header = /^`?([\w.-]+)`?\s*步骤已完成[，,]\s*证据如下\s*[:：]?$/u.exec(statement);
+    if (header?.[1] === currentStepId && currentStepId && receipts.some(r => r.stepId === currentStepId && r.exitCode === 0
+      && !r.aborted && !r.timedOut && r.artifacts?.some(f => f.disposition === 'GENERATED' && f.pptx?.slideCount && f.sha256))) continue;
+    const write = /^生成脚本\s*[:：]\s*`([^`]+)`\s*[（(]\s*file\.write\s*成功[，,]\s*内容摘要\s*(sha256:[a-f\d]{64})\s*[）)]$/iu.exec(statement);
+    if (write) {
+      const action = actions.findLast(a => a.name === 'file.write' && a.state === 'SUCCEEDED' && a.invocationAttempted !== false
+        && a.path && pathKey(a.path) === pathKey(write[1]) && a.contentDigest);
+      if (action) {
+        const matches = action.contentDigest === write[2];
+        checks.push({ id: claim.id, status: matches ? 'PASS' : 'FAIL', message: `已核对脚本写入摘要（${claim.statement}）`,
+          ...(!matches ? { code: 'BUILD_TEST_CONCLUSION_CONFLICT' } : {}), evidence: [action.contentDigest] });
+        continue;
+      }
+    }
     const invoked = [...claim.statement.matchAll(/(?:执行|运行|\b(?:ran|run|executed))\s*`([^`]+)`/giu)].map(match => match[1]);
     const stepId = passStepHeader.exec(normalizedStatement(claim.statement))?.[1];
     const acceptedStep = stepId && completedSteps.includes(stepId);
-    const allCandidates = chronological.filter(receipt => receipt.kind === commandKind(claim)
+    const scoped = chronological.filter(receipt => receipt.kind === commandKind(claim)
       && (!acceptedStep || receipt.stepId === stepId) && invoked.every(command => matchesInvocation(receipt, command)));
+    const namedCommand = /(?:^|[，,(（])\s*(?:执行命令|运行命令|命令|command)\s*[:：=]\s*`([^`]+)`/iu.exec(normalizedStatement(claim.statement))?.[1];
+    const selected = namedCommand ? scoped.filter(receipt => matchesInvocation(receipt, namedCommand)) : [];
+    const allCandidates = selected.length ? selected : scoped;
     // A current build result refers to the final attempt of each distinct
     // invocation. Claims about previous attempts still need their history.
     const historical = /最初|第一次|首次|先前|之前|此前|历次|历史|每次|从未|从没|所有尝试|第\s*[\d一二三四五六七八九十]+\s*次|\b(?:first|initial(?:ly)?|earlier|previous(?:ly)?|history|every|always|never|all attempts)\b/iu;
@@ -480,10 +579,13 @@ export function prepareBuildTestVerification(text, receipts, { completedSteps = 
         continue;
       }
     }
-    const literal = literalReceiptCheck(claim, evidence, completedSteps);
+    const literal = literalReceiptCheck(claim, evidence, completedSteps, chronological);
     if (literal) {
-      checks.push(literal);
-      continue;
+      const { remaining, ...check } = literal;
+      if (!remaining?.length) { checks.push(check); continue; }
+      claim.verifiedFields = check.message;
+      claim.remainingFields = remaining;
+      // The complete assertion remains open until its remaining qualifiers are reviewed.
     }
     const conflict = exactClaimConflict(claim, evidence);
     if (conflict) {

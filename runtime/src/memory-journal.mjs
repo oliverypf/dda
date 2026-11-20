@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { experienceTakesEffect } from './experience-placement.mjs';
+import { memoryScopeKey } from './memory-workspace.mjs';
 import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 
 const canonical = (value) => Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : value && typeof value === 'object' ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}` : JSON.stringify(value) ?? 'null';
@@ -354,11 +356,11 @@ export class MemoryJournal {
     return pruned;
   }
 
-  findSimilar({ statement, scope = 'workspace', includeInactive = false } = {}) {
+  findSimilar({ statement, scope = 'workspace', workspacePath, includeInactive = false } = {}) {
     const needle = String(statement ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
     return [...this.#records.values()]
       .filter((record) => (includeInactive || ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(record.status)))
-      .filter((record) => String(record.scope).toLowerCase() === String(scope).toLowerCase())
+      .filter((record) => memoryScopeKey(record) === memoryScopeKey({ scope, workspacePath }))
       .filter((record) => String(record.statement).replace(/\s+/g, ' ').trim().toLowerCase() === needle)
       .map((record) => structuredClone(record));
   }
@@ -369,12 +371,14 @@ export class MemoryJournal {
     const used = [];
     for (const memoryId of [...new Set(memoryIds)]) {
       const current = this.#records.get(memoryId);
-      if (!current || current.status !== 'ACTIVE') continue;
+      if (!current || !experienceTakesEffect(current)) continue;
+      const runDigest = digest({ memoryId, runId: run });
+      if (current.lastUsedRunDigest === runDigest) continue;
       const next = {
         ...current,
         useCount: Math.min(1000000, Number(current.useCount ?? 0) + 1),
         lastUsedAtMs: now,
-        lastUsedRunDigest: digest({ memoryId, runId: run }),
+        lastUsedRunDigest: runDigest,
         updatedAtMs: now
       };
       next.recordDigest = digest(baseRecord(next));

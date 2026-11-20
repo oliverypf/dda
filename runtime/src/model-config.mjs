@@ -1,3 +1,4 @@
+import { roleWorkflowRefs } from './role-workflows.mjs';
 import { readFile } from 'node:fs/promises';
 import { normalizeCustomInstructions } from './custom-instructions.mjs';
 import { normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
@@ -95,7 +96,7 @@ const ALLOWED_KEYS = new Set([
 ]);
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$/;
-const ROLE_BINDING_KEYS = new Set(['selector', 'modelId', 'allowList', 'requiredCapabilities', 'requireEligible', 'candidateBindings', 'fanout', 'selectionPolicyRef', 'fanoutBudget']);
+const ROLE_BINDING_KEYS = new Set(['skill', 'agentProfile', 'executorId', 'selector', 'modelId', 'allowList', 'requiredCapabilities', 'requireEligible', 'candidateBindings', 'fanout', 'selectionPolicyRef', 'fanoutBudget']);
 const CANDIDATE_BINDING_KEYS = new Set(['bindingId', 'modelId', 'expectedCost', 'expectedLatencyMs', 'expectedTokens']);
 const FANOUT_BUDGET_KEYS = new Set(['maxCandidates', 'maxConcurrency', 'maxCost', 'maxTokens']);
 const VERIFIER_KEYS = new Set(['criteria', 'repetitions', 'maxComparisons', 'pivots', 'seed', 'maxPromptChars', 'passThreshold', 'failThreshold']);
@@ -223,6 +224,11 @@ const validateRoleBindings = (input) => {
     }
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`MODEL_CONFIG_INVALID_FIELD:roleBindings.${role}`);
     for (const key of Object.keys(raw)) if (!ROLE_BINDING_KEYS.has(key)) throw new Error(`MODEL_CONFIG_UNKNOWN_FIELD:roleBindings.${role}.${key}`);
+    const workflowRefs = roleWorkflowRefs(raw, role);
+    if (Object.keys(workflowRefs).length && Object.keys(raw).every(key => key in workflowRefs)) {
+      result[role] = workflowRefs;
+      continue;
+    }
     const selector = raw.selector ?? (raw.modelId ? 'PINNED' : (raw.candidateBindings ? 'CANDIDATE_SET' : 'ALLOW_LIST'));
     if (!['PINNED', 'ALLOW_LIST', 'BEST_AVAILABLE', 'CANDIDATE_SET'].includes(selector)) throw new Error(`MODEL_CONFIG_INVALID_FIELD:roleBindings.${role}.selector`);
     if (selector === 'CANDIDATE_SET') {
@@ -266,7 +272,7 @@ const validateRoleBindings = (input) => {
         };
       }
       result[role] = {
-        selector,
+        ...workflowRefs, selector,
         candidateBindings,
         ...(raw.fanout === undefined ? {} : { fanout: raw.fanout }),
         ...(raw.selectionPolicyRef === undefined ? {} : { selectionPolicyRef: optionalString(raw.selectionPolicyRef, `roleBindings.${role}.selectionPolicyRef`, 120) }),
@@ -275,7 +281,7 @@ const validateRoleBindings = (input) => {
       continue;
     }
     result[role] = {
-      selector,
+      ...workflowRefs, selector,
       ...(raw.modelId === undefined ? {} : { modelId: optionalString(raw.modelId, `roleBindings.${role}.modelId`, 240) }),
       ...(raw.allowList === undefined ? {} : { allowList: validateStringList(raw.allowList, `roleBindings.${role}.allowList`, 256) }),
       ...(raw.requiredCapabilities === undefined ? {} : { requiredCapabilities: validateStringList(raw.requiredCapabilities, `roleBindings.${role}.requiredCapabilities`) }),

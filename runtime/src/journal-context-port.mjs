@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { memoryWorkspaceKey } from './memory-workspace.mjs';
 import { ContextPort } from './context-port.mjs';
 import { experienceTakesEffect } from './experience-placement.mjs';
 
@@ -28,21 +29,27 @@ const scoreMemory = (memory, queryTokens) => {
 export class JournalContextPort {
   #journal;
   #provider;
+  #locateMemories;
 
-  constructor({ journal, provider = 'memory-journal' } = {}) {
+  constructor({ journal, provider = 'memory-journal', locateMemories = records => records } = {}) {
     if (!journal || typeof journal.list !== 'function' || typeof journal.propose !== 'function' || typeof journal.flush !== 'function') {
       throw new Error('JOURNAL_CONTEXT_ADAPTER_INVALID');
     }
     this.#journal = journal;
+    this.#locateMemories = locateMemories;
     this.#provider = bounded(provider, 80) || 'memory-journal';
   }
 
-  async recall({ query = '', scope = 'workspace', limit = 16, maxChars = 3000 } = {}) {
+  async recall({ query = '', scope = 'workspace', workspacePath, limit = 16, maxChars = 3000 } = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 64 || !Number.isInteger(maxChars) || maxChars < 128 || maxChars > 16000) {
       throw new Error('CONTEXT_RECALL_OPTIONS_INVALID');
     }
     const queryTokens = tokenize(query);
-    const activeInScope = this.#journal.list()
+    const workspace = memoryWorkspaceKey(workspacePath);
+    const scoped = ['workspace', 'project'].includes(String(scope).toLowerCase());
+    const records = await this.#locateMemories(this.#journal.list());
+    const activeInScope = records
+      .filter(memory => !scoped || (workspace && memoryWorkspaceKey(memory.workspacePath) === workspace))
       .filter((memory) => experienceTakesEffect(memory))
       .filter((memory) => String(memory.scope).toLowerCase() === String(scope).toLowerCase());
     const scored = activeInScope
@@ -51,7 +58,7 @@ export class JournalContextPort {
         score: scoreMemory(memory, queryTokens),
         isProjectGuidance: String(memory.kind ?? 'PROJECT').toUpperCase() !== 'TASK_OUTCOME'
       }))
-      .filter(({ score, isProjectGuidance }) => score > 0 || !queryTokens.length || isProjectGuidance)
+      .filter(({ score }) => score > 0 || !queryTokens.length)
       .sort((left, right) => right.score - left.score || Number(right.isProjectGuidance) - Number(left.isProjectGuidance) || right.memory.updatedAtMs - left.memory.updatedAtMs)
       .slice(0, limit);
     const items = [];
@@ -61,6 +68,8 @@ export class JournalContextPort {
         memoryId: memory.memoryId,
         scope: bounded(memory.scope, 160),
         kind: bounded(memory.kind, 64),
+        status: memory.status,
+        ...(memory.workspacePath ? { workspacePath: memory.workspacePath } : {}),
         ...(memory.key ? { key: bounded(memory.key, 240) } : {}),
         statement: bounded(memory.statement, 1200),
         confidence: memory.confidence,
@@ -81,6 +90,7 @@ export class JournalContextPort {
       statement: bounded(input.statement, 2000),
       sourceEventIds: Array.isArray(input.sourceEventIds) ? input.sourceEventIds.slice(0, 32) : [],
       scope: bounded(input.scope, 256) || 'workspace',
+      workspacePath: input.workspacePath,
       confidence: input.confidence,
       kind: bounded(input.kind, 64) || 'PROJECT',
       key: input.key === undefined ? undefined : bounded(input.key, 256),

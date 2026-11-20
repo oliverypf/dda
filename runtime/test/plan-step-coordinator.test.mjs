@@ -416,3 +416,100 @@ test('observation-only evidence retries a running step and leaves a persisted un
   assert.equal(stuck.plan.steps[0].status, 'BLOCKED');
   assert.equal(stuck.plan.steps[0].errorCode, 'SIDE_EFFECT_OUTCOME_UNCERTAIN');
 });
+
+const readPlan = normalizePlannerPlan({ steps: [
+  { stepId: 'left', summary: 'inspect left', actionKind: 'READ' },
+  { stepId: 'right', summary: 'inspect right', actionKind: 'READ', dependencies: [] },
+  { stepId: 'third', summary: 'inspect third', actionKind: 'READ', dependencies: [] },
+  { stepId: 'apply', summary: 'apply findings', actionKind: 'WRITE', dependencies: ['left', 'right', 'third'] }
+] });
+
+test('two concurrent observations checkpoint both running steps and commit in plan order', async () => {
+  const { coordinator, calls } = makeCoordinator();
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: readPlan });
+  const pending = new Set();
+  const both = Promise.withResolvers();
+  const verified = [];
+  const result = await scheduler.run({ parallelReads: true, maxAttempts: 1,
+    executeStep: async ({ step, priorResults }) => {
+      pending.add(step.stepId);
+      if (pending.size === 2) both.resolve();
+      assert.ok(pending.size <= 2);
+      if (['left', 'right'].includes(step.stepId)) {
+        assert.equal(priorResults.length, 0);
+        await both.promise;
+      } else if (step.stepId === 'apply') {
+        assert.deepEqual(verified, ['left', 'right', 'third']);
+        assert.equal(pending.size, 1);
+      }
+      pending.delete(step.stepId);
+      return { owner: step.stepId };
+    },
+    verifyStep: async ({ step, result }) => {
+      assert.equal(result.owner, step.stepId);
+      verified.push(step.stepId);
+      return { status: 'PASS' };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.results.map(item => item.stepId), ['left', 'right', 'third', 'apply']);
+  const pair = calls.find(({ state }) => state.steps.filter(step => step.status === 'RUNNING').length === 2);
+  assert.deepEqual(pair.state.pendingActions, ['execute step left', 'execute step right']);
+  const remaining = calls.find(({ state }) => state.steps[0].status === 'SUCCEEDED' && state.steps[1].status === 'RUNNING');
+  assert.equal(remaining.state.currentStepId, 'right');
+  assert.deepEqual(remaining.state.pendingActions, ['execute step right']);
+});
+
+test('a failed read drains its sibling and blocks the dependent write', async () => {
+  const { coordinator } = makeCoordinator();
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: readPlan });
+  const both = Promise.withResolvers();
+  const observed = [];
+  await assert.rejects(scheduler.run({ parallelReads: true, maxAttempts: 1,
+    executeStep: async ({ step }) => {
+      if (step.stepId === 'left') { await both.promise; throw Error('READ_ERROR'); }
+      assert.equal(step.stepId, 'right');
+      both.resolve();
+      return { ok: true };
+    },
+    verifyStep: async ({ step }) => { observed.push(step.stepId); return { status: 'PASS' }; }
+  }), /READ_ERROR/u);
+  assert.deepEqual(observed, ['right']);
+  assert.deepEqual(coordinator.planState.steps.map(step => step.status), ['FAILED', 'SUCCEEDED', 'PENDING', 'BLOCKED']);
+});
+
+test('resume reconciles both interrupted reads before a dependent write can run', async () => {
+  const checkpoint = structuredClone(readPlan);
+  for (const step of checkpoint.steps.slice(0, 2)) Object.assign(step, { status: 'RUNNING', attempt: 1 });
+  const reconciled = [];
+  const { coordinator } = makeCoordinator();
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: checkpoint, resumeFailed: true,
+    reconcileStep: async ({ step }) => {
+      reconciled.push(step.stepId);
+      return { status: step.stepId === 'left' ? 'SUCCEEDED' : 'RETRY' };
+    } });
+  const started = [];
+  const result = await scheduler.run({ maxAttempts: 1, executeStep: async ({ step }) => {
+    started.push([step.stepId, step.attempt]);
+    return { ok: true };
+  }, verifyStep: () => ({ status: 'PASS' }) });
+  assert.equal(result.ok, true);
+  assert.deepEqual(reconciled, ['left', 'right']);
+  assert.deepEqual(started, [['right', 2], ['third', 1], ['apply', 1]]);
+});
+
+test('cancelling two active reads records both interruptions and skips dependent work', async () => {
+  const { coordinator } = makeCoordinator();
+  const controller = new AbortController();
+  const scheduler = createPlanStepCoordinator({ coordinator, plan: readPlan });
+  const settled = Promise.withResolvers();
+  await assert.rejects(scheduler.run({ signal: controller.signal, parallelReads: true,
+    executeStep: async ({ step }) => {
+      if (step.stepId === 'right') { controller.abort(); settled.resolve(); }
+      await settled.promise;
+    }, verifyStep: () => assert.fail('cancelled observations must not verify') }), /PLAN_CANCELLED/u);
+  assert.deepEqual(coordinator.planState.steps.slice(0, 2).map(step => [step.status, step.errorCode]),
+    [['BLOCKED', 'PLAN_CANCELLED'], ['BLOCKED', 'PLAN_CANCELLED']]);
+  assert.deepEqual(coordinator.planState.pendingActions, []);
+  assert.equal(coordinator.planState.steps[3].status, 'BLOCKED');
+});

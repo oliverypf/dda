@@ -1,9 +1,7 @@
 // DDA_JEV_PLAN_TIER_ENABLED (default OFF): multi-mode pre-planner tier.
 //
-// Selected BEFORE the planner turn; it only decides whether the council may
-// run after the planner. The planner always runs (DIRECT does NOT skip it).
-//   DIRECT       planner, no council (skipping the planner is not specified
-//                yet, so DIRECT and PLAN currently have the same effect)
+// Selected before planning. Low-complexity read requests can run directly.
+//   DIRECT       a bounded read step for simple observations, otherwise planner; no council
 //   PLAN         planner, no council
 //   PLAN_COUNCIL today's multi: planner, then the existing council heuristic
 //                (steps > 2 or modify/test)

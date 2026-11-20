@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { memoryLessonKey } from '../src/memory-workspace.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,22 @@ const LEGACY_STAT_PATTERNS = [
   /^Verified task outcome: class=([^;]+); verifier=PASS; outputDigest=sha256:[a-f0-9]{64}$/,
   /^Verified run used (.+); workspace entries=(\d+); toolCalls=(\d+)\.$/
 ];
+
+test('historical terminal failures produce scoped lessons without a verifier or raw error text', () => {
+  const threads = [{ cwd: '/projects/editor', runIds: ['failed', 'cancelled', 'open'] }];
+  const events = [
+    { runId: 'failed', eventId: 'end', kind: 'TaskRunFailed', payload: { code: 'ROLE_BINDING_BLOCKED', message: 'password=private' } },
+    { runId: 'cancelled', eventId: 'cancel', kind: 'TaskRunFailed', payload: { code: 'TASK_CANCELLED', outcomeStatus: 'CANCELLED' } },
+    { runId: 'open', eventId: 'tool', kind: 'ToolInvocationCompleted', payload: { ok: false, errorCode: 'EXCERPT_AMBIGUOUS' } }
+  ];
+  const lessons = extractDreamExperienceCandidates(events, { threads });
+  assert.equal(lessons.length, 1);
+  assert.equal(lessons[0].workspacePath, threads[0].cwd);
+  assert.deepEqual(lessons[0].sourceEventIds, ['end']);
+  assert.match(lessons[0].statement, /ROLE_BINDING_BLOCKED.*角色绑定/);
+  assert.doesNotMatch(lessons[0].statement, /private|password/);
+  assert.deepEqual(extractDreamExperienceCandidates(events, { threads, existingMemories: [{ ...lessons[0], status: 'PROPOSED' }] }), []);
+});
 
 test('extractRunReusableExperience distills verified commands, files, binary inspection and pitfalls while rejecting secrets/noise', () => {
   const events = [
@@ -52,7 +69,7 @@ test('extractRunReusableExperience distills verified commands, files, binary ins
   assert.ok(extracted.some((c) => c.statement.includes('EXCERPT_AMBIGUOUS')));
   assert.ok(!extracted.some((c) => c.statement.includes('git status') || c.statement.includes('console.log') || c.statement.includes('topsecret')));
   assert.ok(extracted.filter((c) => c.kind === 'SKILL').every((c) => c.workspacePath === 'C:\\repo\\project'));
-  assert.ok(extracted.filter((c) => c.kind === 'MEMORY').every((c) => c.workspacePath === undefined));
+  assert.ok(extracted.filter((c) => c.kind === 'MEMORY').every((c) => c.workspacePath === 'C:\\repo\\project'));
   for (const candidate of extracted) {
     assert.ok(!LEGACY_STAT_PATTERNS.some((re) => re.test(candidate.statement)));
   }
@@ -61,7 +78,7 @@ test('extractRunReusableExperience distills verified commands, files, binary ins
   assert.ok(verified.every((r) => r.verification.accepted === true), 'every extracted candidate passes MemoryVerifier');
 });
 
-test('a finished run learns the failed command once, then the successful command', () => {
+test('a verified workflow outranks a diagnosed launcher error, and neither prohibits a retry', () => {
   const events = [
     { eventId: 'ev-install', runId: 'run-build', kind: 'ToolInvocationCompleted', payload: { name: 'shell.execute', ok: false, command: 'npm', args: ['run', 'runtime:install'], cwd: 'desktop', outputTail: 'spawnSync npm.cmd EINVAL', exitCode: 1 } },
     { eventId: 'ev-build', runId: 'run-build', kind: 'ToolInvocationCompleted', payload: { name: 'shell.execute', ok: true, command: 'npm', args: ['run', 'build:exe'], cwd: 'desktop', durationMs: 180000 } },
@@ -77,20 +94,23 @@ test('a finished run learns the failed command once, then the successful command
   });
   const first = selectRunLesson(extracted, { verified: true });
   assert.equal(first.kind, 'SKILL');
-  assert.match(first.statement, /npm run runtime:install/);
-  assert.match(first.statement, /EINVAL/);
-  assert.match(first.statement, /不要再执行这条命令/);
-  assert.equal(extracted.filter((item) => item.key === first.key).length, 1);
-
-  const second = selectRunLesson(extracted, {
-    verified: true,
-    existingKeys: new Set([`workspace::${first.key}`])
-  });
-  assert.match(second.statement, /npm run build:exe/);
+  assert.match(first.statement, /npm run build:exe/);
+  const second = selectRunLesson(extracted, { verified: false, existingKeys: new Set([memoryLessonKey(first)]) });
+  assert.match(second.statement, /EINVAL/);
+  assert.match(second.statement, /修正后重新运行/);
+  assert.doesNotMatch(second.statement, /不要再执行/);
   assert.equal(selectRunLesson(extracted, {
-    verified: false,
-    existingKeys: new Set([`workspace::${first.key}`])
+    verified: false, existingKeys: new Set([memoryLessonKey(second)])
   }), undefined);
+});
+
+test('a red test, a timeout or a missing approval must not become a skip instruction', () => {
+  for (const failure of [{ exitCode: 1 }, { timedOut: true, timeoutMs: 5000 }, { errorCode: 'APPROVAL_DENIED' }]) {
+    const items = extractRunReusableExperience({ runId: 'red-test', threadCwd: '/team/app',
+      events: [{ kind: 'ToolInvocationCompleted', eventId: 'red',
+        payload: { name: 'test.execute', ok: false, command: 'npm', args: ['test'], ...failure } }] });
+    assert.equal(selectRunLesson(items, { verified: false }), undefined);
+  }
 });
 
 test('failed verification becomes a memory, not a skill, and ignores the Jev rewrite', () => {
@@ -134,6 +154,20 @@ test('extractDreamExperienceCandidates skips fixture workspaces and deduplicates
     existingMemories: [{ ...first[0], memoryId: 'mem-1', status: 'PROPOSED' }]
   });
   assert.equal(second.length, 0, 'already proposed key is skipped on repeat Dream run');
+});
+
+test('dream can learn the same recipe separately for two projects, repeatedly', () => {
+  const events = ['a', 'b'].flatMap(runId => [
+    { runId, eventId: runId + '-cmd', kind: 'ToolInvocationCompleted', payload: { name: 'shell.execute', ok: true, command: 'npm', args: ['run', 'build'] } },
+    { runId, eventId: runId + '-end', kind: 'TaskRunCompleted', payload: { outcomeStatus: 'SUCCEEDED' } }
+  ]);
+  const threads = ['a', 'b'].map(runId => ({ cwd: '/projects/' + runId, title: 'Build', turns: [{ runId }] }));
+  const records = extractDreamExperienceCandidates(events, { threads });
+  assert.deepEqual(records.map(record => record.workspacePath).sort(), ['/projects/a', '/projects/b']);
+  const reports = createMemoryVerifier().verify({ candidates: records, sourceEvents: events });
+  assert.equal(reports.filter(item => item.verification.accepted).length, 2);
+  const existingMemories = records.map(item => ({ ...item, status: 'PROPOSED' }));
+  assert.deepEqual(extractDreamExperienceCandidates(events, { threads, existingMemories }), []);
 });
 
 test('CLI dream run extracts concrete PROPOSED experience candidates from SQLite trajectory events', async (t) => {

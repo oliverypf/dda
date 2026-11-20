@@ -10,6 +10,7 @@ export const experiencePlacement = (item = {}) => {
   const key = String(item.key ?? '');
   const statement = String(item.statement ?? '');
   const kind = String(item.kind ?? '').toUpperCase();
+  if (key.startsWith('workflow:skip:')) return 'skip';
   if (SCRATCH_COMMAND.test(key) || SCRATCH_COMMAND.test(statement)) return 'skip';
   if (kind === 'SKILL' || SKILL_KEY.test(key) || SKILL_STATEMENT.test(statement)) return 'skill';
   if (kind === 'MEMORY' || kind === 'TASK_OUTCOME') return 'memory';

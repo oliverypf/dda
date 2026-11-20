@@ -875,3 +875,48 @@ test('failure lesson suggestedPath only surfaces evidence-backed snapshot matche
     else process.env.DDA_FAILURE_LESSON_STORE = prevStore;
   }
 });
+
+test('a bound executor hides undeclared tools and rejects provider requests for them', async t => {
+  const registry = new ToolRegistry();
+  let calls = 0;
+  for (const name of ['workspace.read', 'other.read']) {
+    registry.register({ name, description: name, readOnly: true, inputSchema: { type: 'object', properties: {} },
+      handler() { calls++; return { ok: true }; } });
+  }
+  const root = new Context(); t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(registry));
+  let round = 0;
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', { provider: 'fixture', model: 'fixture',
+    async *stream({ tools }) {
+      if (round++ === 0) {
+        assert.deepEqual(tools.map(tool => tool.name), ['workspace.read']);
+        yield { type: 'tool-call', id: 'call-outside', name: 'other.read', arguments: '{}' };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      } else yield { type: 'text-delta', text: 'Access was blocked.' };
+    }
+  }), 'bound-executor-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  const events = [];
+  await root.taskRunner.run({ workspace, prompt: 'Inspect the source', executorTools: ['workspace.read'], onEvent: event => events.push(event) });
+  assert.equal(calls, 0);
+  assert.equal(events.find(event => event.kind === 'tool.result').errorCode, 'TOOL_OUTSIDE_EXECUTION_SCOPE');
+});
+
+test('long bound workflows preserve authenticated prerequisite findings in the executor request', async t => {
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(new ToolRegistry()));
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', model: 'fixture', async *stream({ messages }) {
+      const request = JSON.stringify(messages);
+      assert.match(request, /last-skill-instruction/u);
+      assert.match(request, /dependency-marker-712/u);
+      yield { type: 'text-delta', text: 'Confirmed.' };
+      yield { type: 'finish', reason: { kind: 'stop' } };
+    }
+  }), 'workflow-context-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  await root.taskRunner.run({ prompt: 'Report the evidence', workspace,
+    workflowInstructions: 'Method. '.repeat(900) + 'last-skill-instruction',
+    historyContext: 'Evidence from prerequisite reads: dependency-marker-712' });
+});

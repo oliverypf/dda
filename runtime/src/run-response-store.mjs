@@ -29,7 +29,7 @@ export async function readRunResponse(storagePath, runId, outputDigest) {
 }
 
 export async function deleteRunResponse(storagePath, runId) {
-  for (const path of [responsePath(storagePath, runId), runContentPath(storagePath, runId, 'goals')]) {
+  for (const path of [responsePath(storagePath, runId), runContentPath(storagePath, runId, 'goals'), runContentPath(storagePath, runId, 'council'), runContentPath(storagePath, runId, 'findings')]) {
     if (path) try { await unlink(path); } catch (error) { if (error?.code !== 'ENOENT') throw error; }
   }
 }
@@ -73,6 +73,38 @@ export const saveRunGoal = (storagePath, runId, goal) =>
   saveRunText(storagePath, runId, goal, 'goals', 'text', 'goalDigest');
 export const readRunGoal = (storagePath, runId, goalDigest) =>
   readRunText(storagePath, runId, goalDigest, 'goals', 'text', 'goalDigest');
+
+export const saveCouncilFinding = (storagePath, runId, finding) =>
+  saveRunText(storagePath, runId, JSON.stringify(finding), 'council', 'text', 'findingDigest');
+export const readCouncilFinding = async (storagePath, runId, findingDigest) => {
+  const text = await readRunText(storagePath, runId, findingDigest, 'council', 'text', 'findingDigest');
+  if (text) return JSON.parse(text);
+};
+
+// Keep revisions addressable by digest so concurrent siblings and interrupted
+// retries cannot overwrite findings referenced by an earlier checkpoint.
+export async function saveStepFinding(storagePath, runId, stepId, finding) {
+  const path = runContentPath(storagePath, runId, 'findings');
+  if (!path) return undefined;
+  const text = JSON.stringify({ stepId, finding });
+  const findingDigest = digest(text);
+  await persistJsonFile(path, { runId, findings: { [findingDigest]: text } }, {
+    merge: (previous, next) => ({ ...next, findings: { ...(previous?.runId === runId ? previous.findings : {}), ...next.findings } })
+  });
+  return findingDigest;
+}
+
+export async function readStepFinding(storagePath, { runId, stepId, findingDigest }) {
+  const path = runContentPath(storagePath, runId, 'findings');
+  if (!path) return undefined;
+  try {
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    const text = saved.findings?.[findingDigest];
+    if (saved.runId !== runId || typeof text !== 'string' || digest(text) !== findingDigest) return undefined;
+    const record = JSON.parse(text);
+    return record.stepId === stepId ? record.finding : undefined;
+  } catch { return undefined; }
+}
 
 // Reasoning is conversation content, separate from the digest-only audit
 // stream. Keep it beside responses so history can restore the expandable

@@ -1,4 +1,5 @@
 import type { ContinuousVerifierConfig } from './verifier-config';
+import type { ComposerImageAttachment } from './image-attachments';
 
 export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'READY' | 'ERROR';
 export type ConnectionMode = 'MOCK' | 'LOCAL_RUNTIME';
@@ -34,6 +35,7 @@ export interface ConnectionReadModel {
 
 export interface RuntimeReadModel {
   releaseChannel?: string;
+  buildId?: string;
   platform: 'WINDOWS' | 'WEB_PREVIEW';
   version: string;
   /** Legacy capability field, independent of the execution mode. */
@@ -75,6 +77,8 @@ export interface ModelConfig {
   apiKeyEnv: string;
   sessionHeader?: string;
   customInstructions?: string;
+  /** Per-model context window in tokens. Reaching it compresses older tool rounds. */
+  modelContextLimits?: Record<string, number>;
   decision?: JevDecisionConfig;
   // Operator-set continuous-verifier budget and thresholds. Leaving the section
   // out keeps the runtime defaults; clearing every field removes it again.
@@ -154,6 +158,8 @@ export interface ThreadReadModel {
   createdAtMs: number;
   updatedAtMs: number;
   forkedFrom?: string;
+  /** Stable conversation id. Later runs of this task join this session. */
+  sessionId?: string;
   state?: 'IDLE' | 'RUNNING' | 'PAUSED' | 'FAILED' | 'COMPLETED';
   checkpoint?: {
     runId?: string;
@@ -198,10 +204,14 @@ export interface TimelineItem {
   commandText?: string;
   /** Bounded stderr/stdout tail shown under a failed process tool's message. */
   outputTail?: string;
+  /** Process exit code. Null means the process ended without a numeric code. */
+  exitCode?: number | null;
   /** Structured workspace-relative path from the tool payload; never extracted from body text. */
   targetPath?: string;
   toolName?: string;
   evidenceKind?: string;
+  failureReasonCode?: string;
+  diagnosticDetail?: string;
   truncated?: boolean;
   /** Worker READY fields. Badge only when both match WINDOWS_NO_OS_SANDBOX + none. */
   warning?: string;
@@ -212,6 +222,14 @@ export interface TimelineItem {
   rows?: CellExecRow[];
   /** The matching tool step is waiting for the user's approval. */
   awaitingApproval?: boolean;
+  /** User-supplied image attachments displayed in the live conversation bubble. */
+  images?: ComposerImageAttachment[];
+  /** True when this row is a Cursor/Codex-style collapsible model thinking block. */
+  thinking?: boolean;
+  /** Role label for thinking rows (e.g. '思考规划', '思考过程'). */
+  thinkingLabel?: string;
+  /** Timestamp when this thinking segment completed. */
+  thinkingCompletedAtMs?: number;
 }
 
 export type CellExecRowState =
@@ -283,6 +301,13 @@ export interface ApprovalReadModel {
   reasonCodes?: string[];
   commandPreview?: string;
   commandPreviewTruncated?: boolean;
+  canAlwaysAllow?: boolean;
+  alwaysAllowSaved?: boolean;
+  reviewKind?: 'DANGER' | 'REVIEW' | 'UNKNOWN';
+  filePreview?: string;
+  filePreviewKind?: 'DIFF' | 'CONTENT';
+  filePreviewTruncated?: boolean;
+  contentBytes?: number;
 }
 
 export interface WorkspaceEntry {
@@ -402,6 +427,7 @@ export interface ProcessVerificationReadModel {
 
 export interface RuntimeSnapshot {
   releaseChannel?: string;
+  buildId?: string;
   platform: 'WINDOWS';
   version: string;
   readOnly: boolean;
@@ -550,6 +576,8 @@ export interface RuntimeTaskOptions {
   clientSessionId?: string;
   /** Workspace root frozen at launch so later project switches can't move it. */
   workspacePath?: string;
+  /** Validated multimodal image inputs attached to this user turn. */
+  images?: Array<{ name?: string; mediaType: string; dataUrl: string }>;
 }
 
 export interface NetworkTargetOption {
@@ -572,8 +600,10 @@ export interface RuntimeExecutionRecord {
   createdAtMs: number;
   updatedAtMs: number;
   requestSummary?: Record<string, unknown>;
+  commands?: string[];
   expiresAt?: number;
   transition?: { from?: string; to?: string; atMs?: number; metadata?: Record<string, unknown> };
+  transitionHistory?: Array<{ from?: string; to?: string; atMs?: number; metadata?: Record<string, unknown> }>;
 }
 
 export interface RuntimeExecutionStateResponse {
@@ -750,6 +780,9 @@ export interface RuntimeMemoryRecord {
   statement: string;
   scope: string;
   kind?: string;
+  key?: string;
+  /** Directory the skill was learned in. Display name comes from this path. */
+  workspacePath?: string;
   confidence: number;
   status: string;
   sourceEventIds?: string[];

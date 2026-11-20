@@ -34,7 +34,8 @@ const defaultIpc = {
   show_desktop_notification: () => ({ accepted: true }),
   pending_sub_agent_count: () => 0,
   cell_maintenance_status: () => ({}),
-  list_projects: () => []
+  list_projects: () => [],
+  read_clipboard_images: () => []
 };
 mockIPC((cmd, args) => {
   window.__accept.calls.push({ cmd, args: JSON.parse(JSON.stringify(args ?? {})) });
@@ -89,6 +90,18 @@ const sessionCalls = async (page) => page.evaluate(() => window.__accept.calls.f
 const selectSession = async (page, id) => {
   await page.locator(`.session-row[data-session-id="${id}"]`).click({ timeout: 5000 });
 };
+const chooseCurrentProject = async (page) => {
+  await page.waitForSelector('.project-picker-card', { timeout: 8000 });
+  const chosen = await page.evaluate(() => {
+    const button = document.querySelector('.project-picker-last-used')
+      ?? [...document.querySelectorAll('[data-action="select-new-task-project"]')].find((item) => item.dataset.projectId !== '__projectless__');
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (!chosen) throw new Error('project picker had no saved project');
+  await page.waitForFunction(() => !document.querySelector('.project-picker-backdrop'), undefined, { timeout: 8000 });
+};
 
 // ── Scenario 1: interactive sessions ───────────────────────────────────────
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -131,8 +144,14 @@ try {
   await page.evaluate((e) => window.__emit(e), ev('run-a', 4, 'approval.requested',
     { requestId: 'req-a', capability: 'shell.execute', requestDigest: 'sha256:' + 'a'.repeat(64), approvalExpiresAt: future, command: 'cmd /c alpha' }, sessionA));
 
-  // New-task parks A → empty enabled composer AND blank timeline on the FIRST click, session row for A persists.
+  // New task always opens the project picker first. A stays on screen until a project is chosen.
   await page.click('[data-action="new-task"]');
+  await page.waitForSelector('.project-picker-card', { timeout: 8000 });
+  check('new-task opens the project picker before leaving the live task', await page.evaluate(() => {
+    const text = document.querySelector('.transcript')?.innerText ?? '';
+    return Boolean(document.querySelector('.project-picker-card')) && text.includes('A-only');
+  }));
+  await chooseCurrentProject(page);
   await page.waitForFunction(() => {
     const ta = document.querySelector('textarea[name="prompt"]');
     const send = document.querySelector('[data-action="send-prompt"], form [type="submit"], .composer button.primary-action');
@@ -159,11 +178,12 @@ try {
   check('no global session switcher', await page.evaluate(() => !document.querySelector('.session-switcher') && !document.querySelector('[data-session-switcher]')));
   check('pristine draft has no row', await page.evaluate(() => document.querySelectorAll('.session-row').length === 1));
 
-  // A second new-task click on an untouched draft must not stack draft rows.
+  // A second new-task click on an untouched draft must ask again and must not stack draft rows.
   await page.click('[data-action="new-task"]');
-  await page.waitForTimeout(300);
+  await page.waitForSelector('.project-picker-card', { timeout: 5000 });
+  check('second new-task still asks for a project', true);
   check('no draft accumulation', await page.evaluate(() => document.querySelectorAll('.session-row').length === 1));
-  await page.click('[data-action="close-project-picker"]').catch(() => {});
+  await page.click('[data-action="close-project-picker"]');
   await page.waitForTimeout(200);
 
   // Draft retention: type B draft, switch to A (draft captured into B's
@@ -199,7 +219,8 @@ try {
   await page.evaluate((e) => window.__emit(e), ev('run-b', 1, 'run.started', {}, sessionB));
   await page.evaluate((e) => window.__emit(e), ev('run-b', 4, 'model.text_delta', { text: 'beta-2' }, sessionB));
   await page.evaluate((e) => window.__emit(e), ev('run-b', 5, 'approval.requested',
-    { requestId: 'req-b', capability: 'shell.execute', requestDigest: 'sha256:' + 'b'.repeat(64), approvalExpiresAt: future, command: 'cmd /c beta' }, sessionB));
+    { requestId: 'req-b', capability: 'shell.execute', requestDigest: 'sha256:' + 'b'.repeat(64), approvalExpiresAt: future, command: 'cmd /c beta',
+      commandPreview: JSON.stringify({ command: 'cmd', args: ['/c', 'beta'], cwd: '.' }) }, sessionB));
   await page.waitForTimeout(250);
   check('B transcript shows only B items', await page.evaluate(() => {
     const text = document.querySelector('.transcript')?.innerText ?? '';
@@ -320,7 +341,7 @@ try {
   check('A launch held during hydration', await page2.evaluate(() => window.__accept.calls.every((c) => c.cmd !== 'run_model_task')));
   // Park to a new task, submit B as well — both queued.
   await page2.click('[data-action="new-task"]');
-  await page2.waitForTimeout(300);
+  await chooseCurrentProject(page2);
   await submit(page2, 'early task B');
   await page2.waitForTimeout(400);
   // Release the reconcile gate → both launches proceed with distinct owners.
@@ -338,6 +359,149 @@ try {
   await page2.screenshot({ path: `${EVIDENCE}/sessions-scenario2-failure.png` }).catch(() => {});
 }
 await page2.close();
+
+// ── Scenario 3: clipboard image paste, session isolation & image submission ──
+const page3 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+page3.on('pageerror', (e) => consoleErrors.push('scenario3:' + String(e)));
+page3.on('console', (m) => { if (m.type() === 'error') consoleErrors.push('scenario3:' + m.text()); });
+await page3.route(`**/src/main.ts`, (route) => route.fulfill({ contentType: 'application/javascript', body: shim }));
+await page3.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+try {
+  await page3.waitForSelector('textarea[name="prompt"]', { timeout: 20000 });
+  await page3.focus('textarea[name="prompt"]');
+  // Simulate pasting a screenshot (both items and files populated like Chromium/WebView2).
+  await page3.evaluate(() => {
+    const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const raw = Uint8Array.from(atob(pngBase64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([raw], 'image.png', { type: 'image/png' }));
+    const textarea = document.querySelector('textarea[name="prompt"]');
+    textarea.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+  });
+  await page3.waitForSelector('.composer-attachment-chip img', { timeout: 5000 });
+  check('clipboard paste renders single image chip (no duplicate)', await page3.evaluate(() =>
+    document.querySelectorAll('.composer-attachment-chip').length === 1));
+
+  // Remove button clears chip; pasting again restores it and allows image-only send.
+  await page3.click('[data-action="remove-attachment"]');
+  await page3.waitForFunction(() => document.querySelectorAll('.composer-attachment-chip').length === 0, undefined, { timeout: 5000 });
+  check('remove-attachment removes pasted image', true);
+
+  await page3.evaluate(() => {
+    const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const raw = Uint8Array.from(atob(pngBase64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([raw], 'bug-shot.png', { type: 'image/png' }));
+    const textarea = document.querySelector('textarea[name="prompt"]');
+    textarea.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+  });
+  await page3.waitForSelector('.composer-attachment-chip img', { timeout: 5000 });
+
+  // Submit image-only (empty textarea) → forwards images array via run_model_task and renders image in timeline.
+  await page3.click('.composer .send-button');
+  await page3.waitForFunction(() => window.__accept.calls.some((c) => c.cmd === 'run_model_task'), undefined, { timeout: 10000 });
+  const imgCall = await page3.evaluate(() => window.__accept.calls.find((c) => c.cmd === 'run_model_task').args);
+  check('image-only submit sends images payload to run_model_task',
+    Array.isArray(imgCall.images) && imgCall.images.length === 1 && imgCall.images[0].mediaType === 'image/png'
+    && imgCall.images[0].dataUrl.startsWith('data:image/png;base64,'), imgCall);
+  check('submitted image renders in timeline user bubble and clears composer strip', await page3.evaluate(() =>
+    document.querySelectorAll('.timeline-image-item img').length === 1
+    && document.querySelectorAll('.composer-attachment-chip').length === 0));
+
+  // Stream Cursor/Codex-style thinking deltas → open while streaming, auto-collapses when tool call starts.
+  const imgSessionId = imgCall.clientSessionId;
+  await page3.evaluate((e) => window.__emit(e), ev('run-img', 1, 'run.started', {}, imgSessionId));
+  await page3.evaluate((e) => window.__emit(e), ev('run-img', 2, 'model.reasoning_delta', {
+    round: 1,
+    text: '先读取 Cargo.toml 与 tauri.conf.json 确认构建配置，再定位图标与打包入口。'
+  }, imgSessionId));
+  await page3.waitForSelector('.timeline-thinking-item', { timeout: 5000 });
+  check('thinking block streams open while active', await page3.evaluate(() => {
+    const details = document.querySelector('.timeline-thinking-details');
+    const body = document.querySelector('.timeline-thinking-body')?.innerText ?? '';
+    return Boolean(details?.open) && body.includes('Cargo.toml');
+  }));
+  await page3.evaluate((e) => window.__emit(e), ev('run-img', 3, 'tool.call_requested', {
+    id: 'call-1',
+    name: 'workspace.read',
+    path: 'desktop/src-tauri/Cargo.toml'
+  }, imgSessionId));
+  await page3.waitForTimeout(200);
+  check('thinking block auto-collapses on tool call and can be expanded', await page3.evaluate(() => {
+    const details = document.querySelector('.timeline-thinking-details');
+    const label = document.querySelector('.timeline-thinking-label')?.innerText ?? '';
+    return details && !details.open && label.startsWith('已思考过程');
+  }));
+  await page3.click('.timeline-thinking-summary');
+  check('clicking thinking header expands reasoning text', await page3.evaluate(() =>
+    Boolean(document.querySelector('.timeline-thinking-details')?.open)));
+  await page3.screenshot({ path: `${EVIDENCE}/sessions-image-paste.png` });
+} catch (error) {
+  check('scenario3 harness error', false, String(error));
+  await page3.screenshot({ path: `${EVIDENCE}/sessions-scenario3-failure.png` }).catch(() => {});
+}
+await page3.close();
+
+// ── Scenario 4: continuing an interrupted task in-place without splitting rows ──
+const page4 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+page4.on('pageerror', (e) => consoleErrors.push('scenario4:' + String(e)));
+page4.on('console', (m) => { if (m.type() === 'error') consoleErrors.push('scenario4:' + m.text()); });
+const shim4 = shim.replace(
+  'list_threads: () => [],',
+  'list_threads: () => ({ threads: window.__accept.threads ?? [] }),'
+);
+await page4.route(`**/src/main.ts`, (route) => route.fulfill({ contentType: 'application/javascript', body: shim4 }));
+await page4.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+try {
+  await page4.waitForSelector('textarea[name="prompt"]', { timeout: 20000 });
+  await submit(page4, '把自动启动做成开关');
+  await page4.waitForFunction(() => window.__accept.calls.some((c) => c.cmd === 'run_model_task'), undefined, { timeout: 10000 });
+  const [firstCall] = await sessionCalls(page4);
+  const firstSession = firstCall.clientSessionId;
+
+  // Runtime creates thread early, then gets killed by supervisor before turn completion (turnCount: 0, resumable PLAN).
+  await page4.evaluate((e) => window.__emit(e), ev('run-int-1', 1, 'run.started', {}, firstSession));
+  await page4.evaluate((e) => window.__emit(e), ev('run-int-1', 2, 'thread.created', { threadId: 'thread-int-1', title: '把自动启动做成开关' }, firstSession));
+  await page4.evaluate(() => {
+    window.__accept.threads = [{
+      id: 'thread-int-1',
+      title: '把自动启动做成开关',
+      cwd: 'C:/fixture-a',
+      turnCount: 0,
+      state: 'RUNNING',
+      resumable: true,
+      resumeMode: 'PLAN',
+      createdAtMs: Date.now() - 5000,
+      updatedAtMs: Date.now()
+    }];
+  });
+  await page4.evaluate(({ id }) => window.__settle(id, {
+    ok: false,
+    error: 'Cordis runtime 心跳超时，已由监督器终止（阶段: run.state_changed:EXECUTING）',
+    plugins: [],
+    runId: 'run-int-1'
+  }), { id: firstSession });
+  await page4.waitForFunction(() => {
+    const ta = document.querySelector('textarea[name="prompt"]');
+    return ta && !ta.disabled;
+  }, undefined, { timeout: 8000 });
+
+  // User types 继续 in the same task composer and submits.
+  await submit(page4, '继续');
+  await page4.waitForFunction(() => window.__accept.calls.filter((c) => c.cmd === 'run_model_task').length === 2, undefined, { timeout: 10000 });
+  const [, secondCall] = await sessionCalls(page4);
+  check('continue carries original threadId after early failure', secondCall.threadId === 'thread-int-1', secondCall);
+  check('continue enables resume automatically for interrupted plan checkpoint', secondCall.resume === true, secondCall);
+  check('continue does not split a duplicate sidebar row named 继续', await page4.evaluate(() => {
+    const itemLabels = [...document.querySelectorAll('.project-thread-item .thread-title, .project-thread-item .session-row-label')]
+      .map((el) => el.textContent?.trim() ?? '');
+    return itemLabels.length === 1 && itemLabels[0] === '把自动启动做成开关';
+  }), await page4.evaluate(() => [...document.querySelectorAll('.project-thread-item')].map((el) => el.innerText)));
+} catch (error) {
+  check('scenario4 harness error', false, String(error));
+  await page4.screenshot({ path: `${EVIDENCE}/sessions-scenario4-failure.png` }).catch(() => {});
+}
+await page4.close();
 
 const summary = {
   ok: results.every((r) => r.ok) && consoleErrors.length === 0,

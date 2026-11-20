@@ -16,6 +16,30 @@ const terminalRun = (model: HarnessReadModel) =>
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
+/**
+ * Role-context recovery reads one shared store. Only contexts that belong to
+ * this event's session, or to this event's run when no session id is present,
+ * may appear on the task. Rows with neither id stay, for callers that already
+ * filtered the payload.
+ */
+export const reconciledContextsForTask = (event: RuntimeEvent): Array<Record<string, unknown>> => {
+  const payload = object(event?.payload);
+  const contexts = Array.isArray(payload?.contexts) ? payload.contexts : [];
+  const eventSession = typeof event.clientSessionId === 'string' ? event.clientSessionId : '';
+  const owned: Array<Record<string, unknown>> = [];
+  for (const value of contexts) {
+    const context = object(value);
+    if (!context || typeof context.contextId !== 'string' || typeof context.role !== 'string') continue;
+    const contextSession = typeof context.sessionId === 'string' ? context.sessionId : '';
+    const contextRun = typeof context.runId === 'string' ? context.runId : '';
+    const sameSession = Boolean(contextSession && eventSession && contextSession === eventSession);
+    const sameRun = Boolean(contextRun && contextRun === event.runId);
+    if ((contextSession || contextRun) && !sameSession && !sameRun) continue;
+    owned.push(context);
+  }
+  return owned;
+};
+
 // Ownership (BUSY) is not work evidence. Actual activity updates the allocated
 // context, scoped to its runtime run and role, rather than a placeholder row.
 export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent, upsert: Upsert): HarnessReadModel => {
@@ -73,19 +97,19 @@ export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent
   }
   if (event.kind === 'role.contexts_reconciled') {
     let next = model;
-    for (const value of Array.isArray(payload.contexts) ? payload.contexts : []) {
-      const context = object(value);
-      if (!context || typeof context.contextId !== 'string' || typeof context.role !== 'string') continue;
+    for (const context of reconciledContextsForTask(event)) {
+      const roleName = String(context.role);
+      const contextId = String(context.contextId);
       next = upsert(next, {
-        agentId: context.contextId, name: name(context.role, context.contextId),
-        runtimeRole: context.role, runtimeRunId: typeof context.runId === 'string' ? context.runId : event.runId,
+        agentId: contextId, name: name(roleName, contextId),
+        runtimeRole: roleName, runtimeRunId: typeof context.runId === 'string' ? context.runId : event.runId,
         state: 'FAILED', task: context.reason === 'OWNER_PROCESS_LOST'
           ? '上次运行进程已退出，角色上下文已标记失败' : '上次运行未完成，角色上下文已标记失败'
       });
     }
     return next;
   }
-  if (['role.text_delta', 'role.turn_completed', 'planner.restored'].includes(event.kind)) {
+  if (['role.turn_started', 'role.text_delta', 'role.turn_completed', 'planner.restored'].includes(event.kind)) {
     const target = role || (event.kind === 'planner.restored' ? 'planner' : '');
     if (!target || terminalRun(model)) return model;
     const row = contextId ? model.subAgents.find(item => item.agentId === contextId) : findRole(target);
@@ -97,9 +121,9 @@ export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent
         : event.kind === 'role.text_delta' ? `（已接收 ${count} 字符）` : `（${count} 字符）` : '';
     return upsert(model, {
       agentId: id, name: row?.name ?? name(target, id), runtimeRole: row?.runtimeRole ?? target,
-      runtimeRunId: event.runId, workStarted: true, state: event.kind === 'role.text_delta' ? 'RUNNING' : 'SUCCEEDED',
+      runtimeRunId: event.runId, workStarted: event.kind !== 'planner.restored' || row?.workStarted === true, state: ['role.turn_started', 'role.text_delta'].includes(event.kind) ? 'RUNNING' : 'SUCCEEDED',
       task: `${event.kind === 'planner.restored' ? '已从 Thread checkpoint 恢复计划'
-        : event.kind === 'role.text_delta' ? '正在生成角色响应' : '角色回合已完成'}${suffix}`
+        : event.kind === 'role.turn_started' ? '正在调用模型' : event.kind === 'role.text_delta' ? '正在生成角色响应' : '角色回合已完成'}${suffix}`
     });
   }
   if (event.kind === 'run.state_changed' && ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(String(payload.to))) {
@@ -114,8 +138,7 @@ export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent
     }
     return next;
   }
-  if (event.kind === 'model.request_started' || event.kind === 'model.text_delta'
-    || (event.kind === 'run.state_changed' && payload.to === 'EXECUTING')) {
+  if (event.kind === 'model.request_started' || event.kind === 'model.text_delta') {
     return update('executor', { state: 'RUNNING', workStarted: true,
       task: event.kind === 'model.text_delta' ? '正在生成执行响应' : '正在处理执行计划与模型请求' });
   }
@@ -134,8 +157,7 @@ export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent
         task: payload.state === 'DECLINED' ? '授权被拒绝，已停止' : '授权已过期，已停止' });
     }
   }
-  if (event.kind === 'verification.started' || event.kind === 'verification.retrying'
-    || (event.kind === 'run.state_changed' && payload.to === 'VERIFYING')) {
+  if (event.kind === 'verification.started' || event.kind === 'verification.retrying') {
     let next = update('verifier', { state: 'RUNNING', workStarted: true,
       task: event.kind === 'verification.retrying' ? '仅重试结果验证，不重跑执行操作' : '正在核对执行结果' });
     const executor = findRole('executor');
@@ -148,7 +170,7 @@ export const projectRoleActivity = (model: HarnessReadModel, event: RuntimeEvent
     const state: SubAgentState = payload.status === 'PASS' ? 'SUCCEEDED'
       : payload.status === 'FAIL' ? 'FAILED' : payload.status === 'SKIPPED' ? 'SKIPPED' : 'WAITING';
     const summary = typeof payload.summary === 'string' ? payload.summary.slice(0, 180) : '';
-    return update('verifier', { state, workStarted: true,
+    return update('verifier', { state, workStarted: state !== 'SKIPPED' || findRole('verifier')?.workStarted === true,
       task: `${payload.status === 'PASS' ? '本轮验证通过' : payload.status === 'FAIL' ? '本轮验证未通过'
         : payload.status === 'SKIPPED' ? '本轮未运行验证' : '验证结果尚未确定'}${summary ? `：${summary}` : ''}` });
   }

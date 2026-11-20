@@ -71,6 +71,8 @@
         "command": { "type": "string", "maxLength": 4096 },
         "argsDigest": { "$ref": "#/$defs/digest" },
         "argCount": { "type": "integer", "minimum": 0 },
+        "argsPreview": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 160 } },
+        "reason": { "type": "string", "maxLength": 240 },
         "path": { "type": "string", "maxLength": 2000 },
         "cwd": { "type": "string", "maxLength": 2000 },
         "host": { "type": "string", "maxLength": 253 },

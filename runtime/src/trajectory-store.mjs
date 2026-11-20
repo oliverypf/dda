@@ -99,6 +99,9 @@ export const createTrajectoryStore = (storagePath, options = {}) => {
         return event;
       },
       list: async (runId) => harnessEventStore.list({ runId }),
+      listRecentRuns: typeof harnessEventStore.listRecentRuns === 'function'
+        ? (options) => harnessEventStore.listRecentRuns(options)
+        : undefined,
       summary: () => {
         const summary = harnessEventStore.summary();
         return { store: summary.store, eventCount: summary.eventCount };

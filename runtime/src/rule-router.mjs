@@ -1,7 +1,12 @@
+export const TASK_CLASSES = Object.freeze(['inspect', 'modify', 'test', 'query', 'unknown']);
+
 const DEFAULT_ROUTES = Object.freeze({
   inspect: { planner: 'default', executor: 'default', verifier: 'rule' },
   modify: { planner: 'default', executor: 'default', verifier: 'rule' },
   test: { planner: 'default', executor: 'default', verifier: 'rule' },
+  // Rule fallback when Jev does not choose a role set. A lookup is one
+  // executor turn: no planner, no verifier, no council.
+  query: { executor: 'default' },
   unknown: { planner: 'default', executor: 'default', verifier: 'rule' }
 });
 
@@ -69,9 +74,38 @@ const hasUnnegatedChineseModify = (text) => {
   return false;
 };
 
+// Lookup cues. Checked only after test/modify, and only when the prompt is
+// not about a file, function, or repository. Those stay on the inspect path.
+const QUERY_ZH = Object.freeze([
+  '查询', '查一下', '查下', '搜一下', '搜索一下', '检索',
+  '多少钱', '什么价', '啥价', '报价', '怎么收费', '价格',
+  '是什么', '什么是', '是谁', '谁是', '什么时候', '性能怎么样', '性能如何'
+]);
+const QUERY_EN = /\b(?:price|pricing|how much|look ?up|lookup|what is|what's|who is|when did)\b/u;
+const WORKSPACE_SUBJECT = /文件|代码|函数|项目|仓库|目录|源码|工作区|readme|报错|这段|这个文件|这个函数|\b(?:function|file|repo|codebase|bug)\b/u;
+
+const hasUnnegatedChineseCue = (text, word) => {
+  let from = 0;
+  while (from < text.length) {
+    const at = text.indexOf(word, from);
+    if (at < 0) return false;
+    if (!chineseWindowContainsNegation(text, at)) return true;
+    from = at + word.length;
+  }
+  return false;
+};
+
+export const isDirectQuery = (prompt) => {
+  const text = normalizePrompt(prompt);
+  if (WORKSPACE_SUBJECT.test(text)) return false;
+  if (hasUnnegatedMatch(text, QUERY_EN)) return true;
+  return QUERY_ZH.some((word) => hasUnnegatedChineseCue(text, word));
+};
+
 export const classifyTask = (prompt) => {
   const text = normalizePrompt(prompt);
   for (const [taskClass, pattern, zh] of CLASSIFIERS) {
+    if (taskClass === 'inspect' && isDirectQuery(text)) return 'query';
     if (hasUnnegatedMatch(text, pattern)) return taskClass;
     if (taskClass === 'modify') {
       if (hasUnnegatedChineseModify(text)) return taskClass;

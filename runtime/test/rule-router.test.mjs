@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyTask, RuleRouter } from '../src/rule-router.mjs';
+import { createTaskSafetyPrecheck } from '../src/task-safety-precheck.mjs';
 
 test('modify tasks use the controlled route and retired execution modes are rejected', () => {
   const router = new RuleRouter();
@@ -53,6 +54,32 @@ test('negated modify can still fall through to inspect or stay unknown', () => {
   assert.equal(routed.taskClass, 'inspect');
   assert.equal(routed.status, 'SELECTED');
   assert.equal(routed.reason, 'STATIC_RULE');
+});
+
+test('a lookup is a query and keeps only the executor', () => {
+  const router = new RuleRouter();
+  for (const prompt of [
+    '腾讯的hy 4是什么价格',
+    'hy4 多少钱',
+    'what is the price of hy4',
+    '查一下腾讯 Hy4 的报价'
+  ]) {
+    assert.equal(classifyTask(prompt), 'query', prompt);
+    const routed = router.resolve({ prompt });
+    assert.equal(routed.status, 'SELECTED', prompt);
+    assert.deepEqual(routed.roles, { executor: 'default' }, prompt);
+  }
+  assert.equal(classifyTask('请修改价格显示'), 'modify');
+  assert.equal(classifyTask('查看 README'), 'inspect');
+  assert.equal(classifyTask('分析这段代码'), 'inspect');
+  assert.equal(classifyTask('不要查询，请修改文件'), 'modify');
+  const precheck = createTaskSafetyPrecheck().evaluate({
+    prompt: '腾讯的hy 4是什么价格',
+    taskClass: 'query',
+    mode: 'CONTROLLED',
+    workspaceRoot: 'C:\\work'
+  });
+  assert.equal(precheck.status, 'ALLOWED');
 });
 
 test('an unnegated modify later in the prompt still wins', () => {

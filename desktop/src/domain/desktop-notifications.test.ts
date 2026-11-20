@@ -10,6 +10,8 @@ describe('DesktopNoticePolicy', () => {
   it('notifies once per (run, requestId), independent of sequence', () => {
     const policy = new DesktopNoticePolicy();
     expect(policy.approvalRequested('run-1', 'req-1')).toEqual({ kind: 'APPROVAL_REQUIRED', runId: 'run-1', requestId: 'req-1' });
+    expect(policy.clarificationRequested('run-1', 'clarify-1')).toEqual({ kind: 'CLARIFICATION_REQUIRED', runId: 'run-1', requestId: 'clarify-1' });
+    expect(policy.clarificationRequested('run-1', 'clarify-1')).toBeUndefined();
     expect(policy.approvalRequested('run-1', 'req-1')).toBeUndefined();
   });
 
@@ -80,6 +82,17 @@ describe('desktopNoticeActivation', () => {
       .toEqual({ type: 'changed' });
     expect(desktopNoticeActivation({ kind: 'TASK_COMPLETED', runId: 'run-9' }, base))
       .toEqual({ type: 'none' });
+  });
+
+  it('opens a still-pending clarification for the active run', () => {
+    expect(desktopNoticeActivation(
+      { kind: 'CLARIFICATION_REQUIRED', runId: 'run-1', requestId: 'clarify-1' },
+      { ...base, clarificationRequestIds: ['clarify-1'] }
+    )).toEqual({ type: 'clarification', requestId: 'clarify-1' });
+    expect(desktopNoticeActivation(
+      { kind: 'CLARIFICATION_REQUIRED', runId: 'run-1', requestId: 'clarify-1' },
+      base
+    )).toEqual({ type: 'none' });
   });
 
   it('ignores unknown kinds entirely', () => {

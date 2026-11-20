@@ -1,6 +1,7 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
@@ -8,11 +9,29 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
+import { workspacePathKey } from '../src/platform/workspace-path.mjs';
+
+// This suite exercises thread persistence, not semantic model quality.
+const fixtureDecision = (request, response, body) => {
+  if (request.url !== '/jev') return false;
+  const answers = {};
+  const defaults = { verification: 'PASS', failureType: 'NONE', evidence: 'SUFFICIENT',
+    test: 'NONE', stop: 'STOP_SUCCESS', escalation: 'LOCAL_CONTINUE', actionGate: 'ALLOW' };
+  for (const [id, question] of Object.entries(JSON.parse(body).questions)) {
+    const choices = Object.keys(question.criteria ?? {});
+    answers[id] = { choice: choices.includes(defaults[id]) ? defaults[id] : choices[0], confidence: 0.99 };
+  }
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify({ answers }));
+  return true;
+};
 
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, ...env },
+    // These fixture runs must not inherit the installed desktop model routing.
+    env: { ...process.env, LOCALAPPDATA: dirname(env.DDA_THREAD_STORE ?? env.DDA_HARNESS_EVENT_STORE),
+      APPDATA: dirname(env.DDA_THREAD_STORE ?? env.DDA_HARNESS_EVENT_STORE), ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stdout = '';
@@ -32,6 +51,7 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
     let body = '';
     request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
+      if (fixtureDecision(request, response, body)) return;
       requestBodies.push(body);
       response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
       response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'thread turn complete' }, finish_reason: null }] })}\n\n`);
@@ -47,6 +67,8 @@ test('creates, resumes and forks a persisted thread while restoring bounded cont
     DDA_THREAD_STORE: threadStore,
     DDA_TRAJECTORY_STORE: trajectoryStore,
     DEEPSEEK_API_KEY: 'test-key',
+    DDA_JEV_ENABLED: '1', DDA_JEV_API_KEY_ENV: 'DEEPSEEK_API_KEY',
+    DDA_JEV_ENDPOINT: `http://127.0.0.1:${address.port}/jev`,
     DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
   };
 
@@ -129,6 +151,76 @@ test('rejects a thread from another workspace without mutating its binding or ch
   const fetched = await run(['thread', '--operation', 'get', '--thread-id', original.id], env);
   assert.equal(fetched.code, 0, `${fetched.stderr}\n${fetched.stdout}`);
   assert.deepEqual(JSON.parse(fetched.stdout.trim()).thread, original);
+});
+
+test('resumes a thread in a linked task worktree and binds a new thread to the checkout', async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-thread-worktree-runtime-'));
+  const repoName = workspace.split(/[\\/]/u).at(-1);
+  const worktree = join(dirname(workspace), `${repoName}.worktrees`, 'session-1');
+  const git = (cwd, args) => execFileSync('git', ['-c', 'core.quotepath=false', '-C', cwd, ...args], {
+    stdio: 'ignore', windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  });
+  git(workspace, ['init', '-b', 'main']);
+  git(workspace, ['config', 'user.email', 'dda-test@example.com']);
+  git(workspace, ['config', 'user.name', 'dda test']);
+  await writeFile(join(workspace, 'readme.txt'), 'hello\n');
+  git(workspace, ['add', 'readme.txt']);
+  git(workspace, ['commit', '-m', 'init']);
+  await mkdir(dirname(worktree), { recursive: true });
+  git(workspace, ['worktree', 'add', '-b', 'dda/session-1', worktree, 'HEAD']);
+  t.after(async () => {
+    try { git(workspace, ['worktree', 'remove', '--force', worktree]); } catch { /* already gone */ }
+    await rm(workspace, { recursive: true, force: true });
+    await rm(dirname(worktree), { recursive: true, force: true });
+  });
+
+  const requestBodies = [];
+  const server = createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      if (fixtureDecision(request, response, body)) return;
+      requestBodies.push(body);
+      response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'thread turn complete' }, finish_reason: null }] })}\n\n`);
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+      response.end('data: [DONE]\n\n');
+    });
+  });
+  t.after(() => server.close());
+  await listenOnFetchablePort(server);
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const env = {
+    DDA_THREAD_STORE: join(workspace, 'threads.json'),
+    DDA_TRAJECTORY_STORE: join(workspace, 'trajectory.jsonl'),
+    DEEPSEEK_API_KEY: 'test-key',
+    DDA_JEV_ENABLED: '1', DDA_JEV_API_KEY_ENV: 'DEEPSEEK_API_KEY',
+    DDA_JEV_ENDPOINT: `http://127.0.0.1:${address.port}/jev`,
+    DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`
+  };
+
+  const created = await run(['thread', '--operation', 'create', '--workspace', workspace, '--title', 'Checkout task'], env);
+  assert.equal(created.code, 0, `${created.stderr}\n${created.stdout}`);
+  const original = JSON.parse(created.stdout.trim()).thread;
+  const resumed = await run([
+    'task', '--provider', 'deepseek', '--prompt', '继续',
+    '--workspace', worktree, '--thread-id', original.id
+  ], env);
+  const resumedPayload = JSON.parse(resumed.stdout.trim());
+  assert.equal(resumedPayload.ok, true, `${resumed.stderr}\n${resumed.stdout}`);
+  assert.equal(resumedPayload.threadId, original.id);
+  assert.equal(workspacePathKey(resumedPayload.thread.cwd), workspacePathKey(workspace));
+  assert.doesNotMatch(resumedPayload.error ?? '', /THREAD_WORKSPACE_MISMATCH/);
+
+  const createdInWorktree = await run([
+    'task', '--provider', 'deepseek', '--prompt', '新的并行任务', '--workspace', worktree
+  ], env);
+  const createdPayload = JSON.parse(createdInWorktree.stdout.trim());
+  assert.equal(createdPayload.ok, true, `${createdInWorktree.stderr}\n${createdInWorktree.stdout}`);
+  assert.notEqual(createdPayload.threadId, original.id);
+  assert.equal(workspacePathKey(createdPayload.thread.cwd), workspacePathKey(workspace));
+  assert.equal(requestBodies.length, 2);
 });
 
 test('default Harness thread commands read the same durable authority as the dashboard', async () => {

@@ -29,6 +29,20 @@ export const outputTailForToolEvent = (
   limit = 800
 ): string => (typeof payload.outputTail === 'string' ? payload.outputTail.slice(0, limit) : '');
 
+/** Exit code carried on a process tool event, or null when the process ended without one. */
+export const exitCodeForToolEvent = (payload: Record<string, unknown>): number | null | undefined => {
+  if (Number.isInteger(payload.exitCode)) return payload.exitCode as number;
+  if (payload.exitCode === null) return null;
+  return undefined;
+};
+
+/** Chinese exit-code line for a failed process. Empty when the event has no exit code field. */
+export const exitCodeLabelForToolEvent = (payload: Record<string, unknown>): string => {
+  const code = exitCodeForToolEvent(payload);
+  if (code === undefined) return '';
+  return code === null ? '退出码未知' : `退出码 ${code}`;
+};
+
 /** Structured workspace path from a tool payload (used for the card target badge). */
 export const pathForToolEvent = (
   payload: Record<string, unknown>,
@@ -50,5 +64,6 @@ export const WORKSPACE_REASON_LABELS: Record<string, string> = {
   WORKSPACE_EXCLUDED_PATH: '该路径已被工作区配置排除，请选择其他路径。',
   SAFETY_COMMAND_INVALID: '执行参数超出允许范围，请检查超时或输出大小限制。',
   TEST_CHECK_FAILED: '测试未通过，请查看输出中的失败项目。',
-  EXECUTOR_RESULT_FAILED: '命令未成功完成，请查看退出码和输出。'
+  EXECUTOR_RESULT_FAILED: '命令未成功完成。',
+  NETWORK_HTTP_STATUS: '网站返回了失败的 HTTP 状态。'
 };

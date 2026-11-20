@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDecisionState } from '../src/decision/types.mjs';
-import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, proposedToolDecisionClaim, toolResultDecisionClaim } from '../src/decision/evidence-claim.mjs';
+import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, proposedToolDecisionClaim, sessionCommandLeaseDecisionClaim, toolResultDecisionClaim } from '../src/decision/evidence-claim.mjs';
 
 const throughWireBoundary = claim => {
   const state = createDecisionState({ evidence: [{ id: 'observed', claim, type: 'tool_result' }] });
@@ -60,6 +60,16 @@ test('tool policy distinguishes configured capability from a required host execu
   assert.equal(facts.executionMode, 'CONTROLLED');
   assert.equal(throughWireBoundary(hostToolPolicyDecisionClaim({ ...input, available: false, configuredCapabilities: [] })).hostToolPolicy.capabilityConfigured, false);
   assert.equal(throughWireBoundary(hostToolPolicyDecisionClaim({ ...input, available: false })).hostToolPolicy.advertised, false);
+});
+
+test('an outside executable is marked for Jev without authorizing it', () => {
+  const facts = throughWireBoundary(sessionCommandLeaseDecisionClaim({ commandName: 'ffmpeg' })).sessionCommandLease;
+  assert.equal(facts.commandOutsideSessionLease, true);
+  assert.equal(facts.proposedCommandName, 'ffmpeg');
+  assert.equal(facts.approvalJudgment, 'JEV');
+  assert.equal(facts.hostEffect, 'ONE_SHOT_IF_JEV_ALLOWS');
+  const opaque = throughWireBoundary(sessionCommandLeaseDecisionClaim({ commandName: '../ffmpeg' })).sessionCommandLease;
+  assert.equal(opaque.proposedCommandName, 'OPAQUE_EXECUTABLE');
 });
 
 test('out-of-workspace paths are classified without revealing absolute or traversal paths', () => {

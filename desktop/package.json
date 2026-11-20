@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "dda": {
+    "executableBuildScript": "build:windows:full-local"
+  },
   "scripts": {
     "test:ui:security": "node \"%npm_config_local_prefix%/scripts/ui-security-test.mjs\"",
     "test:ui:accessibility": "node \"%npm_config_local_prefix%/scripts/ui-accessibility-test.mjs\"",

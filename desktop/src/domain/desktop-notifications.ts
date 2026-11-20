@@ -4,13 +4,14 @@
 // the semantics stay unit-testable; historical playback never reaches here.
 
 export type DesktopNotice =
-  | { kind: 'APPROVAL_REQUIRED'; runId: string; requestId: string }
+  | { kind: 'APPROVAL_REQUIRED' | 'CLARIFICATION_REQUIRED'; runId: string; requestId: string }
   | { kind: 'TASK_COMPLETED' | 'TASK_FAILED'; runId: string };
 
 export type DesktopNoticeDelivery = 'sent' | 'ignored' | 'failed';
 
 export type DesktopNoticeAction =
   | { type: 'approval'; requestId: string }
+  | { type: 'clarification'; requestId: string }
   | { type: 'thread'; threadId: string }
   | { type: 'changed' }
   | { type: 'none' };
@@ -19,6 +20,7 @@ export interface DesktopNoticeActivationContext {
   activeRunId?: string;
   running: boolean;
   approvals: ReadonlyArray<{ requestId: string; state: string; approvalExpiresAt?: number }>;
+  clarificationRequestIds?: readonly string[];
   /** Thread mapped to the notice's run by the caller, if one is known. */
   threadId?: string;
   nowMs: number;
@@ -54,6 +56,13 @@ export class DesktopNoticePolicy {
       : undefined;
   }
 
+  clarificationRequested(runId: string, requestId: string): DesktopNotice | undefined {
+    if (!runId || !requestId) return undefined;
+    return this.#first(`clarification:${runId}:${requestId}`)
+      ? { kind: 'CLARIFICATION_REQUIRED', runId, requestId }
+      : undefined;
+  }
+
   /** First terminal event per run only. */
   runFinished(runId: string, failed: boolean): DesktopNotice | undefined {
     if (!runId) return undefined;
@@ -86,6 +95,11 @@ export const desktopNoticeActivation = (
   const kind = typeof notice?.kind === 'string' ? notice.kind : '';
   const runId = typeof notice?.runId === 'string' ? notice.runId : '';
   const requestId = typeof notice?.requestId === 'string' ? notice.requestId : '';
+  if (kind === 'CLARIFICATION_REQUIRED') {
+    if (!requestId || !runId || runId !== context.activeRunId) return { type: 'none' };
+    if (!(context.clarificationRequestIds ?? []).includes(requestId)) return { type: 'none' };
+    return { type: 'clarification', requestId };
+  }
   if (kind === 'APPROVAL_REQUIRED') {
     if (!requestId || !runId || runId !== context.activeRunId) return { type: 'none' };
     const approval = context.approvals.find((item) => item.requestId === requestId);

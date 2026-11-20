@@ -11,6 +11,7 @@ import type {
   WorkspaceEntry,
   WorkspaceFile
 } from './models';
+import type { ComposerImageAttachment } from './image-attachments';
 import { sameWorkspaceRoot } from './workspace';
 import { projectRoleActivity } from './role-activity';
 
@@ -68,14 +69,35 @@ export const createInitialReadModel = (): HarnessReadModel => ({
   }
 });
 
+const positiveCreatedAtMs = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+
+/** Keep the creation time already shown for this thread. A history page, a
+ * dashboard refresh, or another session's copy can carry a different
+ * createdAtMs; adopting it would move the sidebar row when the user only
+ * selected a task. The first positive time wins. A missing or zero time does
+ * not block a later real one. */
+export const pinThreadCreatedAt = <T extends { createdAtMs: number }>(
+  previous: { createdAtMs: number } | undefined,
+  incoming: T
+): T => {
+  const pinned = positiveCreatedAtMs(previous?.createdAtMs);
+  if (pinned === undefined || pinned === incoming.createdAtMs) return incoming;
+  return { ...incoming, createdAtMs: pinned };
+};
+
 export const setThreads = (
   model: HarnessReadModel,
   threads: HarnessReadModel['threads']
-): HarnessReadModel => ({
-  ...model,
-  projectionVersion: model.projectionVersion + 1,
-  threads: threads.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs)
-});
+): HarnessReadModel => {
+  const previousById = new Map(model.threads.map((thread) => [thread.id, thread]));
+  const pinned = threads.map((thread) => pinThreadCreatedAt(previousById.get(thread.id), thread));
+  return {
+    ...model,
+    projectionVersion: model.projectionVersion + 1,
+    threads: pinned.slice().sort((left, right) => (right.updatedAtMs || 0) - (left.updatedAtMs || 0) || left.id.localeCompare(right.id))
+  };
+};
 
 export const setActiveThread = (
   model: HarnessReadModel,
@@ -158,6 +180,24 @@ export const setContextSidecarStatus = (
     }
   : model;
 
+export type DreamMaintenanceAutoStartInput = {
+  native: boolean;
+  runtimeReady: boolean;
+  userStopped: boolean;
+  taskRunning: boolean;
+  alreadyRunning: boolean;
+  attempted: boolean;
+};
+
+/** Dream maintenance starts with the desktop app. A stop applies only to this process. */
+export const shouldAutoStartDreamMaintenance = (input: DreamMaintenanceAutoStartInput): boolean =>
+  input.native
+  && input.runtimeReady
+  && !input.userStopped
+  && !input.taskRunning
+  && !input.alreadyRunning
+  && !input.attempted;
+
 export const setDreamMaintenanceStatus = (
   model: HarnessReadModel,
   status?: RuntimeDreamMaintenanceStatus
@@ -182,25 +222,51 @@ export const appendTimelineItem = (
   })
 });
 
-export const beginRun = (model: HarnessReadModel, prompt: string): HarnessReadModel => {
+export const isGenericTaskTitle = (value: string | undefined): boolean => {
+  const trimmed = value?.trim() ?? '';
+  return !trimmed
+    || /^(?:dda task|new thread|未命名会话)$/iu.test(trimmed)
+    || /^Thread\s+[a-f\d]{8,}$/iu.test(trimmed);
+};
+
+export const beginRun = (
+  model: HarnessReadModel,
+  prompt: string,
+  images?: ComposerImageAttachment[],
+  displayBody?: string
+): HarnessReadModel => {
   const runId = makeId('run');
+  const userBody = displayBody !== undefined ? displayBody : prompt;
+  const activeThread = model.activeThreadId
+    ? model.threads.find((item) => item.id === model.activeThreadId)
+    : undefined;
+  const sameWorkspaceThread = activeThread
+    && (!activeThread.cwd || !model.workspace.rootPath || sameWorkspaceRoot(activeThread.cwd, model.workspace.rootPath))
+    ? activeThread
+    : undefined;
+  const inheritedTitle = [sameWorkspaceThread?.title, model.activeRun?.title]
+    .find((candidate) => !isGenericTaskTitle(candidate))
+    ?.trim();
+  const runTitleSource = inheritedTitle || userBody.trim() || prompt;
   const withUser = appendTimelineItem(model, {
     kind: 'USER',
     title: '你',
-    body: prompt,
-    status: 'COMPLETE'
+    body: userBody,
+    status: 'COMPLETE',
+    ...(images?.length ? { images: images.slice() } : {})
   });
   return {
     ...withUser,
     projectionVersion: withUser.projectionVersion + 1,
     activeRun: {
       runId,
-      title: prompt.length > 52 ? `${prompt.slice(0, 52)}...` : prompt,
+      title: runTitleSource.length > 52 ? `${runTitleSource.slice(0, 52)}...` : runTitleSource,
       state: 'PLANNING',
       startedAtMs: Date.now()
     },
     subAgents: [],
-    composer: { ...withUser.composer, enabled: false }
+    // A follow-up is typed while this run is still going, then queued.
+    composer: { ...withUser.composer, enabled: true }
   };
 };
 
@@ -232,7 +298,12 @@ export const setRunState = (model: HarnessReadModel, state: RunState): HarnessRe
       : model.subAgents,
     composer: {
       ...model.composer,
+      // In-progress states must leave the composer as it is. Closing it here
+      // disables the box for the whole task while the placeholder still says
+      // a follow-up can be typed. Terminal states open it for the next task.
       enabled: state === 'SUCCEEDED' || state === 'FAILED' || state === 'CANCELLED'
+        ? true
+        : model.composer.enabled
     }
   };
 };
@@ -314,6 +385,69 @@ export const upsertStreamingAgent = (
   };
 };
 
+export const upsertStreamingThinking = (
+  model: HarnessReadModel,
+  itemId: string,
+  delta: string,
+  options: { complete?: boolean; runId?: string; label?: string } = {}
+): HarnessReadModel => {
+  const complete = Boolean(options.complete);
+  const index = model.timeline.findIndex((item) => item.itemId === itemId);
+  if (index < 0 && !delta && complete) return model;
+  const nextTimeline = model.timeline.slice();
+  const now = Date.now();
+  if (index < 0) {
+    nextTimeline.push({
+      itemId,
+      ...(options.runId ? { runId: options.runId } : {}),
+      kind: 'AGENT',
+      title: '思考过程',
+      body: delta,
+      status: complete ? 'COMPLETE' : 'STREAMING',
+      createdAtMs: now,
+      thinking: true,
+      ...(options.label ? { thinkingLabel: options.label } : {}),
+      ...(complete ? { thinkingCompletedAtMs: now } : {})
+    });
+  } else {
+    const current = nextTimeline[index];
+    const nextStatus = complete ? 'COMPLETE' : current.status;
+    nextTimeline[index] = {
+      ...current,
+      body: current.body + delta,
+      status: nextStatus,
+      ...(options.label && !current.thinkingLabel ? { thinkingLabel: options.label } : {}),
+      ...(complete && !current.thinkingCompletedAtMs ? { thinkingCompletedAtMs: now } : {})
+    };
+  }
+  return {
+    ...model,
+    projectionVersion: model.projectionVersion + 1,
+    timeline: nextTimeline
+  };
+};
+
+export const completeAllStreamingThinking = (
+  model: HarnessReadModel,
+  runId?: string
+): HarnessReadModel => {
+  let changed = false;
+  const now = Date.now();
+  const nextTimeline = model.timeline.map((item) => {
+    if (!item.thinking || item.status !== 'STREAMING') return item;
+    if (runId && item.runId && item.runId !== runId) return item;
+    changed = true;
+    return {
+      ...item,
+      status: 'COMPLETE' as const,
+      thinkingCompletedAtMs: item.thinkingCompletedAtMs ?? now
+    };
+  });
+  return changed
+    ? { ...model, projectionVersion: model.projectionVersion + 1, timeline: nextTimeline }
+    : model;
+};
+
 /**
  * Mark an existing streamed response complete without creating a placeholder
  * row when the provider finished without sending any deltas.
@@ -324,6 +458,32 @@ export const completeStreamingAgent = (
 ): HarnessReadModel => model.timeline.some((item) => item.itemId === itemId)
   ? upsertStreamingAgent(model, itemId, '', true)
   : model;
+
+/** One assistant bubble per model round, so later rounds land after the tool cards. */
+export const streamingResponseItemId = (runId: string, round: number): string =>
+  `${runId}-response-r${Number.isInteger(round) && round > 0 ? round : 1}`;
+
+/**
+ * Finish streamed assistant text without moving it. Tool cards appended afterwards
+ * then sit between this round and the next round's thinking or reply.
+ */
+export const completeStreamingResponses = (
+  model: HarnessReadModel,
+  runId?: string,
+  exceptItemId?: string
+): HarnessReadModel => {
+  let changed = false;
+  const nextTimeline = model.timeline.map((item) => {
+    if (item.kind !== 'AGENT' || item.thinking || item.status !== 'STREAMING') return item;
+    if (runId && item.runId !== runId) return item;
+    if (exceptItemId && item.itemId === exceptItemId) return item;
+    changed = true;
+    return { ...item, status: 'COMPLETE' as const };
+  });
+  return changed
+    ? { ...model, projectionVersion: model.projectionVersion + 1, timeline: nextTimeline }
+    : model;
+};
 
 /** Trim only the failed stream attempt's tail from a still-STREAMING bubble (Fix 2 desktop). */
 export const discardStreamingTail = (

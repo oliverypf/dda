@@ -7,6 +7,9 @@ export const ALLOWED_DESKTOP_TARGETS = Object.freeze(['x86_64-pc-windows-msvc', 
 export const ALLOWED_DESKTOP_PROFILES = Object.freeze(['debug', 'release']);
 export const DESKTOP_BUILD_MANIFEST = 'latest.json';
 
+export const desktopBuildSourceExecutable = ({ desktopRoot, cargoTargetDir, target = 'x86_64-pc-windows-msvc', profile }) =>
+  join(cargoTargetDir ?? join(desktopRoot, 'src-tauri', 'target'), target, profile, 'dda-desktop.exe');
+
 export const defaultDesktopBuildRoot = (environment = process.env) => {
   if (!environment.LOCALAPPDATA) throw new Error('LOCALAPPDATA is not set; pass outputRoot explicitly to stage the desktop build');
   return join(environment.LOCALAPPDATA, 'dda', 'desktop-builds');
@@ -18,12 +21,16 @@ const isInside = (parent, child) => {
 };
 
 export async function stageDesktopBuild({
-  desktopRoot = projectPaths(import.meta.url).desktopRoot,
+  desktopRoot,
   target = 'x86_64-pc-windows-msvc',
   profile = 'debug',
   outputRoot = defaultDesktopBuildRoot(),
-  workspaceRoot = dirname(desktopRoot)
+  workspaceRoot,
+  cargoTargetDir
 } = {}) {
+  const defaultDesktopRoot = projectPaths(import.meta.url).desktopRoot;
+  const resolvedDesktopRoot = desktopRoot ?? defaultDesktopRoot;
+  const resolvedWorkspaceRoot = workspaceRoot ?? dirname(resolvedDesktopRoot);
   if (!ALLOWED_DESKTOP_TARGETS.includes(target)) {
     throw new Error(`unsupported desktop target "${target}"; allowed: ${ALLOWED_DESKTOP_TARGETS.join(', ')}`);
   }
@@ -31,8 +38,12 @@ export async function stageDesktopBuild({
     throw new Error(`unsupported desktop profile "${profile}"; allowed: ${ALLOWED_DESKTOP_PROFILES.join(', ')}`);
   }
 
-  const tauriRoot = join(desktopRoot, 'src-tauri');
-  const sourceExecutable = join(tauriRoot, 'target', target, profile, 'dda-desktop.exe');
+  const tauriRoot = join(resolvedDesktopRoot, 'src-tauri');
+  const effectiveTargetRoot = cargoTargetDir
+    ?? (desktopRoot === undefined && process.env.CARGO_TARGET_DIR?.trim()
+      ? resolve(tauriRoot, process.env.CARGO_TARGET_DIR.trim())
+      : join(tauriRoot, 'target'));
+  const sourceExecutable = desktopBuildSourceExecutable({ desktopRoot: resolvedDesktopRoot, cargoTargetDir: effectiveTargetRoot, target, profile });
   await access(sourceExecutable).catch(() => {
     throw new Error(`desktop executable not built: ${sourceExecutable}. Build first with: node desktop/scripts/build-controlled.mjs --fast`);
   });
@@ -42,7 +53,7 @@ export async function stageDesktopBuild({
 
   await mkdir(outputRoot, { recursive: true });
   const realOutputRoot = await realpath(outputRoot);
-  const realWorkspaceRoot = await realpath(workspaceRoot);
+  const realWorkspaceRoot = await realpath(resolvedWorkspaceRoot);
   if (isInside(realWorkspaceRoot, realOutputRoot)) {
     throw new Error(`desktop build output must be outside the workspace: ${realOutputRoot} is inside ${realWorkspaceRoot}`);
   }

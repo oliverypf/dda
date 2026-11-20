@@ -15,7 +15,7 @@ use std::process::{ChildStdin, Command, Stdio};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    mpsc, Arc, Mutex, OnceLock, RwLock,
+    mpsc, Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
@@ -23,6 +23,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 mod dream_maintenance;
 mod notifications;
 mod computer_access;
+mod task_worktree;
+use task_worktree::{allocate_worktree, directory_is_occupied, release_worktree_if_unchanged, TaskWorktree, WorktreeDisposition};
 use dream_maintenance::{
     start as start_dream_maintenance_impl, status as dream_maintenance_status_impl,
     stop as stop_dream_maintenance_impl, DreamMaintenanceState, DreamMaintenanceStatus,
@@ -32,26 +34,46 @@ const DEFAULT_PREVIEW_BYTES: u64 = 256 * 1024;
 const MAX_PREVIEW_BYTES: u64 = 256 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 200;
 const RUNTIME_HEARTBEAT_TIMEOUT_MS: u64 = 30_000;
+// Stdout heartbeats share the runtime main thread. A synchronous store flush
+// or a large event serialization can pause them without the process being
+// dead. Once the stderr process heartbeat is flowing, allow that pause before
+// treating the event loop as stuck.
+const RUNTIME_EVENT_LOOP_STALL_MS: u64 = 120_000;
 // A terminal state is emitted before the runtime flushes durable stores and
 // disposes provider fibers. Allow that final shutdown to finish while the
 // process is heartbeating; only stop a stale process after this grace period.
 const RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS: u64 = 120_000;
 const RUNTIME_STARTUP_GRACE_MS: u64 = 120_000;
 const RUNTIME_WATCHDOG_POLL_MS: u64 = 250;
+// A watchdog poll normally blocks at most RUNTIME_WATCHDOG_POLL_MS. A multi-second
+// gap means the OS/VM was suspended or starved, so extend watchdog deadlines on wake
+// instead of killing live tasks before Node's event loop can emit its next heartbeat.
+const RUNTIME_WATCHDOG_SUSPEND_GAP_MS: u64 = 5_000;
 
 struct RuntimeTaskSlot {
     session_id: String,
     pid: Option<u32>,
     run_id: Option<String>,
     approval_request_ids: HashSet<String>,
+    clarification_request_ids: HashSet<String>,
     stdin: Option<ChildStdin>,
     started_at_ms: Option<u64>,
     last_heartbeat_at_ms: Option<u64>,
+    started_at: Option<Instant>,
+    last_heartbeat_at: Option<Instant>,
     heartbeat_seen: bool,
+    last_process_heartbeat_at_ms: Option<u64>,
+    last_process_heartbeat_at: Option<Instant>,
+    process_heartbeat_seen: bool,
     launching: bool,
     cancel_requested: bool,
     job_handle: Option<usize>,
     order: u64,
+    /// Directory this task is executing in. Set before the process starts so a
+    /// second launch can see that the checkout is already taken.
+    workspace_root: Option<PathBuf>,
+    /// Present only when this task was moved to a linked git worktree.
+    worktree: Option<TaskWorktree>,
 }
 
 #[derive(Clone, Default)]
@@ -60,10 +82,6 @@ struct AppState {
     runtime_slots: Arc<Mutex<HashMap<String, RuntimeTaskSlot>>>,
     runtime_slot_seq: Arc<AtomicU64>,
     runtime_state_lock: Arc<Mutex<()>>,
-    // Tasks acquire shared read access so multiple tasks can execute in
-    // parallel, while exclusive maintenance/dashboard queries acquire write
-    // access so startup recovery finishes before tasks open the database.
-    runtime_command_lock: Arc<RwLock<()>>,
     dream_maintenance: DreamMaintenanceState,
 }
 
@@ -105,6 +123,8 @@ struct RuntimeSnapshot {
     network_side_effects: bool,
     runtime_ready: bool,
     node_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    build_id: Option<String>,
     model: Option<RuntimeModelSummary>,
     config_loaded: bool,
     context_sidecar: LocalContextStatus,
@@ -141,6 +161,9 @@ struct ModelConfig {
     /// 具体取值由 runtime 侧 normalizeContinuousVerifierConfig 校验。
     #[serde(skip_serializing_if = "Option::is_none")]
     verifier: Option<Value>,
+    /// 每个模型的上下文上限（token）。接近上限时 runtime 压缩较早的工具记录。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_context_limits: Option<std::collections::BTreeMap<String, u32>>,
 }
 
 impl Default for ModelConfig {
@@ -198,6 +221,8 @@ struct RuntimeHealthResponse {
 #[derive(Debug, Deserialize)]
 struct RuntimeHealthRuntime {
     node: Option<String>,
+    #[serde(rename = "buildId")]
+    build_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -316,6 +341,7 @@ fn default_model_config() -> ModelConfig {
         session_header: Some("x-opencode-session".to_string()),
         custom_instructions: None,
         verifier: None,
+        model_context_limits: None,
     }
 }
 
@@ -349,6 +375,50 @@ fn validate_model_config_url(value: Option<String>, field: &str) -> Result<Optio
         }
     }
     Ok(value)
+}
+
+fn valid_context_model_id(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphanumeric() => {}
+        _ => return false,
+    }
+    if value.chars().count() > 240 {
+        return false;
+    }
+    chars.all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '/' | '-')
+    })
+}
+
+fn validate_model_context_limits(
+    limits: Option<std::collections::BTreeMap<String, u32>>,
+) -> Result<Option<std::collections::BTreeMap<String, u32>>, String> {
+    let Some(limits) = limits else {
+        return Ok(None);
+    };
+    if limits.is_empty() {
+        return Ok(None);
+    }
+    if limits.len() > 256 {
+        return Err("上下文上限最多 256 个模型".to_string());
+    }
+    let mut cleaned = std::collections::BTreeMap::new();
+    let mut seen = std::collections::HashSet::new();
+    for (model_id, tokens) in limits {
+        let id = model_id.trim();
+        if model_id != id
+            || !valid_context_model_id(id)
+            || !seen.insert(id.to_ascii_lowercase())
+        {
+            return Err("上下文上限里的模型名无效".to_string());
+        }
+        if !(8_192..=2_000_000).contains(&tokens) {
+            return Err("上下文上限需要是 8192 到 2000000 的整数 token".to_string());
+        }
+        cleaned.insert(id.to_string(), tokens);
+    }
+    Ok(Some(cleaned))
 }
 
 fn valid_api_key_env(value: &str) -> bool {
@@ -417,6 +487,7 @@ fn validate_model_config(mut config: ModelConfig) -> Result<ModelConfig, String>
             return Err("会话 Header 名称无效".to_string());
         }
     }
+    config.model_context_limits = validate_model_context_limits(config.model_context_limits)?;
     Ok(config)
 }
 
@@ -677,6 +748,7 @@ fn persist_model_config(config_path: &Path, config: &ModelConfig) -> Result<(), 
         "sessionHeader",
         "customInstructions",
         "verifier",
+        "modelContextLimits",
     ] {
         if let Some(value) = editable.get(key) {
             object.insert(key.to_string(), value.clone());
@@ -780,20 +852,169 @@ fn runtime_process_status_impl(state: &AppState) -> Result<RuntimeProcessStatus,
         .max_by_key(|slot| slot.order);
     let pid = newest.and_then(|slot| slot.pid);
     let started_at_ms = newest.and_then(|slot| slot.started_at_ms);
-    let last_heartbeat_at_ms = newest.and_then(|slot| slot.last_heartbeat_at_ms);
+    let last_heartbeat_at_ms = newest.and_then(|slot| {
+        match (slot.last_heartbeat_at_ms, slot.last_process_heartbeat_at_ms) {
+            (Some(stdout_at), Some(process_at)) => Some(stdout_at.max(process_at)),
+            (stdout_at, process_at) => stdout_at.or(process_at),
+        }
+    });
+    let healthy = newest
+        .filter(|slot| slot.pid.is_some())
+        .is_some_and(|slot| {
+            !runtime_liveness_is_stale(
+                slot.heartbeat_seen,
+                slot.started_at,
+                slot.last_heartbeat_at,
+                slot.process_heartbeat_seen,
+                slot.last_process_heartbeat_at,
+                Instant::now(),
+            )
+        });
     Ok(RuntimeProcessStatus {
         running: pid.is_some(),
         pid,
         started_at_ms,
         last_heartbeat_at_ms,
-        healthy: pid.is_some() && !runtime_heartbeat_is_stale(last_heartbeat_at_ms, unix_time_ms()),
+        healthy,
     })
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 fn runtime_heartbeat_is_stale(last_heartbeat_at_ms: Option<u64>, now_ms: u64) -> bool {
     last_heartbeat_at_ms.map_or(true, |heartbeat| {
         now_ms.saturating_sub(heartbeat) > RUNTIME_HEARTBEAT_TIMEOUT_MS
     })
+}
+
+fn runtime_instant_heartbeat_is_stale(last_heartbeat_at: Option<Instant>, now: Instant) -> bool {
+    last_heartbeat_at.map_or(true, |heartbeat| {
+        runtime_heartbeat_is_stale(Some(0), duration_ms(now.saturating_duration_since(heartbeat)))
+    })
+}
+
+fn runtime_slot_is_stale(
+    heartbeat_seen: bool,
+    started_at: Option<Instant>,
+    last_heartbeat_at: Option<Instant>,
+    now: Instant,
+) -> bool {
+    if heartbeat_seen {
+        runtime_instant_heartbeat_is_stale(last_heartbeat_at, now)
+    } else {
+        let startup_elapsed_ms = started_at
+            .map(|started| duration_ms(now.saturating_duration_since(started)))
+            .unwrap_or(RUNTIME_STARTUP_GRACE_MS + 1);
+        startup_elapsed_ms > RUNTIME_STARTUP_GRACE_MS
+    }
+}
+
+fn runtime_watchdog_poll_was_suspended(poll_gap_ms: u64) -> bool {
+    poll_gap_ms > RUNTIME_WATCHDOG_SUSPEND_GAP_MS
+}
+
+fn advance_instant_for_suspend(target: &mut Option<Instant>, now: Instant, suspended: Duration) {
+    if let Some(instant) = target.as_mut() {
+        *instant = instant
+            .checked_add(suspended)
+            .map_or(now, |shifted| shifted.min(now));
+    }
+}
+
+fn advance_slot_timers_for_suspend(
+    slot: &mut RuntimeTaskSlot,
+    now: Instant,
+    now_ms: u64,
+    suspended: Duration,
+) {
+    slot.last_heartbeat_at = Some(now);
+    slot.last_heartbeat_at_ms = Some(now_ms);
+    if slot.process_heartbeat_seen {
+        slot.last_process_heartbeat_at = Some(now);
+        slot.last_process_heartbeat_at_ms = Some(now_ms);
+    }
+    advance_instant_for_suspend(&mut slot.started_at, now, suspended);
+}
+
+fn extend_runtime_slot_after_suspend(
+    state: &AppState,
+    session_id: &str,
+    pid: u32,
+    now: Instant,
+    now_ms: u64,
+    suspended: Duration,
+    terminal_seen_at: &mut Option<Instant>,
+) -> bool {
+    advance_instant_for_suspend(terminal_seen_at, now, suspended);
+    let Ok(_state_guard) = state.runtime_state_lock.lock() else {
+        return false;
+    };
+    let Ok(mut slots) = state.runtime_slots.lock() else {
+        return false;
+    };
+    let Some(slot) = slots.get_mut(session_id).filter(|slot| slot.pid == Some(pid)) else {
+        return false;
+    };
+    advance_slot_timers_for_suspend(slot, now, now_ms, suspended);
+    true
+}
+
+fn process_heartbeat_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.len() > 256 || !trimmed.starts_with('{') {
+        return false;
+    }
+    serde_json::from_str::<Value>(trimmed)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("type")
+                .and_then(Value::as_str)
+                .map(|kind| kind == "runtime_heartbeat")
+        })
+        .unwrap_or(false)
+}
+
+fn note_process_heartbeat(state: &AppState, session_id: &str, pid: u32) {
+    let Ok(_state_guard) = state.runtime_state_lock.lock() else {
+        return;
+    };
+    let Ok(mut slots) = state.runtime_slots.lock() else {
+        return;
+    };
+    let Some(slot) = slots.get_mut(session_id) else {
+        return;
+    };
+    if slot.pid != Some(pid) {
+        return;
+    }
+    let now = Instant::now();
+    slot.last_process_heartbeat_at = Some(now);
+    slot.last_process_heartbeat_at_ms = Some(unix_time_ms());
+    slot.process_heartbeat_seen = true;
+}
+
+/// Stdout silence is fatal only when no side-channel heartbeat exists. A live
+/// stderr heartbeat means the process is still scheduled, so the main thread
+/// may block up to RUNTIME_EVENT_LOOP_STALL_MS before the supervisor stops it.
+fn runtime_liveness_is_stale(
+    heartbeat_seen: bool,
+    started_at: Option<Instant>,
+    last_heartbeat_at: Option<Instant>,
+    process_heartbeat_seen: bool,
+    last_process_heartbeat_at: Option<Instant>,
+    now: Instant,
+) -> bool {
+    if process_heartbeat_seen {
+        let process_stale = runtime_instant_heartbeat_is_stale(last_process_heartbeat_at, now);
+        let event_loop_silent_ms = last_heartbeat_at
+            .map(|seen| duration_ms(now.saturating_duration_since(seen)))
+            .unwrap_or(u64::MAX);
+        return process_stale || event_loop_silent_ms > RUNTIME_EVENT_LOOP_STALL_MS;
+    }
+    runtime_slot_is_stale(heartbeat_seen, started_at, last_heartbeat_at, now)
 }
 
 fn runtime_watchdog_should_stop(stale: bool, terminal_for_ms: Option<u64>) -> bool {
@@ -831,6 +1052,7 @@ fn handle_runtime_stdout_line(
         return;
     }
     let now_ms = unix_time_ms();
+    let now = Instant::now();
     let is_active = {
         let Ok(_state_guard) = state.runtime_state_lock.lock() else {
             return;
@@ -845,6 +1067,7 @@ fn handle_runtime_stdout_line(
             return;
         }
         slot.last_heartbeat_at_ms = Some(now_ms);
+        slot.last_heartbeat_at = Some(now);
         if value.get("kind").and_then(Value::as_str) == Some("runtime.heartbeat") {
             slot.heartbeat_seen = true;
         }
@@ -859,6 +1082,16 @@ fn handle_runtime_stdout_line(
                 .filter(|id| !id.is_empty())
             {
                 slot.approval_request_ids.insert(request_id.to_string());
+            }
+        }
+        if value.get("kind").and_then(Value::as_str) == Some("clarification.requested") {
+            if let Some(request_id) = value
+                .get("payload")
+                .and_then(|p| p.get("requestId"))
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+            {
+                slot.clarification_request_ids.insert(request_id.to_string());
             }
         }
         true
@@ -907,32 +1140,129 @@ fn reserve_runtime_launch(state: &AppState, session_id: Option<&str>) -> Result<
             pid: None,
             run_id: None,
             approval_request_ids: HashSet::new(),
+            clarification_request_ids: HashSet::new(),
             stdin: None,
             started_at_ms: None,
             last_heartbeat_at_ms: None,
+            started_at: None,
+            last_heartbeat_at: None,
             heartbeat_seen: false,
+            last_process_heartbeat_at_ms: None,
+            last_process_heartbeat_at: None,
+            process_heartbeat_seen: false,
             launching: true,
             cancel_requested: false,
             job_handle: None,
             order,
+            workspace_root: None,
+            worktree: None,
         },
     );
     Ok(resolved_id)
 }
 
 fn clear_runtime_launch_reservation(state: &AppState, session_id: &str) {
-    let Ok(_state_guard) = state.runtime_state_lock.lock() else {
+    let removed = {
+        let Ok(_state_guard) = state.runtime_state_lock.lock() else {
+            return;
+        };
+        let Ok(mut slots) = state.runtime_slots.lock() else {
+            return;
+        };
+        if slots.get(session_id).is_some_and(|slot| slot.pid.is_none()) {
+            slots.remove(session_id)
+        } else {
+            None
+        }
+    };
+    let Some(removed) = removed else {
         return;
     };
-    if let Ok(mut slots) = state.runtime_slots.lock() {
-        if slots.get(session_id).is_some_and(|slot| slot.pid.is_none()) {
-            if let Some(removed) = slots.remove(session_id) {
-                if let Some(handle) = removed.job_handle {
-                    close_job_handle(handle);
-                }
-            }
-        }
+    if let Some(handle) = removed.job_handle {
+        close_job_handle(handle);
     }
+    release_task_worktree(removed.worktree);
+}
+
+fn release_task_worktree(worktree: Option<TaskWorktree>) {
+    let Some(worktree) = worktree else {
+        return;
+    };
+    match release_worktree_if_unchanged(&worktree) {
+        WorktreeDisposition::Removed => append_desktop_log(&format!(
+            "removed task worktree path={} branch={}",
+            worktree.path.display(),
+            worktree.branch
+        )),
+        WorktreeDisposition::Kept { reason } => append_desktop_log(&format!(
+            "kept task worktree path={} branch={} reason={reason}",
+            worktree.path.display(),
+            worktree.branch
+        )),
+    }
+}
+
+/// The first live task keeps `requested`. A later task for that same directory
+/// gets a linked worktree so the two do not share one workspace lease.
+fn claim_task_workspace(state: &AppState, session_id: &str, requested: &Path) -> Result<PathBuf, String> {
+    let requested = requested.canonicalize()
+        .map_err(|error| format!("无法解析工作区路径: {error}"))?;
+    let needs_worktree = {
+        let _state_guard = state.runtime_state_lock.lock()
+            .map_err(|_| "运行时状态不可用".to_string())?;
+        let mut slots = state.runtime_slots.lock()
+            .map_err(|_| "运行时状态不可用".to_string())?;
+        if !slots.contains_key(session_id) || slots.get(session_id).is_some_and(|slot| slot.cancel_requested) {
+            return Err("Cordis runtime 已在启动前取消".to_string());
+        }
+        let occupied: Vec<PathBuf> = slots.values()
+            .filter(|other| other.session_id != session_id && !other.cancel_requested)
+            .filter_map(|other| other.workspace_root.clone())
+            .collect();
+        if directory_is_occupied(&requested, &occupied) {
+            true
+        } else if let Some(slot) = slots.get_mut(session_id) {
+            slot.workspace_root = Some(requested.clone());
+            false
+        } else {
+            return Err("Cordis runtime 已在启动前取消".to_string());
+        }
+    };
+    if !needs_worktree {
+        return Ok(requested);
+    }
+    let worktree = allocate_worktree(&requested, session_id)?;
+    let path = worktree.workspace.clone();
+    let attach = {
+        let state_guard = state.runtime_state_lock.lock();
+        let slots = state.runtime_slots.lock();
+        match (state_guard, slots) {
+            (Ok(_state_guard), Ok(mut slots)) => match slots.get_mut(session_id) {
+                Some(slot) if !slot.cancel_requested => {
+                    slot.workspace_root = Some(path.clone());
+                    slot.worktree = Some(worktree);
+                    Ok(())
+                }
+                _ => Err(worktree),
+            },
+            _ => Err(worktree),
+        }
+    };
+    if let Err(worktree) = attach {
+        release_task_worktree(Some(worktree));
+        return Err("Cordis runtime 已在启动前取消".to_string());
+    }
+    Ok(path)
+}
+
+fn task_worktree_branch(state: &AppState, session_id: &str) -> Option<String> {
+    let Ok(_state_guard) = state.runtime_state_lock.lock() else {
+        return None;
+    };
+    let Ok(slots) = state.runtime_slots.lock() else {
+        return None;
+    };
+    slots.get(session_id).and_then(|slot| slot.worktree.as_ref().map(|worktree| worktree.branch.clone()))
 }
 
 #[tauri::command]
@@ -975,7 +1305,7 @@ fn runtime_snapshot_impl(app: AppHandle, state: &AppState) -> Result<RuntimeSnap
             .unwrap_or_default();
         return Err(format!("Cordis runtime 健康检查失败{detail}"));
     }
-    let node_version = health.runtime.and_then(|runtime| runtime.node);
+    let (node_version, build_id) = health.runtime.map(|runtime| (runtime.node, runtime.build_id)).unwrap_or_default();
     let config_loaded = health.config.map(|config| config.loaded).unwrap_or(false);
     Ok(RuntimeSnapshot {
         release_channel,
@@ -987,6 +1317,7 @@ fn runtime_snapshot_impl(app: AppHandle, state: &AppState) -> Result<RuntimeSnap
         network_side_effects: false,
         runtime_ready: true,
         node_version,
+        build_id,
         model: health.model,
         config_loaded,
         context_sidecar: local_context_status(),
@@ -1177,6 +1508,77 @@ async fn list_thread_events(app: AppHandle, thread_id: String, limit: Option<u32
         if let Some(before) = before.as_deref() { args.extend(["--before", before]); }
         run_runtime_json(&app, &args)
     }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn archive_thread_events(
+    app: AppHandle,
+    thread_id: String,
+    restore: Option<bool>,
+    vacuum: Option<bool>,
+) -> Result<Value, String> {
+    let thread_id = thread_id.trim().to_string();
+    if thread_id.is_empty() || thread_id.len() > 240 {
+        return Err("threadId 无效".to_string());
+    }
+    let operation = if restore.unwrap_or(false) { "restore-thread" } else { "archive-thread" };
+    let vacuum_flag = if vacuum.unwrap_or(false) { "true" } else { "false" };
+    tauri::async_runtime::spawn_blocking(move || {
+        run_runtime_json(
+            &app,
+            &[
+                "harness-events",
+                operation,
+                "--thread-id",
+                thread_id.as_str(),
+                "--vacuum",
+                vacuum_flag,
+            ],
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn archive_threads(
+    app: AppHandle,
+    thread_ids: Vec<String>,
+    vacuum: Option<bool>,
+) -> Result<Value, String> {
+    if thread_ids.is_empty()
+        || thread_ids.len() > 500
+        || thread_ids.iter().any(|id| {
+            let id = id.trim();
+            id.is_empty() || id.len() > 240
+        })
+    {
+        return Err("threadId 无效".to_string());
+    }
+    let payload = serde_json::to_string(&thread_ids).map_err(|error| error.to_string())?;
+    let vacuum_flag = if vacuum.unwrap_or(false) { "true" } else { "false" };
+    tauri::async_runtime::spawn_blocking(move || {
+        run_runtime_json(
+            &app,
+            &[
+                "harness-events",
+                "archive-threads",
+                "--thread-ids",
+                payload.as_str(),
+                "--vacuum",
+                vacuum_flag,
+            ],
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn vacuum_event_store(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || run_runtime_json(&app, &["harness-events", "vacuum"]))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1729,6 +2131,71 @@ async fn evolution_action(
         .map_err(|error| error.to_string())?
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeImageInput {
+    name: Option<String>,
+    media_type: String,
+    data_url: String,
+}
+
+struct TempFileGuard(Option<PathBuf>);
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn validate_task_images(images: &[RuntimeImageInput]) -> Result<(), String> {
+    const MAX_IMAGES: usize = 4;
+    // 10 MiB raw ~= 13.99 MiB base64; cap individual data URL and 20 MiB total raw (~28 MiB base64).
+    const MAX_SINGLE_DATA_URL_LEN: usize = 14 * 1024 * 1024 + 4096;
+    const MAX_TOTAL_DATA_URL_LEN: usize = 28 * 1024 * 1024 + 8192;
+    if images.len() > MAX_IMAGES {
+        return Err(format!("TASK_IMAGE_COUNT_EXCEEDED: 单次最多添加 {MAX_IMAGES} 张图片"));
+    }
+    let mut total_len = 0usize;
+    for item in images {
+        let media = item.media_type.trim().to_ascii_lowercase();
+        let canonical = match media.as_str() {
+            "image/png" => "image/png",
+            "image/jpeg" | "image/jpg" => "image/jpeg",
+            "image/webp" => "image/webp",
+            "image/gif" => "image/gif",
+            _ => return Err("TASK_IMAGE_FORMAT_UNSUPPORTED: 仅支持 PNG、JPG、WebP、GIF 图片格式".to_string()),
+        };
+        let url = item.data_url.trim();
+        let expected_prefix = format!("data:{canonical};base64,");
+        let alt_jpg_prefix = "data:image/jpg;base64,";
+        let payload = if url.len() >= expected_prefix.len()
+            && url[..expected_prefix.len()].eq_ignore_ascii_case(&expected_prefix)
+        {
+            &url[expected_prefix.len()..]
+        } else if canonical == "image/jpeg"
+            && url.len() >= alt_jpg_prefix.len()
+            && url[..alt_jpg_prefix.len()].eq_ignore_ascii_case(alt_jpg_prefix)
+        {
+            &url[alt_jpg_prefix.len()..]
+        } else {
+            return Err("TASK_IMAGE_DATA_INVALID: 图片数据格式无效".to_string());
+        };
+        if payload.trim().is_empty() {
+            return Err("TASK_IMAGE_DATA_INVALID: 图片数据为空".to_string());
+        }
+        if url.len() > MAX_SINGLE_DATA_URL_LEN {
+            return Err("TASK_IMAGE_TOO_LARGE: 单张图片不能超过 10 MB".to_string());
+        }
+        total_len = total_len.saturating_add(url.len());
+        if total_len > MAX_TOTAL_DATA_URL_LEN {
+            return Err("TASK_IMAGE_TOTAL_TOO_LARGE: 单次图片总大小不能超过 20 MB".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn run_model_task(
     app: AppHandle,
@@ -1746,14 +2213,24 @@ async fn run_model_task(
     lease_network_targets: Option<serde_json::Value>,
     client_session_id: Option<String>,
     workspace_path: Option<String>,
+    images: Option<Vec<RuntimeImageInput>>,
 ) -> Result<RuntimeTaskResponse, String> {
+    let image_list = images.unwrap_or_default();
+    if !image_list.is_empty() {
+        validate_task_images(&image_list)?;
+    }
     let prompt_length = prompt.trim().encode_utf16().count();
-    if prompt_length == 0 {
-        return Err("TASK_EMPTY: 请填写任务需求".to_string());
+    if prompt_length == 0 && image_list.is_empty() {
+        return Err("TASK_EMPTY: 请填写任务需求或粘贴图片".to_string());
     }
     if prompt_length > 8000 {
         return Err(format!("TASK_PROMPT_TOO_LONG:{prompt_length}:8000：需求超过 8000 字符，请拆分后提交；原文未被截断"));
     }
+    let effective_prompt = if prompt_length == 0 {
+        "请结合所附图片分析并处理。".to_string()
+    } else {
+        prompt
+    };
     let state = state.inner().clone();
     let session_id = reserve_runtime_launch(&state, client_session_id.as_deref())?;
     let cleanup_state = state.clone();
@@ -1764,7 +2241,8 @@ async fn run_model_task(
             state,
             session_id,
             workspace_path,
-            prompt,
+            effective_prompt,
+            image_list,
             model,
             thread_id,
             resume,
@@ -1829,12 +2307,35 @@ fn slot_cancel_requested(state: &AppState, session_id: &str) -> Result<bool, Str
     Ok(slots.get(session_id).map_or(true, |slot| slot.cancel_requested))
 }
 
+fn prepare_project_workspace(app: &AppHandle, state: &AppState, session_id: &str, root: &Path) -> Result<PathBuf, String> {
+    let requested = if root.as_os_str().is_empty() {
+        ensure_default_workspace(app, state)?
+    } else {
+        normalize_existing_dir(root.to_path_buf()).map_err(|error| error.to_string())?
+    };
+    if !requested.is_dir() { return Err("工作区路径不是目录".to_string()); }
+    let root = claim_task_workspace(state, session_id, &requested)?;
+    if let Some(branch) = task_worktree_branch(state, session_id) {
+        append_desktop_log(&format!(
+            "task worktree session={session_id} path={} branch={branch}",
+            root.display()
+        ));
+        let _ = app.emit("task-worktree", serde_json::json!({
+            "clientSessionId": session_id,
+            "path": root.display().to_string(),
+            "branch": branch,
+        }));
+    }
+    Ok(root)
+}
+
 fn run_model_task_blocking(
     app: AppHandle,
     state: AppState,
     session_id: String,
     workspace_path: Option<String>,
     prompt: String,
+    images: Vec<RuntimeImageInput>,
     model: Option<String>,
     thread_id: Option<String>,
     resume: Option<bool>,
@@ -1846,44 +2347,16 @@ fn run_model_task_blocking(
     lease_commands: Option<Vec<String>>,
     lease_network_targets: Option<serde_json::Value>,
 ) -> Result<RuntimeTaskResponse, String> {
-    // Acquire shared read access so parallel tasks run concurrently without
-    // waiting on each other, while startup recovery/dashboard write guards
-    // complete before any task opens the database.
-    let lock_wait_started = Instant::now();
-    let _runtime_command_guard = loop {
-        match state.runtime_command_lock.try_read() {
-            Ok(guard) => break guard,
-            Err(std::sync::TryLockError::Poisoned(_)) => {
-                return Err("运行时命令状态不可用".to_string());
-            }
-            Err(std::sync::TryLockError::WouldBlock) => {
-                if slot_cancel_requested(&state, &session_id)? {
-                    return Err("Cordis runtime 已在启动前取消".to_string());
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-    };
-    let lock_wait_ms = lock_wait_started.elapsed().as_millis();
-    if lock_wait_ms > 0 {
-        append_desktop_log(&format!("runtime task waited for command lock {lock_wait_ms}ms"));
-    }
+    append_desktop_log(&format!("runtime task launch begin session={session_id}"));
     if slot_cancel_requested(&state, &session_id)? {
         return Err("Cordis runtime 已在启动前取消".to_string());
     }
     let channel = desktop_release_channel()?;
     validate_release_mode(&channel, execution_mode.as_deref())?;
-    let root = match workspace_path.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-        Some(explicit) => {
-            let resolved = normalize_existing_dir(PathBuf::from(explicit))
-                .map_err(|error| format!("无法解析工作区路径: {error}"))?;
-            if !resolved.is_dir() {
-                return Err("工作区路径不是目录".to_string());
-            }
-            resolved
-        }
-        None => ensure_default_workspace(&app, &state)?,
-    };
+    // Capture the selected directory as an identity only. A chat can start
+    // without a project, including when the last checkout has disappeared.
+    let root = workspace_path.as_deref().map(str::trim).filter(|value| !value.is_empty())
+        .map(PathBuf::from).or_else(|| state.workspace_root.lock().ok()?.clone()).unwrap_or_default();
     let runtime = runtime_entrypoint(&app)?;
     let _ = app.emit("context-sidecar-status", &local_context_status());
     let resource_dir = app.path().resource_dir().ok();
@@ -1909,7 +2382,30 @@ fn run_model_task_blocking(
         .arg("--prompt")
         .arg(prompt)
         .arg("--workspace")
-        .arg(root);
+        .arg(&root)
+        .arg("--defer-workspace");
+    let mut _images_file_guard = TempFileGuard(None);
+    if !images.is_empty() {
+        let safe_id: String = session_id
+            .chars()
+            .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' })
+            .take(80)
+            .collect();
+        let file_name = format!("task-images-{safe_id}-{}.json", unix_time_ms());
+        let images_path = local_app_data_dir()
+            .map(|app_data| windows_desktop_journal_path(&app_data, &file_name))
+            .unwrap_or_else(|| std::env::temp_dir().join(&file_name));
+        if let Some(parent) = images_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("无法创建图片临时目录: {error}"))?;
+        }
+        let serialized = serde_json::to_string(&serde_json::json!({ "images": images }))
+            .map_err(|error| format!("序列化图片数据失败: {error}"))?;
+        fs::write(&images_path, serialized)
+            .map_err(|error| format!("写入图片临时文件失败: {error}"))?;
+        command.arg("--images-file").arg(&images_path);
+        _images_file_guard = TempFileGuard(Some(images_path));
+    }
     let execution_mode = execution_mode.unwrap_or_else(|| "CONTROLLED".to_string());
     if execution_mode != "CONTROLLED" {
         return Err("EXECUTION_MODE_INVALID".to_string());
@@ -1917,6 +2413,7 @@ fn run_model_task_blocking(
     command.arg("--execution-mode").arg(&execution_mode);
     command.arg("--agent-mode").arg("multi");
     command.arg("--events").arg("stdout");
+    command.arg("--session-id").arg(&session_id);
     if let Some(capabilities) = lease_capabilities {
         let value = join_runtime_values(&capabilities)?;
         if !value.is_empty() {
@@ -1964,7 +2461,7 @@ fn run_model_task_blocking(
         if !value.is_finite() || value < 0.0 { return Err("费用上限必须是非负数字".to_string()); }
         command.arg("--max-cost").arg(value.to_string());
     }
-    let mut child = {
+    let (mut child, spawn_instant) = {
         let _state_guard = state
             .runtime_state_lock
             .lock()
@@ -1973,16 +2470,27 @@ fn run_model_task_blocking(
             .runtime_slots
             .lock()
             .map_err(|_| "运行时状态不可用".to_string())?;
+        if !slots.contains_key(&session_id) {
+            return Err("Cordis runtime 已在启动前取消".to_string());
+        }
+        if slots.get(&session_id).is_some_and(|slot| slot.pid.is_some()) {
+            return Err("该会话已有任务正在运行".to_string());
+        }
+        if slots.get(&session_id).is_some_and(|slot| slot.cancel_requested) {
+            let removed = slots.remove(&session_id);
+            drop(slots);
+            drop(_state_guard);
+            if let Some(removed) = removed {
+                if let Some(handle) = removed.job_handle {
+                    close_job_handle(handle);
+                }
+                release_task_worktree(removed.worktree);
+            }
+            return Err("Cordis runtime 已在启动前取消".to_string());
+        }
         let Some(slot) = slots.get_mut(&session_id) else {
             return Err("Cordis runtime 已在启动前取消".to_string());
         };
-        if slot.pid.is_some() {
-            return Err("该会话已有任务正在运行".to_string());
-        }
-        if slot.cancel_requested {
-            slots.remove(&session_id);
-            return Err("Cordis runtime 已在启动前取消".to_string());
-        }
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -1996,23 +2504,47 @@ fn run_model_task_blocking(
         let job_handle = bind_session_keep_reaper(pid);
         let child_stdin = child.stdin.take();
         let started = unix_time_ms();
+        let started_at = Instant::now();
         slot.pid = Some(pid);
         slot.stdin = child_stdin;
         slot.started_at_ms = Some(started);
         slot.last_heartbeat_at_ms = Some(started);
+        slot.started_at = Some(started_at);
+        slot.last_heartbeat_at = Some(started_at);
         slot.heartbeat_seen = false;
         slot.launching = false;
         slot.job_handle = job_handle;
-        child
+        (child, started_at)
     };
     let pid = child.id();
     append_desktop_log(&format!("runtime task spawned session={session_id} pid={pid}"));
     let stderr = child.stderr.take();
+    let stderr_state = state.clone();
+    let stderr_session = session_id.clone();
+    let stderr_pid = pid;
     let stderr_thread = std::thread::spawn(move || {
         let mut text = String::new();
-        if let Some(stderr) = stderr {
-            let mut reader = BufReader::new(stderr);
-            let _ = reader.read_to_string(&mut text);
+        let Some(stderr) = stderr else {
+            return text;
+        };
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if process_heartbeat_line(&line) {
+                        note_process_heartbeat(&stderr_state, &stderr_session, stderr_pid);
+                    } else {
+                        text.push_str(&line);
+                    }
+                }
+                Err(error) => {
+                    text.push_str(&format!("读取 Cordis runtime 错误输出失败: {error}\n"));
+                    break;
+                }
+            }
         }
         text
     });
@@ -2043,15 +2575,61 @@ fn run_model_task_blocking(
     });
     let mut stdout_text = String::new();
     let mut stdout_error = None;
-    let mut terminal_seen_at_ms = None;
+    let mut claimed_workspace: Option<PathBuf> = None;
+    let mut terminal_seen_at: Option<Instant> = None;
+    let mut last_watchdog_tick = spawn_instant;
     loop {
-        match stdout_receiver.recv_timeout(Duration::from_millis(RUNTIME_WATCHDOG_POLL_MS)) {
+        let recv_result =
+            stdout_receiver.recv_timeout(Duration::from_millis(RUNTIME_WATCHDOG_POLL_MS));
+        let now = Instant::now();
+        let poll_gap_ms = duration_ms(now.saturating_duration_since(last_watchdog_tick));
+        last_watchdog_tick = now;
+        if runtime_watchdog_poll_was_suspended(poll_gap_ms) {
+            let suspended =
+                Duration::from_millis(poll_gap_ms.saturating_sub(RUNTIME_WATCHDOG_POLL_MS));
+            if extend_runtime_slot_after_suspend(
+                &state,
+                &session_id,
+                pid,
+                now,
+                unix_time_ms(),
+                suspended,
+                &mut terminal_seen_at,
+            ) {
+                append_desktop_log(&format!(
+                    "runtime 监督器检测到系统挂起或调度跳变 gap_ms={poll_gap_ms}，顺延心跳窗口 pid={pid}"
+                ));
+            }
+        }
+        match recv_result {
             Ok(Ok(Some(line))) => {
+                if line.contains("workspace.claim_requested") {
+                    if let Ok(event) = serde_json::from_str::<Value>(&line) {
+                        if event["type"] == "runtime_event" && event["kind"] == "workspace.claim_requested" {
+                            // Resolve only the parent-owned launch directory, once per task slot.
+                            let result = match &claimed_workspace {
+                                Some(path) => Ok(path.clone()),
+                                None => prepare_project_workspace(&app, &state, &session_id, &root),
+                            };
+                            if let Ok(path) = &result { claimed_workspace = Some(path.clone()); }
+                            let reply = serde_json::json!({
+                                "type": "workspace.claim_result", "requestId": event["payload"]["requestId"],
+                                "path": result.as_ref().ok(), "error": result.as_ref().err()
+                            });
+                            if let Ok(mut slots) = state.runtime_slots.lock() {
+                                if let Some(input) = slots.get_mut(&session_id)
+                                    .filter(|slot| slot.pid == Some(pid)).and_then(|slot| slot.stdin.as_mut()) {
+                                    let _ = writeln!(input, "{reply}").and_then(|_| input.flush());
+                                }
+                            }
+                        }
+                    }
+                }
                 handle_runtime_stdout_line(&app, &state, &session_id, pid, &line, &mut stdout_text);
                 if runtime_last_phase(&stdout_text).is_some_and(|phase| {
                     matches!(phase.as_str(), "run.state_changed:SUCCEEDED" | "run.state_changed:FAILED" | "run.state_changed:CANCELLED")
                 }) {
-                    terminal_seen_at_ms.get_or_insert(unix_time_ms());
+                    terminal_seen_at.get_or_insert_with(Instant::now);
                 }
             }
             Ok(Ok(None)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -2064,29 +2642,45 @@ fn run_model_task_blocking(
                 break;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let now_ms = unix_time_ms();
-                let (slot_active, heartbeat_seen, started_at_ms, last_heartbeat_at_ms, watchdog_job) = {
+                let (
+                    slot_active,
+                    heartbeat_seen,
+                    started_at,
+                    last_heartbeat_at,
+                    process_heartbeat_seen,
+                    last_process_heartbeat_at,
+                    watchdog_job,
+                ) = {
                     let Ok(slots) = state.runtime_slots.lock() else {
                         continue;
                     };
                     if let Some(slot) = slots.get(&session_id).filter(|s| s.pid == Some(pid)) {
-                        (true, slot.heartbeat_seen, slot.started_at_ms, slot.last_heartbeat_at_ms, slot.job_handle)
+                        (
+                            true,
+                            slot.heartbeat_seen,
+                            slot.started_at,
+                            slot.last_heartbeat_at,
+                            slot.process_heartbeat_seen,
+                            slot.last_process_heartbeat_at,
+                            slot.job_handle,
+                        )
                     } else {
-                        (false, false, None, None, None)
+                        (false, false, None, None, false, None, None)
                     }
                 };
                 if !slot_active {
                     continue;
                 }
-                let startup_elapsed_ms = started_at_ms
-                    .map(|started| now_ms.saturating_sub(started))
-                    .unwrap_or(RUNTIME_STARTUP_GRACE_MS + 1);
-                let stale = if heartbeat_seen {
-                    runtime_heartbeat_is_stale(last_heartbeat_at_ms, now_ms)
-                } else {
-                    startup_elapsed_ms > RUNTIME_STARTUP_GRACE_MS
-                };
-                let terminal_for_ms = terminal_seen_at_ms.map(|seen| now_ms.saturating_sub(seen));
+                let stale = runtime_liveness_is_stale(
+                    heartbeat_seen,
+                    started_at,
+                    last_heartbeat_at,
+                    process_heartbeat_seen,
+                    last_process_heartbeat_at,
+                    now,
+                );
+                let terminal_for_ms = terminal_seen_at
+                    .map(|seen| duration_ms(now.saturating_duration_since(seen)));
                 if runtime_watchdog_should_stop(stale, terminal_for_ms) {
                     let exited = child.try_wait().map_or(false, |status| status.is_some());
                     let terminal_error = if exited {
@@ -2109,8 +2703,13 @@ fn run_model_task_blocking(
                                 ));
                                 format!("Cordis runtime 在任务结束后没有退出，已由监督器终止（阶段: {phase}）")
                             } else {
+                                let signal = if process_heartbeat_seen {
+                                    "process-heartbeat"
+                                } else {
+                                    "stdout-only"
+                                };
                                 append_desktop_log(&format!(
-                                    "runtime 心跳超时，监督器终止进程 pid={pid} phase={phase}"
+                                    "runtime 心跳超时，监督器终止进程 pid={pid} phase={phase} signal={signal}"
                                 ));
                                 format!("Cordis runtime 心跳超时，已由监督器终止（阶段: {phase}）")
                             }
@@ -2145,16 +2744,21 @@ fn run_model_task_blocking(
         append_desktop_log(&format!("runtime stderr:\n{}", stderr_text.trim_end()));
     }
     let mut exit_job = None;
+    let mut finished_worktree = None;
     if let Ok(_state_guard) = state.runtime_state_lock.lock() {
         if let Ok(mut slots) = state.runtime_slots.lock() {
             if slots.get(&session_id).is_some_and(|slot| slot.pid == Some(pid)) {
-                exit_job = slots.remove(&session_id).and_then(|slot| slot.job_handle);
+                if let Some(slot) = slots.remove(&session_id) {
+                    exit_job = slot.job_handle;
+                    finished_worktree = slot.worktree;
+                }
             }
         }
     }
     if let Some(handle) = exit_job {
         close_job_handle(handle);
     }
+    release_task_worktree(finished_worktree);
     if let Some(session_file) = session_store_file {
         let _ = fs::remove_file(&session_file);
         let _ = fs::remove_file(format!("{}.lock", session_file.display()));
@@ -2227,6 +2831,44 @@ fn select_approval_slot<'a>(
     }
 }
 
+/// A clarification answer belongs to the slot that emitted that request.
+/// It never falls through to a sibling task.
+fn select_clarification_slot<'a>(
+    slots: &'a HashMap<String, RuntimeTaskSlot>,
+    request_id: &str,
+    session_id: Option<&str>,
+    run_id: Option<&str>,
+    is_live: impl Fn(&RuntimeTaskSlot) -> bool,
+) -> Result<String, String> {
+    let explicit_session = session_id.map(str::trim).filter(|value| !value.is_empty());
+    let explicit_run = run_id.map(str::trim).filter(|value| !value.is_empty());
+    let has_identity = |slot: &RuntimeTaskSlot| {
+        explicit_session.map(|sid| sid == slot.session_id).unwrap_or(true)
+            && explicit_run
+                .map(|rid| slot.run_id.as_deref() == Some(rid))
+                .unwrap_or(true)
+    };
+    if explicit_session.is_some() || explicit_run.is_some() {
+        let slot = slots
+            .values()
+            .find(|slot| is_live(slot) && has_identity(slot))
+            .ok_or_else(|| "补充说明目标会话不存在或已结束".to_string())?;
+        if !slot.clarification_request_ids.contains(request_id) {
+            return Err("补充说明请求不属于目标任务".to_string());
+        }
+        return Ok(slot.session_id.clone());
+    }
+    let owners: Vec<&RuntimeTaskSlot> = slots
+        .values()
+        .filter(|slot| is_live(slot) && slot.clarification_request_ids.contains(request_id))
+        .collect();
+    match owners.as_slice() {
+        [slot] => Ok(slot.session_id.clone()),
+        [] => Err("当前没有等待补充说明的运行时任务".to_string()),
+        _ => Err("补充说明目标不唯一，请指定任务会话".to_string()),
+    }
+}
+
 /// Pure slot selection for cancellation. Explicit ids must resolve to a real
 /// slot or the cancel is a no-op (`None`) — never a sibling fallback. Only a
 /// targetless call keeps the legacy "most recent slot" behavior.
@@ -2259,6 +2901,7 @@ fn resolve_runtime_approval(
     state: State<'_, AppState>,
     request_id: String,
     approved: bool,
+    always_allow: Option<bool>,
     displayed_digest: String,
     session_id: Option<String>,
     run_id: Option<String>,
@@ -2291,6 +2934,7 @@ fn resolve_runtime_approval(
         "type": "approval_response",
         "requestId": request_id,
         "approved": approved,
+        "alwaysAllow": always_allow.unwrap_or(false),
         "displayedDigest": displayed_digest
     });
     use std::io::Write;
@@ -2298,6 +2942,76 @@ fn resolve_runtime_approval(
     stdin
         .flush()
         .map_err(|error| format!("审批回执刷新失败: {error}"))
+}
+
+fn valid_clarification_request_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 80
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+}
+
+fn valid_clarification_answer(value: &str) -> bool {
+    let count = value.chars().count();
+    (1..=4000).contains(&count)
+        && !value
+            .chars()
+            .any(|character| character == '\u{0}' || (character.is_control() && !matches!(character, '\n' | '\r' | '\t')))
+}
+
+#[tauri::command]
+fn resolve_runtime_clarification(
+    state: State<'_, AppState>,
+    request_id: String,
+    answer: String,
+    selected_option_id: Option<String>,
+    session_id: Option<String>,
+    run_id: Option<String>,
+) -> Result<(), String> {
+    let answer = answer.trim();
+    if !valid_clarification_request_id(request_id.trim()) || !valid_clarification_answer(&answer) {
+        return Err("补充说明回执无效".to_string());
+    }
+    if let Some(option_id) = selected_option_id.as_deref() {
+        if !matches!(option_id, "option-1" | "option-2" | "option-3" | "option-4") {
+            return Err("补充说明选项无效".to_string());
+        }
+    }
+    let _state_guard = state
+        .runtime_state_lock
+        .lock()
+        .map_err(|_| "运行时状态不可用".to_string())?;
+    let mut slots = state
+        .runtime_slots
+        .lock()
+        .map_err(|_| "运行时状态不可用".to_string())?;
+    let target_key = select_clarification_slot(
+        &slots,
+        request_id.trim(),
+        session_id.as_deref(),
+        run_id.as_deref(),
+        |slot| slot.stdin.is_some(),
+    )?;
+    let Some(stdin) = slots
+        .get_mut(&target_key)
+        .and_then(|slot| slot.stdin.as_mut())
+    else {
+        return Err("当前没有等待补充说明的运行时任务".to_string());
+    };
+    let mut payload = serde_json::json!({
+        "type": "clarification_response",
+        "requestId": request_id.trim(),
+        "answer": answer,
+    });
+    if let Some(option_id) = selected_option_id.as_deref() {
+        payload["selectedOptionId"] = serde_json::Value::String(option_id.to_string());
+    }
+    use std::io::Write;
+    writeln!(stdin, "{payload}").map_err(|error| format!("补充说明回执发送失败: {error}"))?;
+    stdin
+        .flush()
+        .map_err(|error| format!("补充说明回执刷新失败: {error}"))
 }
 
 fn join_runtime_values(values: &[String]) -> Result<String, String> {
@@ -2376,7 +3090,10 @@ fn cancel_runtime_slot(
     ));
 
     match reap_runtime_slot(pid, job_handle) {
-        Ok(true) => Ok(RuntimeCancellation { cancelled: true }),
+        Ok(true) => {
+            release_task_worktree(removed.worktree.take());
+            Ok(RuntimeCancellation { cancelled: true })
+        }
         Ok(false) => {
             if let Ok(_state_guard) = state.runtime_state_lock.lock() {
                 if let Ok(mut slots) = state.runtime_slots.lock() {
@@ -2428,9 +3145,11 @@ fn cancel_all_runtime_processes(state: &AppState) -> Result<RuntimeCancellation,
         if let Some(pid) = slot.pid {
             if reap_runtime_slot(pid, slot.job_handle.take()).unwrap_or(false) {
                 cancelled_any = true;
+                release_task_worktree(slot.worktree.take());
             }
         } else if let Some(handle) = slot.job_handle.take() {
             close_job_handle(handle);
+            release_task_worktree(slot.worktree.take());
         }
     }
     Ok(RuntimeCancellation {
@@ -3076,6 +3795,28 @@ fn workspace_root_label(root: &Path) -> String {
         .unwrap_or_else(|| root.display().to_string())
 }
 
+fn is_ephemeral_default_workspace(path: &Path) -> bool {
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase();
+    if normalized.starts_with("c:/windows") || normalized == "c:" {
+        return true;
+    }
+    if normalized.contains("/appdata/local/dda/")
+        || normalized.contains("/appdata/local/hmcodex")
+        || normalized.contains("/appdata/roaming/hmcodex")
+        || normalized.contains("/appdata/local/temp/")
+        || normalized.contains("/desktop-builds/")
+    {
+        return true;
+    }
+    normalized
+        .split('/')
+        .any(|part| part == "target" || part == "cargo-target" || part == "node_modules" || part.starts_with("target-"))
+}
+
 fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var("DDA_WORKSPACE_ROOT") {
         let candidate = PathBuf::from(value);
@@ -3085,9 +3826,15 @@ fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let mut candidates = Vec::with_capacity(8);
+    let mut candidates = Vec::with_capacity(12);
     if let Ok(current) = std::env::current_dir() {
-        candidates.extend([current.clone(), current.join(".."), current.join("../..")]);
+        candidates.extend([
+            current.clone(),
+            current.join(".."),
+            current.join("../.."),
+            current.join("../../.."),
+            current.join("../../../.."),
+        ]);
     }
     if let Ok(executable) = std::env::current_exe() {
         if let Some(parent) = executable.parent() {
@@ -3095,6 +3842,8 @@ fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
                 parent.to_path_buf(),
                 parent.join(".."),
                 parent.join("../.."),
+                parent.join("../../.."),
+                parent.join("../../../.."),
             ]);
         }
     }
@@ -3107,16 +3856,16 @@ fn default_workspace_root(app: &AppHandle) -> Result<PathBuf, String> {
         let Ok(resolved) = candidate.canonicalize().map(prefer_mapped_path) else {
             continue;
         };
-        if !resolved.is_dir() {
+        if !resolved.is_dir() || is_ephemeral_default_workspace(&resolved) {
             continue;
         }
         if fallback.is_none() {
             fallback = Some(resolved.clone());
         }
-        let looks_like_workspace = ["desktop", "contracts", "README.md"]
-            .iter()
-            .any(|name| resolved.join(name).exists());
-        if looks_like_workspace {
+        let looks_like_repo_root = resolved.join(".git").exists()
+            || (resolved.join("desktop").is_dir() && resolved.join("runtime").is_dir())
+            || resolved.join("contracts").is_dir();
+        if looks_like_repo_root {
             return Ok(resolved);
         }
     }
@@ -3197,6 +3946,111 @@ fn bounded_process_error(stderr: &str) -> String {
     format!(": {suffix}")
 }
 
+const HARNESS_PROCESS_DEFER: &str = "任务还在使用运行时数据库，这次不会另开进程。任务结束后会自动刷新。";
+const JEV_PROCESS_DEFER: &str = "JEV 判断现在不要另开进程。任务结束后会自动刷新。";
+
+#[derive(Debug, PartialEq, Eq)]
+enum SideProcessAdmission {
+    /// No task is running, or this is the lightweight history reader.
+    Spawn,
+    /// A read that does not open the harness database. Jev chooses.
+    AskJev,
+    /// Would open the harness database while a task process is alive.
+    Defer,
+}
+
+fn runtime_flag_value<'a>(args: &'a [&'a str], flag: &str) -> Option<&'a str> {
+    args.windows(2)
+        .find(|pair| pair[0] == flag && !pair[1].starts_with('-'))
+        .map(|pair| pair[1])
+}
+
+fn memory_read_without_harness(args: &[&str]) -> bool {
+    if !matches!(args.first().copied(), Some("memory" | "memories")) {
+        return false;
+    }
+    let operation = runtime_flag_value(args, "--operation")
+        .or_else(|| args.get(1).copied().filter(|value| !value.starts_with('-')))
+        .unwrap_or("list");
+    operation == "list" || operation == "get"
+}
+
+fn task_slot_active(state: &AppState) -> bool {
+    state
+        .runtime_slots
+        .lock()
+        .map(|slots| !slots.is_empty())
+        .unwrap_or(false)
+}
+
+/// Host policy for a side process while a task may already be running.
+/// Kept aligned with runtime/src/decision/process-admission.mjs.
+fn side_process_admission(task_active: bool, args: &[&str]) -> SideProcessAdmission {
+    if !task_active || is_history_read(args) {
+        SideProcessAdmission::Spawn
+    } else if memory_read_without_harness(args) {
+        SideProcessAdmission::AskJev
+    } else {
+        SideProcessAdmission::Defer
+    }
+}
+
+fn jev_process_admission(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+    let runtime = runtime_entrypoint(app)?;
+    let script = runtime.with_file_name("process-admission.mjs");
+    let resource_dir = app.path().resource_dir().ok();
+    let operation = runtime_flag_value(args, "--operation").unwrap_or("list");
+    let output = runtime_command(&script, resource_dir.as_deref())
+        .arg(&script)
+        .arg("--command")
+        .arg(args.first().copied().unwrap_or(""))
+        .arg("--operation")
+        .arg(operation)
+        .output()
+        .map_err(|error| format!("无法启动进程准入: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .rev()
+        .find(|value| !value.trim().is_empty())
+        .ok_or_else(|| "进程准入没有返回结果".to_string())?;
+    let value = serde_json::from_str::<Value>(line)
+        .map_err(|error| format!("进程准入结果无效: {error}"))?;
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        return Err(value
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("进程准入失败")
+            .to_string());
+    }
+    value
+        .get("decision")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "进程准入没有给出决定".to_string())
+}
+
+fn admit_side_process(app: &AppHandle, args: &[&str]) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    match side_process_admission(task_slot_active(state.inner()), args) {
+        SideProcessAdmission::Spawn => Ok(()),
+        SideProcessAdmission::Defer => Err(HARNESS_PROCESS_DEFER.to_string()),
+        SideProcessAdmission::AskJev => match jev_process_admission(app, args) {
+            Ok(decision) if decision == "DEFER" => Err(JEV_PROCESS_DEFER.to_string()),
+            Ok(decision) => {
+                append_desktop_log(&format!("process admission decision={decision}"));
+                Ok(())
+            }
+            Err(error) => {
+                // The rule for this command is to open the read. A failed
+                // Jev call must not hide the skill list.
+                append_desktop_log(&format!("process admission fallback error={error}"));
+                Ok(())
+            }
+        },
+    }
+}
+
 fn is_history_read(args: &[&str]) -> bool {
     args.first() == Some(&"thread-events")
         || (args.first() == Some(&"dashboard") && args.windows(2).any(|pair| pair == ["--summary", "true"]))
@@ -3206,21 +4060,15 @@ fn is_history_read(args: &[&str]) -> bool {
 }
 
 fn run_runtime_json(app: &AppHandle, args: &[&str]) -> Result<Value, String> {
-    // Dashboard, recovery and governance commands use the same Harness store
-    // as a live task. Serialize the process lifetime here instead of relying
-    // on SQLite's busy timeout, which can otherwise stall the task before it
-    // emits RoleContextAllocated.
-    let lock_wait_started = Instant::now();
-    let state = app.state::<AppState>();
-    // These commands open a read-only transaction and never recover or rebuild.
-    // Keep writes serialized without queuing history behind an entire recovery.
-    let _runtime_command_guard = if is_history_read(args) { None } else {
-        Some(state.runtime_command_lock.write()
-            .map_err(|_| "运行时命令状态不可用".to_string())?)
-    };
-    let lock_wait_ms = lock_wait_started.elapsed().as_millis();
+    // A live task opens the harness database and can stall before
+    // RoleContextAllocated if another process runs an integrity check on it.
+    // There is no process lock. Jev decides a side process that stays off
+    // that database; any other side process waits until the task exits.
+    let admission_started = Instant::now();
+    admit_side_process(app, args)?;
+    let admission_ms = admission_started.elapsed().as_millis();
     let command_name = args.first().copied().unwrap_or("unknown");
-    append_desktop_log(&format!("runtime query start command={command_name} lock_wait_ms={lock_wait_ms}"));
+    append_desktop_log(&format!("runtime query start command={command_name} admission_ms={admission_ms}"));
     let runtime = runtime_entrypoint(app)?;
     let runtime = if is_history_read(args) { runtime.with_file_name("history-cli.mjs") } else { runtime };
     let resource_dir = app.path().resource_dir().ok();
@@ -3453,6 +4301,118 @@ impl log::Log for DesktopLogger {
 }
 static DESKTOP_LOGGER: DesktopLogger = DesktopLogger;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardImagePayload {
+    name: String,
+    media_type: String,
+    data_url: String,
+    size_bytes: usize,
+}
+
+#[tauri::command]
+async fn read_clipboard_images() -> Result<Vec<ClipboardImagePayload>, String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW_FLAG: u32 = 0x0800_0000;
+            let script = r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$out = @()
+if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+  $files = [System.Windows.Forms.Clipboard]::GetFileDropList()
+  foreach ($f in $files) {
+    if ($out.Count -ge 4) { break }
+    if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+    $ext = [System.IO.Path]::GetExtension($f).ToLowerInvariant()
+    $mime = switch ($ext) {
+      '.png'  { 'image/png' }
+      '.jpg'  { 'image/jpeg' }
+      '.jpeg' { 'image/jpeg' }
+      '.webp' { 'image/webp' }
+      '.gif'  { 'image/gif' }
+      default { $null }
+    }
+    if (-not $mime) { continue }
+    $info = Get-Item -LiteralPath $f
+    if ($info.Length -le 0 -or $info.Length -gt 10485760) { continue }
+    $bytes = [System.IO.File]::ReadAllBytes($f)
+    $b64 = [Convert]::ToBase64String($bytes)
+    $out += @{
+      name = $info.Name
+      mediaType = $mime
+      dataUrl = "data:$mime;base64,$b64"
+      sizeBytes = [int]$bytes.Length
+    }
+  }
+} elseif ([System.Windows.Forms.Clipboard]::ContainsImage()) {
+  $img = [System.Windows.Forms.Clipboard]::GetImage()
+  if ($img -ne $null) {
+    $ms = New-Object System.IO.MemoryStream
+    try {
+      $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+      $bytes = $ms.ToArray()
+      if ($bytes.Length -gt 0 -and $bytes.Length -le 10485760) {
+        $b64 = [Convert]::ToBase64String($bytes)
+        $out += @{
+          name = '粘贴图片.png'
+          mediaType = 'image/png'
+          dataUrl = "data:image/png;base64,$b64"
+          sizeBytes = [int]$bytes.Length
+        }
+      }
+    } finally {
+      $ms.Dispose()
+      $img.Dispose()
+    }
+  }
+}
+ConvertTo-Json -InputObject @($out) -Compress
+"#;
+            let mut cmd = Command::new("powershell.exe");
+            cmd.args(["-NoProfile", "-NonInteractive", "-STA", "-Command", script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .creation_flags(CREATE_NO_WINDOW_FLAG);
+            let child = cmd
+                .spawn()
+                .map_err(|e| format!("读取剪贴板图片失败: {e}"))?;
+            let output = wait_child_output(child, Duration::from_secs(5))
+                .map_err(|_| "读取剪贴板图片超时".to_string())?;
+            if !output.status.success() {
+                return Ok(Vec::new());
+            }
+            let text = String::from_utf8_lossy(&output.stdout);
+            let trimmed = text.trim();
+            if trimmed.is_empty() || trimmed == "null" {
+                return Ok(Vec::new());
+            }
+            let parsed: Vec<ClipboardImagePayload> = serde_json::from_str(trimmed)
+                .or_else(|_| serde_json::from_str::<ClipboardImagePayload>(trimmed).map(|one| vec![one]))
+                .unwrap_or_default();
+            let as_inputs: Vec<RuntimeImageInput> = parsed
+                .iter()
+                .map(|item| RuntimeImageInput {
+                    name: Some(item.name.clone()),
+                    media_type: item.media_type.clone(),
+                    data_url: item.data_url.clone(),
+                })
+                .collect();
+            validate_task_images(&as_inputs)?;
+            Ok(parsed)
+        })
+        .await
+        .map_err(|e| format!("剪贴板任务失败: {e}"))?
+    }
+}
+
 #[tauri::command]
 async fn access_mode() -> Result<computer_access::AccessStatus, String> {
     Ok(computer_access::access_mode())
@@ -3552,6 +4512,9 @@ pub fn run() {
             runtime_timeline_page,
             get_thread,
             list_thread_events,
+            archive_thread_events,
+            archive_threads,
+            vacuum_event_store,
             fork_thread,
             list_execution_state,
             get_execution_state,
@@ -3573,8 +4536,10 @@ pub fn run() {
             list_evolution,
             evolution_action,
             run_model_task,
+            read_clipboard_images,
             cancel_model_task,
             resolve_runtime_approval,
+            resolve_runtime_clarification,
             desktop_settings,
             save_desktop_settings,
             notifications::show_desktop_notification,
@@ -3629,7 +4594,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_read_only_history_commands_bypass_the_runtime_write_lock() {
+    fn history_reads_stay_on_the_lightweight_reader() {
         assert!(is_history_read(&["thread-events", "--thread-id", "test", "--limit", "100"]));
         assert!(is_history_read(&["dashboard", "--summary", "true"]));
         assert!(is_history_read(&["thread", "--operation", "list", "--summary", "true"]));
@@ -3638,6 +4603,34 @@ mod tests {
             vec!["recovery"], vec!["thread", "--operation", "fork", "--summary", "true"]] {
             assert!(!is_history_read(&args));
         }
+    }
+
+    #[test]
+    fn side_process_admission_asks_jev_only_for_a_memory_read() {
+        assert_eq!(
+            side_process_admission(false, &["recovery"]),
+            SideProcessAdmission::Spawn
+        );
+        assert_eq!(
+            side_process_admission(true, &["thread-events", "--thread-id", "t"]),
+            SideProcessAdmission::Spawn
+        );
+        assert_eq!(
+            side_process_admission(true, &["memory", "--operation", "list"]),
+            SideProcessAdmission::AskJev
+        );
+        assert_eq!(
+            side_process_admission(true, &["memories", "get", "--memory-id", "m"]),
+            SideProcessAdmission::AskJev
+        );
+        assert_eq!(
+            side_process_admission(true, &["memory", "--operation", "retract"]),
+            SideProcessAdmission::Defer
+        );
+        assert_eq!(
+            side_process_admission(true, &["dashboard"]),
+            SideProcessAdmission::Defer
+        );
     }
 
     #[test]
@@ -3977,6 +4970,68 @@ mod tests {
     }
 
     #[test]
+    fn process_heartbeat_line_is_the_side_channel_marker_only() {
+        assert!(process_heartbeat_line(
+            "{\"type\":\"runtime_heartbeat\",\"emittedAtMs\":1}\n"
+        ));
+        assert!(!process_heartbeat_line(
+            "{\"type\":\"runtime_event\",\"kind\":\"runtime.heartbeat\"}\n"
+        ));
+        assert!(!process_heartbeat_line("workspace-failure\n"));
+        let padded = format!(
+            "{{\"type\":\"runtime_heartbeat\",\"pad\":\"{}\"}}\n",
+            "x".repeat(300)
+        );
+        assert!(!process_heartbeat_line(&padded));
+    }
+
+    #[test]
+    fn live_process_heartbeat_tolerates_a_blocked_event_loop_until_the_stall_ceiling() {
+        let now = Instant::now();
+        let started = now.checked_sub(Duration::from_secs(10)).unwrap();
+        let recent_process = now.checked_sub(Duration::from_secs(1)).unwrap();
+        let blocked_stdout = now.checked_sub(Duration::from_secs(40)).unwrap();
+        assert!(!runtime_liveness_is_stale(
+            true,
+            Some(started),
+            Some(blocked_stdout),
+            true,
+            Some(recent_process),
+            now,
+        ));
+        let stalled_stdout = now
+            .checked_sub(Duration::from_millis(RUNTIME_EVENT_LOOP_STALL_MS + 1))
+            .unwrap();
+        assert!(runtime_liveness_is_stale(
+            true,
+            Some(started),
+            Some(stalled_stdout),
+            true,
+            Some(recent_process),
+            now,
+        ));
+        let dead_process = now
+            .checked_sub(Duration::from_millis(RUNTIME_HEARTBEAT_TIMEOUT_MS + 1))
+            .unwrap();
+        assert!(runtime_liveness_is_stale(
+            true,
+            Some(started),
+            Some(now),
+            true,
+            Some(dead_process),
+            now,
+        ));
+        assert!(runtime_liveness_is_stale(
+            true,
+            Some(started),
+            Some(dead_process),
+            false,
+            None,
+            now,
+        ));
+    }
+
+    #[test]
     fn watchdog_preserves_live_run_heartbeat_timeout() {
         assert!(!runtime_watchdog_should_stop(false, None));
         assert!(runtime_watchdog_should_stop(true, None));
@@ -4009,6 +5064,140 @@ mod tests {
     }
 
     #[test]
+    fn watchdog_monotonic_staleness_ignores_wall_clock_jumps() {
+        let state = AppState::default();
+        let session = reserve_runtime_launch(&state, Some("clock-jump")).unwrap();
+        let base = Instant::now();
+        {
+            let mut slots = state.runtime_slots.lock().unwrap();
+            let slot = slots.get_mut(&session).unwrap();
+            slot.pid = Some(16244);
+            // Simulate VMAgent jumping unix_time_ms forward by 6+ minutes while
+            // monotonic Instant only advanced by 2 seconds since last heartbeat.
+            slot.started_at_ms = Some(1_000);
+            slot.last_heartbeat_at_ms = Some(1_000);
+            slot.started_at = Some(base);
+            slot.last_heartbeat_at = Some(base);
+            slot.heartbeat_seen = true;
+        }
+        assert!(!runtime_slot_is_stale(
+            true,
+            Some(base),
+            Some(base),
+            base + Duration::from_secs(2),
+        ));
+        let status = runtime_process_status_impl(&state).unwrap();
+        assert!(status.running);
+        assert!(status.healthy);
+    }
+
+    #[test]
+    fn watchdog_extends_parallel_slots_after_host_or_vm_suspend_and_still_times_out_if_hung() {
+        assert!(!runtime_watchdog_poll_was_suspended(RUNTIME_WATCHDOG_POLL_MS));
+        assert!(!runtime_watchdog_poll_was_suspended(RUNTIME_WATCHDOG_SUSPEND_GAP_MS));
+        assert!(runtime_watchdog_poll_was_suspended(RUNTIME_WATCHDOG_SUSPEND_GAP_MS + 1));
+
+        let state = AppState::default();
+        let s1 = reserve_runtime_launch(&state, Some("waiting-approval")).unwrap();
+        let s2 = reserve_runtime_launch(&state, Some("starting-up")).unwrap();
+        let base = Instant::now();
+        let pre_suspend_startup = Duration::from_secs(10);
+        {
+            let mut slots = state.runtime_slots.lock().unwrap();
+            let slot1 = slots.get_mut(&s1).unwrap();
+            slot1.pid = Some(101);
+            slot1.started_at = Some(base);
+            slot1.last_heartbeat_at = Some(base + Duration::from_secs(2));
+            slot1.started_at_ms = Some(100_000);
+            slot1.last_heartbeat_at_ms = Some(102_000);
+            slot1.heartbeat_seen = true;
+
+            let slot2 = slots.get_mut(&s2).unwrap();
+            slot2.pid = Some(102);
+            slot2.started_at = Some(base);
+            slot2.last_heartbeat_at = Some(base);
+            slot2.started_at_ms = Some(100_000);
+            slot2.last_heartbeat_at_ms = Some(100_000);
+            slot2.heartbeat_seen = false;
+        }
+
+        // Host/VM pauses for 382,387 ms (~6m22s), matching the VMAgent suspend scenario.
+        let poll_gap_ms = 382_387;
+        assert!(runtime_watchdog_poll_was_suspended(poll_gap_ms));
+        let suspended = Duration::from_millis(poll_gap_ms - RUNTIME_WATCHDOG_POLL_MS);
+        let resume_at = base + pre_suspend_startup + Duration::from_millis(poll_gap_ms);
+        let mut terminal_seen = Some(base + Duration::from_secs(5));
+
+        assert!(extend_runtime_slot_after_suspend(
+            &state,
+            &s1,
+            101,
+            resume_at,
+            482_387,
+            suspended,
+            &mut terminal_seen,
+        ));
+        assert!(extend_runtime_slot_after_suspend(
+            &state,
+            &s2,
+            102,
+            resume_at,
+            482_387,
+            suspended,
+            &mut None,
+        ));
+
+        let slots = state.runtime_slots.lock().unwrap();
+        let slot1 = slots.get(&s1).unwrap();
+        assert_eq!(slot1.last_heartbeat_at_ms, Some(482_387));
+        assert!(!runtime_slot_is_stale(
+            slot1.heartbeat_seen,
+            slot1.started_at,
+            slot1.last_heartbeat_at,
+            resume_at,
+        ));
+        // If the child genuinely stops heartbeating after resume, it still expires after 30s.
+        assert!(!runtime_slot_is_stale(
+            slot1.heartbeat_seen,
+            slot1.started_at,
+            slot1.last_heartbeat_at,
+            resume_at + Duration::from_millis(RUNTIME_HEARTBEAT_TIMEOUT_MS),
+        ));
+        assert!(runtime_slot_is_stale(
+            slot1.heartbeat_seen,
+            slot1.started_at,
+            slot1.last_heartbeat_at,
+            resume_at + Duration::from_millis(RUNTIME_HEARTBEAT_TIMEOUT_MS + 1),
+        ));
+
+        // Startup grace preserves the 10s spent before suspend without counting the 382s pause.
+        let slot2 = slots.get(&s2).unwrap();
+        assert!(!runtime_slot_is_stale(
+            slot2.heartbeat_seen,
+            slot2.started_at,
+            slot2.last_heartbeat_at,
+            resume_at,
+        ));
+        let remaining_startup_ms = RUNTIME_STARTUP_GRACE_MS - duration_ms(pre_suspend_startup) - RUNTIME_WATCHDOG_POLL_MS;
+        assert!(!runtime_slot_is_stale(
+            slot2.heartbeat_seen,
+            slot2.started_at,
+            slot2.last_heartbeat_at,
+            resume_at + Duration::from_millis(remaining_startup_ms),
+        ));
+        assert!(runtime_slot_is_stale(
+            slot2.heartbeat_seen,
+            slot2.started_at,
+            slot2.last_heartbeat_at,
+            resume_at + Duration::from_millis(remaining_startup_ms + 1),
+        ));
+
+        // Terminal shutdown grace also excludes the suspended interval.
+        let terminal_for_ms = duration_ms(resume_at.saturating_duration_since(terminal_seen.unwrap()));
+        assert!(terminal_for_ms < RUNTIME_TERMINAL_SHUTDOWN_GRACE_MS);
+    }
+
+    #[test]
     fn extracts_last_runtime_phase_for_watchdog_diagnostics() {
         let stdout = r#"{"type":"runtime_event","kind":"run.started","payload":{}}
 {"type":"runtime_event","kind":"runtime.phase","payload":{"phase":"LEGACY_MIGRATION_CHECK"}}
@@ -4017,31 +5206,15 @@ mod tests {
     }
 
     #[test]
-    fn runtime_command_lock_serializes_dashboard_and_allows_parallel_tasks() {
+    fn a_running_task_does_not_need_a_command_lock_to_admit_a_side_process() {
         let state = AppState::default();
-        // Two parallel tasks can hold shared read access simultaneously.
-        let task_a = state.runtime_command_lock.try_read().unwrap();
-        let task_b = state.runtime_command_lock.try_read().unwrap();
-        drop(task_a);
-        drop(task_b);
-
-        // An exclusive dashboard/recovery write blocks tasks until it completes.
-        let guard = state.runtime_command_lock.write().unwrap();
-        let (ready_sender, ready_receiver) = std::sync::mpsc::channel();
-        let worker_state = state.clone();
-        let worker = std::thread::spawn(move || {
-            let _worker_guard = worker_state.runtime_command_lock.read().unwrap();
-            ready_sender.send(()).unwrap();
-        });
-
-        assert!(ready_receiver
-            .recv_timeout(Duration::from_millis(50))
-            .is_err());
-        drop(guard);
-        assert!(ready_receiver
-            .recv_timeout(Duration::from_secs(1))
-            .is_ok());
-        worker.join().unwrap();
+        assert!(!task_slot_active(&state));
+        reserve_runtime_launch(&state, Some("session")).unwrap();
+        assert!(task_slot_active(&state));
+        assert_eq!(
+            side_process_admission(true, &["memory", "--operation", "list"]),
+            SideProcessAdmission::AskJev
+        );
     }
 
     #[test]
@@ -4303,14 +5476,22 @@ mod slot_selector_tests {
             pid: None,
             run_id: None,
             approval_request_ids: HashSet::new(),
+            clarification_request_ids: HashSet::new(),
             stdin: None,
             started_at_ms: None,
             last_heartbeat_at_ms: None,
+            started_at: None,
+            last_heartbeat_at: None,
             heartbeat_seen: false,
+            last_process_heartbeat_at_ms: None,
+            last_process_heartbeat_at: None,
+            process_heartbeat_seen: false,
             launching: false,
             cancel_requested: false,
             job_handle: None,
             order,
+            workspace_root: None,
+            worktree: None,
         }
     }
 
@@ -4379,6 +5560,23 @@ mod slot_selector_tests {
         let slots = slots_with(vec![slot("session-a", 1), with_run]);
         assert_eq!(select_cancel_slot(&slots, Some("session-b"), Some("run-other")), None);
         assert_eq!(select_cancel_slot(&slots, Some("session-b"), Some("run-b")).as_deref(), Some("session-b"));
+    }
+
+    #[test]
+    fn clarification_does_not_answer_another_tasks_question() {
+        let mut a = slot("session-a", 1);
+        a.clarification_request_ids.insert("clarify-1".to_string());
+        let mut b = slot("session-b", 2);
+        b.approval_request_ids.insert("clarify-1".to_string());
+        let slots = slots_with(vec![a, b]);
+        assert_eq!(
+            select_clarification_slot(&slots, "clarify-1", Some("session-a"), None, |_| true).unwrap(),
+            "session-a"
+        );
+        assert!(select_clarification_slot(&slots, "clarify-1", Some("session-b"), None, |_| true).is_err());
+        assert_eq!(valid_clarification_answer("按 API 调用"), true);
+        assert_eq!(valid_clarification_answer(""), false);
+        assert_eq!(valid_clarification_answer(&"字".repeat(4001)), false);
     }
 
     #[test]

@@ -54,15 +54,24 @@ test('returns an empty context when there are no prior runs', () => {
 
 test('restores only active bounded memory as advisory context', () => {
   const result = assembleMemoryContext({ memories: [
-    { memoryId: 'inactive', status: 'PROPOSED', statement: 'do not restore' },
-    { memoryId: 'active', status: 'ACTIVE', scope: 'project', confidence: 0.875, statement: 'Use the checked build command\nwhen validating changes.' }
+    { memoryId: 'inactive', status: 'RETRACTED', statement: 'do not restore' },
+    { memoryId: 'proposed', status: 'PROPOSED', key: 'pitfall:excerpt-ambiguous', scope: 'workspace', statement: '工具定位经验：定位文字不唯一时改用更长原文。' },
+    { memoryId: 'active', status: 'ACTIVE', scope: 'project', confidence: 0.875, statement: 'Use the checked build command\nwhen validating changes.' },
+    { memoryId: 'scratch', status: 'ACTIVE', key: 'workflow:cmd:tmp', statement: '项目命令经验：执行 `node .codex-tmp/digest.mjs`。' },
+    { memoryId: 'skill', status: 'ACTIVE', kind: 'SKILL', key: 'workflow:cmd:desktop:npm run build', scope: 'workspace', workspacePath: 'C:/Work/hmCodex-local', confidence: 0.9, statement: '项目命令经验（编译exe）：在工作区 `desktop` 目录执行 `npm run build`。' }
   ] });
-  assert.equal(result.memoryCount, 1);
-  assert.match(result.text, /Active dda memories/);
+  assert.equal(result.memoryCount, 3);
+  assert.match(result.text, /定位文字不唯一/);
+  assert.match(result.text, /Project skills/);
+  assert.match(result.text, /npm run build/);
+  assert.match(result.text, /project=C:\/Work\/hmCodex-local/);
+  assert.match(result.text, /Run lessons/);
+  assert.equal(result.text.includes('.codex-tmp'), false);
   assert.match(result.text, /confidence=0\.88/);
   assert.match(result.text, /Use the checked build command when validating changes/);
   assert.equal(result.text.includes('do not restore'), false);
-  assert.equal(result.text.includes('treat as instructions'), true);
+  assert.match(result.text, /follow the matching lesson/);
+  assert.match(result.text, /apply the matching lesson/);
 });
 
 test('restores only bounded checkpoint summaries and never raw prompt fields', () => {

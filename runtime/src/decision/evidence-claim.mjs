@@ -1,4 +1,52 @@
 import { nodeProcessIntent, normalizedNodeProcessRequest } from './process-intent.mjs';
+import { isRelativeWorkspacePath, READONLY_FAST_PATH_TOOLS } from './readonly-fast-path.mjs';
+
+const workspaceReadTools = new Set([...READONLY_FAST_PATH_TOOLS, 'workspace.inspect_binary', 'kernel.workspace_inspect_binary']);
+
+// These tools return the host-resolved path, relative only for in-workspace targets.
+export const observedWorkspaceRead = (name, definition, result) => {
+  if (!workspaceReadTools.has(name) || definition?.readOnly !== true || result?.found === false
+    || typeof result?.path !== 'string' || !isRelativeWorkspacePath(result.path)) return undefined;
+  return { path: result.path, scope: 'IN_WORKSPACE', readOnly: true };
+};
+
+const verifiedRead = action => action.state === 'SUCCEEDED' && workspaceReadTools.has(action.name)
+  && action.invocationAttempted !== false && action.effectApplied !== true
+  && action.verifiedResult?.workspaceRead?.scope === 'IN_WORKSPACE'
+  && action.verifiedResult.workspaceRead.readOnly === true && action.outputDigest
+  && action.verifiedResult.outputDigest === action.outputDigest;
+
+export const verifiedWorkspaceReadEvidence = (actions, previousActions = []) => {
+  if (!actions.length || !actions.every(verifiedRead)) return undefined;
+  const priorLimits = [];
+  for (const prior of previousActions) {
+    if (verifiedRead(prior)) continue;
+    if (prior.state !== 'FAILED' || prior.effectApplied === true) return undefined;
+    if (prior.invocationAttempted === false && prior.gateDecision === 'BLOCK'
+      && prior.errorCode === 'TOOL_OUTSIDE_EXECUTION_SCOPE') {
+      priorLimits.push({ tool: prior.name, errorCode: prior.errorCode, invoked: false });
+    } else if (prior.name === 'workspace.read' && prior.invocationAttempted !== false
+      && prior.errorCode === 'WORKSPACE_BINARY_FILE' && prior.path
+      && isRelativeWorkspacePath(prior.path) && prior.errorMessage === prior.path) {
+      // workspace.read reports this after resolving the file and trying its
+      // text decoder. Require the host-reported resolved path as well as the
+      // request path, since FULL_ACCESS can resolve links outside the workspace.
+      priorLimits.push({ tool: prior.name, errorCode: prior.errorCode, path: prior.path });
+    } else return undefined;
+  }
+  return {
+    completedInvocations: actions.length,
+    inWorkspaceInvocations: actions.length,
+    readOnlyInvocations: actions.length,
+    ...(priorLimits.length ? { attemptScope: 'current read-only attempt', priorLimitCount: priorLimits.length,
+      priorLimits: priorLimits.slice(-4) } : {}),
+    recentResults: actions.slice(-4).map(({ name, verifiedResult }) => ({
+      tool: name,
+      path: verifiedResult.workspaceRead.path,
+      outputDigest: verifiedResult.outputDigest
+    }))
+  };
+};
 
 // DecisionState limits each claim to 500 characters. Build a valid, bounded
 // JSON envelope before that boundary; never cut serialized JSON afterwards.
@@ -135,4 +183,20 @@ export const hostToolPolicyDecisionClaim = ({ name, registered, available, readO
     facts.configuredCommandNames = configuredCommands.filter(command => /^[A-Za-z][A-Za-z0-9_.+-]{0,31}$/u.test(command)).slice(0, 4);
   }
   return fit(() => ({ hostToolPolicy: facts }));
+};
+
+// Host fact for an executable that is not in the session command list.
+// Jev chooses ALLOW or REQUIRE_APPROVAL; this claim does not authorize it.
+export const sessionCommandLeaseDecisionClaim = ({ commandName } = {}) => {
+  const name = typeof commandName === 'string' && /^[A-Za-z0-9_.+-]{1,64}$/u.test(commandName)
+    ? commandName.slice(0, 64)
+    : 'OPAQUE_EXECUTABLE';
+  return fit(() => ({
+    sessionCommandLease: {
+      commandOutsideSessionLease: true,
+      proposedCommandName: name,
+      approvalJudgment: 'JEV',
+      hostEffect: 'ONE_SHOT_IF_JEV_ALLOWS'
+    }
+  }));
 };

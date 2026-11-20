@@ -179,12 +179,13 @@ test('a killed controlled runtime resumes pending observation work without repea
   assert.equal(states[reconciliation + 1].reason, 'resume:interrupted');
 });
 
-test('a killed controlled write stays blocked even when the resume holds the write lease', { timeout: 60000 }, async t => {
+test('a killed controlled write is not replayed and the task continues', { timeout: 60000 }, async t => {
   const { resumed, after, requests, workspace } = await exerciseInterruption(t, { sideEffect: true });
-  assert.notEqual(resumed.code, 0);
-  assert.equal(after.checkpoint.plan.steps[1].status, 'BLOCKED');
-  assert.equal(after.checkpoint.plan.steps[1].errorCode, 'SIDE_EFFECT_OUTCOME_UNCERTAIN');
-  assert.equal(requests.length, 0, 'changing the resume mode cannot turn an uncertain write into a retry');
+  assert.equal(resumed.code, 0, resumed.stderr + resumed.stdout);
+  const resumeRequests = requests.filter((entry) => entry.phase === 'after-kill');
+  assert.ok(resumeRequests.some((entry) => inputText(entry.body).includes('Current validated plan step: continue-task')), resumed.stderr);
+  assert.equal(resumeRequests.filter((entry) => inputText(entry.body).includes('Current validated plan step: interrupted')).length, 0);
+  assert.equal(after.checkpoint.plan.steps.some((step) => step.stepId === 'interrupted' && step.status === 'RUNNING'), false);
   assert.equal(await readFile(join(workspace, 'result.txt'), 'utf8'), 'ACTUAL_WRITE_BEFORE_KILL');
 });
 

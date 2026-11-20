@@ -7,6 +7,7 @@ import { ToolRegistry, toolRegistryPlugin } from '../src/tool-registry.mjs';
 import { createRuleVerifier } from '../src/rule-verifier.mjs';
 import { RuntimeSafetyMonitor, RestrictedWindowsExecutor } from '../src/safety-executor.mjs';
 import { createExplicitLeaseProvider, registerExecutorTools } from '../src/controlled-tools.mjs';
+import { RestrictedNetworkAdapter } from '../src/restricted-network-adapter.mjs';
 
 const workspace = {
   granted: true,
@@ -15,6 +16,173 @@ const workspace = {
   entries: [],
   sections: []
 };
+
+test('executor receives observed artifact facts separately from native process output', async t => {
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  const output = { ok: true, cwd: '.', exitCode: 0, stdout: 'builder printed an unverified path: draft.pptx' };
+  registry.register({ name: 'shell.execute', description: 'Build fixture', readOnly: false,
+    inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] }, handler: () => output });
+  const root = new Context(); t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(registry));
+  let withReceipt = true;
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', { model: 'fixture', provider: 'fixture',
+    async *stream({ messages }) {
+      const result = messages.find(message => message.source?.kind === 'tool');
+      if (result) {
+        assert.deepEqual(JSON.parse(result.content[0].content[0].text), output);
+        const context = messages.at(-1).content[0].text;
+        if (withReceipt) {
+          assert.match(context, /docs\/observed.pptx/);
+          assert.match(context, /"slideCount":12/);
+          assert.match(context, /opening a desktop application require separate observations/);
+          assert.doesNotMatch(context, /draft.pptx|private-root/);
+        } else assert.doesNotMatch(context, /observed.pptx|separate observations/);
+        yield { type: 'text-delta', text: 'Finished.' };
+      } else yield { type: 'tool-call', id: 'call-build', name: 'shell.execute', arguments: JSON.stringify({ command: 'node docs/build-deck.mjs' }) };
+      yield { type: 'finish', reason: { kind: result ? 'stop' : 'tool-calls' } };
+    }
+  }), 'build-facts-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  const run = () => root.taskRunner.run({ prompt: 'Build the deck and report observations.', workspace,
+    onToolResult: ({ buildTest }) => withReceipt ? { ...buildTest, artifacts: [{ path: 'docs/observed.pptx',
+      absolutePath: '/private-root/docs/observed.pptx', sizeBytes: 26559, disposition: 'GENERATED',
+      sha256: `sha256:${'f'.repeat(64)}`, pptx: { slideCount: 12, entryCount: 35 } }] } : undefined });
+  const result = await run();
+  assert.equal(result.taskContextFacts.length, 1);
+  assert.equal(result.taskContextFacts[0].receipt.artifacts[0].sizeBytes, 26559);
+  withReceipt = false;
+  assert.equal((await run()).taskContextFacts[0].receipt, undefined);
+});
+
+test('fact refresh retains the step prompt and split DSML retries through the provider', async t => {
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(new ToolRegistry()));
+  let requests = 0;
+  let repeatMarkup = false;
+  const deltas = [];
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', model: 'fixture',
+    async *stream({ messages }) {
+      requests++;
+      assert.match(JSON.stringify(messages), /Read the outline/u);
+      assert.match(messages.at(-1).content.map(part => part.text).join('\n'), /native tool-call interface|Current step objective: Read the outline/u);
+      assert.match(messages.at(-1).content.map(part => part.text).join('\n'), /native tool-call interface|Current user goal: Build the requested presentation/u);
+      if (requests === 1 || repeatMarkup) {
+        yield { type: 'text-delta', text: repeatMarkup ? '<tool_' : '<｜DS' };
+        yield { type: 'text-delta', text: repeatMarkup ? 'call>secret' : 'ML｜ calls><｜DSML｜ invoke' };
+      } else {
+        assert.match(JSON.stringify(messages), /native tool-call interface/u);
+        yield { type: 'text-delta', text: 'Recovered.' };
+      }
+    }
+  }), 'step-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  const options = {
+    workspace, prompt: 'Read the outline', originalGoal: 'Build the requested presentation', stepObjective: 'Read the outline',
+    historyContext: 'HOST_TASK_CONTEXT: earlier read results',
+    taskContextFacts: [{ key: 'path:docs', path: 'docs', tool: 'workspace.list' }],
+    maxToolRounds: 4,
+    onEvent(event) { if (event.kind === 'model.text_delta') deltas.push(event.text); }
+  };
+  assert.equal((await root.taskRunner.run(options)).text, 'Recovered.');
+  assert.equal(deltas.join(''), 'Recovered.');
+  repeatMarkup = true;
+  await assert.rejects(root.taskRunner.run(options), /MODEL_TOOL_CALL_IN_TEXT/u);
+  assert.equal(requests, 4);
+});
+
+test('current-fact lookup switches search engines and reads another page before answering', async t => {
+  const networkTargets = [
+    { host: 'html.duckduckgo.com' },
+    { host: 'mcp.exa.ai', methods: ['POST'] },
+    { host: 'pricing.example.com' }
+  ];
+  const monitor = new RuntimeSafetyMonitor({ mode: 'CONTROLLED', workspaceRoot: process.cwd(), networkTargets });
+  const requests = [];
+  const adapter = new RestrictedNetworkAdapter({
+    monitor,
+    lookup: async () => [{ address: '93.184.216.34' }],
+    fetch: async (url, request) => {
+      requests.push(new URL(url).hostname + new URL(url).pathname);
+      if (url.includes('duckduckgo.com')) {
+        return new Response('<form id="challenge-form">Verify that you are human</form>', { status: 202 });
+      }
+      if (url.includes('mcp.exa.ai')) {
+        assert.equal(request.method, 'POST');
+        assert.equal(JSON.parse(request.body).params.name, 'web_search_exa');
+        const result = { content: [{ type: 'text', text: [
+          'Title: Market pricing\nURL: https://pricing.example.com/dynamic\nHighlights:\nModel pricing',
+          'Title: Pricing reference\nURL: https://pricing.example.com/reference\nHighlights:\nPricing table'
+        ].join('\n\n') }] };
+        return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result })}\n\n`);
+      }
+      if (url.endsWith('/dynamic')) return new Response('<html><body><noscript>Enable JavaScript</noscript><div id="app"></div></body></html>');
+      return new Response(`<html><body><main><p>${'Unrelated page content. '.repeat(40)}</p><table><tr><td>Model</td><td>Input</td><td>8</td></tr></table></main><script>untrusted-script</script></body></html>`);
+    }
+  });
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  let approvalGranted = true;
+  registerExecutorTools(registry, new RestrictedWindowsExecutor({ monitor }), {
+    networkAdapter: adapter,
+    leaseProvider: createExplicitLeaseProvider({
+      monitor, capabilities: ['network.request'], networkTargets, requestApproval: async () => approvalGranted
+    })
+  });
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(registry));
+  const calls = [
+    ['web.search', { query: 'model pricing', engine: 'duckduckgo' }],
+    null,
+    ['web.search', { query: 'model pricing' }],
+    ['web.fetch', { url: 'https://pricing.example.com/dynamic' }]
+  ];
+  let round = 0;
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', protocol: 'fixture', model: 'lookup-fixture',
+    async *stream(request) {
+      const step = calls[round++];
+      const context = JSON.stringify(request.messages);
+      if (round < 5) {
+        assert.ok(request.tools.some(tool => tool.name === 'web.fetch'));
+        assert.ok(!request.tools.some(tool => tool.name === 'shell.execute'));
+      }
+      if (round === 2) assert.match(context, /WEB_SOURCE_CHALLENGE/u);
+      if (round === 3) assert.match(context, /HOST_LOOKUP_FOLLOWUP/u);
+      if (round === 4) assert.match(context, /pricing.example.com\/dynamic/u);
+      if (round === 5) assert.match(context, /WEB_PAGE_EMPTY/u);
+      if (round === 5) {
+        assert.equal(request.tools.length, 0);
+        assert.match(context, /Input \| 8/u);
+        assert.doesNotMatch(context, /untrusted-script/u);
+      }
+      if (step) yield { type: 'tool-call', id: `lookup-${round}`, name: step[0], arguments: JSON.stringify(step[1]) };
+      else yield { type: 'text-delta', text: round === 2 ? 'premature answer' : 'Verified price: 8.' };
+      yield { type: 'finish', reason: { kind: step ? 'tool-calls' : 'stop' } };
+    }
+  }), 'lookup-fixture'));
+  await root.plugin(taskRunnerPlugin);
+
+  const reviewedUrls = [];
+  const pageEvidence = [];
+  const result = await root.taskRunner.run({
+    prompt: 'What is the current model price?', workspace, taskClass: 'query', readOnlyStep: true,
+    onToolCall: ({ networkUrl }) => { reviewedUrls.push(networkUrl); },
+    onToolResult: ({ name, decisionClaim }) => { if (name === 'web.fetch') pageEvidence.push(decisionClaim); }
+  });
+  assert.equal(result.text, 'Verified price: 8.');
+  assert.deepEqual(requests, ['html.duckduckgo.com/html/', 'mcp.exa.ai/mcp', 'pricing.example.com/dynamic', 'pricing.example.com/reference']);
+  assert.deepEqual(reviewedUrls, requests.map(url => `https://${url}`));
+  assert.match(pageEvidence.at(-1), /pricing.example.com\/reference/u);
+  assert.match(pageEvidence.at(-1), /Model \| Input \| 8/u);
+  assert.doesNotMatch(pageEvidence.at(-1), /Unrelated page content/u);
+
+  approvalGranted = false;
+  await assert.rejects(registry.invoke('web.fetch', { url: 'https://pricing.example.com/reference' }), /SAFETY_LEASE_REQUIRED/u);
+  await assert.rejects(registry.invoke('web.fetch', { url: 'http://127.0.0.1/private' }), /SAFETY_NETWORK_INVALID/u);
+  assert.equal(requests.length, 4);
+});
 
 for (const scenario of [
   { mode: 'CONTROLLED', mutate: false, checkpoints: 1 },
@@ -63,14 +231,17 @@ for (const scenario of [
 for (const sample of [
   { name: 'test.execute', args: {}, output: { ok: false, exitCode: 1, stdout: 'assertion failed', stderr: '', timedOut: false, aborted: false }, code: 'TEST_CHECK_FAILED', verifierStatus: 'CONTINUE' },
   { name: 'test.execute', args: {}, output: { ok: false, exitCode: 101, stdout: 'partial build log', stderr: '', timedOut: true, aborted: false, timeoutMs: 60000 }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },
-  { name: 'shell.execute', args: { command: 'fixture' }, output: { ok: false, exitCode: 1, stdout: '', stderr: 'command failed', timedOut: false, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' }
+  { name: 'shell.execute', args: { command: 'fixture' }, output: { ok: false, exitCode: 1, stdout: '', stderr: 'command failed', timedOut: false, aborted: false }, code: 'EXECUTOR_RESULT_FAILED', verifierStatus: 'FAIL' },
+  { name: 'network.request', args: { host: 'example.com' }, output: { ok: false, status: 403, aborted: false, timedOut: false, truncated: false, body: '', durationMs: 12, action: 'network' }, code: 'NETWORK_HTTP_STATUS', verifierStatus: 'FAIL', message: /^HTTP 403$/ }
 ]) {
   test(`an unsuccessful ${sample.name} result is a failure (${sample.code}) despite a completed invocation`, async () => {
     const registry = new ToolRegistry({ allowSideEffects: true });
     registry.register({ name: sample.name, description: 'Process fixture', readOnly: false,
       inputSchema: sample.name === 'shell.execute'
         ? { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false }
-        : { type: 'object', properties: {}, additionalProperties: false },
+        : sample.name === 'network.request'
+          ? { type: 'object', properties: { host: { type: 'string' } }, required: ['host'], additionalProperties: false }
+          : { type: 'object', properties: {}, additionalProperties: false },
       handler: () => sample.output });
     const events = [], requests = [];
     const providerPlugin = cordisPlugin(ctx => ctx.provide('modelProvider', {
@@ -96,11 +267,14 @@ for (const sample of [
         assert.equal(result.timeoutMs, 60000, 'actual deadline reported');
         assert.match(result.message, /execution deadline|Partial filesystem changes/, 'deadline message not a bare exit code');
       }
+      if (sample.message) assert.match(result.message, sample.message);
+      if (sample.code === 'NETWORK_HTTP_STATUS') assert.doesNotMatch(result.message, /exit code|process returned/i);
       const tool = requests[1].messages.find(message => message.source?.kind === 'tool');
       assert.deepEqual(JSON.parse(tool.content[0].content[0].text), sample.output, 'native output stays unchanged for digest verification');
       const report = createRuleVerifier().verify({ prompt: 'verify', output: 'More evidence required', workspace,
         executionMode: 'CONTROLLED', actions: [{ name: sample.name, state: 'FAILED', errorCode: result.errorCode }] });
-      assert.equal(report.status, sample.verifierStatus);
+      assert.equal(report.status, 'PASS');
+      assert.deepEqual(report.failureCodes, []);
     } finally { await root.fiber.dispose(); }
   });
 }
@@ -408,8 +582,8 @@ test('preserves recoverable tool error codes and lets the model switch paths', a
       executionMode: 'CONTROLLED',
       actions
     });
-    assert.equal(verification.status, 'CONTINUE');
-    assert.equal(verification.failureCodes.includes('ACTION_FAILED'), false);
+    assert.equal(verification.status, 'PASS');
+    assert.deepEqual(verification.failureCodes, []);
   } finally {
     await root.fiber.dispose();
   }
@@ -600,6 +774,7 @@ test('shell.execute events carry bounded command fields and failure outputTail',
     assert.equal(requested.cwd, 'C:/work/app');
     const result = events.find((event) => event.kind === 'tool.result' && event.name === 'shell.execute');
     assert.equal(result.ok, false);
+    assert.equal(result.exitCode, 1);
     assert.equal(result.command, 'npm');
     assert.deepEqual(result.args, ['run', 'build']);
     assert.equal(result.cwd, 'C:/work/app');
@@ -662,6 +837,7 @@ test('failure lesson suggestedPath only surfaces evidence-backed snapshot matche
       const resultEvent = events.find((event) => event.kind === 'tool.result');
       output.__requestedPath = requested?.path;
       output.__resultPath = resultEvent?.path;
+      output.__prompt = JSON.stringify(requests[0].messages);
       return output;
     } finally {
       await root.fiber.dispose();
@@ -682,6 +858,15 @@ test('failure lesson suggestedPath only surfaces evidence-backed snapshot matche
     const missing = await runRead('totally/missing/file.txt');
     assert.equal(missing.suggestedPath, undefined);
     assert.ok((missing.matchingPaths ?? []).every((p) => snapshotWorkspace.entries.some((e) => e.path === p)));
+    snapshotWorkspace.omittedDirectories = ['desktop/node_modules', 'desktop/src-tauri/target', 'desktop/dist'];
+    const generatedChild = await runRead('desktop/node_modules/playwright');
+    assert.equal(generatedChild.suggestedPath, 'desktop/node_modules');
+    assert.match(generatedChild.message, /desktop\/node_modules/);
+    assert.match(generatedChild.message, /do not treat them as missing/);
+    assert.match(generatedChild.__prompt, /directory desktop\/node_modules \(exists; contents omitted\)/);
+    assert.match(generatedChild.__prompt, /Do not call it missing/);
+    const generatedExact = await runRead('desktop/src-tauri/target/release/dda-desktop.exe');
+    assert.equal(generatedExact.suggestedPath, 'desktop/src-tauri/target');
     // structured path flows on both the request and the result events
     assert.equal(missing.__requestedPath, 'totally/missing/file.txt');
     assert.equal(missing.__resultPath, 'totally/missing/file.txt');

@@ -47,6 +47,7 @@ test('every role and tool round receives one system instruction without mutating
   assert.equal(requests.length, 10);
   for (const request of requests) {
     assert.equal(request.system.split(instruction).length, 2);
+    assert.match(request.system, /reasoning text the user can read/);
     assert.match(request.system, /preserve schema and host limits/);
     assert.equal(request.messages, messages);
   }

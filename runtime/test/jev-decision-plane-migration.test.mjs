@@ -79,7 +79,7 @@ test('CLASSIFY_TASK and SELECT_ROUTE consult Jev only when the operator opts in'
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
   assert.ok(candidateDecisions.includes('CLASSIFY_TASK'), 'the opted-in classifier consults Jev over bounded candidates');
   assert.ok(candidateDecisions.includes('SELECT_ROUTE'), 'route selection reaches Jev instead of being dead code');
-  assert.deepEqual(classifyChoices?.slice().sort(), ['inspect', 'modify', 'test', 'unknown'].sort());
+  assert.deepEqual(classifyChoices?.slice().sort(), ['inspect', 'modify', 'query', 'test', 'unknown'].sort());
   assert.deepEqual(routeChoices?.slice().sort(), ['route-blocked', 'route-selected'].sort());
 });
 

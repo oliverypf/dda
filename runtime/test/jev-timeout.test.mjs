@@ -47,5 +47,8 @@ test('a negative semantic answer and deterministic failures remain failures', as
   const client = new JevClient({ apiKey: 'fixture', fetchImpl: delayedFetch(1, 'FAIL') });
   const engine = createDecisionEngine({ enabled: true, client });
   assert.equal((await engine.judgeVerification({ ruleStatus: 'PASS' })).decision, 'FAIL');
-  assert.equal((await engine.judgeVerification({ ruleStatus: 'FAIL' })).reasonCode, 'RULE_VERIFIER_FAILED');
+  const ruled = await engine.judgeVerification({ ruleStatus: 'FAIL' });
+  assert.equal(ruled.decision, 'FAIL');
+  assert.equal(ruled.source, 'jev');
+  assert.notEqual(ruled.reasonCode, 'RULE_VERIFIER_FAILED');
 });

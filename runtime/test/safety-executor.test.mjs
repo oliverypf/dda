@@ -4,8 +4,6 @@ import { mkdtemp, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import {
   ACTIONS,
   CAPABILITIES,
@@ -13,7 +11,6 @@ import {
   PolicyLease,
   RestrictedWindowsExecutor,
   RuntimeSafetyMonitor,
-  WorkspaceLeaseRegistry,
   SAFETY_ERROR_CODES
 } from '../src/safety-executor.mjs';
 
@@ -37,87 +34,18 @@ test('defaults to CONTROLLED but refuses every side effect without a lease', asy
   await assert.rejects(readFile(join(workspace, 'must-not-exist.txt')), { code: 'ENOENT' });
 });
 
-test('issues at most one workspace-mutating lease until execution releases it', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-workspace-lock-'));
-  const registry = new WorkspaceLeaseRegistry();
-  const first = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  const second = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  const lease = first.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] });
-  assert.throws(() => second.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  lease.releaseWorkspace();
-  assert.doesNotThrow(() => second.issueLease({ capabilities: [CAPABILITIES.SHELL] }));
-});
+test('authorizes independent commands in the same workspace without a shared lock', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-independent-'));
+  const first = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  const second = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  const firstLease = first.issueLease({ capabilities: [CAPABILITIES.SHELL] });
+  const secondLease = second.issueLease({ capabilities: [CAPABILITIES.SHELL] });
+  const request = { command: 'node', args: ['--version'] };
 
-test('network leases do not claim the writable workspace slot', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-network-lock-'));
-  const registry = new WorkspaceLeaseRegistry();
-  const monitor = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: [{ host: 'example.com', methods: ['GET'] }] });
-  assert.doesNotThrow(() => monitor.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] }));
-});
-
-test('workspace lock state is shared across independent registries', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-cross-process-lock-'));
-  const lockDirectory = await mkdtemp(join(tmpdir(), 'hmcodex-safety-lock-dir-'));
-  const first = new WorkspaceLeaseRegistry({ lockDirectory });
-  const second = new WorkspaceLeaseRegistry({ lockDirectory });
-  const monitorA = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: first
-  });
-  const monitorB = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: second
-  });
-  const lease = monitorA.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] });
-  assert.throws(() => monitorB.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  lease.releaseWorkspace();
-  assert.doesNotThrow(() => monitorB.issueLease({ capabilities: [CAPABILITIES.SHELL] }));
-});
-
-test('workspace lock rejects a competing child process and recovers after release', async (t) => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-child-lock-'));
-  const lockDirectory = await mkdtemp(join(tmpdir(), 'hmcodex-safety-child-lock-dir-'));
-  const registry = new WorkspaceLeaseRegistry({ lockDirectory });
-  const childSource = `
-    import { WorkspaceLeaseRegistry } from ${JSON.stringify(new URL('../src/runtime-safety-monitor.mjs', import.meta.url).href)};
-    const registry = new WorkspaceLeaseRegistry({ lockDirectory: ${JSON.stringify(lockDirectory)} });
-    registry.acquire(${JSON.stringify(workspace)}, 'child-lease', Date.now() + 10000);
-    console.log('WORKSPACE_LOCKED');
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => {
-      if (chunk.trim() === 'release') {
-        registry.release(${JSON.stringify(workspace)}, 'child-lease');
-        process.exit(0);
-      }
-    });
-  `;
-  const child = spawn(process.execPath, ['--input-type=module', '-e', childSource], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true
-  });
-  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill(); });
-  const [marker] = await once(child.stdout, 'data');
-  assert.equal(marker.toString().trim(), 'WORKSPACE_LOCKED');
-  assert.throws(() => registry.acquire(workspace, 'parent-lease', Date.now() + 10000), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  child.stdin.write('release\n');
-  await once(child, 'exit');
-  assert.doesNotThrow(() => registry.acquire(workspace, 'parent-lease', Date.now() + 10000));
-  registry.release(workspace, 'parent-lease');
+  await assert.rejects(second.authorize(ACTIONS.SHELL, request, firstLease), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  await first.authorize(ACTIONS.SHELL, request, firstLease);
+  await second.authorize(ACTIONS.SHELL, request, secondLease);
+  await assert.rejects(second.authorize(ACTIONS.SHELL, request, secondLease), { code: SAFETY_ERROR_CODES.LEASE_USED });
 });
 
 test('runs an allowlisted command with bounded, redacted output in CONTROLLED mode', async () => {

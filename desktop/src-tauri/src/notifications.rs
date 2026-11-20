@@ -11,6 +11,8 @@ use std::sync::{LazyLock, Mutex};
 
 const APPROVAL_TITLE: &str = "dda：需要你确认操作";
 const APPROVAL_BODY: &str = "任务正在等待一次性审批。点击通知返回应用核对；不会自动批准。";
+const CLARIFICATION_TITLE: &str = "dda：需要你补充说明";
+const CLARIFICATION_BODY: &str = "任务有一个问题需要你回答后才能继续。点击通知返回应用；不会自动替你回答。";
 const COMPLETED_TITLE: &str = "dda：任务已完成";
 const COMPLETED_BODY: &str = "任务已完成。点击通知返回应用查看结果。";
 const FAILED_TITLE: &str = "dda：任务未完成";
@@ -21,6 +23,8 @@ const DEDUP_LIMIT: usize = 512;
 pub enum NoticeKind {
     #[serde(rename = "APPROVAL_REQUIRED")]
     ApprovalRequired,
+    #[serde(rename = "CLARIFICATION_REQUIRED")]
+    ClarificationRequired,
     #[serde(rename = "TASK_COMPLETED")]
     TaskCompleted,
     #[serde(rename = "TASK_FAILED")]
@@ -69,6 +73,7 @@ fn validate(request: &DesktopNoticeRequest) -> Result<NoticeTarget, String> {
     }
     let (title, body, warning, kind_label) = match request.kind {
         NoticeKind::ApprovalRequired => (APPROVAL_TITLE, APPROVAL_BODY, true, "APPROVAL_REQUIRED"),
+        NoticeKind::ClarificationRequired => (CLARIFICATION_TITLE, CLARIFICATION_BODY, true, "CLARIFICATION_REQUIRED"),
         NoticeKind::TaskCompleted => (COMPLETED_TITLE, COMPLETED_BODY, false, "TASK_COMPLETED"),
         NoticeKind::TaskFailed => (FAILED_TITLE, FAILED_BODY, true, "TASK_FAILED"),
     };
@@ -88,7 +93,11 @@ fn validate(request: &DesktopNoticeRequest) -> Result<NoticeTarget, String> {
             let id = request_id.clone().ok_or_else(|| "requestId".to_string())?;
             format!("approval:{}:{id}", request.run_id)
         }
-        _ => format!("terminal:{}", request.run_id),
+        NoticeKind::ClarificationRequired => {
+            let id = request_id.clone().ok_or_else(|| "requestId".to_string())?;
+            format!("clarification:{}:{id}", request.run_id)
+        }
+        NoticeKind::TaskCompleted | NoticeKind::TaskFailed => format!("terminal:{}", request.run_id),
     };
     Ok(NoticeTarget { kind_label, run_id: request.run_id.clone(), request_id, title, body, warning, dedup_key })
 }
@@ -418,6 +427,11 @@ mod tests {
     #[test]
     fn validates_kinds_ids_and_required_request_id() {
         assert!(validate(&request(NoticeKind::ApprovalRequired, "run-1", Some("req-1"))).is_ok());
+        assert!(validate(&request(NoticeKind::ClarificationRequired, "run-1", Some("clarify-1"))).is_ok());
+        assert_eq!(
+            validate(&request(NoticeKind::ClarificationRequired, "run-1", None)).unwrap_err(),
+            "requestId"
+        );
         assert_eq!(
             validate(&request(NoticeKind::ApprovalRequired, "run-1", None)).unwrap_err(),
             "requestId"

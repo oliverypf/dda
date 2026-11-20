@@ -7,8 +7,49 @@ import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 import { createThreadStore } from '../src/thread-store.mjs';
 import { readThreadHistory, parseHistoryOptions } from '../src/thread-history-reader.mjs';
 import { openHarnessDatabase } from '../src/harness-store-schema.mjs';
-import { saveRunResponse, readRunResponse } from '../src/run-response-store.mjs';
+import { saveRunImages, saveRunResponse, readRunResponse, saveRunThinking } from '../src/run-response-store.mjs';
 import { sha256Digest } from '../src/trajectory-store.mjs';
+
+test('history restores image attachments from the local run content store', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-images-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const events = createHarnessEventStore({ storagePath: harnessPath });
+  const threads = createThreadStore({ eventStore: events });
+  const thread = await threads.create({ title: '带图片的任务', cwd: directory });
+  await threads.appendTurn(thread.id, { runId: 'image-run', summary: '带图片', state: 'SUCCEEDED' });
+  const input = [{ name: 'screen.png', mediaType: 'image/png', dataUrl: 'data:image/png;base64,QQ==' }];
+  const refs = await saveRunImages(harnessPath, 'image-run', input);
+  await events.append({ runId: 'image-run', kind: 'TaskRunCreated', payload: { imageRefs: refs } });
+  const history = await readThreadHistory({ harnessPath, threadId: thread.id });
+  const created = history.events.find((event) => event.payload.persistedKind === 'TaskRunCreated');
+  assert.deepEqual(created?.payload.images, input);
+});
+
+test('history restores thinking content and durable tool requests after restart', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-live-trace-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const events = createHarnessEventStore({ storagePath: harnessPath });
+  const threads = createThreadStore({ eventStore: events });
+  const thread = await threads.create({ title: '可恢复轨迹', cwd: directory });
+  await threads.appendTurn(thread.id, { runId: 'trace-run', summary: 'trace', state: 'SUCCEEDED' });
+  const thinkingDigest = await saveRunThinking(harnessPath, 'trace-run', '先检查项目结构，再运行验证。');
+  await events.append({ runId: 'trace-run', kind: 'TaskRunCreated', payload: {} });
+  await events.append({ runId: 'trace-run', kind: 'ToolCallRequested', payload: {
+    id: 'call-1', name: 'workspace.list', round: 1
+  } });
+  await events.append({ runId: 'trace-run', kind: 'ToolInvocationCompleted', payload: {
+    id: 'call-1', name: 'workspace.list', ok: true, outputChars: 42
+  } });
+  await events.append({ runId: 'trace-run', kind: 'TaskRunCompleted', payload: {
+    outputDigest: 'sha256:' + 'a'.repeat(64), reasoningDigest: thinkingDigest
+  } });
+  const history = await readThreadHistory({ harnessPath, threadId: thread.id, limit: 20 });
+  assert.ok(history.events.some((event) => event.payload.persistedKind === 'ToolCallRequested'));
+  const completed = history.events.find((event) => event.payload.persistedKind === 'TaskRunCompleted');
+  assert.equal(completed?.payload.thinkingText, '先检查项目结构，再运行验证。');
+});
 
 test('history uses a stable cursor across runs, equal timestamps, new writes, and excluded maintenance', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'history-page-'));
@@ -168,6 +209,60 @@ for (const extension of ['db', 'json']) {
     await events.purgeRun('with-response');
   });
 }
+
+test('history groups later runs of one conversation by session id', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-session-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const events = createHarnessEventStore({ storagePath: harnessPath });
+  const threads = createThreadStore({ eventStore: events });
+  const thread = await threads.create({ title: '编译exe', cwd: directory });
+  await threads.attachRun(thread.id, { runId: 'source-run', sessionId: 'ui-session-1' });
+  await events.append({ runId: 'source-run', kind: 'ToolCallRequested', payload: { id: 'call-1', name: 'workspace.list' } });
+  await events.append({ runId: 'source-run', kind: 'ToolInvocationCompleted', payload: { name: 'workspace.list', ok: true, outputChars: 12 } });
+  // A later launch may pass a new slot id. The conversation keeps the first one.
+  await threads.attachRun(thread.id, { runId: 'resume-run', sessionId: 'ui-session-2' });
+  await events.append({ runId: 'resume-run', kind: 'TaskRunFailed', payload: { code: 'PLAN_STEP_FAILED', stepId: 'inspect-build-config' } });
+  await threads.setCheckpoint(thread.id, { runId: 'foreign-run', phase: 'EXECUTING', state: 'RUNNING' });
+  await events.append({ runId: 'foreign-run', kind: 'ToolInvocationCompleted', payload: { name: 'secret.tool', ok: true } });
+  const history = await readThreadHistory({ harnessPath, threadId: thread.id, limit: 50 });
+  assert.equal(history.thread.sessionId, 'ui-session-1');
+  assert.deepEqual([...new Set(history.events.map((event) => event.runId))].sort(), ['resume-run', 'source-run']);
+  assert.equal(history.events.some((event) => event.payload.name === 'workspace.list'), true);
+  assert.equal(history.events.some((event) => event.payload.persistedKind === 'TaskRunFailed'), true);
+  assert.equal(history.events.some((event) => event.runId === 'foreign-run' || event.payload.name === 'secret.tool'), false);
+});
+
+test('resumed history keeps tool events from earlier checkpoints of the same thread', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-resume-lineage-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const harnessPath = join(directory, 'events.db');
+  const events = createHarnessEventStore({ storagePath: harnessPath });
+  const threads = createThreadStore({ eventStore: events });
+  const thread = await threads.create({ title: '编译exe', cwd: directory });
+  const other = await threads.create({ title: '其他任务', cwd: directory });
+  await events.append({ runId: 'source-run', kind: 'TaskRunCreated', payload: { requestedMode: 'CONTROLLED' } });
+  await events.append({ runId: 'source-run', kind: 'ToolCallRequested', payload: { id: 'call-1', name: 'workspace.list' } });
+  await events.append({ runId: 'source-run', kind: 'ToolInvocationCompleted', payload: {
+    name: 'workspace.list', ok: true, outputChars: 20
+  } });
+  await threads.setCheckpoint(thread.id, { runId: 'source-run', phase: 'EXECUTING', state: 'RUNNING' });
+  await events.append({ runId: 'other-run', kind: 'ToolInvocationCompleted', payload: { name: 'secret.tool', ok: true } });
+  await threads.setCheckpoint(other.id, { runId: 'other-run', phase: 'EXECUTING', state: 'RUNNING' });
+  await events.append({ runId: 'resume-run', kind: 'TaskRunCreated', payload: { sourceRunId: 'source-run', requestedMode: 'CONTROLLED' } });
+  await events.append({ runId: 'resume-run', kind: 'TaskRunFailed', payload: { code: 'PLAN_STEP_FAILED', stepId: 'inspect-build-config' } });
+  await threads.setCheckpoint(thread.id, {
+    runId: 'resume-run', phase: 'RECOVERING', state: 'FAILED',
+    plan: { steps: [{ stepId: 'inspect-build-config', actionKind: 'INSPECT', dependencies: [], status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' }] }
+  });
+  await threads.appendTurn(thread.id, { runId: 'resume-run', summary: 'failed', state: 'FAILED' });
+  const history = await readThreadHistory({ harnessPath, threadId: thread.id, limit: 50 });
+  const runIds = new Set(history.events.map((event) => event.runId));
+  assert.deepEqual([...runIds].sort(), ['resume-run', 'source-run']);
+  assert.equal(history.events.some((event) => event.payload.persistedKind === 'ToolInvocationCompleted' && event.payload.name === 'workspace.list'), true);
+  assert.equal(history.events.some((event) => event.payload.persistedKind === 'TaskRunFailed'), true);
+  assert.equal(history.events.some((event) => event.runId === 'other-run' || event.payload.name === 'secret.tool'), false);
+});
 
 test('a checkpoint with an uncertain side-effect step is reported blocked, not resumable, and clears on replace/clear', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'history-recovery-block-'));

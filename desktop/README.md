@@ -32,6 +32,8 @@ Windows 桌面客户端目录，目标运行时为 Tauri 2 + TypeScript 前端 +
 
 历史列表可以跨工作区查看；若当前授权目录与历史会话目录不同，发送时会在当前目录创建新会话，不复用旧目录的 checkpoint。要续接原会话，请先打开其原目录，再从历史列表选择该会话。runtime 继续保留 `THREAD_WORKSPACE_MISMATCH` 校验，防止跨目录复用执行上下文。
 
+桌面归档只会从列表隐藏项目或会话，不迁移历史、不压缩数据库，也不会阻止其他会话启动任务。旧版已搬入归档库的历史仍可查看；实际续跑时只恢复当前会话的数据。磁盘空间回收属于独立维护，请在退出桌面并停止本地任务后执行。
+
 回归验证：先执行 `npm run build`，再执行 `node scripts/ui-workspace-test.mjs`。UI 测试使用 Playwright 和模拟 native bridge，不调用真实模型或访问真实项目目录；可通过 `NODE_PATH` 指定 Playwright 安装位置，通过 `DDA_BROWSER_CHANNEL=msedge` 使用本机 Edge。
 
 Windows 原生任务由 `runtime/` 中的独立 Cordis 进程执行。
@@ -78,10 +80,10 @@ runtime 现在还提供 provider-neutral 的 Tool Registry，内置
 的符号链接和未授权路径都会被拒绝。Responses 与 Chat Completions 的 function-call
 解析器支持有界多轮调用；副作用工具始终经过 RuntimeSafetyMonitor、Lease、审批和审计。
 
-Dream 后台维护默认关闭。在治理面板点击“启动后台”后，桌面端会托管
+Dream 后台维护在桌面应用打开后自动启动，不用再点“启动后台”。桌面端会托管
 `dream --operation daemon` 子进程；每轮维护都会重新读取活动任务计数，状态文件缺失或
 异常时按繁忙处理。它只生成 `PROPOSED` memory，不会自动激活记忆、修改安全策略或晋级
-Evolution proposal。应用退出时会清理 daemon 进程树。
+Evolution proposal。本轮可以在技能与记忆页停止；下次打开应用会再次自动启动。应用退出时会清理 daemon 进程树。
 
 Windows 后续工作统一见 [阶段四实施计划](../docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)和[阶段四验收矩阵](../docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。当前重点：
 

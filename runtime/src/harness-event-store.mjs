@@ -1,4 +1,4 @@
-import { deleteRunResponse } from './run-response-store.mjs';
+import { deleteRunResponse, deleteRunThinking } from './run-response-store.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 import {
@@ -9,6 +9,8 @@ import {
   purgeHarnessRun,
   countHarnessEvents,
   readHarnessEventPage,
+  readThreadProjectionEvents,
+  readRecentHarnessRunsEvents,
   readHarnessEventsByIds,
   readHarnessReceipt,
   readHarnessReceiptPage,
@@ -124,6 +126,47 @@ const validateTombstone = (tombstone, index) => {
   if (recordDigest !== digest(unsigned)) throw new Error('HARNESS_STORE_INVALID_TOMBSTONE:' + (index + 1));
 };
 
+// Archive used to pass the clock function through as purgedAtMs. Canonical
+// form recorded that as null, then JSON.stringify omitted the key. The digest
+// still matches the null form, so rewrite only that exact shape.
+const repairLegacyArchiveTombstones = (db, nowMs) => {
+  const purgedAtMs = Number.isInteger(nowMs) && nowMs >= 0 ? nowMs : Date.now();
+  const pending = [];
+  for (const row of db.prepare('SELECT run_id, envelope FROM run_tombstones').all()) {
+    let tombstone;
+    try { tombstone = JSON.parse(row.envelope); } catch { continue; }
+    if (!isObject(tombstone) || tombstone.runId !== row.run_id) continue;
+    if (Number.isInteger(tombstone.purgedAtMs) && tombstone.purgedAtMs >= 0) continue;
+    const legacy = {
+      schemaVersion: tombstone.schemaVersion,
+      tombstoneId: tombstone.tombstoneId,
+      runId: tombstone.runId,
+      purgedAtMs: null,
+      reasonDigest: tombstone.reasonDigest
+    };
+    if (tombstone.recordDigest !== digest(legacy)) continue;
+    const unsigned = {
+      schemaVersion: tombstone.schemaVersion,
+      tombstoneId: tombstone.tombstoneId,
+      runId: tombstone.runId,
+      purgedAtMs,
+      reasonDigest: tombstone.reasonDigest
+    };
+    pending.push({ runId: row.run_id, envelope: JSON.stringify({ ...unsigned, recordDigest: digest(unsigned) }) });
+  }
+  if (!pending.length) return 0;
+  const update = db.prepare('UPDATE run_tombstones SET envelope=? WHERE run_id=?');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const item of pending) update.run(item.envelope, item.runId);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* keep the original failure */ }
+    throw error;
+  }
+  return pending.length;
+};
+
 const validateStore = (parsed, {
   maxEvents = MAX_EVENTS,
   maxReceipts = MAX_RECEIPTS,
@@ -187,9 +230,11 @@ const validateReceiptShape = (receipt) => {
   return receipt;
 };
 
+const yieldToEventLoop = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 // Streaming equivalent of validateStore for the SQLite backend. It preserves
 // the same invariants while keeping memory bounded to one page.
-const validateSqliteDatabase = (db) => {
+const validateSqliteStructuralInvariants = (db) => {
   const runGap = db.prepare(`SELECT run_id FROM trajectory_events GROUP BY run_id
     HAVING MIN(sequence) <> 1 OR MAX(sequence) <> COUNT(*) LIMIT 1`).get();
   if (runGap) throw new Error('HARNESS_STORE_SEQUENCE_INVALID');
@@ -202,6 +247,10 @@ const validateSqliteDatabase = (db) => {
   const tombstoneConflict = db.prepare(`SELECT e.event_id FROM trajectory_events e
     JOIN run_tombstones t ON t.run_id = e.run_id LIMIT 1`).get();
   if (tombstoneConflict) throw new Error('HARNESS_STORE_TOMBSTONE_CONFLICT');
+};
+
+const validateSqliteDatabase = (db) => {
+  validateSqliteStructuralInvariants(db);
   let cursor;
   let index = 0;
   for (;;) {
@@ -223,6 +272,39 @@ const validateSqliteDatabase = (db) => {
   for (const tombstone of readHarnessTombstones(db)) validateTombstone(tombstone, 0);
 };
 
+// Async page-yielding variant used on startup load() and verify() so large
+// SQLite histories never starve runtime.heartbeat timers on the main thread.
+// NOTE: setTimeout(..., 0) reaches libuv's timers phase; setImmediate alone
+// stays inside the check phase and can starve setInterval heartbeats when
+// called in a tight loop without pending poll I/O.
+const yieldForTimers = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const validateSqliteDatabaseAsync = async (db) => {
+  validateSqliteStructuralInvariants(db);
+  await yieldForTimers();
+  let cursor;
+  let index = 0;
+  for (;;) {
+    const page = readHarnessEventPage(db, { ...(cursor ?? {}), limit: 250 });
+    for (const event of page.events) validateEvent(event, index++);
+    if (!page.hasMore) break;
+    cursor = page.nextCursor;
+    await yieldForTimers();
+  }
+  let receiptCursor;
+  for (;;) {
+    const page = readHarnessReceiptPage(db, {
+      ...(receiptCursor ? { afterCommandId: receiptCursor } : {}),
+      limit: 500
+    });
+    for (const receipt of page.receipts) validateReceiptShape(receipt);
+    if (!page.hasMore) break;
+    receiptCursor = page.nextCursor.afterCommandId;
+    await yieldForTimers();
+  }
+  for (const tombstone of readHarnessTombstones(db)) validateTombstone(tombstone, 0);
+};
+
 export class HarnessEventStore {
   #storagePath;
   #now;
@@ -232,12 +314,15 @@ export class HarnessEventStore {
   #receipts = new Map();
   #tombstones = new Map();
   #loaded = false;
+  #loadPromise;
   #queue = Promise.resolve();
   #sqlite;
+  #validateOnRead;
   #sqliteSummary = { eventCount: 0, receiptCount: 0, tombstoneCount: 0, lastSequenceByRun: {} };
 
-  constructor({ storagePath, backupPath, now = () => Date.now(), idFactory = randomUUID } = {}) {
+  constructor({ storagePath, backupPath, now = () => Date.now(), idFactory = randomUUID, validateOnRead = false } = {}) {
     this.#storagePath = storagePath;
+    this.#validateOnRead = validateOnRead;
     this.#sqlite = typeof storagePath === 'string' && /\.db$/iu.test(storagePath);
     this.#backupPath = backupPath ?? (storagePath ? `${storagePath}.backup` : undefined);
     this.#now = typeof now === 'function' ? now : () => Date.now();
@@ -246,45 +331,59 @@ export class HarnessEventStore {
 
   async load() {
     if (this.#loaded) return this.summary();
-    if (!this.#storagePath) {
-      this.#loaded = true;
-      return this.summary();
-    }
-    if (this.#sqlite) {
-      try {
-        const db = openHarnessDatabase(this.#storagePath);
+    if (this.#loadPromise) return this.#loadPromise;
+    this.#loadPromise = (async () => {
+      if (!this.#storagePath) {
+        this.#loaded = true;
+        return this.summary();
+      }
+      if (this.#sqlite) {
         try {
-          validateSqliteDatabase(db);
-          this.#tombstones = new Map(readHarnessTombstones(db).map((tombstone) => [tombstone.runId, clone(tombstone)]));
-          this.#sqliteSummary = readHarnessSummary(db);
-        } finally {
-          db.close();
+          const db = openHarnessDatabase(this.#storagePath, { verifyIntegrity: !this.#validateOnRead });
+          try {
+            repairLegacyArchiveTombstones(db, this.#now());
+            // Task processes validate consumed rows and their committed writes.
+            // The explicit verify command and maintenance readers audit the whole store.
+            if (!this.#validateOnRead) await validateSqliteDatabaseAsync(db);
+            this.#tombstones = new Map(readHarnessTombstones(db).map((tombstone, i) => {
+              validateTombstone(tombstone, i);
+              return [tombstone.runId, clone(tombstone)];
+            }));
+            this.#sqliteSummary = readHarnessSummary(db);
+          } finally {
+            db.close();
+          }
+        } catch (error) {
+          if (error?.message?.startsWith('HARNESS_STORE_')) throw error;
+          throw new Error('HARNESS_STORE_READ_FAILED');
         }
+        this.#loaded = true;
+        return this.summary();
+      }
+      let parsed;
+      try {
+        parsed = await readPersistentJsonFile(this.#storagePath);
       } catch (error) {
         if (error?.message?.startsWith('HARNESS_STORE_')) throw error;
         throw new Error('HARNESS_STORE_READ_FAILED');
       }
+      if (parsed !== undefined) {
+        try { validateStore(parsed); } catch (error) {
+          if (error?.message?.startsWith('HARNESS_STORE_')) throw error;
+          throw new Error('HARNESS_STORE_INVALID');
+        }
+        this.#events = parsed.events.map(clone);
+        this.#receipts = new Map(parsed.receipts.map((receipt) => [receipt.commandId, clone(receipt)]));
+        this.#tombstones = new Map((Array.isArray(parsed.tombstones) ? parsed.tombstones : []).map((tombstone) => [tombstone.runId, clone(tombstone)]));
+      }
       this.#loaded = true;
       return this.summary();
-    }
-    let parsed;
+    })();
     try {
-      parsed = await readPersistentJsonFile(this.#storagePath);
-    } catch (error) {
-      if (error?.message?.startsWith('HARNESS_STORE_')) throw error;
-      throw new Error('HARNESS_STORE_READ_FAILED');
+      return await this.#loadPromise;
+    } finally {
+      this.#loadPromise = undefined;
     }
-    if (parsed !== undefined) {
-      try { validateStore(parsed); } catch (error) {
-        if (error?.message?.startsWith('HARNESS_STORE_')) throw error;
-        throw new Error('HARNESS_STORE_INVALID');
-      }
-      this.#events = parsed.events.map(clone);
-      this.#receipts = new Map(parsed.receipts.map((receipt) => [receipt.commandId, clone(receipt)]));
-      this.#tombstones = new Map((Array.isArray(parsed.tombstones) ? parsed.tombstones : []).map((tombstone) => [tombstone.runId, clone(tombstone)]));
-    }
-    this.#loaded = true;
-    return this.summary();
   }
 
   async reload() {
@@ -295,6 +394,11 @@ export class HarnessEventStore {
     this.#tombstones = new Map();
     this.#loaded = false;
     return this.load();
+  }
+
+  #checkedEvents(events) {
+    if (this.#validateOnRead) events.forEach(validateEvent);
+    return events.map(clone);
   }
 
   // SQLite append paths never materialize the full event log. The database
@@ -324,12 +428,13 @@ export class HarnessEventStore {
     if (commandId) {
       const previous = readHarnessReceipt(db, commandId);
       if (previous) {
+        validateReceiptShape(previous);
         if (previous.requestDigest !== requestDigest) throw new Error('HARNESS_COMMAND_IDEMPOTENCY_CONFLICT');
         return {
           result: {
             ...clone(previous),
             idempotent: true,
-            events: readHarnessEventsByIds(db, previous.eventIds).map(clone)
+            events: this.#checkedEvents(readHarnessEventsByIds(db, previous.eventIds))
           }
         };
       }
@@ -379,7 +484,7 @@ export class HarnessEventStore {
     const committed = commitHarnessEvent(db, event, receipt, undefined, { skipIdentityCheck: true });
     if (committed.idempotent) {
       const saved = readHarnessReceipt(db, committed.commandId);
-      return { result: { ...clone(saved), idempotent: true, events: readHarnessEventsByIds(db, saved.eventIds).map(clone) } };
+      return { result: { ...clone(saved), idempotent: true, events: this.#checkedEvents(readHarnessEventsByIds(db, saved.eventIds)) } };
     }
     if (validate) {
       const saved = readHarnessReceipt(db, committed.commandId);
@@ -405,7 +510,7 @@ export class HarnessEventStore {
   }
 
   #appendSqlite(input) {
-    const db = openHarnessDatabase(this.#storagePath);
+    const db = openHarnessDatabase(this.#storagePath, { verifyIntegrity: !this.#loaded });
     try {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -422,7 +527,7 @@ export class HarnessEventStore {
   }
 
   #appendSqliteBatch(inputs) {
-    const db = openHarnessDatabase(this.#storagePath);
+    const db = openHarnessDatabase(this.#storagePath, { verifyIntegrity: !this.#loaded });
     try {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -668,6 +773,7 @@ export class HarnessEventStore {
       const existingTombstone = this.#tombstones.get(normalizedRunId);
       if (existingTombstone) {
         await deleteRunResponse(this.#storagePath, normalizedRunId);
+        await deleteRunThinking(this.#storagePath, normalizedRunId);
         return { status: 'COMMITTED', tombstone: clone(existingTombstone), idempotent: true };
       }
       const unsigned = {
@@ -683,6 +789,7 @@ export class HarnessEventStore {
         try {
           const result = purgeHarnessRun(db, tombstone, validateSqliteDatabase);
           await deleteRunResponse(this.#storagePath, normalizedRunId);
+          await deleteRunThinking(this.#storagePath, normalizedRunId);
           this.#sqliteSummary = readHarnessSummary(db);
           this.#tombstones = new Map(readHarnessTombstones(db).map((item) => [item.runId, clone(item)]));
           return clone(result);
@@ -722,6 +829,7 @@ export class HarnessEventStore {
       this.#receipts = new Map(committedSnapshot.receipts.map((receipt) => [receipt.commandId, clone(receipt)]));
       this.#tombstones = new Map((committedSnapshot.tombstones ?? []).map((item) => [item.runId, clone(item)]));
       await deleteRunResponse(this.#storagePath, normalizedRunId);
+      await deleteRunThinking(this.#storagePath, normalizedRunId);
       return { status: 'COMMITTED', tombstone: clone(tombstone), purgedEventCount: removedIds.size, idempotent: false };
     };
     this.#queue = this.#queue.then(operation, operation);
@@ -829,28 +937,87 @@ export class HarnessEventStore {
     return imported;
   }
 
-  async list({ runId, aggregateType, aggregateId } = {}) {
+  async listThreadProjection(threadId) {
     try { await this.#queue; } catch { /* a failed write must not poison reads */ }
     await this.load();
+    if (!this.#sqlite) {
+      const events = await this.list({
+        kinds: ['ThreadCreated', 'ThreadTurnAppended', 'ThreadStateChanged', 'ThreadCheckpointCommitted', 'ThreadCheckpointCleared', 'ThreadRunAttached', 'ThreadWorkspaceBound']
+      });
+      return threadId ? events.filter(event => event.payload?.threadId === threadId) : events;
+    }
+    const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
+    try {
+      return this.#checkedEvents(readThreadProjectionEvents(db, threadId));
+    } finally {
+      db.close();
+    }
+  }
+
+  async hasThreadRecords() {
+    await this.load();
+    if (!this.#sqlite) return this.#events.some(event => event.kind === 'ThreadCreated');
+    const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
+    try { return Boolean(db.prepare("SELECT 1 FROM trajectory_events WHERE aggregate_type='Thread' LIMIT 1").get()); }
+    finally { db.close(); }
+  }
+
+  async list({ runId, aggregateType, aggregateId, kinds } = {}) {
+    try { await this.#queue; } catch { /* a failed write must not poison reads */ }
+    await this.load();
+    const kindSet = Array.isArray(kinds) && kinds.length > 0 ? new Set(kinds) : undefined;
     if (this.#sqlite) {
-      const db = openHarnessDatabase(this.#storagePath);
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
       try {
         const events = [];
         let cursor;
         for (;;) {
-          const page = readHarnessEventPage(db, { runId, aggregateType, aggregateId, ...(cursor ?? {}), limit: 1000 });
-          events.push(...page.events);
+          const page = readHarnessEventPage(db, { runId, aggregateType, aggregateId, ...(kindSet ? { kinds: [...kindSet] } : {}), ...(cursor ?? {}), limit: 200 });
+          for (const event of page.events) {
+            if (this.#validateOnRead) validateEvent(event, events.length);
+            events.push(clone(event));
+            if (events.length % 20 === 0) await yieldToEventLoop();
+          }
           if (!page.hasMore) break;
           cursor = page.nextCursor;
+          await yieldToEventLoop();
         }
-        return events.map(clone);
+        return events;
       } finally {
         db.close();
       }
     }
     return this.#events.filter((event) => (!runId || event.runId === runId)
       && (!aggregateType || event.aggregateType === aggregateType)
-      && (!aggregateId || event.aggregateId === aggregateId)).map(clone);
+      && (!aggregateId || event.aggregateId === aggregateId)
+      && (!kindSet || kindSet.has(event.kind))).map(clone);
+  }
+
+  async listRecentRuns({ excludeRunId, maxRuns = 4 } = {}) {
+    try { await this.#queue; } catch { /* a failed write must not poison reads */ }
+    await this.load();
+    const cappedRuns = Number.isInteger(maxRuns) && maxRuns > 0 ? Math.min(32, maxRuns) : 4;
+    if (this.#sqlite) {
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
+      try {
+        return this.#checkedEvents(readRecentHarnessRunsEvents(db, { excludeRunId, maxRuns: cappedRuns }));
+      } finally {
+        db.close();
+      }
+    }
+    const latestByRun = new Map();
+    for (const event of this.#events) {
+      if (event.aggregateType !== 'TaskRun' || (excludeRunId && event.runId === excludeRunId)) continue;
+      const prev = latestByRun.get(event.runId) ?? -1;
+      if ((event.emittedAtMs ?? 0) > prev) latestByRun.set(event.runId, event.emittedAtMs ?? 0);
+    }
+    const selectedRuns = new Set(
+      [...latestByRun.entries()]
+        .sort((left, right) => right[1] - left[1] || right[0].localeCompare(left[0]))
+        .slice(0, cappedRuns)
+        .map(([id]) => id)
+    );
+    return this.#events.filter((event) => selectedRuns.has(event.runId)).map(clone);
   }
 
   // Paged reads let callers rebuild or export a store larger than memory.
@@ -859,12 +1026,12 @@ export class HarnessEventStore {
     try { await this.#queue; } catch { /* a failed write must not poison reads */ }
     await this.load();
     if (this.#sqlite) {
-      const db = openHarnessDatabase(this.#storagePath);
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
       try {
         const page = readHarnessEventPage(db, { runId, aggregateType, aggregateId, afterRunId, afterSequence, limit });
         return {
           ...page,
-          events: page.events.map(clone),
+          events: this.#checkedEvents(page.events),
           total: countHarnessEvents(db, { runId, aggregateType, aggregateId })
         };
       } finally {
@@ -896,14 +1063,15 @@ export class HarnessEventStore {
     try { await this.#queue; } catch { /* a failed write must not poison reads */ }
     await this.load();
     if (this.#sqlite) {
-      const db = openHarnessDatabase(this.#storagePath);
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
       try {
         let cursor;
         for (;;) {
           const page = readHarnessEventPage(db, { runId, aggregateType, aggregateId, ...(cursor ?? {}), limit });
-          for (const event of page.events) yield clone(event);
+          for (const event of this.#checkedEvents(page.events)) yield event;
           if (!page.hasMore) return;
           cursor = page.nextCursor;
+          await yieldToEventLoop();
         }
       } finally {
         db.close();
@@ -922,7 +1090,7 @@ export class HarnessEventStore {
     try { await this.#queue; } catch { /* a failed write must not poison reads */ }
     await this.load();
     if (this.#sqlite) {
-      const db = openHarnessDatabase(this.#storagePath);
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
       try { return readHarnessTombstones(db).map((tombstone) => tombstone.runId).sort(); } finally { db.close(); }
     }
     return [...this.#tombstones.keys()].sort();
@@ -930,9 +1098,10 @@ export class HarnessEventStore {
 
   getReceipt(commandId) {
     if (this.#sqlite) {
-      const db = openHarnessDatabase(this.#storagePath);
+      const db = openHarnessDatabase(this.#storagePath, { readOnly: true, verifyIntegrity: false });
       try {
         const receipt = readHarnessReceipt(db, commandId);
+        if (receipt) validateReceiptShape(receipt);
         return receipt ? clone(receipt) : undefined;
       } finally {
         db.close();
@@ -948,7 +1117,7 @@ export class HarnessEventStore {
     if (this.#sqlite) {
       const db = openHarnessDatabase(this.#storagePath);
       try {
-        validateSqliteDatabase(db);
+        await validateSqliteDatabaseAsync(db);
         const summary = readHarnessSummary(db);
         return {
           ok: true,

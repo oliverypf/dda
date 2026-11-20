@@ -41,11 +41,15 @@ export async function resumeWrittenFiles({ events = [], sourceRunId, checkpointD
       outputDigest: p.outputDigest, state: 'SUCCEEDED', sourceEventId: event.eventId });
   }
   if (files.size > 128) throw new Error('RECOVERY_FILE_LIMIT');
+  // A later edit or a missing file must not be replayed as a successful write.
+  // Dropping that record lets an explicit continue proceed from the current
+  // workspace instead of aborting before the model starts.
+  const restored = [];
   for (const file of files.values()) {
     let current;
     try { current = await workspace.read(file.path, 1); }
-    catch { throw new Error(`RECOVERY_WORKSPACE_CHANGED:${file.path}`); }
-    if (current.digest !== file.contentDigest) throw new Error(`RECOVERY_WORKSPACE_CHANGED:${file.path}`);
+    catch { continue; }
+    if (current?.digest === file.contentDigest) restored.push(file);
   }
-  return [...files.values()];
+  return restored;
 }

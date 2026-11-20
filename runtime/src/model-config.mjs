@@ -3,6 +3,7 @@ import { normalizeCustomInstructions } from './custom-instructions.mjs';
 import { normalizeContinuousVerifierConfig } from './continuous-verifier.mjs';
 import { createPlatformPaths } from './platform/paths.mjs';
 import { validateProviderModelCatalogs } from './provider-model-catalog.mjs';
+import { validateModelContextLimits } from './model-context-limits.mjs';
 
 // The continuous-verifier budget and criteria are operator configuration, not
 // constants. They are validated by the same normaliser the verifier itself
@@ -89,7 +90,8 @@ const ALLOWED_KEYS = new Set([
   'roleBindings',
   'verifier',
   'decision',
-  'providerModelCatalogs'
+  'providerModelCatalogs',
+  'modelContextLimits'
 ]);
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$/;
@@ -97,7 +99,7 @@ const ROLE_BINDING_KEYS = new Set(['selector', 'modelId', 'allowList', 'required
 const CANDIDATE_BINDING_KEYS = new Set(['bindingId', 'modelId', 'expectedCost', 'expectedLatencyMs', 'expectedTokens']);
 const FANOUT_BUDGET_KEYS = new Set(['maxCandidates', 'maxConcurrency', 'maxCost', 'maxTokens']);
 const VERIFIER_KEYS = new Set(['criteria', 'repetitions', 'maxComparisons', 'pivots', 'seed', 'maxPromptChars', 'passThreshold', 'failThreshold']);
-const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'verificationTimeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled']);
+const DECISION_KEYS = new Set(['enabled', 'enforce', 'endpoint', 'apiKeyEnv', 'model', 'timeoutMs', 'verificationTimeoutMs', 'maxStateChars', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled', 'roleSetEnabled', 'executionProfileEnabled', 'controlJudgmentsEnabled', 'singleAgentPlanEnabled']);
 const MODEL_ENTRY_KEYS = new Set(['id', 'modelId', 'provider', 'protocol', 'model', 'baseURL', 'endpoint', 'apiKeyEnv', 'headers', 'sessionHeader', 'capabilities', 'roles', 'costPer1kTokens', 'latencyMs', 'state', 'version']);
 
 const clone = (value) => structuredClone(value);
@@ -290,7 +292,7 @@ const validateDecisionConfig = (input) => {
   for (const key of Object.keys(input)) {
     if (!DECISION_KEYS.has(key)) throw new Error(`MODEL_CONFIG_UNKNOWN_FIELD:decision.${key}`);
   }
-  for (const key of ['enabled', 'enforce', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled']) {
+  for (const key of ['enabled', 'enforce', 'classificationEnabled', 'routeSelectionEnabled', 'topologyEnabled', 'planReviewEnabled', 'diagnosisEnabled', 'recoveryDirectionEnabled', 'contextPackEnabled', 'readonlyFastPathEnabled', 'planTierEnabled', 'roleSetEnabled', 'executionProfileEnabled', 'controlJudgmentsEnabled', 'singleAgentPlanEnabled']) {
     if (input[key] !== undefined && typeof input[key] !== 'boolean') {
       throw new Error(`MODEL_CONFIG_INVALID_FIELD:decision.${key}`);
     }
@@ -327,6 +329,10 @@ const validateDecisionConfig = (input) => {
     ,...(input.contextPackEnabled === undefined ? {} : { contextPackEnabled: input.contextPackEnabled })
     ,...(input.readonlyFastPathEnabled === undefined ? {} : { readonlyFastPathEnabled: input.readonlyFastPathEnabled })
     ,...(input.planTierEnabled === undefined ? {} : { planTierEnabled: input.planTierEnabled })
+    ,...(input.roleSetEnabled === undefined ? {} : { roleSetEnabled: input.roleSetEnabled })
+    ,...(input.executionProfileEnabled === undefined ? {} : { executionProfileEnabled: input.executionProfileEnabled })
+    ,...(input.controlJudgmentsEnabled === undefined ? {} : { controlJudgmentsEnabled: input.controlJudgmentsEnabled })
+    ,...(input.singleAgentPlanEnabled === undefined ? {} : { singleAgentPlanEnabled: input.singleAgentPlanEnabled })
   };
 };
 
@@ -356,6 +362,9 @@ export const validateModelConfig = (input) => {
   const baseURL = validateUrl(input.baseURL, 'baseURL');
   const endpoint = validateUrl(input.endpoint, 'endpoint');
   const customInstructions = normalizeCustomInstructions(input.customInstructions);
+  const modelContextLimits = input.modelContextLimits === undefined
+    ? undefined
+    : validateModelContextLimits(input.modelContextLimits);
   return {
     schemaVersion: '1.0',
     ...(provider ? { provider } : {}),
@@ -373,7 +382,8 @@ export const validateModelConfig = (input) => {
     ...(input.roleBindings === undefined ? {} : { roleBindings: validateRoleBindings(input.roleBindings) }),
     ...(input.verifier === undefined ? {} : { verifier: validateVerifierConfig(input.verifier) }),
     ...(input.decision === undefined ? {} : { decision: validateDecisionConfig(input.decision) }),
-    ...(input.providerModelCatalogs === undefined ? {} : { providerModelCatalogs: validateProviderModelCatalogs(input.providerModelCatalogs) })
+    ...(input.providerModelCatalogs === undefined ? {} : { providerModelCatalogs: validateProviderModelCatalogs(input.providerModelCatalogs) }),
+    ...(modelContextLimits ? { modelContextLimits } : {})
   };
 };
 
@@ -502,7 +512,8 @@ export const resolveModelConfig = ({ fileConfig = {}, overrides = {}, env = proc
     ...(fileConfig.roleBindings ? { roleBindings: clone(fileConfig.roleBindings) } : {}),
     ...(fileConfig.verifier ? { verifier: clone(fileConfig.verifier) } : {}),
     ...(fileConfig.decision ? { decision: clone(fileConfig.decision) } : {}),
-    ...(Array.isArray(fileConfig.providerModelCatalogs) ? { providerModelCatalogs: clone(fileConfig.providerModelCatalogs) } : {})
+    ...(Array.isArray(fileConfig.providerModelCatalogs) ? { providerModelCatalogs: clone(fileConfig.providerModelCatalogs) } : {}),
+    ...(fileConfig.modelContextLimits ? { modelContextLimits: clone(fileConfig.modelContextLimits) } : {})
   };
   const resolved = validateModelConfig(candidate);
   if (isDeepSeek) resolved.protocol = 'deepseek-harness';
@@ -555,6 +566,10 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
   const verificationTimeoutMs = configured.verificationTimeoutMs ?? Number(envValue('DDA_JEV_VERIFICATION_TIMEOUT_MS') ?? 15000);
   const maxStateChars = configured.maxStateChars ?? Number(envValue('DDA_JEV_MAX_STATE_CHARS') ?? 16000);
   const featureFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName];
+  // Role set, execution profile, control judgments, and the single-agent plan
+  // are on unless the operator turns them off. They still no-op until the
+  // decision plane itself is configured and has a credential.
+  const defaultOnFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName] ?? true;
   return validateDecisionConfig({
     enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, verificationTimeoutMs, maxStateChars,
     classificationEnabled: featureFlag('DDA_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
@@ -566,6 +581,10 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
     contextPackEnabled: featureFlag('DDA_JEV_CONTEXT_PACK_ENABLED', 'contextPackEnabled'),
     // Speed MVP (default OFF). See docs/JEV_SPEED_MVP.md.
     readonlyFastPathEnabled: featureFlag('DDA_JEV_READONLY_FAST_PATH', 'readonlyFastPathEnabled'),
-    planTierEnabled: featureFlag('DDA_JEV_PLAN_TIER_ENABLED', 'planTierEnabled')
+    planTierEnabled: featureFlag('DDA_JEV_PLAN_TIER_ENABLED', 'planTierEnabled'),
+    roleSetEnabled: defaultOnFlag('DDA_JEV_ROLE_SET_ENABLED', 'roleSetEnabled'),
+    executionProfileEnabled: defaultOnFlag('DDA_JEV_EXECUTION_PROFILE_ENABLED', 'executionProfileEnabled'),
+    controlJudgmentsEnabled: defaultOnFlag('DDA_JEV_CONTROL_JUDGMENTS_ENABLED', 'controlJudgmentsEnabled'),
+    singleAgentPlanEnabled: defaultOnFlag('DDA_JEV_SINGLE_AGENT_PLAN_ENABLED', 'singleAgentPlanEnabled')
   });
 };

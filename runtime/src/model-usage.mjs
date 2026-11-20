@@ -1,6 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { cacheDigest, prefixShape, comparePrefixShapes } from './prompt-cache.mjs';
 
+const textSize = (value, depth = 0) => {
+  if (depth > 8) return 0;
+  if (typeof value === 'string') return value.length;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).length;
+  if (Array.isArray(value)) return value.reduce((total, item) => total + textSize(item, depth + 1), 0);
+  if (value && typeof value === 'object') return Object.values(value).reduce((total, item) => total + textSize(item, depth + 1), 0);
+  return 0;
+};
+// Lengths only. The sample must not keep prompt text.
+export const promptCharBuckets = (request) => ({
+  systemChars: textSize(request?.system),
+  toolsChars: textSize(request?.tools),
+  messageChars: textSize(request?.messages)
+});
+const FIRST_TOKEN_CHUNK = new Set(['text-delta', 'reasoning-delta', 'tool-call', 'tool-call-delta']);
 const count = (n) => Number.isSafeInteger(n) && n >= 0 ? n : null;
 const sum = (a, b) => a === null || b === null ? null : count(a + b);
 const pick = (...values) => values.find((v) => v !== undefined && v !== null);
@@ -76,9 +91,12 @@ export const withModelUsage = (provider, { scope, onUsage, onRecordingError = ()
       const reasons = comparePrefixShapes(shapes.get(roleKey), shape);
       shapes.set(roleKey, shape);
       let usage, status = 'UNKNOWN';
+      let firstTokenAt;
       const start = Date.now();
+      const buckets = promptCharBuckets(request);
       try {
         for await (const chunk of provider.stream({ ...request, cacheScope: cacheDigest(scope ?? ''), cacheRole: roleKey })) {
+          if (firstTokenAt === undefined && FIRST_TOKEN_CHUNK.has(chunk?.type)) firstTokenAt = Date.now();
           if (chunk?.type === 'usage') usage = chunk.usage;
           if (chunk?.type === 'finish') status = ['error', 'aborted'].includes(chunk.reason?.kind) ? 'FAILED' : 'SUCCEEDED';
           yield chunk;
@@ -95,6 +113,8 @@ export const withModelUsage = (provider, { scope, onUsage, onRecordingError = ()
           protocol: String(provider.protocol ?? 'unknown').slice(0, 40),
           ...normalizeTokenUsage(usage), status,
           latencyMs: Math.max(0, Date.now() - start),
+          ttftMs: firstTokenAt === undefined ? null : Math.max(0, firstTokenAt - start),
+          ...buckets,
           prefixChanged: reasons.length > 0, prefixChangeReasons: reasons, ...shape
         };
         // Usage is observational: never retry a model/tool or change its result

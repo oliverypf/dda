@@ -159,6 +159,7 @@ export const runWorker = async ({ input = process.stdin, output = process.stdout
 
   let ready = false;
   let handle = null;
+  let bindWorkspace;
   const state = createStateMirror();
   const framer = createMessageFramer();
 
@@ -186,16 +187,18 @@ export const runWorker = async ({ input = process.stdin, output = process.stdout
         write(kernelFailure(message.id, KERNEL_ERROR_CODES.INVALID_PARAMS, 'unsupported protocol version'));
         return;
       }
-      const workspace = typeof params.workspaceRoot === 'string' && params.workspaceRoot
-        ? new ReadonlyWorkspace(params.workspaceRoot, {
+      const workspace = new ReadonlyWorkspace(params.workspaceRoot, {
             excludedPaths: Array.isArray(params.excludedPaths) ? params.excludedPaths : [],
             getAccessMode: params.enableUserFileAccess === true ? readAccessMode : undefined,
             protectedPaths: Array.isArray(params.protectedPaths) ? params.protectedPaths : []
-          })
-        : null;
+          });
+      bindWorkspace = root => {
+        workspace.bindWorkspace(root);
+        handle = createKernelHandler({ workspace, state });
+      };
       const snapshot = isPlainObject(params.sessionState) ? params.sessionState : {};
       state.load(Array.isArray(snapshot.entries) ? snapshot.entries : [], snapshot.revision);
-      handle = createKernelHandler({ workspace, state });
+      handle = createKernelHandler({ workspace: workspace.root ? workspace : null, state });
       ready = true;
       write(kernelSuccess(message.id, {
         ready: true,
@@ -217,6 +220,11 @@ export const runWorker = async ({ input = process.stdin, output = process.stdout
       return;
     }
     try {
+      if (message.op === 'bind_workspace') {
+        bindWorkspace(message.params?.root);
+        write(kernelSuccess(message.id, { bound: true }));
+        return;
+      }
       const result = await handle(message.op, message.params);
       write(kernelSuccess(message.id, result));
     } catch (error) {

@@ -223,11 +223,11 @@ test('controlled resume stays uncertain when the journal had already started the
   const events = await readEvents(seed.trajectoryPath);
   const codes = stepErrorCodes(events);
   assert.ok(!codes.includes('RECONCILED_SAFE_TO_RETRY'), `${result.stderr}\n${result.stdout}\ncodes=${codes.join(',')}`);
+  assert.ok(codes.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN'), `${result.stderr}\n${result.stdout}\ncodes=${codes.join(',')}`);
   const persisted = JSON.parse(await readFile(seed.threadStorePath, 'utf8'));
-  const inspect = persisted.threads.find((item) => item.id === seed.thread.id)?.checkpoint?.plan?.steps
-    ?.find((step) => step.stepId === 'inspect');
-  assert.equal(inspect?.status, 'BLOCKED', `${result.stderr}\n${result.stdout}`);
-  assert.equal(inspect?.errorCode, 'SIDE_EFFECT_OUTCOME_UNCERTAIN');
+  const steps = persisted.threads.find((item) => item.id === seed.thread.id)?.checkpoint?.plan?.steps ?? [];
+  assert.equal(steps.some((step) => step.stepId === 'inspect' && step.status === 'READY'), false);
+  assert.equal(steps[0]?.stepId, 'continue-task', `${result.stderr}\n${result.stdout}`);
   const journal = JSON.parse(await readFile(seed.journalPath, 'utf8'));
   assert.equal(journal.effects.find((effect) => effect.effectId === 'effect-prestart')?.state, 'UNKNOWN');
 });

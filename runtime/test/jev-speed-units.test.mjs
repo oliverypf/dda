@@ -14,13 +14,18 @@ const fastPath = (name, request, overrides = {}) => readonlyFastPathDecision({
   proposedInputClaim: proposedToolDecisionClaim(name, request), ...overrides
 });
 
-test('fast path allowlist is exactly workspace.list|read|focus and kernel.workspace_list|read|focus', () => {
+test('fast path admits scoped workspace reads and PE header inspection', () => {
   assert.deepEqual([...READONLY_FAST_PATH_TOOLS].sort(), [
-    'kernel.workspace_focus', 'kernel.workspace_list', 'kernel.workspace_read',
-    'workspace.focus', 'workspace.list', 'workspace.read'
+    'kernel.workspace_focus', 'kernel.workspace_inspect_binary', 'kernel.workspace_list', 'kernel.workspace_read',
+    'workspace.focus', 'workspace.inspect_binary', 'workspace.list', 'workspace.read'
   ]);
   for (const name of READONLY_FAST_PATH_TOOLS) {
-    const decision = fastPath(name, { path: 'README.md' });
+    const binary = name.endsWith('inspect_binary');
+    const decision = fastPath(name, { path: binary ? 'desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe' : 'README.md' });
+    if (binary) {
+      for (const path of ['../outside.exe', 'C:/outside.dll', 'README.md', '']) assert.equal(fastPath(name, { path }), undefined);
+      assert.equal(fastPath(name, { path: 'build/app.exe', command: 'run' }), undefined);
+    }
     assert.equal(decision?.decision, 'ALLOW', name);
     assert.equal(decision.reasonCode, READONLY_FAST_PATH_REASON);
     assert.equal(decision.source, 'rule');
@@ -139,7 +144,8 @@ test('engine counts Jev requests per kind and hard-decision short circuits witho
   const verify = await engine.judgeVerification({ state: {}, ruleStatus: 'PASS' });
   assert.equal(verify.decision, 'PASS');
   const failed = await engine.judgeVerification({ state: {}, ruleStatus: 'FAIL' });
-  assert.equal(failed.decision, 'FAIL', 'rule FAIL is never upgraded');
+  assert.equal(failed.decision, 'PASS', 'a rule status does not veto Jev');
+  assert.equal(failed.source, 'jev');
   const metrics = engine.metrics();
   assert.equal(metrics.byKind.ACTION_GATE.decisions, 2);
   assert.equal(metrics.byKind.ACTION_GATE.requests, 1);
@@ -147,9 +153,9 @@ test('engine counts Jev requests per kind and hard-decision short circuits witho
   assert.deepEqual(metrics.byKind.ACTION_GATE.shortCircuitReasons, { READONLY_FAST_PATH: 1 });
   assert.equal(metrics.byKind.ACTION_GATE.latency.totalMs, 12);
   assert.equal(metrics.byKind.SELECT_PLAN_TIER.requests, 1);
-  assert.equal(metrics.byKind.VERIFY_BEHAVIOR.requests, 1);
+  assert.equal(metrics.byKind.VERIFY_BEHAVIOR.requests, 2);
   assert.equal(metrics.byKind.VERIFY_BEHAVIOR.decisions, 2);
-  assert.equal(metrics.byKind.VERIFY_BEHAVIOR.shortCircuits, 1);
+  assert.equal(metrics.byKind.VERIFY_BEHAVIOR.shortCircuits, 0);
 });
 
 test('engine metrics record request errors and fallbacks without changing fail-closed results', async () => {

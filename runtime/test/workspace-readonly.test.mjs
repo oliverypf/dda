@@ -163,6 +163,9 @@ test('snapshot walks breadth-first and skips hidden cache/build directories so m
   assert.equal(paths.some((p) => p.startsWith('.bitfun')), false);
   assert.equal(paths.some((p) => p.includes('__pycache__') || p.endsWith('.pyc')), false);
   assert.equal(paths.some((p) => p.includes('target-b199')), false);
+  assert.ok(snapshot.omittedDirectories.includes('.bitfun'));
+  assert.ok(snapshot.omittedDirectories.includes('desktop/src-tauri/target-b199'));
+  assert.equal(snapshot.omittedDirectories.some((p) => p.includes('artifact-')), false);
   assert.equal(paths.includes('desktop/package.json'), true);
   assert.equal(paths.includes('desktop/src-tauri/Cargo.toml'), true);
   assert.equal(paths.includes('runtime/package.json'), true);
@@ -191,6 +194,8 @@ test('snapshot skips noisy cache dirs, ranks nested manifests, and stays bounded
   assert.ok(snapshot.entries.length <= 200);
   assert.equal(paths.some((path) => path.includes('.bitfun')), false);
   assert.equal(paths.some((path) => path.includes('.deveco')), false);
+  assert.ok(snapshot.omittedDirectories.includes('.bitfun'));
+  assert.ok(snapshot.omittedDirectories.includes('.deveco'));
   assert.equal(paths.includes('package.json'), false, 'no fabricated root manifest');
   assert.equal(paths.includes('Cargo.toml'), false, 'no fabricated root manifest');
   assert.ok(paths.includes('desktop/package.json'));
@@ -202,4 +207,66 @@ test('snapshot skips noisy cache dirs, ranks nested manifests, and stays bounded
   assert.equal(cached.path, '.bitfun/logs/trace.json');
   const cachedList = await workspace.list('.deveco');
   assert.ok(cachedList.entries.some((entry) => entry.path === '.deveco/cache'));
+  const rootList = await workspace.list();
+  const bitfun = rootList.entries.find((entry) => entry.path === '.bitfun');
+  assert.equal(bitfun?.kind, 'DIRECTORY');
+  assert.equal(bitfun?.contentsOmitted, true);
+});
+
+test('reports generated build directories as present without indexing their contents', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-generated-'));
+  await mkdir(join(root, 'desktop', 'node_modules', 'left-pad'), { recursive: true });
+  await writeFile(join(root, 'desktop', 'node_modules', 'left-pad', 'package.json'), '{}\n');
+  await mkdir(join(root, 'desktop', 'dist', 'assets'), { recursive: true });
+  await writeFile(join(root, 'desktop', 'dist', 'index.html'), '<html></html>\n');
+  await mkdir(join(root, 'desktop', 'src-tauri', 'target', 'release'), { recursive: true });
+  await writeFile(join(root, 'desktop', 'src-tauri', 'target', 'release', 'dda-desktop.exe'), 'MZ');
+  await mkdir(join(root, 'desktop', 'src-tauri', 'target-b199', 'debug'), { recursive: true });
+  await writeFile(join(root, 'desktop', 'package.json'), '{}\n');
+  const workspace = new ReadonlyWorkspace(root);
+
+  const snapshot = await workspace.snapshot();
+  assert.deepEqual(snapshot.omittedDirectories, [
+    'desktop/dist',
+    'desktop/node_modules',
+    'desktop/src-tauri/target',
+    'desktop/src-tauri/target-b199'
+  ]);
+  const indexed = snapshot.entries.map((entry) => entry.path);
+  assert.equal(indexed.some((path) => path.includes('left-pad') || path.includes('index.html') || path.endsWith('.exe')), false);
+  assert.equal(indexed.includes('desktop/package.json'), true);
+
+  const desktop = await workspace.list('desktop');
+  const listed = Object.fromEntries(desktop.entries.map((entry) => [entry.path, entry]));
+  assert.equal(listed['desktop/node_modules']?.contentsOmitted, true);
+  assert.equal(listed['desktop/dist']?.contentsOmitted, true);
+  const modules = await workspace.list('desktop/node_modules');
+  const packageEntry = modules.entries.find((entry) => entry.path === 'desktop/node_modules/left-pad');
+  assert.equal(packageEntry?.kind, 'DIRECTORY');
+  assert.equal(packageEntry?.contentsOmitted, undefined);
+  const tauri = await workspace.list('desktop/src-tauri');
+  const tauriEntries = Object.fromEntries(tauri.entries.map((entry) => [entry.path, entry]));
+  assert.equal(tauriEntries['desktop/src-tauri/target']?.contentsOmitted, true);
+  assert.equal(tauriEntries['desktop/src-tauri/target-b199']?.contentsOmitted, true);
+});
+
+test('reads and focuses minified JS bundles containing sparse literal control characters while rejecting NUL or dense binary bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hmcodex-workspace-minified-js-'));
+  const bundleBody = [
+    'const header = "' + 'a'.repeat(800) + '";',
+    'const ctrlTable = "\\x00" + "\x01\x03\x1f\x7f";',
+    'function connectChatGptAccount() { return "connected"; }',
+    'const footer = "' + 'b'.repeat(800) + '";'
+  ].join('\n');
+  await writeFile(join(root, 'workbench.desktop.main.js'), bundleBody, 'utf8');
+  await writeFile(join(root, 'nul-bytes.js'), Buffer.concat([Buffer.from('const x = 1;\n'.repeat(80)), Buffer.from([0])]));
+  await writeFile(join(root, 'dense-binary.js'), '\x01'.repeat(600), 'utf8');
+
+  const workspace = new ReadonlyWorkspace(root);
+  const focused = await workspace.readMatching('workbench.desktop.main.js', 'function connectChatGptAccount()', 120, 0, true);
+  assert.equal(focused.found, true);
+  assert.ok(focused.content.startsWith('function connectChatGptAccount()'));
+
+  await assert.rejects(workspace.read('nul-bytes.js'), /WORKSPACE_BINARY_FILE/);
+  await assert.rejects(workspace.read('dense-binary.js'), /WORKSPACE_BINARY_FILE/);
 });

@@ -141,7 +141,7 @@ export const registerResidentKernelTools = (registry, kernel, { hostRequestDispa
 
   registry.register({
     name: 'kernel.workspace_list',
-    description: 'List visible entries in the authorized workspace or a child directory through the resident kernel. path MUST be relative (empty string or e.g. src); never an absolute path.',
+    description: 'List visible entries in the authorized workspace or a child directory through the resident kernel. path MUST be relative (empty string or e.g. src); never an absolute path. Generated or cache directories such as node_modules, target, target-*, and dist are included when they exist, with contentsOmitted:true. That flag means the directory is present and its children were not expanded; it does not mean the directory is missing. Call list on that exact path to see its children.',
     inputSchema: workspaceListSchema,
     readOnly: true,
     metadata: kernelMeta,

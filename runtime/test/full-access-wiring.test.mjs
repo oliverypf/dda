@@ -33,33 +33,22 @@ test('ReadonlyWorkspace honors a live FULL_ACCESS callback and revokes dynamical
   await assert.rejects(() => ws.read(join(outside, 'external.txt')), /WORKSPACE_|SAFETY_/);
 });
 
-test('rule verifier accepts exact authorized outside paths only', async (t) => {
+test('rule verifier does not treat outside paths as a failed check', async (t) => {
   const { outside, project } = await dirs(t);
   const file = join(outside, 'external.txt');
-  const verify = createRuleVerifier().verify({
-    output: 'wrote file',
-    workspace: { granted: true, root: project, snapshotDigest: 'x' },
-    actions: [{ id: 'a1', state: 'SUCCEEDED', path: file }],
-    authorizedFilePaths: [file]
-  });
-  const scope = verify.checks.find((c) => c.id === 'paths.scope');
-  assert.equal(scope.status, 'PASS');
-  assert.match(scope.message, /已授权范围/);
-  // Same outside path WITHOUT the host list fails.
-  const denied = createRuleVerifier().verify({
-    output: 'wrote file',
-    workspace: { granted: true, root: project, snapshotDigest: 'x' },
-    actions: [{ id: 'a1', state: 'SUCCEEDED', path: file }]
-  });
-  assert.equal(denied.checks.find((c) => c.id === 'paths.scope').status, 'FAIL');
-  // A sibling/prefix path is not covered by exact-match authorization.
-  const sibling = createRuleVerifier().verify({
-    output: 'wrote file',
-    workspace: { granted: true, root: project, snapshotDigest: 'x' },
-    actions: [{ id: 'a1', state: 'SUCCEEDED', path: join(outside, 'other.txt') }],
-    authorizedFilePaths: [file]
-  });
-  assert.equal(sibling.checks.find((c) => c.id === 'paths.scope').status, 'FAIL');
+  for (const actions of [
+    [{ id: 'a1', state: 'SUCCEEDED', path: file }],
+    [{ id: 'a1', state: 'SUCCEEDED', path: join(outside, 'other.txt') }]
+  ]) {
+    const report = createRuleVerifier().verify({
+      output: 'wrote file',
+      workspace: { granted: true, root: project, snapshotDigest: 'x' },
+      actions,
+      authorizedFilePaths: [file]
+    });
+    assert.equal(report.status, 'PASS');
+    assert.equal(report.checks.find((check) => check.id === 'paths.scope'), undefined);
+  }
 });
 
 test('task-runner reads an outside absolute path only under USER_FILESYSTEM', async (t) => {
@@ -68,7 +57,7 @@ test('task-runner reads an outside absolute path only under USER_FILESYSTEM', as
   const { ToolRegistry, toolRegistryPlugin, registerReadonlyWorkspaceTools } = await import('../src/tool-registry.mjs');
   const { cordisPlugin } = await import('../src/plugins/cordis-plugin.mjs');
   const { taskRunnerPlugin } = await import('../src/plugins/task-runner.mjs');
-  const { FULL_ACCESS_SYSTEM_INSTRUCTION } = await import('../src/access-mode-instructions.mjs');
+  const { FULL_ACCESS_SYSTEM_INSTRUCTION, WORKSPACE_SYSTEM_INSTRUCTION } = await import('../src/access-mode-instructions.mjs');
   const runOnce = async (filesystemAccess, mode) => {
     const registry = new ToolRegistry({ allowSideEffects: true });
     registerReadonlyWorkspaceTools(registry, new ReadonlyWorkspace(project, { getAccessMode: () => mode }));
@@ -113,9 +102,11 @@ test('task-runner reads an outside absolute path only under USER_FILESYSTEM', as
   assert.equal(JSON.stringify(full.requests[1]).includes('external-content'), true, 'real outside content reached the model');
   assert.equal(full.requests.length, 2);
   assert.equal(full.requests[0].system, FULL_ACCESS_SYSTEM_INSTRUCTION, 'exact FULL system instruction used');
+  assert.match(full.requests[0].system, /evidence-driven agent/);
 
   // WORKSPACE: the outside read is denied at the guard.
   const denied = await runOnce('WORKSPACE', 'REQUIRE_APPROVAL');
+  assert.equal(denied.requests[0]?.system, WORKSPACE_SYSTEM_INSTRUCTION, 'workspace mode keeps the narrower instruction');
   const deniedResult = denied.events.find((e) => e.kind === 'tool.result' && e.id === 'r1');
   assert.ok(deniedResult == null || deniedResult.ok === false || /WORKSPACE_|SAFETY_/.test(JSON.stringify(deniedResult)),
     'outside read denied under WORKSPACE mode');

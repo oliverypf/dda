@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ContextPort } from './context-port.mjs';
+import { experienceTakesEffect } from './experience-placement.mjs';
 
 const clone = (value) => structuredClone(value);
 const bounded = (value, max = 500) => String(value ?? '').replace(/[\u0000-\u001f\u007f\r\n]+/gu, ' ').trim().slice(0, max);
@@ -41,7 +42,8 @@ export class JournalContextPort {
       throw new Error('CONTEXT_RECALL_OPTIONS_INVALID');
     }
     const queryTokens = tokenize(query);
-    const activeInScope = this.#journal.list('ACTIVE')
+    const activeInScope = this.#journal.list()
+      .filter((memory) => experienceTakesEffect(memory))
       .filter((memory) => String(memory.scope).toLowerCase() === String(scope).toLowerCase());
     const scored = activeInScope
       .map((memory) => ({
@@ -59,6 +61,7 @@ export class JournalContextPort {
         memoryId: memory.memoryId,
         scope: bounded(memory.scope, 160),
         kind: bounded(memory.kind, 64),
+        ...(memory.key ? { key: bounded(memory.key, 240) } : {}),
         statement: bounded(memory.statement, 1200),
         confidence: memory.confidence,
         score,

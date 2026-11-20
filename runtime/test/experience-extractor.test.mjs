@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { extractRunReusableExperience, extractDreamExperienceCandidates } from '../src/experience-extractor.mjs';
+import { attachMemoryWorkspacePaths, extractRunReusableExperience, extractDreamExperienceCandidates, selectRunLesson } from '../src/experience-extractor.mjs';
 import { createMemoryVerifier } from '../src/memory-verifier.mjs';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
 
@@ -39,19 +39,78 @@ test('extractRunReusableExperience distills verified commands, files, binary ins
   });
 
   assert.ok(extracted.length >= 5, 'expected command, timeout, files, PE tool, and pitfall lessons');
-  assert.ok(extracted.some((c) => c.statement.includes('npm run build:windows:full-local') && c.statement.includes('desktop') && c.statement.includes('timeoutMs >= 300000')));
+  assert.ok(extracted.some((c) => c.kind === 'SKILL' && c.statement.includes('npm run build:windows:full-local') && c.statement.includes('desktop') && c.statement.includes('timeoutMs >= 300000')));
+  assert.ok(extracted.some((c) => c.kind === 'SKILL' && c.statement.includes('构建时限经验')));
+  assert.ok(extracted.some((c) => c.kind === 'SKILL' && c.statement.includes('desktop/src/main.ts')));
+  assert.ok(extracted.some((c) => c.kind === 'MEMORY' && c.statement.includes('workspace.inspect_binary')));
+  assert.ok(extracted.some((c) => c.kind === 'MEMORY' && c.statement.includes('宿主受保护目录')));
+  assert.ok(extracted.some((c) => c.kind === 'MEMORY' && c.statement.includes('EXCERPT_AMBIGUOUS')));
   assert.ok(extracted.some((c) => c.statement.includes('timeoutMs=600s') && c.statement.includes('构建时限经验')));
   assert.ok(extracted.some((c) => c.statement.includes('desktop/src/main.ts')));
   assert.ok(extracted.some((c) => c.statement.includes('workspace.inspect_binary')));
   assert.ok(extracted.some((c) => c.statement.includes('宿主受保护目录')));
   assert.ok(extracted.some((c) => c.statement.includes('EXCERPT_AMBIGUOUS')));
   assert.ok(!extracted.some((c) => c.statement.includes('git status') || c.statement.includes('console.log') || c.statement.includes('topsecret')));
+  assert.ok(extracted.filter((c) => c.kind === 'SKILL').every((c) => c.workspacePath === 'C:\\repo\\project'));
+  assert.ok(extracted.filter((c) => c.kind === 'MEMORY').every((c) => c.workspacePath === undefined));
   for (const candidate of extracted) {
     assert.ok(!LEGACY_STAT_PATTERNS.some((re) => re.test(candidate.statement)));
   }
 
   const verified = createMemoryVerifier().verify({ candidates: extracted, sourceEvents: events, existingMemories: [] });
   assert.ok(verified.every((r) => r.verification.accepted === true), 'every extracted candidate passes MemoryVerifier');
+});
+
+test('a finished run learns the failed command once, then the successful command', () => {
+  const events = [
+    { eventId: 'ev-install', runId: 'run-build', kind: 'ToolInvocationCompleted', payload: { name: 'shell.execute', ok: false, command: 'npm', args: ['run', 'runtime:install'], cwd: 'desktop', outputTail: 'spawnSync npm.cmd EINVAL', exitCode: 1 } },
+    { eventId: 'ev-build', runId: 'run-build', kind: 'ToolInvocationCompleted', payload: { name: 'shell.execute', ok: true, command: 'npm', args: ['run', 'build:exe'], cwd: 'desktop', durationMs: 180000 } },
+    { eventId: 'ev-done', runId: 'run-build', kind: 'TaskRunCompleted', payload: { outcomeStatus: 'SUCCEEDED' } }
+  ];
+  const extracted = extractRunReusableExperience({
+    runId: 'run-build',
+    taskClass: 'test',
+    threadTitle: '编译exe',
+    threadCwd: 'C:\\repo\\project',
+    events,
+    terminalEventId: 'ev-done'
+  });
+  const first = selectRunLesson(extracted, { verified: true });
+  assert.equal(first.kind, 'SKILL');
+  assert.match(first.statement, /npm run runtime:install/);
+  assert.match(first.statement, /EINVAL/);
+  assert.match(first.statement, /不要再执行这条命令/);
+  assert.equal(extracted.filter((item) => item.key === first.key).length, 1);
+
+  const second = selectRunLesson(extracted, {
+    verified: true,
+    existingKeys: new Set([`workspace::${first.key}`])
+  });
+  assert.match(second.statement, /npm run build:exe/);
+  assert.equal(selectRunLesson(extracted, {
+    verified: false,
+    existingKeys: new Set([`workspace::${first.key}`])
+  }), undefined);
+});
+
+test('failed verification becomes a memory, not a skill, and ignores the Jev rewrite', () => {
+  const extracted = extractRunReusableExperience({
+    runId: 'run-fail',
+    taskClass: 'modify',
+    threadTitle: '编译exe',
+    threadCwd: 'C:\\repo\\project',
+    verificationChecks: [
+      { id: 'actions.progress', status: 'FAIL', message: '1 个动作执行失败（EXECUTOR_RESULT_FAILED）' },
+      { id: 'actions.duplicates', status: 'FAIL', message: '检测到重复动作指纹' },
+      { id: 'jev-behavior-judge', status: 'FAIL', message: 'RULE_VERIFIER_FAILED' }
+    ],
+    terminalEventId: 'ev-fail'
+  });
+  assert.equal(extracted.length, 2);
+  assert.ok(extracted.every((item) => item.kind === 'MEMORY' && String(item.key).startsWith('pitfall:')));
+  assert.ok(extracted.some((item) => item.key === 'pitfall:executor-result-failed'));
+  assert.ok(extracted.some((item) => item.key === 'pitfall:repeated-action'));
+  assert.equal(extracted.some((item) => /RULE_VERIFIER_FAILED|Jev/u.test(item.statement)), false);
 });
 
 test('extractDreamExperienceCandidates skips fixture workspaces and deduplicates against existing memories', () => {
@@ -118,8 +177,22 @@ test('CLI dream run extracts concrete PROPOSED experience candidates from SQLite
   assert.equal(dreamOut.proposedMemories.length, 1);
   assert.equal(dreamOut.proposedMemories[0].status, 'PROPOSED');
   assert.match(dreamOut.proposedMemories[0].statement, /stage-desktop-build\.mjs/);
+  assert.equal(dreamOut.proposedMemories[0].workspacePath, 'D:\\Projects\\dda');
 
   // Re-running dream is idempotent and adds 0 duplicates.
   const dreamSecond = JSON.parse((await promisify(execFile)(process.execPath, [cli, 'dream', 'run'], { env, windowsHide: true })).stdout);
   assert.equal(dreamSecond.proposedMemories.length, 0);
+});
+
+test('older skills are labeled from the thread that produced the run', () => {
+  const labeled = attachMemoryWorkspacePaths(
+    [{ memoryId: 'memory-old', runId: 'run-old', statement: '项目改动经验（编译exe）：关键修改文件包括 `desktop/package.json`。', scope: 'workspace' }],
+    [{ id: 'thread-1', cwd: 'C:\\Users\\User\\hmCodex-local', turns: [{ runId: 'run-old' }] }]
+  );
+  assert.equal(labeled[0].workspacePath, 'C:\\Users\\User\\hmCodex-local');
+  const kept = attachMemoryWorkspacePaths(
+    [{ memoryId: 'memory-new', runId: 'run-new', workspacePath: 'D:\\Kept', statement: '项目命令经验', scope: 'workspace' }],
+    [{ cwd: 'C:\\Other', turns: [{ runId: 'run-new' }] }]
+  );
+  assert.equal(kept[0].workspacePath, 'D:\\Kept');
 });

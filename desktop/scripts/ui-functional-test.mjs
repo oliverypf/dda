@@ -692,7 +692,8 @@ const suite = async (client) => {
       assert((await setComposer(client, 'hello')) === 'SET', 'set composer');
       assert((await submitComposer(client)) === 'SUBMITTED', 'submit composer');
       await waitFor(client, `document.querySelector('.composer-stop') && !document.querySelector('.composer-stop').disabled`, { timeout: 30000, label: 'cancel enabled while running' });
-      assert((await attr(client, '.send-button', 'disabled')) !== null, 'send disabled while running');
+      assert((await attr(client, '.send-button', 'disabled')) === null, 'send stays enabled while running');
+      assert(String(await attr(client, '.send-button', 'title')).includes('结束后继续'), 'send queues a follow-up while running');
       assert((await click(client, '.composer-stop')) === 'CLICKED', 'cancel click');
       await waitFor(client, `document.querySelector('.run-status')?.innerText.includes('任务已取消')`, { timeout: 30000, label: 'cancelled state' });
       assert((await attr(client, '.composer-stop', 'disabled')) !== null, 'cancel disabled after cancellation');

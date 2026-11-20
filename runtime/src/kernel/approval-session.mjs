@@ -1,12 +1,54 @@
 import { randomUUID } from 'node:crypto';
+import { lstat, mkdir, realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { approvalSubject, cellApprovalPresentation } from './cell-approval.mjs';
 import { executionDigest } from '../execution-state-store.mjs';
 import { CAPABILITIES, parseCommand } from '../runtime-safety-monitor.mjs';
 import { currentAccessMode } from '../filesystem-access.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
-import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome, assessRequestRisk } from '../controlled-tools.mjs';
+import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome, assessRequestRisk, classifySessionCommand, COMMAND_OUTSIDE_SESSION_LEASE } from '../controlled-tools.mjs';
 
 const DEFAULT_APPROVAL_TTL_MS = 900_000;
+
+const requireDirectory = async (path) => {
+  if (!(await lstat(path)).isDirectory()) throw new Error('COMMAND_APPROVAL_STORE_INVALID');
+};
+
+// Each grant is an empty directory named by the digest of its scope. Creating
+// it is atomic across runtime processes, and no command arguments are stored.
+const commandApprovals = (directory) => {
+  const has = async (key) => {
+    try {
+      await requireDirectory(dirname(directory));
+      await requireDirectory(directory);
+      await requireDirectory(join(directory, key));
+      return true;
+    } catch { return false; }
+  };
+  const save = async (key) => {
+    await mkdir(dirname(directory), { recursive: true, mode: 0o700 });
+    await requireDirectory(dirname(directory));
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await requireDirectory(directory);
+    try {
+      await mkdir(join(directory, key), { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== 'EEXIST' || !(await has(key))) throw error;
+    }
+  };
+  return { has, save };
+};
+
+const commandApprovalKey = async ({ workspaceRoot, capability, command, args, cwd = '.' }) => {
+  try {
+    const root = await realpath(workspaceRoot);
+    const directory = await realpath(resolve(root, cwd));
+    const subpath = relative(root, directory);
+    if (isAbsolute(subpath) || subpath === '..' || subpath.startsWith(`..${sep}`)) return undefined;
+    if (!(await stat(directory)).isDirectory()) return undefined;
+    return executionDigest({ version: 1, root, directory, capability, command, args }).slice('sha256:'.length);
+  } catch { return undefined; }
+};
 
 /**
  * One pending approval per cell. Queued waiters resolve false when the cell
@@ -75,6 +117,7 @@ export const createApprovalSession = (deps) => {
   const ttlMs = deps.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS;
   const now = deps.now ?? Date.now;
   const logger = deps.logger ?? console;
+  const savedApprovals = deps.commandApprovalDirectory ? commandApprovals(deps.commandApprovalDirectory) : undefined;
 
   const takeHold = () => {
     holds.n += 1;
@@ -118,26 +161,28 @@ export const createApprovalSession = (deps) => {
     }
   };
 
-  const emitResolved = (pending, requestId, state) => {
+  const emitResolved = (pending, requestId, state, alwaysAllowSaved) => {
     deps.emitEvent('approval.resolved', {
       requestId,
       state,
       displayedDigest: pending.requestDigest,
+      ...(alwaysAllowSaved === undefined ? {} : { alwaysAllowSaved }),
       ...(pending.context?.intent ? { intentId: pending.context.intent.recordId } : {}),
       ...(pending.context?.approval ? { approvalId: pending.context.approval.recordId } : {})
     });
   };
 
-  const settleWinner = (pending, requestId, { state, coordinatorNext, coordinatorReason, deleteContext }) => {
+  const settleWinner = (pending, requestId, { state, coordinatorNext, coordinatorReason, deleteContext, alwaysAllow }) => {
     const releaseHold = takeHold();
     void (async () => {
       try {
         const approved = state === 'APPROVED';
+        const decisionReason = approved ? 'USER_APPROVED' : state === 'EXPIRED' ? 'APPROVAL_EXPIRED' : 'USER_DECLINED';
         if (pending.context?.approval) {
-          await executionState().transition(pending.context.approval.recordId, approved ? 'APPROVED' : state === 'EXPIRED' ? 'EXPIRED' : 'DECLINED');
+          await executionState().transition(pending.context.approval.recordId, approved ? 'APPROVED' : state === 'EXPIRED' ? 'EXPIRED' : 'DECLINED', { reason: decisionReason });
         }
         if (pending.context?.intent) {
-          await executionState().transition(pending.context.intent.recordId, approved ? 'APPROVED' : 'REJECTED');
+          await executionState().transition(pending.context.intent.recordId, approved ? 'APPROVED' : 'REJECTED', { reason: decisionReason });
         }
         if (deleteContext) approvalContexts.delete(pending.requestDigest);
         if (coordinator().state === 'WAITING_APPROVAL' && coordinatorNext) {
@@ -146,8 +191,17 @@ export const createApprovalSession = (deps) => {
             metadata: { requestId }
           });
         }
+        let alwaysAllowSaved;
+        if (approved && alwaysAllow) {
+          try {
+            await savedApprovals.save(pending.commandApprovalKey);
+            alwaysAllowSaved = true;
+          } catch {
+            alwaysAllowSaved = false;
+          }
+        }
         if (state === 'EXPIRED') deps.emitEvent('approval.expired', { requestId });
-        else emitResolved(pending, requestId, state);
+        else emitResolved(pending, requestId, state, alwaysAllowSaved);
         if (state === 'DECLINED' || state === 'EXPIRED') pending.cellOpSink?.markTerminal(state);
         pending.cellOpSink?.onApprovalSettled(state);
         if (state === 'EXPIRED' || state === 'DECLINED') {
@@ -177,13 +231,16 @@ export const createApprovalSession = (deps) => {
       const pending = pendingApprovals.get(message.requestId);
       if (!pending) return;
       if (message.displayedDigest !== pending.requestDigest) return;
-      if (!claim(pending, message.requestId)) return;
       const approved = message.approved === true;
+      const alwaysAllow = message.alwaysAllow === true;
+      if (alwaysAllow && (!approved || !pending.commandApprovalKey || pending.context.approval.expiresAt <= now())) return;
+      if (!claim(pending, message.requestId)) return;
       settleWinner(pending, message.requestId, {
         state: approved ? 'APPROVED' : 'DECLINED',
         coordinatorNext: approved ? 'EXECUTING' : 'FAILED',
         coordinatorReason: approved ? 'APPROVAL_GRANTED' : 'APPROVAL_DECLINED',
-        deleteContext: !approved
+        deleteContext: !approved,
+        alwaysAllow
       });
     } catch {
       // Ignore malformed host input; the pending approval will expire safely.
@@ -217,13 +274,13 @@ export const createApprovalSession = (deps) => {
             ? executionState().get(pending.context.approval.recordId)
             : undefined;
           if (approval && (approval.state === 'REQUESTED' || approval.state === 'PRESENTED')) {
-            await executionState().transition(approval.recordId, 'CANCELLED');
+            await executionState().transition(approval.recordId, 'CANCELLED', { reason: 'CELL_ENDED_BEFORE_DECISION' });
           }
           const intent = pending.context?.intent
             ? executionState().get(pending.context.intent.recordId)
             : undefined;
           if (intent && intent.state === 'WAITING_APPROVAL') {
-            await executionState().transition(intent.recordId, 'REJECTED');
+            await executionState().transition(intent.recordId, 'REJECTED', { reason: 'CELL_ENDED_BEFORE_DECISION' });
           }
         } catch {
           // Store trouble must not skip the desktop cancel or resolve(false).
@@ -240,7 +297,7 @@ export const createApprovalSession = (deps) => {
     }
   };
 
-  const requestApproval = async ({ capability, request, requireApproval = false, mandatoryApproval = false, risk: providedRisk, dangerReasons, context: approvalCallContext, onApprovalFailure } = {}) => {
+  const requestApproval = async ({ capability, request, requireApproval = false, mandatoryApproval = false, allowRememberedCommand = !mandatoryApproval, jevAllowsOutsideCommand = false, risk: providedRisk, dangerReasons, policyReasonCodes = [], context: approvalCallContext, onApprovalFailure } = {}) => {
     const requestId = `approval-${randomUUID()}`;
     const batchGranted = requireApproval !== true
       && typeof approvalCallContext?.kernelEffect?.batchGrant?.consume === 'function'
@@ -325,11 +382,11 @@ export const createApprovalSession = (deps) => {
       aborted = true;
       try {
         if (approvalRecord && (approvalState === 'REQUESTED' || approvalState === 'PRESENTED')) {
-          await executionState().transition(approvalRecord.recordId, 'CANCELLED');
+          await executionState().transition(approvalRecord.recordId, 'CANCELLED', { reason: 'APPROVAL_INTERRUPTED' });
           approvalState = 'CANCELLED';
         }
         if (intentRecord && (intentState === 'PROPOSED' || intentState === 'SAFETY_EVALUATING' || intentState === 'WAITING_APPROVAL')) {
-          await executionState().transition(intentRecord.recordId, 'REJECTED');
+          await executionState().transition(intentRecord.recordId, 'REJECTED', { reason: 'APPROVAL_INTERRUPTED' });
           intentState = 'REJECTED';
         }
         await maybeReleaseCoordinator(setupHoldRelease !== null);
@@ -430,10 +487,10 @@ export const createApprovalSession = (deps) => {
         capabilitySnapshot
       };
       approvalContexts.set(requestDigest, pending.context);
-      // A persisted FULL_ACCESS grant for this exact workspace covers ordinary
-      // controlled operations only: dangerous requests, mandatory gates, and
-      // anything the host cannot classify stay on the human path.
-      // A global FULL_ACCESS grant covers only ordinary controlled requests.
+      // A persisted FULL_ACCESS grant covers ordinary controlled requests.
+      // Dangerous requests, mandatory gates, and anything the host cannot
+      // classify stay on the human path. assessRequestRisk already treats an
+      // inline interpreter inside a git workspace as ordinary under FULL_ACCESS.
       // The session re-assesses the request itself — caller-supplied flags are
       // never trusted — and fails closed when the assessment cannot prove the
       // request ordinary or the shape is not a known meaningful request.
@@ -470,7 +527,21 @@ export const createApprovalSession = (deps) => {
         const assessor = typeof deps.assessRequestRisk === 'function' ? deps.assessRequestRisk : assessRequestRisk;
         independent = assessor({ capability, request, workspaceRoot: deps.workspaceRoot, accessMode: liveMode });
       } catch { independent = undefined; }
-      const fullAccessAuto = !batchGranted && requireApproval !== true && mandatoryApproval !== true
+      const snapshotCommands = (() => {
+        try {
+          const snap = typeof deps.capabilitySnapshot === 'function' ? deps.capabilitySnapshot() : undefined;
+          return Array.isArray(snap?.commands) ? snap.commands : [];
+        } catch {
+          return [];
+        }
+      })();
+      const outsideLease = (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST)
+        && classifySessionCommand(snapshotCommands, request).outside === true;
+      // The lease provider sets this only after a real Jev ALLOW. Danger is
+      // rechecked here; a caller flag cannot cover a dangerous command.
+      const jevCoversOutside = jevAllowsOutsideCommand === true && independent?.dangerous === false;
+      const outsideNeedsHuman = outsideLease && !jevCoversOutside;
+      const fullAccessAuto = !batchGranted && requireApproval !== true && mandatoryApproval !== true && !outsideNeedsHuman
         && meaningfulRequest()
         && independent?.dangerous === false
         && liveMode === 'FULL_ACCESS'
@@ -480,19 +551,41 @@ export const createApprovalSession = (deps) => {
       // JSON argv for human review, never re-evaluated as a shell line.
       const reasonCodes = (() => {
         const codes = [];
+        if (outsideNeedsHuman) codes.push(COMMAND_OUTSIDE_SESSION_LEASE);
         if (independent?.dangerous === true && Array.isArray(independent.reasons)) {
           for (const code of independent.reasons) {
             if (typeof code === 'string' && /^[A-Z_]{3,48}$/.test(code) && !codes.includes(code)) codes.push(code);
             if (codes.length >= 8) break;
           }
         }
-        if (codes.length) return codes;
+        // Only host gate metadata reaches this parameter. Model danger claims
+        // still cannot classify an action as dangerous or remove a host reason.
+        for (const code of Array.isArray(policyReasonCodes) ? policyReasonCodes : []) {
+          if (typeof code === 'string' && /^[A-Z][A-Z0-9_]*(?::[a-zA-Z0-9_.-]+)?$/.test(code)
+            && code.length <= 160 && !codes.includes(code)) codes.push(code);
+        }
+        if (codes.length) return codes.slice(0, 16);
         if (mandatoryApproval === true) return ['MANDATORY_SAFETY_REVIEW'];
         if (!independent) return ['SAFETY_ASSESSMENT_UNAVAILABLE'];
         return ['HOST_SAFETY_REVIEW_REQUIRED'];
       })();
       safeRequest.reasonCodes = reasonCodes;
+      // Capability-level HIGH means a side effect needs care, not that a
+      // concrete dangerous operation was found. Keep lease/risk policy intact.
+      safeRequest.reviewKind = independent?.reasons?.some((code) => /^(DANGEROUS_|EXTREME_)/.test(code))
+        ? 'DANGER' : independent ? 'REVIEW' : 'UNKNOWN';
       if (independent?.dangerous === true) safeRequest.risk = 'HIGH';
+      if (capability === CAPABILITIES.WRITE_FILE && typeof request?.content === 'string') {
+        const fileReview = approvalCallContext?.hostFileReview;
+        const matches = fileReview?.path === request.path
+          && fileReview?.contentDigest === sha256Digest(request.content)
+          && typeof fileReview?.diff === 'string';
+        const preview = matches ? fileReview.diff : request.content;
+        safeRequest.filePreviewKind = matches ? 'DIFF' : 'CONTENT';
+        safeRequest.filePreview = preview.slice(0, 16384);
+        safeRequest.filePreviewTruncated = preview.length > 16384 || (matches && fileReview.diffTruncated === true);
+        safeRequest.contentBytes = Buffer.byteLength(request.content, 'utf8');
+      }
       if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
         try {
           const parsed = parseCommand(request);
@@ -500,6 +593,14 @@ export const createApprovalSession = (deps) => {
             const preview = JSON.stringify({ command: parsed.command, args: parsed.args, cwd: request.cwd ?? '.' }, null, 2);
             if (preview.length <= 16384) {
               safeRequest.commandPreview = preview;
+              if (savedApprovals && !cellId && !approvalCallContext?.kernelEffect
+                && independent?.dangerous === false
+                && (liveMode !== 'FULL_ACCESS' || !assessRequestRisk({ capability, request, workspaceRoot: deps.workspaceRoot }).dangerous)) {
+                pending.commandApprovalKey = await commandApprovalKey({
+                  ...parsed, capability, workspaceRoot: deps.workspaceRoot, cwd: request.cwd
+                });
+                if (pending.commandApprovalKey) safeRequest.canAlwaysAllow = true;
+              }
             } else {
               safeRequest.commandPreview = preview.slice(0, 16384);
               safeRequest.commandPreviewTruncated = true;
@@ -507,8 +608,10 @@ export const createApprovalSession = (deps) => {
           }
         } catch { /* unparsed commands get no preview */ }
       }
+      const rememberedCommandAuto = !batchGranted && allowRememberedCommand && pending.commandApprovalKey
+        && await savedApprovals.has(pending.commandApprovalKey);
       const live = deps.hasLiveApprover() === true;
-      if (live && !batchGranted && !fullAccessAuto) {
+      if (live && !batchGranted && !fullAccessAuto && !rememberedCommandAuto) {
         setupHoldRelease = takeHold();
         if (coordinator().state === 'EXECUTING') {
           await coordinator().transitionAndFlush('WAITING_APPROVAL', {
@@ -550,16 +653,16 @@ export const createApprovalSession = (deps) => {
         if (await checkpoint('batchIntent')) return false;
         return true;
       }
-      if (fullAccessAuto) {
-        // Re-read the grant one last time immediately before committing the
-        // auto-approve; a revocation between assessment and commit falls
-        // through to the normal pending path.
-        const grantNow = await currentAccessMode(deps.getWorkspaceAccessMode);
-        if (grantNow === 'FULL_ACCESS') {
-          await executionState().transition(approvalRecord.recordId, 'APPROVED', { reason: 'COMPUTER_FULL_ACCESS' });
+      if (fullAccessAuto || rememberedCommandAuto) {
+        // A grant removed during approval setup falls back to a live review.
+        const useSavedApproval = rememberedCommandAuto && await savedApprovals.has(pending.commandApprovalKey);
+        const grantNow = fullAccessAuto && await currentAccessMode(deps.getWorkspaceAccessMode) === 'FULL_ACCESS';
+        if (useSavedApproval || grantNow) {
+          const reason = useSavedApproval ? 'SAVED_COMMAND_APPROVAL' : 'COMPUTER_FULL_ACCESS';
+          await executionState().transition(approvalRecord.recordId, 'APPROVED', { reason });
           approvalState = 'APPROVED';
           if (await checkpoint('fullAccessApproval')) return false;
-          await executionState().transition(intentRecord.recordId, 'APPROVED', { reason: 'COMPUTER_FULL_ACCESS' });
+          await executionState().transition(intentRecord.recordId, 'APPROVED', { reason });
           intentState = 'APPROVED';
           if (await checkpoint('fullAccessIntent')) return false;
           deps.emitEvent('approval.auto_approved', {
@@ -567,8 +670,9 @@ export const createApprovalSession = (deps) => {
             approvalId: approvalRecord.recordId,
             intentId: intentRecord.recordId,
             requestDigest,
-            mode: 'FULL_ACCESS',
-            scope: 'USER_FILESYSTEM',
+            ...(useSavedApproval
+              ? { mode: 'ALWAYS_ALLOW', scope: 'WORKSPACE_COMMAND' }
+              : { mode: 'FULL_ACCESS', scope: 'USER_FILESYSTEM' }),
             workspaceRootDigest: sha256Digest(String(deps.workspaceRoot ?? ''))
           });
           return true;

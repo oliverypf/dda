@@ -1,10 +1,10 @@
-const TASK_CLASSES = Object.freeze(['inspect', 'modify', 'test', 'unknown']);
 import { EXECUTION_MODES } from './runtime-safety-monitor.mjs';
+import { TASK_CLASSES } from './rule-router.mjs';
 
 const boundedPrompt = (prompt) => typeof prompt === 'string' && prompt.trim().length > 0 && prompt.length <= 100_000;
 
 export class TaskSafetyPrecheck {
-  evaluate({ prompt, taskClass = 'unknown', mode = 'CONTROLLED', workspaceRoot = '' } = {}) {
+  evaluate({ prompt, taskClass = 'unknown', mode = 'CONTROLLED', workspaceRoot = '', workspaceDeferred = false } = {}) {
     const checks = [
       {
         id: 'prompt.valid',
@@ -23,8 +23,8 @@ export class TaskSafetyPrecheck {
       },
       {
         id: 'controlled.workspace',
-        status: typeof workspaceRoot === 'string' && workspaceRoot.trim() ? 'PASS' : 'FAIL',
-        reason: typeof workspaceRoot === 'string' && workspaceRoot.trim()
+        status: workspaceDeferred || (typeof workspaceRoot === 'string' && workspaceRoot.trim()) ? 'PASS' : 'FAIL',
+        reason: workspaceDeferred ? 'PROJECT_TOOLS_REQUIRE_WORKSPACE_CLAIM' : typeof workspaceRoot === 'string' && workspaceRoot.trim()
           ? 'WORKSPACE_SCOPE_AVAILABLE'
           : 'CONTROLLED_WORKSPACE_REQUIRED'
       }

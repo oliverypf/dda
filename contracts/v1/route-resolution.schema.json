@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["taskClass", "status", "reason", "roles"],
   "properties": {
-    "taskClass": { "enum": ["inspect", "modify", "test", "unknown"] },
+    "taskClass": { "enum": ["inspect", "modify", "test", "query", "unknown"] },
     "status": { "enum": ["SELECTED", "BLOCKED"] },
     "reason": { "type": "string", "minLength": 1, "maxLength": 120 },
     "roles": { "type": "object", "maxProperties": 16, "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 160 } }

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   CAPABILITIES,
   EXECUTION_MODES,
+  MAX_BOUNDED_OUTPUT,
   RuntimeSafetyMonitor,
   RestrictedWindowsExecutor,
   SafetyError
@@ -236,6 +237,88 @@ test('concurrent requests are bounded and excess requests do not consume leases'
   const results = await Promise.all(active);
   assert.equal(results.length, 2);
   assert.equal(results.every((result) => result.ok), true);
+});
+
+test('public wildcard lets the model choose a public host and still blocks private addresses', async () => {
+  const workspaceRoot = await temporaryWorkspace('public');
+  const wildcard = [{ host: '*' }];
+  const monitor = createMonitor({ workspaceRoot, networkTargets: wildcard });
+  const fetch = fakeFetch(() => jsonResponse({ price: 1 }));
+  const adapter = new RestrictedNetworkAdapter({
+    monitor,
+    fetch,
+    lookup: async (host) => [{ address: host === 'localhost' ? '127.0.0.1' : '93.184.216.34' }]
+  });
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: wildcard });
+  const result = await adapter.request({ host: 'cloud.tencent.com', method: 'GET', path: '/product/hunyuan' }, { lease });
+  assert.equal(result.ok, true);
+  assert.equal(fetch.calls[0].url, 'https://cloud.tencent.com:443/product/hunyuan');
+  await assert.rejects(
+    adapter.request(
+      { host: '127.0.0.1' },
+      { lease: monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: wildcard }) }
+    ),
+    /SAFETY_NETWORK_TARGET_FORBIDDEN/
+  );
+  await assert.rejects(
+    adapter.request(
+      { host: 'localhost' },
+      { lease: monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: wildcard }) }
+    ),
+    /SAFETY_NETWORK_RESOLVED_FORBIDDEN/
+  );
+});
+
+test('the default output ceiling matches the largest network response the tool accepts', async () => {
+  const workspaceRoot = await temporaryWorkspace('ceiling');
+  const monitor = createMonitor({ workspaceRoot, networkTargets: [networkTarget] });
+  assert.equal(monitor.limits.maxOutputBytes, MAX_BOUNDED_OUTPUT);
+  assert.equal(monitor.limits.maxOutputChars, MAX_BOUNDED_OUTPUT);
+  const payload = 'x'.repeat(MAX_BOUNDED_OUTPUT);
+  const fetch = fakeFetch(() => jsonResponse(payload));
+  const adapter = new RestrictedNetworkAdapter({ monitor, fetch, lookup: async () => [{ address: '93.184.216.34' }] });
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: [networkTarget] });
+  const result = await adapter.request({
+    host: 'api.example.com',
+    method: 'GET',
+    maxResponseBytes: MAX_BOUNDED_OUTPUT,
+    maxResponseChars: MAX_BOUNDED_OUTPUT
+  }, { lease });
+  assert.equal(result.ok, true);
+  assert.equal(result.truncated, true);
+  assert.ok(result.body.length > 0);
+  assert.ok(JSON.stringify(result).length <= MAX_BOUNDED_OUTPUT);
+  assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') <= MAX_BOUNDED_OUTPUT);
+  await assert.rejects(
+    adapter.request({
+      host: 'api.example.com',
+      method: 'GET',
+      maxResponseChars: MAX_BOUNDED_OUTPUT + 1
+    }, { lease: monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: [networkTarget] }) }),
+    /SAFETY_NETWORK_INVALID:limit/
+  );
+  const registry = new ToolRegistry({ allowSideEffects: true, maxOutputBytes: MAX_BOUNDED_OUTPUT, maxOutputChars: MAX_BOUNDED_OUTPUT });
+  let approved = true;
+  registerExecutorTools(registry, new RestrictedWindowsExecutor({ monitor }), {
+    networkAdapter: adapter,
+    leaseProvider: createExplicitLeaseProvider({
+      monitor,
+      capabilities: [CAPABILITIES.NETWORK],
+      networkTargets: [networkTarget],
+      requestApproval: async () => approved
+    })
+  });
+  const tool = registry.list().find((item) => item.name === 'network.request');
+  assert.equal(tool.inputSchema.properties.maxResponseBytes.maximum, MAX_BOUNDED_OUTPUT);
+  assert.equal(tool.inputSchema.properties.maxResponseChars.maximum, MAX_BOUNDED_OUTPUT);
+  const captured = await registry.invoke('network.request', {
+    host: 'api.example.com',
+    method: 'GET',
+    maxResponseBytes: MAX_BOUNDED_OUTPUT,
+    maxResponseChars: MAX_BOUNDED_OUTPUT
+  });
+  assert.equal(captured.ok, true);
+  assert.ok(JSON.stringify(captured).length <= MAX_BOUNDED_OUTPUT);
 });
 
 test('network tool registration stays behind the explicit lease provider', async () => {

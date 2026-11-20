@@ -109,6 +109,13 @@ export class ResidentKernel {
     return { ready: this.#ready, sessionId: this.#sessionId, restarts: this.#restarts };
   }
 
+  async bindWorkspace(root) {
+    if (this.#workspaceRoot) throw new Error('KERNEL_WORKSPACE_ALREADY_BOUND');
+    await this.#ensureWorker();
+    await this.#post('bind_workspace', { root });
+    this.#workspaceRoot = root;
+  }
+
   async request(op, params = {}) {
     if (this.#stopped) throw new KernelRequestError(KERNEL_ERROR_CODES.DISABLED, 'kernel has been stopped');
     if (isSessionWriteKernelOp(op)) return this.#sessionWrite(op, params);

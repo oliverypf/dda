@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ACTIONS, CAPABILITIES, EXECUTION_MODES, RuntimeSafetyMonitor } from '../src/runtime-safety-monitor.mjs';
@@ -23,7 +23,7 @@ const waitFor = async (predicate, attempts = 100) => {
   assert.fail('timed out waiting for condition');
 };
 
-const make = async (t, { live = true } = {}) => {
+const make = async (t, { live = true, commands = ['node'], gateDecisionFor } = {}) => {
   const base = await mkdtemp(join(tmpdir(), 'full-access-approval-'));
   t.after(() => rm(base, { recursive: true, force: true }));
   const project = join(base, 'project');
@@ -63,7 +63,7 @@ const make = async (t, { live = true } = {}) => {
     releaseChannel: () => 'WINDOWS_PHASE1_5_CONTROLLED',
     executorIdentity: () => 'test-executor',
     bindingSnapshot: () => [],
-    capabilitySnapshot: () => ({}),
+    capabilitySnapshot: () => ({ commands }),
     buildScope: async (input) => createExecutionScopeSnapshot({
       runId: 'run-full-access', operationId: input.operationId, allowedCapabilities: [input.capability],
       ...(input.accessMode === 'FULL_ACCESS' && ['shell.execute', 'test.execute'].includes(input.capability)
@@ -91,7 +91,8 @@ const make = async (t, { live = true } = {}) => {
     leaseProvider: createExplicitLeaseProvider({
       monitor,
       capabilities: [CAPABILITIES.SHELL, CAPABILITIES.WRITE_FILE, CAPABILITIES.TEST],
-      commands: ['node'],
+      commands,
+      ...(typeof gateDecisionFor === 'function' ? { gateDecisionFor } : {}),
       requestApproval: (input) => session.requestApproval(input),
       getWorkspaceAccessMode,
       onLeaseIssued: ({ lease }) => { if (lease?.id) leaseIds.add(lease.id); }
@@ -105,6 +106,136 @@ const make = async (t, { live = true } = {}) => {
   }));
   return { base, project, outside, events, kinds, registry, session, store, approvalContexts, monitor, modeRef, effects, leaseIds, consumedLeaseIds, decline };
 };
+
+test('FULL_ACCESS still opens an authorization for an executable outside the session lease', async (t) => {
+  const { project, kinds, registry, session, modeRef, effects, leaseIds } = await make(t, { commands: ['git'] });
+  modeRef.value = 'FULL_ACCESS';
+  await writeFile(join(project, 'script.js'), 'process.stdout.write("ran")', 'utf8');
+  const pending = registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' });
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  assert.equal(kinds('approval.auto_approved').length, 0);
+  assert.equal(effects.length, 0);
+  assert.equal(leaseIds.size, 0);
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: card.payload.requestId,
+    approved: true,
+    displayedDigest: card.payload.requestDigest
+  }));
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.equal(result.stdout, 'ran');
+  assert.equal(effects.length, 1);
+  assert.equal(leaseIds.size, 1);
+  const again = registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' });
+  await waitFor(() => kinds('approval.requested').length === 2);
+  const second = kinds('approval.requested')[1];
+  assert.ok(second.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: second.payload.requestId,
+    approved: false,
+    displayedDigest: second.payload.requestDigest
+  }));
+  const declined = await again.catch((error) => error);
+  assert.ok(declined instanceof Error || declined?.ok === false);
+  assert.equal(effects.length, 1);
+});
+
+test('FULL_ACCESS runs an outside executable once when Jev allows that call', async (t) => {
+  const allow = new Set(['call-version']);
+  const gateDecisionFor = ({ context }) => allow.has(context?.toolCallId)
+    ? { decision: 'ALLOW', source: 'jev', fallbackUsed: false }
+    : undefined;
+  const { project, kinds, registry, session, modeRef, effects } = await make(t, { commands: ['git'], gateDecisionFor });
+  modeRef.value = 'FULL_ACCESS';
+  await writeFile(join(project, 'script.js'), 'process.stdout.write("ran")', 'utf8');
+  const result = await registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' }, { toolCallId: 'call-version' });
+  assert.equal(result.ok, true);
+  assert.equal(result.stdout, 'ran');
+  assert.equal(kinds('approval.requested').length, 0);
+  assert.equal(kinds('approval.auto_approved').length, 1);
+  assert.equal(effects.length, 1);
+  const again = registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' }, { toolCallId: 'call-again' });
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: card.payload.requestId,
+    approved: false,
+    displayedDigest: card.payload.requestDigest
+  }));
+  const declined = await again.catch((error) => error);
+  assert.ok(declined instanceof Error || declined?.ok === false);
+  assert.equal(effects.length, 1);
+});
+
+test('a Jev ALLOW does not cover a dangerous outside command', async (t) => {
+  const gateDecisionFor = () => ({ decision: 'ALLOW', source: 'jev', fallbackUsed: false });
+  const { kinds, registry, session, modeRef, effects } = await make(t, { commands: ['git'], gateDecisionFor });
+  modeRef.value = 'FULL_ACCESS';
+  const pending = registry.invoke('shell.execute', { command: 'rm', args: ['-rf', 'x'], cwd: '.' }, { toolCallId: 'call-rm' });
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  assert.ok(card.payload.reasonCodes.some((code) => code.startsWith('DANGEROUS_')));
+  assert.equal(kinds('approval.auto_approved').length, 0);
+  assert.equal(effects.length, 0);
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: card.payload.requestId,
+    approved: false,
+    displayedDigest: card.payload.requestDigest
+  }));
+  const declined = await pending.catch((error) => error);
+  assert.ok(declined instanceof Error || declined?.ok === false);
+  assert.equal(effects.length, 0);
+});
+
+test('a fallback ALLOW still asks before an outside executable', async (t) => {
+  const gateDecisionFor = () => ({ decision: 'ALLOW', source: 'rule', fallbackUsed: true });
+  const { project, kinds, registry, session, modeRef, effects } = await make(t, { commands: ['git'], gateDecisionFor });
+  modeRef.value = 'FULL_ACCESS';
+  await writeFile(join(project, 'script.js'), 'process.stdout.write("ran")', 'utf8');
+  const pending = registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' }, { toolCallId: 'call-fallback' });
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  assert.equal(kinds('approval.auto_approved').length, 0);
+  assert.equal(effects.length, 0);
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: card.payload.requestId,
+    approved: false,
+    displayedDigest: card.payload.requestDigest
+  }));
+  const declined = await pending.catch((error) => error);
+  assert.ok(declined instanceof Error || declined?.ok === false);
+});
+
+test('Jev REQUIRE_APPROVAL still asks for an outside executable under FULL_ACCESS', async (t) => {
+  const gateDecisionFor = () => ({ decision: 'REQUIRE_APPROVAL', source: 'jev', fallbackUsed: false, requireApproval: true });
+  const { project, kinds, registry, session, modeRef, effects } = await make(t, { commands: ['git'], gateDecisionFor });
+  modeRef.value = 'FULL_ACCESS';
+  await writeFile(join(project, 'script.js'), 'process.stdout.write("ran")', 'utf8');
+  const pending = registry.invoke('shell.execute', { command: process.execPath, args: ['script.js'], cwd: '.' }, { toolCallId: 'call-ask' });
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('COMMAND_OUTSIDE_SESSION_LEASE'));
+  assert.equal(kinds('approval.auto_approved').length, 0);
+  session.handleLine(JSON.stringify({
+    type: 'approval_response',
+    requestId: card.payload.requestId,
+    approved: false,
+    displayedDigest: card.payload.requestDigest
+  }));
+  const declined = await pending.catch((error) => error);
+  assert.ok(declined instanceof Error || declined?.ok === false);
+  assert.equal(effects.length, 0);
+});
 
 test('FULL_ACCESS auto-approves ordinary outside writes with real leases + audit', async (t) => {
   const { outside, kinds, registry, modeRef, effects, leaseIds, consumedLeaseIds } = await make(t);
@@ -127,6 +258,72 @@ test('FULL_ACCESS auto-approves ordinary outside writes with real leases + audit
   assert.equal(kinds('approval.requested').length, 0);
   assert.equal(leaseIds.size >= 2, true, 'unique lease per operation');
   assert.ok([...leaseIds].every((id) => consumedLeaseIds.has(id)), 'every lease consumed by the effect');
+});
+
+for (const tool of ['file.patch', 'file.write']) {
+  test(`${tool}: policy review shows a bound diff and reasons before any write, even under FULL_ACCESS`, async (t) => {
+    const reasons = ['SAFETY_PROFILE_REQUIRE_APPROVAL', 'SAFETY_BELOW_THRESHOLD', 'FAILURE_OBSERVED', 'SAFETY_PROFILE:profile-test'];
+    const { project, registry, modeRef, kinds, session, effects } = await make(t, {
+      gateDecisionFor: () => ({ mandatoryApproval: true, reasonCodes: reasons })
+    });
+    modeRef.value = 'FULL_ACCESS';
+    const path = 'BUILD-EXE-RECORD.md';
+    await writeFile(join(project, path), 'build: pending\n', 'utf8');
+    const pending = registry.invoke(tool, tool === 'file.patch'
+      ? { path, replacements: [{ oldText: 'pending', newText: 'passed' }] }
+      : { path, content: 'build: passed\n' });
+    await waitFor(() => kinds('approval.requested').length === 1);
+    const card = kinds('approval.requested')[0].payload;
+    assert.equal(card.reviewKind, 'REVIEW');
+    assert.equal(card.filePreviewKind, 'DIFF');
+    assert.match(card.filePreview, /-build: pending/);
+    assert.match(card.filePreview, /\+build: passed/);
+    assert.equal(card.filePreviewTruncated, false);
+    assert.equal(card.contentBytes, Buffer.byteLength('build: passed\n'));
+    assert.deepEqual(card.reasonCodes, reasons);
+    assert.equal(card.commandPreview, undefined);
+    assert.equal(effects.length, 0);
+    assert.equal(await readFile(join(project, path), 'utf8'), 'build: pending\n');
+    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: card.requestId,
+      approved: true, displayedDigest: card.requestDigest }));
+    assert.equal((await pending).ok, true);
+    assert.equal(await readFile(join(project, path), 'utf8'), 'build: passed\n');
+  });
+}
+
+test('file review bounds large previews and preserves deletion/empty-file diffs', async (t) => {
+  const { project, registry, modeRef, kinds, decline } = await make(t, {
+    gateDecisionFor: () => ({ mandatoryApproval: true, reasonCodes: ['VERIFIER_UNCERTAIN'] })
+  });
+  modeRef.value = 'FULL_ACCESS';
+  for (const content of ['x'.repeat(50000), '']) {
+    await writeFile(join(project, 'review.txt'), 'previous\n');
+    const pending = registry.invoke('file.write', { path: 'review.txt', content }).catch((error) => error);
+    const count = kinds('approval.requested').length;
+    await waitFor(() => kinds('approval.requested').length > count);
+    const event = kinds('approval.requested').at(-1);
+    assert.equal(event.payload.reviewKind, 'REVIEW');
+    assert.ok(event.payload.filePreview.length <= 16384);
+    assert.equal(event.payload.filePreviewTruncated, content.length > 16384);
+    assert.match(event.payload.filePreview, /-previous/);
+    decline(event);
+    await pending;
+    assert.equal(await readFile(join(project, 'review.txt'), 'utf8'), 'previous\n');
+  }
+});
+
+test('a concrete destructive command keeps a detected-risk warning and full argv', async (t) => {
+  const { registry, modeRef, kinds, decline, effects } = await make(t);
+  modeRef.value = 'FULL_ACCESS';
+  const pending = registry.invoke('shell.execute', { command: 'format', args: ['D:'] }).catch((error) => error);
+  await waitFor(() => kinds('approval.requested').length === 1);
+  const card = kinds('approval.requested')[0];
+  assert.equal(card.payload.reviewKind, 'DANGER');
+  assert.ok(card.payload.reasonCodes.includes('EXTREME_DISK_OPERATION'));
+  assert.deepEqual(JSON.parse(card.payload.commandPreview).args, ['D:']);
+  decline(card);
+  await pending;
+  assert.equal(effects.length, 0);
 });
 
 const dangerousCases = [
@@ -303,6 +500,60 @@ test('FULL_ACCESS: direct-entry tsc skips ordinary prompt, node -p demands human
   decline(card);
   const settled = await pending;
   assert.ok(settled instanceof Error || settled?.ok === false);
+});
+
+test('FULL_ACCESS git workspace drops inline-interpreter approval inside the work tree', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'git-inline-'));
+  const child = join(root, 'child');
+  const bare = await mkdtemp(join(tmpdir(), 'no-git-inline-'));
+  try {
+    await mkdir(join(root, '.git'));
+    await mkdir(child);
+    const inline = (request, workspaceRoot = root, accessMode = 'FULL_ACCESS') => assessRequestRisk({
+      capability: CAPABILITIES.SHELL, request, workspaceRoot, accessMode
+    });
+    assert.equal(inline({ command: 'node', args: ['--input-type=module', '--eval', '1'] }).dangerous, false);
+    assert.equal(inline({ command: 'node.exe', args: ['-e', '1'], cwd: 'src' }).dangerous, false);
+    assert.equal(inline({ command: 'python3.11', args: ['-c', 'pass'] }).dangerous, false);
+    assert.equal(inline({ command: 'powershell.exe', args: ['-enc', 'AA'] }).dangerous, false);
+    // Same script still needs a person without full access, without .git, or outside the tree.
+    assert.equal(inline({ command: 'node', args: ['-e', '1'] }, root, 'REQUIRE_APPROVAL').reasons.includes('DANGEROUS_INLINE_INTERPRETER'), true);
+    assert.equal(inline({ command: 'node.exe', args: ['-e', '1'] }, bare).reasons.includes('DANGEROUS_INLINE_INTERPRETER'), true);
+    assert.equal(inline({ command: 'node', args: ['-e', '1'] }, child).reasons.includes('DANGEROUS_INLINE_INTERPRETER'), true);
+    assert.equal(inline({ command: 'node', args: ['-e', '1'], cwd: join(bare, 'away') }).reasons.includes('DANGEROUS_INLINE_INTERPRETER'), true);
+    assert.equal(inline({ command: 'node', args: ['-e', '1'], cwd: '..' }).reasons.includes('DANGEROUS_INLINE_INTERPRETER'), true);
+    // Other danger classes are unchanged by the git work tree.
+    assert.equal(inline({ command: 'format', args: ['D:'] }).reasons.includes('EXTREME_DISK_OPERATION'), true);
+    assert.equal(inline({ command: 'runas', args: ['/user:a', 'x'] }).reasons.includes('DANGEROUS_PRIVILEGE_ESCALATION'), true);
+    assert.equal(inline({ command: 'rm', args: ['C:/outside/x'] }).dangerous, true);
+    const worktree = join(root, 'linked');
+    await mkdir(worktree);
+    await writeFile(join(worktree, '.git'), 'gitdir: ../.git\n');
+    assert.equal(inline({ command: 'node', args: ['-p', '1'] }, worktree).dangerous, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(bare, { recursive: true, force: true });
+  }
+});
+
+test('FULL_ACCESS git workspace auto-approves node --eval and still cards disk format', async (t) => {
+  const { project, kinds, registry, modeRef, effects, decline } = await make(t);
+  await mkdir(join(project, '.git'));
+  modeRef.value = 'FULL_ACCESS';
+  const ran = await registry.invoke('shell.execute', { command: 'node', args: ['-e', 'process.stdout.write("ok")'] });
+  assert.equal(ran.ok, true);
+  assert.match(ran.stdout, /ok/);
+  assert.equal(kinds('approval.requested').length, 0, 'git workspace inline script has no human card');
+  assert.equal(kinds('approval.auto_approved').length, 1);
+  assert.equal(effects.length, 1);
+  const pending = registry.invoke('shell.execute', { command: 'format', args: ['D:'] }).catch((e) => e);
+  await waitFor(() => kinds('approval.requested').length === 1, 60);
+  const card = kinds('approval.requested')[0];
+  assert.ok(card.payload.reasonCodes.includes('EXTREME_DISK_OPERATION'));
+  decline(card);
+  const settled = await pending;
+  assert.ok(settled instanceof Error || settled?.ok === false);
+  assert.equal(kinds('approval.auto_approved').length, 1, 'format is not auto-approved');
 });
 
 test('async getWorkspaceAccessMode resolves before buildScope sets allowedPathScope=WORKSPACE on shell.execute', async (t) => {

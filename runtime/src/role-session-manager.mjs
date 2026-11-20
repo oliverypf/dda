@@ -14,10 +14,13 @@ const TRANSITIONS = Object.freeze({
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MAX_SNAPSHOT_CHARS = 256 * 1024;
 
+// JSON.stringify drops object keys whose value is undefined. The digest has
+// to do the same, or a snapshot that omitted an optional field fails
+// ROLE_CONTEXT_STORE_INVALID after it is written and read back.
 const canonical = (value) => Array.isArray(value)
   ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object'
-    ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
+    ? `{${Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
     : JSON.stringify(value) ?? 'null';
 const digest = (value) => `sha256:${createHash('sha256').update(canonical(value), 'utf8').digest('hex')}`;
 const clone = (value) => structuredClone(value);
@@ -100,6 +103,9 @@ export class RoleSessionManager {
       if (context.threadId !== undefined) {
         try { safeText(context.threadId, 'THREAD_ID'); } catch { throw new Error('ROLE_CONTEXT_STORE_INVALID'); }
       }
+      if (context.sessionId !== undefined) {
+        try { safeText(context.sessionId, 'SESSION_ID', 160); } catch { throw new Error('ROLE_CONTEXT_STORE_INVALID'); }
+      }
       if (context.adapterIdentity !== undefined) {
         try {
           const identity = normalizeIdentity(context.adapterIdentity);
@@ -142,7 +148,17 @@ export class RoleSessionManager {
       aggregateType: 'RoleContext',
       aggregateId: context.contextId,
       kind: 'RoleContextAllocated',
-      payload: { contextId: context.contextId, runId: context.runId, role: context.role, model: context.model, isolation: context.isolation, adapterIdentityDigest: context.adapterIdentityDigest, bindingSnapshotDigest: context.bindingSnapshotDigest, threadId: context.threadId },
+      payload: {
+        contextId: context.contextId,
+        runId: context.runId,
+        ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+        role: context.role,
+        model: context.model,
+        isolation: context.isolation,
+        adapterIdentityDigest: context.adapterIdentityDigest,
+        bindingSnapshotDigest: context.bindingSnapshotDigest,
+        threadId: context.threadId
+      },
       sensitivity: 'INTERNAL'
     });
     this.#contexts.set(context.contextId, context);
@@ -150,15 +166,19 @@ export class RoleSessionManager {
     return structuredClone(context);
   }
 
-  allocate({ runId, role, model, isolation = 'DEDICATED', metadata = {}, adapterIdentity, adapterId, threadId, externalThreadId, bindingSnapshot } = {}, { deferPersist = false, deferStore = false } = {}) {
+  allocate({ runId, sessionId, role, model, isolation = 'DEDICATED', metadata = {}, adapterIdentity, adapterId, threadId, externalThreadId, bindingSnapshot } = {}, { deferPersist = false, deferStore = false } = {}) {
     if (typeof runId !== 'string' || typeof role !== 'string' || !role.trim()) throw new Error('ROLE_CONTEXT_INVALID');
     if (!['DEDICATED', 'EXPLICIT_SHARED'].includes(isolation)) throw new Error('ROLE_ISOLATION_INVALID');
+    const normalizedSessionId = sessionId === undefined || sessionId === null || sessionId === ''
+      ? undefined
+      : safeText(sessionId, 'SESSION_ID', 160);
     const normalizedAdapterIdentity = normalizeIdentity(adapterIdentity ?? adapterId);
     const normalizedThreadId = threadId === undefined ? externalThreadId : threadId;
     const normalizedBindingSnapshot = normalizeSnapshot(bindingSnapshot);
     const context = Object.freeze({
       contextId: `role-context-${this.#factory()}-${++this.#sequence}`,
       runId,
+      ...(normalizedSessionId ? { sessionId: normalizedSessionId } : {}),
       role,
       model: typeof model === 'string' ? model : undefined,
       isolation,
@@ -202,7 +222,14 @@ export class RoleSessionManager {
   fork(parent, { mode = 'EPHEMERAL', role = parent?.role } = {}) {
     const current = this.#require(parent?.contextId);
     if (current.state === 'CLOSED' || current.state === 'FAILED') throw new Error('ROLE_CONTEXT_NOT_FORKABLE');
-    return this.allocate({ runId: current.runId, role, model: current.model, isolation: 'DEDICATED', metadata: { parentContextId: current.contextId, mode } });
+    return this.allocate({
+      runId: current.runId,
+      sessionId: current.sessionId,
+      role,
+      model: current.model,
+      isolation: 'DEDICATED',
+      metadata: { parentContextId: current.contextId, mode }
+    });
   }
 
   setBusy(contextId) { return this.#transition(contextId, 'BUSY'); }
@@ -214,6 +241,7 @@ export class RoleSessionManager {
     if (mismatch.length && current.state !== 'CLOSED') {
       const replacement = this.allocate({
         runId: current.runId,
+        sessionId: current.sessionId,
         role: current.role,
         model: current.model,
         isolation: current.isolation,
@@ -254,22 +282,37 @@ export class RoleSessionManager {
   list(runId) { return [...this.#contexts.values()].filter((context) => !runId || context.runId === runId).map((context) => structuredClone(context)); }
   async flush() { await this.#queue; }
 
-  async reconcile({ isOwnerAlive = defaultOwnerAlive } = {}) {
+  async reconcile({ isOwnerAlive = defaultOwnerAlive, sessionId, runId } = {}) {
     if (typeof isOwnerAlive !== 'function') throw new Error('ROLE_CONTEXT_RECONCILE_INVALID');
+    const scopeSession = sessionId === undefined || sessionId === null || sessionId === ''
+      ? undefined
+      : safeText(sessionId, 'SESSION_ID', 160);
+    const scopeRun = runId === undefined || runId === null || runId === ''
+      ? undefined
+      : safeText(runId, 'RUN_ID');
     await this.load();
-    const reconciled = [];
+    const failed = [];
     for (const context of this.#contexts.values()) {
       if (!['ALLOCATING', 'BUSY', 'INTERRUPTING', 'CLOSING'].includes(context.state)) continue;
       const ownerAlive = Number.isInteger(context.ownerPid) && context.ownerPid > 0 && isOwnerAlive(context.ownerPid);
       if (ownerAlive) continue;
-      reconciled.push(this.#replace(context, { state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }));
+      // Dead owners are closed in the shared store so the next task does not
+      // inherit a live-looking context. The returned list is only this task.
+      failed.push(this.#replace(context, { state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }));
     }
     await this.flush();
+    const visible = scopeSession
+      ? failed.filter((context) => context.sessionId === scopeSession)
+      : scopeRun
+        ? failed.filter((context) => context.runId === scopeRun)
+        : failed;
     return {
-      reconciled: reconciled.length,
-      contexts: reconciled.map((context) => ({
+      reconciled: visible.length,
+      ...(scopeSession ? { sessionId: scopeSession } : {}),
+      contexts: visible.map((context) => ({
         contextId: context.contextId,
         runId: context.runId,
+        ...(context.sessionId ? { sessionId: context.sessionId } : {}),
         role: context.role,
         state: context.state,
         reason: context.reason
@@ -348,12 +391,12 @@ export class RoleSessionManager {
 export const createRoleSessionManager = (options) => new RoleSessionManager(options);
 export { STATES as ROLE_CONTEXT_STATES, TRANSITIONS as ROLE_CONTEXT_TRANSITIONS };
 
-const defaultOwnerAlive = (pid) => {
+export const defaultOwnerAlive = (pid) => {
   if (pid === process.pid) return true;
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return error?.code === 'EPERM';
+    return error?.code !== 'ESRCH';
   }
 };

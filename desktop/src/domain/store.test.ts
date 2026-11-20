@@ -5,6 +5,8 @@ import {
   cancelPendingApprovals,
   expireRequestedApprovals,
   completeStreamingAgent,
+  completeStreamingResponses,
+  streamingResponseItemId,
   createInitialReadModel,
   setActiveThread,
   setThreads,
@@ -12,6 +14,7 @@ import {
   setRuntimeReady,
   setContextSidecarStatus,
   setDreamMaintenanceStatus,
+  shouldAutoStartDreamMaintenance,
   setWorkspace,
   setWorkspaceFile,
   upsertStreamingAgent,
@@ -112,6 +115,16 @@ describe('HarnessReadModel store', () => {
     expect(item?.status).toBe('COMPLETE');
   });
 
+  it('keeps each model round in its own bubble and finishes the previous one before the next', () => {
+    let model = upsertStreamingAgent(createInitialReadModel(), streamingResponseItemId('run', 1), '先看工作区。', false, 'run');
+    model = completeStreamingResponses(model, 'run');
+    model = upsertStreamingAgent(model, streamingResponseItemId('run', 2), '再改一处。', false, 'run');
+    const replies = model.timeline.filter((entry) => entry.runId === 'run' && entry.kind === 'AGENT' && !entry.thinking);
+    expect(replies.map((entry) => entry.body)).toEqual(['先看工作区。', '再改一处。']);
+    expect(replies[0]?.status).toBe('COMPLETE');
+    expect(replies[1]?.status).toBe('STREAMING');
+  });
+
   it('discardStreamingTail keeps earlier rounds and ignores COMPLETE bubbles', () => {
     let model = upsertStreamingAgent(createInitialReadModel(), 'run-response', '第一轮。', false, 'run');
     model = upsertStreamingAgent(model, 'run-response', '半截失败', false, 'run');
@@ -204,6 +217,41 @@ describe('HarnessReadModel store', () => {
     expect(projected.projectionVersion).toBeGreaterThan(initial.projectionVersion);
   });
 
+  it('starts Dream maintenance with the desktop app unless this session stopped it', () => {
+    expect(shouldAutoStartDreamMaintenance({
+      native: true,
+      runtimeReady: true,
+      userStopped: false,
+      taskRunning: false,
+      alreadyRunning: false,
+      attempted: false
+    })).toBe(true);
+    expect(shouldAutoStartDreamMaintenance({
+      native: true,
+      runtimeReady: true,
+      userStopped: true,
+      taskRunning: false,
+      alreadyRunning: false,
+      attempted: false
+    })).toBe(false);
+    expect(shouldAutoStartDreamMaintenance({
+      native: true,
+      runtimeReady: true,
+      userStopped: false,
+      taskRunning: true,
+      alreadyRunning: false,
+      attempted: false
+    })).toBe(false);
+    expect(shouldAutoStartDreamMaintenance({
+      native: false,
+      runtimeReady: true,
+      userStopped: false,
+      taskRunning: false,
+      alreadyRunning: false,
+      attempted: false
+    })).toBe(false);
+  });
+
   it('projects Dream maintenance status without enabling side effects', () => {
     const initial = createInitialReadModel();
     const projected = setDreamMaintenanceStatus(initial, {
@@ -229,10 +277,11 @@ describe('HarnessReadModel store', () => {
   it('runs through planning, streaming, verification and completion', () => {
     let model = beginRun(createInitialReadModel(), '检查工作区结构');
     expect(model.activeRun?.state).toBe('PLANNING');
-    expect(model.composer.enabled).toBe(false);
+    expect(model.composer.enabled).toBe(true);
     expect(model.timeline.at(-1)?.body).toBe('检查工作区结构');
 
     model = setRunState(model, 'EXECUTING_READ');
+    expect(model.composer.enabled).toBe(true);
     model = upsertStreamingAgent(model, 'agent-1', '第一段');
     model = upsertStreamingAgent(model, 'agent-1', '，第二段', true);
     expect(model.timeline.at(-1)).toMatchObject({
@@ -242,6 +291,7 @@ describe('HarnessReadModel store', () => {
     });
 
     model = setRunState(model, 'VERIFYING');
+    expect(model.composer.enabled).toBe(true);
     model = setRunState(model, 'SUCCEEDED');
     expect(model.activeRun?.state).toBe('SUCCEEDED');
     expect(model.composer.enabled).toBe(true);
@@ -268,6 +318,39 @@ describe('HarnessReadModel store', () => {
 
     expect(cancelled.activeRun?.state).toBe('CANCELLED');
     expect(cancelled.composer.enabled).toBe(true);
+  });
+
+  it('keeps sidebar creation time when a later snapshot reports a different one', () => {
+    const older = { id: 'compile', title: '编译exe', cwd: 'C:\\demo', turnCount: 1, createdAtMs: 10, updatedAtMs: 10 };
+    const newer = { id: 'price', title: '腾讯的hy 4', cwd: 'C:\\demo', turnCount: 1, createdAtMs: 20, updatedAtMs: 20 };
+    const listed = setThreads(createInitialReadModel(), [older, newer]);
+    const opened = setThreads(listed, [
+      { ...older, title: '编译exe', createdAtMs: 99, updatedAtMs: 40 },
+      newer
+    ]);
+    expect(opened.threads.map((thread) => [thread.id, thread.createdAtMs])).toEqual([
+      ['compile', 10],
+      ['price', 20]
+    ]);
+    const filled = setThreads(setThreads(createInitialReadModel(), [{ ...older, createdAtMs: 0 }]), [{ ...older, createdAtMs: 15, updatedAtMs: 16 }]);
+    expect(filled.threads[0].createdAtMs).toBe(15);
+  });
+
+  it('preserves the original task title when sending a follow-up like 继续', () => {
+    const initial = setWorkspace(createInitialReadModel(), 'demo', '', [], 'C:\\demo');
+    const first = beginRun(initial, '把自动启动做成开关，打开后后面一直自动启动');
+    const failed = setRunState(first, 'FAILED');
+    const continued = beginRun(failed, '继续');
+    expect(continued.activeRun?.title).toBe('把自动启动做成开关，打开后后面一直自动启动');
+    expect(continued.timeline.at(-1)).toMatchObject({ kind: 'USER', body: '继续' });
+
+    const withThread = setActiveThread(
+      setThreads(initial, [{ id: 'thread-1', title: '编译exe', cwd: 'C:\\demo', turnCount: 0, createdAtMs: 1, updatedAtMs: 2 }]),
+      'thread-1',
+      true
+    );
+    const resumed = beginRun(withThread, '继续');
+    expect(resumed.activeRun?.title).toBe('编译exe');
   });
 
   it('cancels approvals left pending when a runtime run terminates', () => {
@@ -402,6 +485,23 @@ describe('HarnessReadModel store', () => {
     expect(model.subAgents.find((agent) => agent.agentId === 'ctx-verifier')).toMatchObject({
       state: 'FAILED'
     });
+  });
+
+  it('keeps another task session out of this task when contexts are reconciled together', () => {
+    let model = beginRun(createInitialReadModel(), '任务');
+    const event = (kind: string, payload: Record<string, unknown>, sequence: number): RuntimeEvent => ({
+      type: 'runtime_event', schemaVersion: '1.0', runId: 'run-new', clientSessionId: 'ui-new',
+      sequence, kind, payload, emittedAtMs: sequence
+    });
+    model = applyRuntimeSubAgentEvent(model, event('role.contexts_reconciled', {
+      reconciled: 2,
+      contexts: [
+        { contextId: 'ctx-other', role: 'planner', runId: 'run-old', sessionId: 'ui-old', state: 'FAILED', reason: 'OWNER_PROCESS_LOST' },
+        { contextId: 'ctx-mine', role: 'executor', runId: 'run-prev', sessionId: 'ui-new', state: 'FAILED', reason: 'OWNER_PROCESS_LOST' }
+      ]
+    }, 1));
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-other')).toBeUndefined();
+    expect(model.subAgents.find((agent) => agent.agentId === 'ctx-mine')).toMatchObject({ state: 'FAILED' });
   });
 
   it('projects workspace navigation and a selected file without mutating prior state', () => {

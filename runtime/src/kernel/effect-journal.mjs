@@ -97,16 +97,6 @@ export const isEffectJournalEnabled = (env = process.env) => {
  * Create a durable effect journal. storagePath is required for kernel/cell paths;
  * missing store + ALS bit set ⇒ JOURNAL_UNAVAILABLE before operation().
  */
-const isOtherOwnerAlive = (pid) => {
-  if (!Number.isInteger(pid) || pid < 1 || pid === process.pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === 'EPERM';
-  }
-};
-
 export const createEffectJournal = ({ storagePath } = {}) => {
   let snapshot = emptySnapshot();
   let loaded = false;
@@ -176,7 +166,12 @@ export const createEffectJournal = ({ storagePath } = {}) => {
     const now = Date.now();
     for (const effect of snapshot.effects) {
       if (effect.state === JOURNAL_STATES.STARTED) {
-        if (isOtherOwnerAlive(effect.ownerPid)) continue;
+        // A journal is rehydrated by a new runtime instance. The persisted PID
+        // only identifies the writer that last touched the row; it cannot prove
+        // that the interrupted operation is still active (for example, a
+        // parent process may remain alive while the child runtime is replaced).
+        // Treat every non-terminal STARTED row as UNKNOWN so reconciliation can
+        // fail closed instead of leaving the task permanently stuck in STARTED.
         effect.state = JOURNAL_STATES.UNKNOWN;
         effect.unknownAtMs = now;
         effect.unknownReason = 'RESTART_STARTED_WITHOUT_TERMINAL';

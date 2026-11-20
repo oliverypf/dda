@@ -456,6 +456,24 @@ for (const [scenario, prompts, continuation] of [
   });
 }
 
+test('resumeWrittenFiles keeps a continue going when a previously written file has changed or disappeared', async () => {
+  const facts = resumeLineage(['继续']);
+  facts.workspace.read = async (path) => {
+    if (path === 'missing.txt') throw new Error('WORKSPACE_NOT_FOUND:missing.txt');
+    return { digest: 'sha256:' + 'c'.repeat(64) };
+  };
+  assert.deepEqual(await resumeWrittenFiles(facts), []);
+
+  const matching = resumeLineage(['Create the first file', '继续']);
+  matching.workspace.read = async (path) => {
+    const write = matching.events.find((event) => event.kind === 'TaskFileWritten' && event.payload.path === path);
+    if (path === 'r0.txt') return { digest: 'sha256:' + 'd'.repeat(64) };
+    return { digest: write.payload.contentDigest };
+  };
+  const restored = await resumeWrittenFiles(matching);
+  assert.deepEqual(restored.map((file) => file.path), ['r1.txt']);
+});
+
 test('resumeWrittenFiles rejects invalid current continuation prompt digests', async () => {
   for (const promptDigest of [undefined, null, 42, '', 'sha256:bad', `sha256:${'g'.repeat(64)}`, 'a'.repeat(64)]) {
     const facts = resumeLineage(kdsPrompts);

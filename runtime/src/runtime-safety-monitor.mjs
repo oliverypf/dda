@@ -1,10 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { lstat, realpath, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { DEFAULT_RELEASE_CHANNEL } from './release-channel.mjs';
-import { canonicalMappedPath, preferMappedPath } from './platform/workspace-path.mjs';
+import { preferMappedPath } from './platform/workspace-path.mjs';
 import { resolveAuthorizedPath } from './filesystem-access.mjs';
 import { MAX_PROCESS_TIMEOUT_MS, PROCESS_LEASE_MARGIN_MS } from './process-limits.mjs';
 
@@ -23,6 +21,9 @@ export const CAPABILITIES = Object.freeze({
   NETWORK: 'network.request'
 });
 export const SAFETY_POLICY_VERSION = 'runtime-safety-1';
+
+/** One ceiling for captured command output and network response bodies. */
+export const MAX_BOUNDED_OUTPUT = 256 * 1024;
 
 export const SAFETY_ERROR_CODES = Object.freeze({
   INVALID_OPTIONS: 'SAFETY_INVALID_OPTIONS',
@@ -55,8 +56,7 @@ export const SAFETY_ERROR_CODES = Object.freeze({
   NETWORK_REDIRECT_FORBIDDEN: 'SAFETY_NETWORK_REDIRECT_FORBIDDEN',
   NETWORK_BODY_TOO_LARGE: 'SAFETY_NETWORK_BODY_TOO_LARGE',
   NETWORK_CONCURRENCY_LIMIT: 'SAFETY_NETWORK_CONCURRENCY_LIMIT',
-  NETWORK_SECRET_REJECTED: 'SAFETY_NETWORK_SECRET_REJECTED',
-  WORKSPACE_LEASE_BUSY: 'SAFETY_WORKSPACE_LEASE_BUSY'
+  NETWORK_SECRET_REJECTED: 'SAFETY_NETWORK_SECRET_REJECTED'
 });
 
 const DEFAULT_COMMANDS = Object.freeze(['node', 'node.exe', 'npm', 'npm.cmd', 'npx', 'npx.cmd', 'cargo', 'cargo.exe', 'rustc', 'rustc.exe', 'git', 'git.exe']);
@@ -69,97 +69,6 @@ const SECRET_OUTPUT = [
 const LEASE_CLAIM = Symbol('hmcodex.policyLeaseClaim');
 const LEASE_FACTORY = Symbol('hmcodex.policyLeaseFactory');
 const LEASE_OWNER = Symbol('hmcodex.policyLeaseOwner');
-
-const workspaceLeaseKey = (value) => {
-  const canonical = canonicalMappedPath(String(value ?? ''));
-  const normalized = canonical.replace(/[\\/]+/g, '\\');
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-};
-
-export class WorkspaceLeaseRegistry {
-  #entries = new Map();
-  #lockDirectory;
-
-  constructor({ lockDirectory = join(tmpdir(), 'hmcodex-workspace-leases') } = {}) {
-    if (typeof lockDirectory !== 'string' || !lockDirectory.trim()) {
-      throw new SafetyError(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'lockDirectory');
-    }
-    this.#lockDirectory = resolve(lockDirectory);
-  }
-
-  #lockPath(workspaceRoot) {
-    const key = workspaceLeaseKey(workspaceRoot);
-    const fingerprint = createHash('sha256').update(key, 'utf8').digest('hex');
-    return join(this.#lockDirectory, `workspace-${fingerprint}.lock`);
-  }
-
-  #readLock(path) {
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8'));
-      if (typeof parsed?.leaseId !== 'string' || !Number.isFinite(parsed?.expiresAt)) return undefined;
-      return parsed;
-    } catch {
-      return undefined;
-    }
-  }
-
-  acquire(workspaceRoot, leaseId, expiresAt) {
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-      throw new SafetyError(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'expiresAt');
-    }
-    const key = workspaceLeaseKey(workspaceRoot);
-    const path = this.#lockPath(workspaceRoot);
-    const active = this.#entries.get(key);
-    if (active && active.expiresAt > Date.now() && active.leaseId !== leaseId) {
-      throw new SafetyError(SAFETY_ERROR_CODES.WORKSPACE_LEASE_BUSY);
-    }
-    mkdirSync(this.#lockDirectory, { recursive: true });
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      let descriptor;
-      try {
-        descriptor = openSync(path, 'wx');
-        writeFileSync(descriptor, JSON.stringify({ leaseId, expiresAt }), { encoding: 'utf8' });
-        this.#entries.set(key, { leaseId, expiresAt });
-        return;
-      } catch (error) {
-        if (error?.code !== 'EEXIST') throw error;
-        const existing = this.#readLock(path);
-        if (existing && existing.expiresAt > Date.now() && existing.leaseId !== leaseId) {
-          throw new SafetyError(SAFETY_ERROR_CODES.WORKSPACE_LEASE_BUSY);
-        }
-        try {
-          unlinkSync(path);
-        } catch (unlinkError) {
-          if (unlinkError?.code !== 'ENOENT') throw unlinkError;
-        }
-      } finally {
-        if (descriptor !== undefined) closeSync(descriptor);
-      }
-    }
-    throw new SafetyError(SAFETY_ERROR_CODES.WORKSPACE_LEASE_BUSY);
-  }
-
-  release(workspaceRoot, leaseId) {
-    const key = workspaceLeaseKey(workspaceRoot);
-    const path = this.#lockPath(workspaceRoot);
-    const existing = this.#readLock(path);
-    if (existing?.leaseId === leaseId) {
-      try {
-        unlinkSync(path);
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
-    }
-    const active = this.#entries.get(key);
-    if (active?.leaseId === leaseId) this.#entries.delete(key);
-  }
-
-  active(workspaceRoot) {
-    const path = this.#lockPath(workspaceRoot);
-    const active = this.#readLock(path) ?? this.#entries.get(workspaceLeaseKey(workspaceRoot));
-    return active && active.expiresAt > Date.now() ? { ...active } : undefined;
-  }
-}
 
 const fail = (code, message = '') => {
   throw new SafetyError(code, message);
@@ -311,7 +220,7 @@ const sanitizeOutput = (value) => {
   return output;
 };
 
-export const boundOutput = (value, { maxOutputBytes = 64 * 1024, maxOutputChars = 64 * 1024 } = {}) => {
+export const boundOutput = (value, { maxOutputBytes = MAX_BOUNDED_OUTPUT, maxOutputChars = MAX_BOUNDED_OUTPUT } = {}) => {
   const sanitized = sanitizeOutput(value);
   const byChars = sanitized.slice(0, maxOutputChars);
   const bytes = Buffer.byteLength(byChars, 'utf8');
@@ -390,24 +299,40 @@ const normalizeNetworkPath = (value) => {
   return value;
 };
 
+const normalizeTargetMethods = (methods, fallback) => (
+  methods === undefined
+    ? [...fallback]
+    : (Array.isArray(methods) && methods.length && methods.length <= NETWORK_METHODS.length
+      ? [...new Set(methods.map(normalizeNetworkMethod))]
+      : failNetwork(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'networkTargets.methods'))
+);
+
 const normalizeNetworkTargets = (value) => {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 32) failNetwork(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'networkTargets');
   return value.map((target) => {
     if (!isObject(target)) failNetwork(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'networkTargets');
+    // "*" is public internet. The model chooses the URL. Private addresses are
+    // rejected in parseNetworkRequest before this list is consulted.
+    if (typeof target.host === 'string' && target.host.trim() === '*') {
+      const scheme = target.scheme === undefined ? undefined : normalizeNetworkScheme(target.scheme);
+      const port = target.port === undefined ? undefined : normalizeNetworkPort(target.port, scheme ?? 'https');
+      return {
+        host: '*',
+        methods: normalizeTargetMethods(target.methods, NETWORK_METHODS),
+        ...(port !== undefined ? { port } : {}),
+        ...(scheme !== undefined ? { scheme } : {})
+      };
+    }
     const host = normalizeNetworkHost(target.host);
     const scheme = normalizeNetworkScheme(target.scheme);
     const port = normalizeNetworkPort(target.port, scheme);
-    const methods = target.methods === undefined
-      ? ['GET', 'HEAD']
-      : (Array.isArray(target.methods) && target.methods.length && target.methods.length <= NETWORK_METHODS.length
-        ? [...new Set(target.methods.map(normalizeNetworkMethod))]
-        : failNetwork(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'networkTargets.methods'));
+    const methods = normalizeTargetMethods(target.methods, ['GET', 'HEAD']);
     return { host, port, scheme, methods };
   });
 };
 
-const networkTargetAllows = (targets, request) => targets.some((target) => target.host === request.host
+const networkTargetAllows = (targets, request) => targets.some((target) => (target.host === '*' || target.host === request.host)
   && (target.port === undefined || target.port === request.port)
   && (target.scheme === undefined || target.scheme === request.scheme)
   && target.methods.includes(request.method));
@@ -449,16 +374,12 @@ export class PolicyLease {
   #releaseChannel;
   #used = false;
   #networkTargets = [];
-  #workspaceRoot;
-  #workspaceLeaseRegistry;
-  #workspaceReleased = false;
 
   constructor({
-    capabilities, commands, networkTargets, expiresAt, monitorId, releaseChannel, id,
-    workspaceRoot, workspaceLeaseRegistry, [LEASE_FACTORY]: factory
+    capabilities, commands, networkTargets, expiresAt, monitorId, releaseChannel, [LEASE_FACTORY]: factory
   } = {}) {
     if (factory !== LEASE_FACTORY) fail(SAFETY_ERROR_CODES.LEASE_INVALID);
-    this.#id = typeof id === 'string' && id ? id : `lease-${randomUUID()}`;
+    this.#id = `lease-${randomUUID()}`;
     this.#capabilities = new Set(capabilities);
     this.#commands = new Set(commands);
     this.#networkTargets = normalizeNetworkTargets(networkTargets);
@@ -467,8 +388,6 @@ export class PolicyLease {
     this.#releaseChannel = typeof releaseChannel === 'string' && releaseChannel.trim()
       ? releaseChannel.trim().slice(0, 80)
       : DEFAULT_RELEASE_CHANNEL;
-    this.#workspaceRoot = workspaceRoot;
-    this.#workspaceLeaseRegistry = workspaceLeaseRegistry instanceof WorkspaceLeaseRegistry ? workspaceLeaseRegistry : undefined;
   }
 
   #monitorId;
@@ -506,12 +425,6 @@ export class PolicyLease {
   toJSON() {
     return { id: this.#id, expiresAt: this.#expiresAt, consumed: this.#used, capabilities: this.capabilities };
   }
-
-  releaseWorkspace() {
-    if (this.#workspaceReleased) return;
-    this.#workspaceReleased = true;
-    this.#workspaceLeaseRegistry?.release(this.#workspaceRoot, this.#id);
-  }
 }
 
 export class RuntimeSafetyMonitor {
@@ -527,7 +440,6 @@ export class RuntimeSafetyMonitor {
   #maxLeaseMs;
   #releaseChannel;
   #networkTargets;
-  #workspaceLeaseRegistry;
 
   constructor(options = {}) {
     if (!isObject(options)) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS);
@@ -554,12 +466,9 @@ export class RuntimeSafetyMonitor {
       fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'commandAllowlist');
     }
     this.#networkTargets = normalizeNetworkTargets(options.networkTargets);
-    this.#workspaceLeaseRegistry = options.workspaceLeaseRegistry instanceof WorkspaceLeaseRegistry
-      ? options.workspaceLeaseRegistry
-      : undefined;
     this.#maxFileBytes = Number.isInteger(options.maxFileBytes) ? options.maxFileBytes : 1024 * 1024;
-    this.#maxOutputBytes = Number.isInteger(options.maxOutputBytes) ? options.maxOutputBytes : 64 * 1024;
-    this.#maxOutputChars = Number.isInteger(options.maxOutputChars) ? options.maxOutputChars : 64 * 1024;
+    this.#maxOutputBytes = Number.isInteger(options.maxOutputBytes) ? options.maxOutputBytes : MAX_BOUNDED_OUTPUT;
+    this.#maxOutputChars = Number.isInteger(options.maxOutputChars) ? options.maxOutputChars : MAX_BOUNDED_OUTPUT;
     this.#maxLeaseMs = Number.isInteger(options.maxLeaseMs) ? options.maxLeaseMs
       : Math.max(5 * 60 * 1000, MAX_PROCESS_TIMEOUT_MS + PROCESS_LEASE_MARGIN_MS);
     if (this.#maxFileBytes < 1 || this.#maxOutputBytes < 1 || this.#maxOutputChars < 1 || this.#maxLeaseMs < 1) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'limits');
@@ -567,6 +476,11 @@ export class RuntimeSafetyMonitor {
 
   get mode() { return this.#mode; }
   get workspaceRoot() { return this.#workspaceRoot; }
+
+  bindWorkspace(rootPath) {
+    if (this.#workspaceRoot || !isAbsolute(rootPath)) throw new Error('WORKSPACE_BINDING_INVALID');
+    this.#workspaceRoot = resolve(rootPath);
+  }
   get policyVersion() { return SAFETY_POLICY_VERSION; }
   get releaseChannel() { return this.#releaseChannel; }
   get maxLeaseMs() { return this.#maxLeaseMs; }
@@ -582,22 +496,6 @@ export class RuntimeSafetyMonitor {
     const ttl = options.ttlMs ?? options.expiresInMs ?? 60 * 1000;
     if (!Number.isInteger(ttl) || ttl < 1 || ttl > this.#maxLeaseMs) fail(SAFETY_ERROR_CODES.INVALID_OPTIONS, 'ttlMs');
     const expiresAt = Date.now() + ttl;
-    if (this.#workspaceLeaseRegistry && capabilities.some((capability) => capability !== CAPABILITIES.NETWORK)) {
-      const leaseId = `lease-${randomUUID()}`;
-      this.#workspaceLeaseRegistry.acquire(this.#workspaceRoot, leaseId, expiresAt);
-      return new PolicyLease({
-        capabilities,
-        commands,
-        networkTargets,
-        expiresAt,
-        monitorId: this.#id,
-        releaseChannel: this.#releaseChannel,
-        id: leaseId,
-        workspaceRoot: this.#workspaceRoot,
-        workspaceLeaseRegistry: this.#workspaceLeaseRegistry,
-        [LEASE_FACTORY]: LEASE_FACTORY
-      });
-    }
     return new PolicyLease({
       capabilities,
       commands,
@@ -694,4 +592,4 @@ export class RuntimeSafetyMonitor {
   }
 }
 
-export { commandBase, parseCommand, sanitizeOutput, digest };
+export { commandBase, commandMatches, parseCommand, sanitizeOutput, digest };

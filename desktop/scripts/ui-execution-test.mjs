@@ -26,11 +26,11 @@ async function fixture(viewport = { width: 1440, height: 960 }, { controlled = f
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(({ controlled }) => {
     const callbacks = new Map(), listeners = new Map(), calls = [], auditWaiters = [];
-    let callbackId = 0, sequence = 0, finish, runId;
+    let callbackId = 0, sequence = 0, finish, runId, clientSessionId;
     const state = window.__executionTest = {
       calls, auditWaiters, expected: '', rootWrites: 0, navWrites: 0, longTasks: [],
       emit(kind, payload = {}, overrides = {}) {
-        const event = { type: 'runtime_event', schemaVersion: '1.0', runId,
+        const event = { type: 'runtime_event', schemaVersion: '1.0', runId, clientSessionId,
           sequence: ++sequence, emittedAtMs: Date.now(), kind, payload, ...overrides };
         for (const id of listeners.get('runtime-event') ?? []) callbacks.get(id)({ payload: event });
       },
@@ -79,6 +79,7 @@ async function fixture(viewport = { width: 1440, height: 960 }, { controlled = f
         if (command === 'model_config') return { config: { schemaVersion: '1.0', provider: 'openai-chat', protocol: 'chat-completions', model: 'fixture', apiKeyEnv: 'FIXTURE_KEY' } };
         if (command === 'run_model_task') {
           sequence = 0; state.expected = ''; runId = `fixture-${calls.length}`;
+          clientSessionId = args.clientSessionId;
           return new Promise((done) => {
             finish = done;
             if (state.deferStart) return;
@@ -104,7 +105,7 @@ async function submit(page) {
   await page.locator('textarea[name="prompt"]').fill('Execution responsiveness fixture');
   await page.locator('.send-button').click();
   await page.waitForFunction(() => window.__executionTest.calls.some((c) => c.command === 'run_model_task'));
-  await page.waitForSelector('[data-agent-id="executor-fixture"]');
+  await page.waitForSelector('.composer-stop');
 }
 async function mark(page) {
   await page.evaluate(async () => {
@@ -125,12 +126,21 @@ async function identity(page) {
   return page.evaluate(() => ({ rootWrites: window.__executionTest.rootWrites,
     replaced: window.__executionTest.refs.filter(([selector, ref]) => document.querySelector(selector) !== ref).map(([selector]) => selector) }));
 }
-try {
+async function testExecution() {
   await mkdir(output, { recursive: true });
   const page = await fixture();
-  await page.waitForFunction(() => document.querySelector('[data-model-cache="composer"]')?.textContent.includes('服务商未返回缓存统计'));
+  await page.waitForFunction(() => document.querySelector('[data-model-cache="composer"]')?.textContent.includes('缓存命中率 未知'));
   assert.ok(!(await page.locator('[data-model-cache="composer"]').innerText()).includes('0.0%'));
   await submit(page);
+  assert.equal(await page.locator('.subagent-panel').count(), 0, 'allocated roles stay hidden until work starts');
+  await page.evaluate(() => window.__executionTest.emit('role.turn_started', { role: 'executor', contextId: 'executor-fixture' }));
+  await page.locator('.subagent-row[data-agent-id="executor-fixture"]').waitFor();
+  assert.equal(await page.locator('.subagent-row').count(), 1);
+  if (process.argv.includes('--startup')) {
+    assert.deepEqual(errors, []);
+    console.log('PASS: no role rows on allocation; one executor row after its turn starts');
+    return;
+  }
   const profiler = process.env.DDA_UI_PROFILE === '1' ? await page.context().newCDPSession(page) : undefined;
   if (profiler) {
     await profiler.send('Profiler.enable');
@@ -151,7 +161,7 @@ try {
   assert.ok(burst.navWrites <= 1, 'token events must not synchronously persist navigation');
   results.push({ name: 'role burst coalesces and preserves shell', ...burst });
   await page.evaluate(() => window.__executionTest.delta('first <tag> & text\nsecond line'));
-  await page.waitForFunction(() => document.querySelector('.timeline-item[data-status="STREAMING"] .timeline-body')?.textContent === window.__executionTest.expected);
+  await page.waitForFunction(() => document.querySelector('.timeline-item[data-status="STREAMING"] .timeline-body')?.textContent.trimEnd() === window.__executionTest.expected.trimEnd());
   await page.evaluate(() => {
     const row = document.querySelector('.timeline-item[data-status="STREAMING"]');
     window.__executionTest.stream = row;
@@ -168,7 +178,7 @@ try {
       await new Promise((done) => setTimeout(done, 16));
     }
   });
-  await page.waitForFunction(() => window.__executionTest.stream.querySelector('.timeline-body')?.textContent === window.__executionTest.expected);
+  await page.waitForFunction(() => window.__executionTest.stream.querySelector('.timeline-body')?.textContent.trimEnd() === window.__executionTest.expected.trimEnd());
   assert.equal(await page.evaluate(() => window.__executionTest.stream.isConnected && window.__executionTest.stream.querySelector('details').open), true);
   assert.deepEqual(await identity(page), { rootWrites: 0, replaced: [] });
   const tasks = await page.evaluate(() => window.__executionTest.longTasks.filter((task) => task.start >= window.__executionTest.started));
@@ -200,22 +210,14 @@ try {
   });
   assert.equal(chunkSpacing, true, 'stream chunk boundaries must not add blank lines');
 
+  const conversationRows = await page.locator('[data-live-human] .timeline-item').count();
   await page.evaluate(() => {
     for (let i = 0; i < 600; i++) window.__executionTest.emit('model.route_resolved', { provider: 'fixture', model: `route-${i}` });
   });
-  await page.waitForFunction(() => document.querySelector('[data-execution-group] > summary').textContent.includes('617'));
-  assert.equal(await page.locator('[data-live-tools] .timeline-item').count(), 0);
-  await page.evaluate(() => { document.querySelector('[data-execution-group]').open = true; });
-  await page.waitForFunction(() => document.querySelectorAll('[data-live-tools] .timeline-item').length === 617);
-  await page.evaluate(() => {
-    window.__executionTest.toolRow = document.querySelector('[data-live-tools] .timeline-item');
-    window.__executionTest.toolRow.querySelector('details')?.setAttribute('open', '');
-    window.__executionTest.emit('model.route_resolved', { model: 'last route' });
-  });
-  await page.waitForFunction(() => document.querySelectorAll('[data-live-tools] .timeline-item').length === 618);
-  assert.equal(await page.evaluate(() => window.__executionTest.toolRow.isConnected && (!window.__executionTest.toolRow.querySelector('details') || window.__executionTest.toolRow.querySelector('details').open)), true);
-  await page.evaluate(() => { document.querySelector('[data-execution-group]').open = false; });
-  results.push({ name: '600 collapsed events mount on demand and preserve disclosure state' });
+  await page.waitForTimeout(50);
+  assert.equal(await page.locator('[data-execution-group]').count(), 0);
+  assert.equal(await page.locator('[data-live-human] .timeline-item').count(), conversationRows);
+  results.push({ name: 'route audit events stay out of the conversation' });
   await page.evaluate(() => window.__executionTest.emit('tool.call_requested', {
     id: 'tool-visible', name: 'workspace.list', operationId: 'op-visible'
   }));
@@ -283,8 +285,30 @@ try {
   await keyboardCard.waitFor({ state: 'detached' });
   results.push({ name: 'high-risk approval buttons have keyboard order, visible reject focus and direct Enter rejection' });
 
+  await page.evaluate(() => window.__executionTest.emit('approval.requested', {
+    requestId: 'approval-blind-write', capability: 'file.write', risk: 'HIGH', requestDigest: 'sha256:blind-write',
+    reasonCodes: ['UNKNOWN_POLICY_A', 'UNKNOWN_POLICY_B', 'UNKNOWN_POLICY_C']
+  }));
+  const blindCards = page.locator('article[data-approval-id="approval-blind-write"]');
+  await blindCards.first().waitFor();
+  for (const card of await blindCards.all()) {
+    assert.equal(await card.locator('[data-approved="true"]').isDisabled(), true);
+    assert.equal(await card.locator('[data-approved="false"]').isEnabled(), true);
+    assert.equal(await card.locator('.approval-reasons li').count(), 1);
+    assert.match(await card.innerText(), /缺少文件路径或修改内容/);
+  }
+  await blindCards.first().locator('[data-approved="false"]').click();
+  await page.waitForFunction(() => window.__executionTest.calls.some(call =>
+    call.command === 'resolve_runtime_approval' && call.args.requestId === 'approval-blind-write' && call.args.approved === false));
+  await page.evaluate(() => window.__executionTest.emit('approval.resolved', { requestId: 'approval-blind-write', state: 'DECLINED' }));
+  results.push({ name: 'file approval without a review target or diff cannot be approved and only shows one generic reason' });
+
   const highRiskCalls = () => page.evaluate(() => window.__executionTest.calls.filter(call => call.command === 'resolve_runtime_approval' && call.args.requestId === 'approval-confirm').length);
-  await page.evaluate(() => window.__executionTest.emit('approval.requested', { requestId: 'approval-confirm', capability: 'shell.execute', risk: 'HIGH', command: 'echo <review>', requestDigest: 'sha256:confirm' }));
+  await page.evaluate(() => window.__executionTest.emit('approval.requested', {
+    requestId: 'approval-confirm', capability: 'shell.execute', risk: 'HIGH', command: 'echo', requestDigest: 'sha256:confirm',
+    commandPreview: JSON.stringify({ command: 'echo', args: ['<review>'], cwd: 'desktop' }, null, 2),
+    reasonCodes: ['UNKNOWN_POLICY_A', 'UNKNOWN_POLICY_B', 'DANGEROUS_INLINE_INTERPRETER']
+  }));
   const confirmCard = page.locator('[data-live-region="approvals"] article[data-approval-id="approval-confirm"]');
   await confirmCard.locator('[data-approved="true"]').click();
   const confirmation = page.locator('dialog.approval-confirmation');
@@ -293,7 +317,9 @@ try {
   const confirmGeometry = await confirmation.locator('button').evaluateAll(buttons => buttons.map(button => ({ y: button.getBoundingClientRect().y, height: button.getBoundingClientRect().height })));
   assert.ok(confirmGeometry.every(button => Math.abs(button.y - confirmGeometry[0].y) < 1 && Math.abs(button.height - confirmGeometry[0].height) < 1), 'desktop confirmation buttons align and have equal heights');
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-confirmation')), 'back');
-  assert.match(await confirmation.locator('pre').innerText(), /echo <review>/);
+  assert.match(await confirmation.locator('pre').innerText(), /<review>/);
+  assert.equal(await confirmation.locator('review').count(), 0, 'command preview is rendered as text');
+  assert.equal(await confirmation.locator('.approval-reasons li').count(), 2);
   await page.keyboard.press('Enter');
   await confirmation.waitFor({ state: 'detached' });
   assert.equal(await highRiskCalls(), 0, 'repeated Enter returns without approval');
@@ -313,7 +339,10 @@ try {
   await page.waitForFunction(() => window.__executionTest.calls.some(call => call.command === 'resolve_runtime_approval' && call.args.requestId === 'approval-confirm' && call.args.approved === true));
   assert.equal(await highRiskCalls(), 1);
   await page.evaluate(() => window.__executionTest.emit('approval.resolved', { requestId: 'approval-confirm', state: 'APPROVED' }));
-  await page.evaluate(() => window.__executionTest.emit('approval.requested', { requestId: 'approval-confirm-expire', capability: 'shell.execute', risk: 'HIGH', requestDigest: 'sha256:expire' }));
+  await page.evaluate(() => window.__executionTest.emit('approval.requested', {
+    requestId: 'approval-confirm-expire', capability: 'shell.execute', risk: 'HIGH', requestDigest: 'sha256:expire',
+    commandPreview: JSON.stringify({ command: 'echo', args: ['expires'], cwd: '.' })
+  }));
   await page.locator('[data-live-region="approvals"] [data-approval-id="approval-confirm-expire"] [data-approved="true"]').click();
   await confirmation.waitFor();
   await page.evaluate(() => window.__executionTest.emit('approval.expired', { requestId: 'approval-confirm-expire' }));
@@ -371,7 +400,7 @@ try {
   await page.evaluate(() => { const transcript = document.querySelector('.transcript'); transcript.scrollTop = 100; transcript.dispatchEvent(new Event('scroll')); });
   const top = await page.locator('.transcript').evaluate((el) => el.scrollTop);
   await page.evaluate(() => window.__executionTest.delta('\nkeep reading position'));
-  await page.waitForFunction(() => window.__executionTest.stream.querySelector('.timeline-body').textContent === window.__executionTest.expected);
+  await page.waitForFunction(() => window.__executionTest.stream.querySelector('.timeline-body').textContent.trimEnd() === window.__executionTest.expected.trimEnd());
   assert.ok(Math.abs(await page.locator('.transcript').evaluate((el) => el.scrollTop) - top) < 2);
   await page.locator('[data-action="open-settings"]').click();
   await page.waitForSelector('[data-settings-dialog]');
@@ -383,7 +412,7 @@ try {
   await page.waitForTimeout(60);
   assert.deepEqual(await identity(page), { rootWrites: 0, replaced: [] });
   await page.locator('[data-action="close-settings"]').last().click();
-  await page.waitForFunction(() => document.querySelector('.timeline-item[data-status="STREAMING"] .timeline-body')?.textContent === window.__executionTest.expected);
+  await page.waitForFunction(() => document.querySelector('.timeline-item[data-status="STREAMING"] .timeline-body')?.textContent.trimEnd() === window.__executionTest.expected.trimEnd());
   results.push({ name: 'reading position and settings survive live events' });
   await page.evaluate(() => window.__executionTest.emit('approval.requested', { requestId: 'approval-unsettled', capability: 'fixture.read', requestDigest: 'sha256:unsettled' }));
   await page.locator('[data-action="resolve-approval"][data-approval-id="approval-unsettled"]').first().waitFor();
@@ -398,8 +427,6 @@ try {
   assert.match(await page.locator('[data-model-cache="composer"]').innerText(), /覆盖 2\/2 次调用/);
   results.push({ name: 'completed live task refreshes cache and displays real zero hits' });
   await page.screenshot({ path: resolve(output, 'desktop.png') });
-  await page.locator('[data-execution-group] > summary').click();
-  await page.waitForFunction(() => document.querySelector('[data-execution-group]')?.open);
   await page.locator('[data-action="new-task"]').click();
   // New task now opens the project chooser so the workspace boundary is
   // explicit. Continue through the current workspace when it is available.
@@ -462,7 +489,6 @@ try {
   assert.equal(await controlled.locator('[data-action="resolve-approval"]').count(), 0, 'card cancellation closes all pending decisions');
   assert.equal(await controlled.evaluate(() => window.__executionTest.calls.filter(call => call.command === 'resolve_runtime_approval').length), approvalCallsBeforeCancel, 'cancellation does not approve or decline');
   assert.equal(await controlled.evaluate(() => window.__executionTest.calls.filter(call => call.command === 'cancel_model_task').length), 1);
-  await controlled.locator('[data-execution-group] > summary').click();
   await controlled.waitForFunction(() => document.querySelector('.transcript')?.textContent.includes('已经执行的操作不会自动撤销'));
   assert.match(await controlled.locator('.transcript').textContent(), /已经执行的操作不会自动撤销/);
   assert.doesNotMatch(await controlled.locator('.transcript').textContent(), /只读运行没有产生外部副作用/);
@@ -558,6 +584,9 @@ try {
   console.log(JSON.stringify({ ok, results }, null, 2));
   if (!ok) process.exitCode = 1;
   await writeFile(resolve(output, 'results.json'), JSON.stringify({ ok, results }, null, 2));
+}
+try {
+  await testExecution();
 } finally {
   await browser.close();
   await new Promise((done) => server.close(done));

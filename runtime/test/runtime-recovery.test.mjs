@@ -6,12 +6,17 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createExecutionStateStore } from '../src/execution-state-store.mjs';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+import { createThreadStore } from '../src/thread-store.mjs';
+import { reconcileInterruptedThreads } from '../src/thread-reconciliation.mjs';
 import { dreamDigest } from '../src/dream-scheduler.mjs';
 
+const isolatedAppData = await mkdtemp(join(tmpdir(), 'dda-recovery-app-data-'));
+const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+  !/^DDA_.*(?:STORE|DATA_DIR)$/iu.test(key)));
 const run = (args, env) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, ...env },
+    env: { ...baseEnv, LOCALAPPDATA: isolatedAppData, APPDATA: isolatedAppData, ...env },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stdout = '';
@@ -39,6 +44,30 @@ test('recovery records a Git observer checkpoint in the Harness Store', async ()
   const audit = JSON.parse(await readFile(auditPath, 'utf8'));
   assert.equal(audit.checkpoints.length, 1);
   assert.equal(audit.checkpoints[0].checkpointKind, 'RECOVERY');
+});
+
+test('thread recovery keeps live owners and checkpoints, and closes a lost owner once', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dda-thread-reconcile-'));
+  const eventStore = createHarnessEventStore({ storagePath: join(directory, 'events.db') });
+  const threadPath = join(directory, 'threads.json');
+  const threads = createThreadStore({ storagePath: threadPath, eventStore });
+  const seed = async (runId, ownerPid) => {
+    const thread = await threads.create({ cwd: directory, title: runId });
+    await threads.setCheckpoint(thread.id, { runId, ownerPid, state: 'RUNNING', phase: 'EXECUTING' });
+    return thread.id;
+  };
+  const live = await seed('live-run', 100);
+  const lost = await seed('lost-run', 200);
+  const options = { threadPath, eventStore, roleSessions: { list: () => [] }, ownerAlive: pid => pid === 100 };
+  assert.equal(await reconcileInterruptedThreads(options), 1);
+  assert.equal(await reconcileInterruptedThreads(options), 0);
+  const result = createThreadStore({ storagePath: threadPath, eventStore });
+  assert.equal((await result.get(live)).state, 'RUNNING');
+  assert.equal((await result.get(lost)).state, 'FAILED');
+  assert.equal((await result.get(lost)).checkpoint.runId, 'lost-run');
+  const foreignStore = createHarnessEventStore({ storagePath: join(directory, 'other.db') });
+  assert.equal(await reconcileInterruptedThreads({ ...options, eventStore: foreignStore, ownerAlive: () => false }), 0);
+  assert.equal(JSON.parse(await readFile(threadPath, 'utf8')).threads.find(thread => thread.id === live).state, 'RUNNING');
 });
 
 test('recovery command closes records owned by a lost runtime process', async () => {

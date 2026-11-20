@@ -149,7 +149,7 @@ const normalizeObservation = (observation = {}) => ({
   }))
 });
 
-export const createDecisionState = (input = {}, { maxStateChars = DEFAULT_MAX_STATE_CHARS } = {}) => {
+export const createDecisionState = (input = {}, { maxStateChars = DEFAULT_MAX_STATE_CHARS, supplementalEvidence = [] } = {}) => {
   const stateLimit = normalizeStateLimit(maxStateChars);
   const state = {
     taskId: bounded(input.taskId ?? 'task-unknown', 240),
@@ -258,6 +258,14 @@ export const createDecisionState = (input = {}, { maxStateChars = DEFAULT_MAX_ST
     };
     Object.keys(state).forEach((key) => delete state[key]);
     Object.assign(state, minimal);
+  }
+  // Optional source excerpts fit only in the slack of the final normalized
+  // state. Adding them never evicts primary observations or the step goal.
+  for (const item of normalizeList(supplementalEvidence, normalizeEvidence)) {
+    if (!state.evidence || state.evidence.length >= MAX_LIST) break;
+    if (state.evidence.some(entry => entry.id === item.id)) continue;
+    state.evidence.push(item);
+    if (JSON.stringify(state).length > stateLimit) state.evidence.pop();
   }
   return clone(state);
 };

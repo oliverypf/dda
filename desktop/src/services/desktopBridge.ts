@@ -218,6 +218,21 @@ export const desktopBridge = {
       : undefined;
   },
 
+  async archiveThreads(threadIds: string[], { vacuum = false }: { vacuum?: boolean } = {}): Promise<{ movedEventCount?: number }> {
+    if (!isTauriRuntime() || threadIds.length === 0) return { movedEventCount: 0 };
+    return invoke('archive_threads', { threadIds, vacuum });
+  },
+
+  async archiveThreadEvents(threadId: string, { restore = false, vacuum = false }: { restore?: boolean; vacuum?: boolean } = {}): Promise<{ movedEventCount?: number; movedRunCount?: number; restoredEventCount?: number; restoredRunCount?: number }> {
+    if (!isTauriRuntime()) return {};
+    return invoke('archive_thread_events', { threadId, restore, vacuum });
+  },
+
+  async vacuumEventStore(): Promise<{ bytesBefore?: number; bytesAfter?: number }> {
+    if (!isTauriRuntime()) return {};
+    return invoke('vacuum_event_store');
+  },
+
   async listThreadEvents(threadId: string, { limit = 100, before }: { limit?: number; before?: string } = {}): Promise<ThreadEventPage> {
     if (!isTauriRuntime()) return { threadId, events: [], limit, hasMore: false };
     const response = await invoke<ThreadEventPage>('list_thread_events', { threadId, limit, before });
@@ -389,9 +404,25 @@ export const desktopBridge = {
     return invoke<RuntimeTaskResponse>('run_model_task', { prompt, model, ...options });
   },
 
+  async readClipboardImages(): Promise<Array<{ name: string; mediaType: string; dataUrl: string; sizeBytes: number }>> {
+    if (!isTauriRuntime()) return [];
+    return invoke<Array<{ name: string; mediaType: string; dataUrl: string; sizeBytes: number }>>('read_clipboard_images');
+  },
+
   async listenRuntimeEvents(handler: (event: RuntimeEvent) => void): Promise<UnlistenFn | undefined> {
     if (!isTauriRuntime()) return undefined;
     return listen<RuntimeEvent>('runtime-event', (event) => handler(event.payload));
+  },
+
+  async listenTaskWorktree(handler: (notice: { clientSessionId: string; path: string; branch: string }) => void): Promise<UnlistenFn | undefined> {
+    if (!isTauriRuntime()) return undefined;
+    return listen<{ clientSessionId?: string; path?: string; branch?: string }>('task-worktree', (event) => {
+      const clientSessionId = event.payload?.clientSessionId ?? '';
+      const path = event.payload?.path ?? '';
+      const branch = event.payload?.branch ?? '';
+      if (!clientSessionId || !path) return;
+      handler({ clientSessionId, path, branch });
+    });
   },
 
   async listenContextSidecarStatus(handler: (status: RuntimeContextSidecarStatus) => void): Promise<UnlistenFn | undefined> {
@@ -425,10 +456,23 @@ export const desktopBridge = {
   },
 
   async resolveRuntimeApproval(requestId: string, approved: boolean, displayedDigest: string,
-    target?: { sessionId?: string; runId?: string }): Promise<void> {
+    target?: { sessionId?: string; runId?: string; alwaysAllow?: boolean }): Promise<void> {
     if (!isTauriRuntime()) return;
     await invoke('resolve_runtime_approval', {
       requestId, approved, displayedDigest,
+      ...(target?.alwaysAllow ? { alwaysAllow: true } : {}),
+      ...(target?.sessionId ? { sessionId: target.sessionId } : {}),
+      ...(target?.runId ? { runId: target.runId } : {})
+    });
+  },
+
+  async resolveRuntimeClarification(requestId: string, answer: string,
+    target?: { sessionId?: string; runId?: string; selectedOptionId?: string }): Promise<void> {
+    if (!isTauriRuntime()) throw new Error('CLARIFICATION_UNAVAILABLE');
+    await invoke('resolve_runtime_clarification', {
+      requestId,
+      answer,
+      ...(target?.selectedOptionId ? { selectedOptionId: target.selectedOptionId } : {}),
       ...(target?.sessionId ? { sessionId: target.sessionId } : {}),
       ...(target?.runId ? { runId: target.runId } : {})
     });

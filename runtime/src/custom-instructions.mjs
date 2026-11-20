@@ -18,7 +18,7 @@ export const withCustomInstructions = (provider, value) => {
     ...provider,
     stream(request) {
       const system = [request.system,
-        'User custom instructions (apply alongside the role requirements, required output format, and host capability limits):',
+        'User custom instructions (apply to the visible reply and to reasoning text the user can read; required output format, JSON keys, stepId, actionKind, and host capability limits stay unchanged):',
         instructions].filter(Boolean).join('\n\n');
       return provider.stream({ ...request, system });
     }

@@ -25,8 +25,10 @@ describe('exec flow no longer renders routing/decision regions', () => {
     expect(main).not.toContain('renderRoutePanel');
     expect(main).toContain('data-live-region="route-notice"');
   });
-  it('never sends a model override and retry does not prompt for a model', () => {
-    expect(main).toContain('desktopBridge.runModelTask(prompt, undefined, taskOptions)');
+  it('sends the task composer model and does not revive the legacy pin', () => {
+    expect(main).toMatch(/desktopBridge\.runModelTask\([^,]+,\s*launchedComposerModel \|\| undefined,\s*taskOptions\)/u);
+    expect(main).toContain('composerModelId');
+    expect(main).not.toContain('saveModelConfig({ ...loaded, model: modelId })');
     expect(main).not.toContain('modelOverride ??');
     expect(main).not.toContain('重试模型');
     expect(main).not.toContain('更换模型');

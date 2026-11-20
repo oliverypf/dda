@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TaskSessionController, nextClientSessionId, type TaskSession } from './task-session';
+import { TaskSessionController, newestTaskFirst, nextClientSessionId, sessionStatusText, sessionStillExecuting, sessionThreadActivity, type TaskSession } from './task-session';
 
 const runningSession = (controller: TaskSessionController, workspace: string): TaskSession => {
   const session = controller.create({ workspacePath: workspace });
@@ -7,7 +7,48 @@ const runningSession = (controller: TaskSessionController, workspace: string): T
   return session;
 };
 
+describe('session status after cancel', () => {
+  const label = (state: string): string => (state === 'CANCELLED' ? '已取消' : state);
+
+  it('lets a finished run replace leftover progress while the bridge lock is still held', () => {
+    const progress = '已完成 23 次工具调用，尚未记录成功的受控文件写入';
+    expect(sessionStatusText(true, progress, 'CANCELLED', label)).toBe('已取消');
+    expect(sessionThreadActivity(true, progress, 'CANCELLED', label)).toBe('已取消');
+    expect(sessionStillExecuting(true, 'CANCELLED')).toBe(false);
+  });
+
+  it('keeps progress text while the run has not finished', () => {
+    expect(sessionStatusText(true, '正在读取工作区', 'EXECUTING', label)).toBe('正在读取工作区');
+    expect(sessionThreadActivity(true, '', 'EXECUTING', label)).toBe('进行中');
+    expect(sessionStillExecuting(true, 'EXECUTING')).toBe(true);
+    expect(sessionStatusText(false, '', undefined, label)).toBe('待发送');
+  });
+});
+
+describe('newestTaskFirst', () => {
+  it('keeps creation order when timestamps tie or are missing', () => {
+    const ordered = newestTaskFirst([
+      { createdAtMs: 1, sortId: 'thread:b', name: 'b' },
+      { createdAtMs: 2, sortId: 'thread:c', name: 'c' },
+      { createdAtMs: 2, sortId: 'thread:a', name: 'a' },
+      { createdAtMs: Number.NaN, sortId: 'session:z', name: 'z' }
+    ]);
+    expect(ordered.map((item) => item.name)).toEqual(['a', 'c', 'b', 'z']);
+  });
+});
+
 describe('TaskSessionController', () => {
+  it('keeps an unbound choice on the next draft', () => {
+    const controller = new TaskSessionController({ workspacePath: 'C:/repo' });
+    const parked = controller.selected()!;
+    parked.unboundProject = true;
+    const draft = controller.ensureDraftSession('', { unboundProject: true });
+    expect(draft.clientSessionId).not.toBe(parked.clientSessionId);
+    expect(draft.unboundProject).toBe(true);
+    expect(draft.workspacePath).toBe('');
+    expect(controller.selected()?.unboundProject).toBe(true);
+  });
+
   it('starts with one selected draft session', () => {
     const controller = new TaskSessionController({ workspacePath: 'C:/work' });
     expect(controller.sessions.size).toBe(1);
@@ -124,6 +165,36 @@ describe('TaskSessionController', () => {
     // A second prune with nothing pristine is a no-op.
     controller.pruneIdleDrafts(keep.clientSessionId);
     expect(controller.sessions.size).toBe(6);
+  });
+
+  it('keeps each session composer model across selection and does not copy it onto a new draft', () => {
+    const controller = new TaskSessionController({ workspacePath: 'C:/a' });
+    const a = controller.selected()!;
+    a.composerModelId = 'model-a';
+    const b = controller.create({ workspacePath: 'C:/b', composerModelId: ' model-b ' });
+    expect(b.composerModelId).toBe('model-b');
+    controller.select(b.clientSessionId);
+    expect(controller.selected()?.composerModelId).toBe('model-b');
+    controller.select(a.clientSessionId);
+    expect(controller.selected()?.composerModelId).toBe('model-a');
+    const draft = controller.ensureDraftSession('C:/c');
+    expect(draft.composerModelId).toBeUndefined();
+    expect(a.composerModelId).toBe('model-a');
+  });
+
+  it('moves a settled conversation onto its stored session id', () => {
+    const controller = new TaskSessionController({ workspacePath: 'C:/a' });
+    const draft = controller.selected()!;
+    const fromId = draft.clientSessionId;
+    controller.bindRunId(fromId, 'run-1');
+    const moved = controller.adoptId(fromId, 'ui-session-1');
+    expect(moved?.clientSessionId).toBe('ui-session-1');
+    expect(controller.selectedId).toBe('ui-session-1');
+    expect(controller.forRunId('run-1')?.clientSessionId).toBe('ui-session-1');
+    expect(controller.sessions.has(fromId)).toBe(false);
+    const running = runningSession(controller, 'C:/b');
+    expect(controller.adoptId(running.clientSessionId, 'ui-session-2')).toBe(running);
+    expect(running.clientSessionId).not.toBe('ui-session-2');
   });
 
   it('generates unique non-empty client session ids', () => {

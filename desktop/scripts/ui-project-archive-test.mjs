@@ -28,6 +28,7 @@ async function installFixture(context) {
       {id:'b-live',title:'乙的会话',cwd:'C:/fixture/B',turnCount:1,updatedAtMs:1},
       {id:'c-live',title:'自动发现项目的会话',cwd:'C:/fixture/C',turnCount:1,updatedAtMs:1}];
     const callbacks = new Map(), listeners = new Map(); let id=0;
+    threads.push({...threads[0],id:'a-second',turnCount:1});
     window.__supervisor = {threads, calls:[], listeners, callbacks};
     window.__TAURI_INTERNALS__ = {
       transformCallback: callback => { callbacks.set(++id,callback); return id; },
@@ -46,6 +47,7 @@ async function installFixture(context) {
         if(cmd === 'reconcile_runtime_state') return {ok:true,reconciled:0,execution:{reconciled:0,records:[]},roles:{reconciled:0,contexts:[]}};
         if(cmd === 'runtime_process_status') return {running:false,healthy:true};
         if(cmd === 'run_model_task') return new Promise(resolve=>{window.__supervisor.finishTask=resolve;});
+        if(['archive_threads','archive_thread_events','vacuum_event_store'].includes(cmd)) return new Promise(()=>{});
         if(cmd === 'model_config') return undefined;
         if(cmd === 'context_sidecar_status' || cmd === 'dream_maintenance_status') return undefined;
         return {};
@@ -57,6 +59,39 @@ async function installFixture(context) {
 const browser=await chromium.launch({channel:process.env.DDA_BROWSER_CHANNEL??'msedge',headless:true}); const results=[];
 const check=(name,pass,detail)=>results.push({name,pass,detail});
 try{
+const concurrencyContext=await browser.newContext();
+await installFixture(concurrencyContext);
+const concurrencyPage=await concurrencyContext.newPage();
+await concurrencyPage.goto(url);
+for (const threadId of ['a-live','a-second','a-live']) {
+  await concurrencyPage.locator(`[data-action="select-thread"][data-thread-id="${threadId}"]`).click({timeout:5000});
+  await concurrencyPage.waitForFunction(id=>document.querySelector('[data-action="select-thread"][aria-current="true"]')?.dataset.threadId===id
+    && document.querySelector('[data-region="conversation"]')?.getAttribute('aria-busy')==='false',threadId,{timeout:5000});
+}
+check('same-title saved tasks reopen by thread ID',true);
+await concurrencyPage.locator('[data-action="select-thread"][data-thread-id="a-live"]').click({timeout:5000});
+await concurrencyPage.locator('[data-action="select-thread"][data-thread-id="a-live"][aria-current="true"]').waitFor({timeout:5000});
+await concurrencyPage.locator('textarea[name="prompt"]').fill('继续编译 exe');
+await concurrencyPage.locator('textarea[name="prompt"]').press('Enter');
+await concurrencyPage.waitForFunction(()=>window.__supervisor.calls.some(c=>c.cmd==='run_model_task'&&c.args.threadId==='a-live'),undefined,{timeout:5000});
+check('an unrelated existing task starts with archived sessions at startup',true);
+await concurrencyPage.locator('[data-action="archive-project"][data-project-id="project-b"]').click({timeout:5000});
+check('archive another project while the task runs',await concurrencyPage.locator('[data-project-group="project-b"]').count()===0);
+check('desktop archive never moves or vacuums the task database',await concurrencyPage.evaluate(()=>window.__supervisor.calls.every(c=>!['archive_threads','archive_thread_events','vacuum_event_store'].includes(c.cmd))));
+await concurrencyContext.close();
+
+const freshContext=await browser.newContext();
+await installFixture(freshContext);
+const freshPage=await freshContext.newPage();
+await freshPage.goto(url);
+await freshPage.locator('[data-project-group="project-a"]').waitFor({timeout:5000});
+await freshPage.locator('textarea[name="prompt"]').fill('新建编译任务');
+await freshPage.locator('textarea[name="prompt"]').press('Enter');
+await freshPage.waitForFunction(()=>window.__supervisor.calls.some(c=>c.cmd==='run_model_task'&&!c.args.threadId),undefined,{timeout:5000});
+check('a fresh task starts with archived sessions at startup',true);
+await freshContext.close();
+
+if (!process.argv.includes('--concurrency-only')) {
 const context=await browser.newContext({viewport:{width:1440,height:1000}});await installFixture(context);
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto(url);await page.locator('[data-project-group="project-a"]').waitFor();
@@ -115,6 +150,7 @@ const blockedText=await runPage.locator('body').innerText();
 check('blocked archived project explains recovery',blockedText.includes('此项目已归档'),blockedText.includes('此项目已归档')?undefined:blockedText);
 await runPage.screenshot({path:resolve(output,'blocked-task.png')});
 await runningContext.close();
+}
 } catch(error){check('test flow completed',false,String(error))}finally{await browser.close();await new Promise(done=>server.close(done))}
 writeFileSync(resolve(output,'report.json'),JSON.stringify({backend:'fixture',frontend:root,results},null,2));console.log(JSON.stringify(results,null,2));process.exitCode=results.every(r=>r.pass)?0:1;
 

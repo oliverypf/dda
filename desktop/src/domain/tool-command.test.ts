@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commandLineForToolEvent, outputTailForToolEvent, pathBadgeText, pathForToolEvent, WORKSPACE_REASON_LABELS } from './tool-command';
+import { commandLineForToolEvent, exitCodeLabelForToolEvent, outputTailForToolEvent, pathBadgeText, pathForToolEvent, WORKSPACE_REASON_LABELS } from './tool-command';
 
 describe('commandLineForToolEvent', () => {
   it('joins command and args for shell.execute and test.execute', () => {
@@ -33,6 +33,17 @@ describe('outputTailForToolEvent', () => {
   });
 });
 
+describe('exitCodeLabelForToolEvent', () => {
+  it('prints an integer exit code and a missing code', () => {
+    expect(exitCodeLabelForToolEvent({ exitCode: 1 })).toBe('退出码 1');
+    expect(exitCodeLabelForToolEvent({ exitCode: 0 })).toBe('退出码 0');
+    expect(exitCodeLabelForToolEvent({ exitCode: null })).toBe('退出码未知');
+    expect(exitCodeLabelForToolEvent({})).toBe('');
+    expect(exitCodeLabelForToolEvent({ exitCode: 1.5 })).toBe('');
+    expect(exitCodeLabelForToolEvent({ exitCode: '1' })).toBe('');
+  });
+});
+
 describe('pathForToolEvent', () => {
   it('returns the bounded structured path or empty', () => {
     expect(pathForToolEvent({ path: 'desktop/src/main.ts' })).toBe('desktop/src/main.ts');
@@ -63,6 +74,7 @@ describe('limit/failure reason labels', () => {
   it('localizes SAFETY_COMMAND_INVALID, TEST_CHECK_FAILED and EXECUTOR_RESULT_FAILED', () => {
     expect(WORKSPACE_REASON_LABELS.SAFETY_COMMAND_INVALID).toBe('执行参数超出允许范围，请检查超时或输出大小限制。');
     expect(WORKSPACE_REASON_LABELS.TEST_CHECK_FAILED).toBe('测试未通过，请查看输出中的失败项目。');
-    expect(WORKSPACE_REASON_LABELS.EXECUTOR_RESULT_FAILED).toBe('命令未成功完成，请查看退出码和输出。');
+    expect(WORKSPACE_REASON_LABELS.EXECUTOR_RESULT_FAILED).toBe('命令未成功完成。');
+    expect(WORKSPACE_REASON_LABELS.NETWORK_HTTP_STATUS).toBe('网站返回了失败的 HTTP 状态。');
   });
 });

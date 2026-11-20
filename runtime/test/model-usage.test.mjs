@@ -75,6 +75,34 @@ test('records one redacted usage sample for success and failure streams', async 
   assert.equal(JSON.stringify(samples).includes('stable'), false);
 });
 
+test('records time to first token and prompt lengths without prompt text', async () => {
+  const samples = [];
+  const base = {
+    provider: 'fixture', protocol: 'fixture', model: 'fixture-model',
+    async *stream() {
+      yield { type: 'text-delta', text: 'hello' };
+      yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 2 } };
+      yield { type: 'finish', reason: { kind: 'stop' } };
+    }
+  };
+  const provider = withModelUsage(base, { scope: 'workspace', onUsage: (sample) => samples.push(sample) });
+  for await (const _chunk of provider.stream({
+    system: 'system-secret',
+    tools: [{ name: 'tool-secret' }],
+    messages: [{ content: 'message-secret' }],
+    cacheRole: 'executor'
+  })) {}
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].systemChars, 'system-secret'.length);
+  assert.ok(samples[0].toolsChars > 0);
+  assert.ok(samples[0].messageChars > 0);
+  assert.equal(typeof samples[0].ttftMs, 'number');
+  assert.ok(samples[0].ttftMs >= 0);
+  assert.equal(JSON.stringify(samples).includes('system-secret'), false);
+  assert.equal(JSON.stringify(samples).includes('message-secret'), false);
+  assert.equal(JSON.stringify(samples).includes('tool-secret'), false);
+});
+
 test('reads only ModelUsageRecorded events and reports historical coverage', async () => {
   const store = createHarnessEventStore();
   await store.append({ runId: 'r1', kind: 'ModelEgressRecorded', payload: { records: [{ actualTokens: 999 }] } });

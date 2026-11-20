@@ -11,6 +11,12 @@ const normalizeMemoryId = (value, code = 'MEMORY_REFERENCE_INVALID') => {
   if (typeof value !== 'string' || !value.trim() || value.length > 240) throw new Error(code);
   return value.trim();
 };
+const normalizeWorkspacePath = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw new Error('MEMORY_WORKSPACE_INVALID');
+  const text = value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 1024);
+  return text || undefined;
+};
 const normalizeConflictIds = (value) => {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 32) throw new Error('MEMORY_CONFLICTS_INVALID');
@@ -120,7 +126,7 @@ export class MemoryJournal {
     return structuredClone(record);
   }
 
-  propose({ runId, statement, sourceEventIds = [], scope = 'workspace', confidence = 0.5, kind = 'PROJECT', key, validFromMs, expiresAtMs, sensitivity = 'INTERNAL', version = 1, supersedesMemoryId, conflictsWithMemoryIds } = {}, { deferPersist = false } = {}) {
+  propose({ runId, statement, sourceEventIds = [], scope = 'workspace', confidence = 0.5, kind = 'PROJECT', key, workspacePath, validFromMs, expiresAtMs, sensitivity = 'INTERNAL', version = 1, supersedesMemoryId, conflictsWithMemoryIds } = {}, { deferPersist = false } = {}) {
     if (typeof statement !== 'string' || !statement.trim()) throw new Error('MEMORY_STATEMENT_INVALID');
     if (SENSITIVE_TEXT.test(statement)) throw new Error('MEMORY_SENSITIVE_CONTENT');
     if (this.#records.size >= MAX_RECORDS) throw new Error('MEMORY_STORE_FULL');
@@ -143,6 +149,7 @@ export class MemoryJournal {
     if (normalizedSupersedes && normalizedConflicts.includes(normalizedSupersedes)) throw new Error('MEMORY_CONFLICTS_INVALID');
     if (normalizedConflicts.some((id) => !this.#records.has(id))) throw new Error('MEMORY_CONFLICT_NOT_FOUND');
     const normalizedKey = key === undefined ? undefined : String(key).trim().slice(0, 256);
+    const normalizedWorkspace = normalizeWorkspacePath(workspacePath);
     const normalizedValidFrom = validFromMs === undefined ? now : Number(validFromMs);
     const normalizedExpires = expiresAtMs === undefined ? undefined : Number(expiresAtMs);
     if (!Number.isInteger(normalizedValidFrom) || normalizedValidFrom < 0 || (normalizedExpires !== undefined && (!Number.isInteger(normalizedExpires) || normalizedExpires <= normalizedValidFrom))) {
@@ -157,6 +164,7 @@ export class MemoryJournal {
       confidence: Math.max(0, Math.min(1, Number(confidence) || 0)),
       kind: normalizedKind,
       ...(normalizedKey ? { key: normalizedKey } : {}),
+      ...(normalizedWorkspace ? { workspacePath: normalizedWorkspace } : {}),
       validFromMs: normalizedValidFrom,
       ...(normalizedExpires === undefined ? {} : { expiresAtMs: normalizedExpires }),
       sensitivity: normalizedSensitivity,
@@ -183,6 +191,7 @@ export class MemoryJournal {
       confidence: input.confidence === undefined ? current.confidence : input.confidence,
       kind: current.kind,
       key: current.key,
+      workspacePath: input.workspacePath === undefined ? current.workspacePath : input.workspacePath,
       validFromMs: input.validFromMs === undefined ? this.#now() : input.validFromMs,
       expiresAtMs: input.expiresAtMs === undefined ? current.expiresAtMs : input.expiresAtMs,
       sensitivity: input.sensitivity === undefined ? (current.sensitivity ?? 'INTERNAL') : input.sensitivity,
@@ -270,7 +279,7 @@ export class MemoryJournal {
   }
 
   async #commitMemoryEvent(kind, record, details = {}) {
-    const payload = { memoryId: record.memoryId, runId: record.runId, statement: record.statement, status: record.status, recordDigest: record.recordDigest, lifecycleDigest: record.lifecycleDigest, createdAtMs: record.createdAtMs, updatedAtMs: record.updatedAtMs, sourceEventIds: record.sourceEventIds, scope: record.scope, confidence: record.confidence, kind: record.kind, ...(record.key === undefined ? {} : { key: record.key }), ...(record.validFromMs === undefined ? {} : { validFromMs: record.validFromMs }), ...(record.expiresAtMs === undefined ? {} : { expiresAtMs: record.expiresAtMs }), ...(record.sensitivity === undefined ? {} : { sensitivity: record.sensitivity }), ...(record.version === undefined ? {} : { version: record.version }), ...(record.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: record.supersedesMemoryId }), ...(record.conflictsWithMemoryIds === undefined ? {} : { conflictsWithMemoryIds: record.conflictsWithMemoryIds }), ...(record.untrainable === undefined ? {} : { untrainable: record.untrainable }), ...(record.untrainableAtMs === undefined ? {} : { untrainableAtMs: record.untrainableAtMs }), ...details };
+    const payload = { memoryId: record.memoryId, runId: record.runId, statement: record.statement, status: record.status, recordDigest: record.recordDigest, lifecycleDigest: record.lifecycleDigest, createdAtMs: record.createdAtMs, updatedAtMs: record.updatedAtMs, sourceEventIds: record.sourceEventIds, scope: record.scope, confidence: record.confidence, kind: record.kind, ...(record.key === undefined ? {} : { key: record.key }), ...(record.workspacePath === undefined ? {} : { workspacePath: record.workspacePath }), ...(record.validFromMs === undefined ? {} : { validFromMs: record.validFromMs }), ...(record.expiresAtMs === undefined ? {} : { expiresAtMs: record.expiresAtMs }), ...(record.sensitivity === undefined ? {} : { sensitivity: record.sensitivity }), ...(record.version === undefined ? {} : { version: record.version }), ...(record.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: record.supersedesMemoryId }), ...(record.conflictsWithMemoryIds === undefined ? {} : { conflictsWithMemoryIds: record.conflictsWithMemoryIds }), ...(record.untrainable === undefined ? {} : { untrainable: record.untrainable }), ...(record.untrainableAtMs === undefined ? {} : { untrainableAtMs: record.untrainableAtMs }), ...details };
     const result = await this.#eventStore.append({ runId: String(record.runId || 'memory-system').slice(0, 240), aggregateType: 'Memory', aggregateId: record.memoryId, kind, payload, sensitivity: 'INTERNAL' });
     const receipt = result?.receipt ?? result;
     const event = result?.event ?? result?.events?.[0];
@@ -393,7 +402,7 @@ export class MemoryJournal {
     }
     return [...latest.values()]
       .filter((record) => !status || record.status === status)
-      .map((record) => ({ memoryId: record.memoryId, runId: record.runId, status: record.status, recordDigest: record.recordDigest, lifecycleDigest: record.lifecycleDigest, createdAtMs: record.createdAtMs, updatedAtMs: record.updatedAtMs, sourceEventIds: structuredClone(record.sourceEventIds ?? []), scope: record.scope, confidence: record.confidence, kind: record.kind, ...(record.key === undefined ? {} : { key: record.key }), ...(record.validFromMs === undefined ? {} : { validFromMs: record.validFromMs }), ...(record.expiresAtMs === undefined ? {} : { expiresAtMs: record.expiresAtMs }), ...(record.sensitivity === undefined ? {} : { sensitivity: record.sensitivity }), ...(record.version === undefined ? {} : { version: record.version }), ...(record.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: record.supersedesMemoryId }), ...(record.conflictsWithMemoryIds === undefined ? {} : { conflictsWithMemoryIds: structuredClone(record.conflictsWithMemoryIds) }) }));
+      .map((record) => ({ memoryId: record.memoryId, runId: record.runId, status: record.status, recordDigest: record.recordDigest, lifecycleDigest: record.lifecycleDigest, createdAtMs: record.createdAtMs, updatedAtMs: record.updatedAtMs, sourceEventIds: structuredClone(record.sourceEventIds ?? []), scope: record.scope, confidence: record.confidence, kind: record.kind, ...(record.key === undefined ? {} : { key: record.key }), ...(typeof record.workspacePath === 'string' && record.workspacePath ? { workspacePath: record.workspacePath } : {}), ...(record.validFromMs === undefined ? {} : { validFromMs: record.validFromMs }), ...(record.expiresAtMs === undefined ? {} : { expiresAtMs: record.expiresAtMs }), ...(record.sensitivity === undefined ? {} : { sensitivity: record.sensitivity }), ...(record.version === undefined ? {} : { version: record.version }), ...(record.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: record.supersedesMemoryId }), ...(record.conflictsWithMemoryIds === undefined ? {} : { conflictsWithMemoryIds: structuredClone(record.conflictsWithMemoryIds) }) }));
   }
 
   list(status) { return [...this.#records.values()].filter((record) => !status || record.status === status).map((record) => structuredClone(record)); }

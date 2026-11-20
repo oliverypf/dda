@@ -646,9 +646,10 @@ export async function restrictPolicy({
 }
 
 /**
- * Highest ACTIVE matching stateFloor, or null if none.
+ * Highest ACTIVE matching stateFloor, or null if none. Callers can exclude
+ * SANDBOX floors when the action gate does not require an OS sandbox.
  */
-export function effectiveStateFloor({ match, policyStore } = {}) {
+export function effectiveStateFloor({ match, policyStore, includeSandbox = true } = {}) {
   if (!policyStore || typeof policyStore.listPolicies !== 'function') {
     return null;
   }
@@ -658,6 +659,7 @@ export function effectiveStateFloor({ match, policyStore } = {}) {
   for (const policy of active) {
     if (!policyMatches(policy.match, match ?? {})) continue;
     const floor = policy.effect?.stateFloor;
+    if (!includeSandbox && floor === 'SANDBOX') continue;
     if (!POLICY_STATE_FLOORS.includes(floor)) continue;
     const rank = POLICY_FLOOR_RANK[floor];
     if (rank > bestRank) {

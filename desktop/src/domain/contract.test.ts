@@ -257,6 +257,7 @@ describe('HarnessReadModel v1 contract', () => {
     expect(ajv.compile(dreamSchema)({ runId: 'dream-1', projectId: 'project-1', state: 'WAITING_GATE', startedAtMs: 1, recordDigest: digest })).toBe(true);
     expect(ajv.compile(pluginSchema)({ pluginId: 'plugin.example', version: '1.0.0', manifest: {}, source: 'CORE', packageDigest: digest, state: 'ACTIVE', createdAtMs: 1, updatedAtMs: 1, recordDigest: digest })).toBe(true);
     expect(ajv.compile(roleContextSchema)({ contextId: 'context-1', runId: 'run-1', role: 'planner', isolation: 'DEDICATED', state: 'READY', ownerPid: 1, runtimeInstanceId: 'runtime-1', metadata: {}, createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
+    expect(ajv.compile(roleContextSchema)({ contextId: 'context-1', runId: 'run-1', sessionId: 'ui-task-1', role: 'planner', isolation: 'DEDICATED', state: 'READY', ownerPid: 1, runtimeInstanceId: 'runtime-1', metadata: {}, createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
     expect(ajv.compile(threadSchema)({ id: 'thread-1', title: 'Task', cwd: 'C:/workspace', turns: [], state: 'IDLE', createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
     expect(ajv.compile(routeSchema)({ taskClass: 'inspect', status: 'SELECTED', reason: 'STATIC_RULE', roles: { planner: 'default', executor: 'default', verifier: 'rule' } })).toBe(true);
   });

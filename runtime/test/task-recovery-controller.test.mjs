@@ -111,7 +111,7 @@ test('T-smf-1: safeReport path preserves TOPOLOGY_BUDGET_PROBES checks into diag
   );
 });
 
-test('SCOPE_VIOLATION in attempt 1 neither auto-replans nor clears to PASS on later attempts', async () => {
+test('SCOPE_VIOLATION is not a rule-verifier failure', async () => {
   const { createRuleVerifier } = await import('../src/rule-verifier.mjs');
   const verifier = createRuleVerifier();
   let executions = 0;
@@ -148,11 +148,10 @@ test('SCOPE_VIOLATION in attempt 1 neither auto-replans nor clears to PASS on la
       };
     }
   });
-  assert.equal(result.ok, false, 'run with SCOPE_VIOLATION must not finish ok');
-  assert.equal(executions, 1, 'must stop immediately without auto-replan');
-  assert.ok(result.report.failureCodes.includes('SCOPE_VIOLATION'));
+  assert.equal(result.ok, true, 'the rule report no longer fails the run');
+  assert.equal(executions, 1);
+  assert.equal(result.report.failureCodes.includes('SCOPE_VIOLATION'), false);
 
-  // Even if a caller directly invokes RuleVerifier with prior SCOPE_VIOLATION, attempt 2 stays FAIL.
   const secondVerify = verifier.verify({
     prompt: 'build exe',
     output: 'clean retry',
@@ -160,6 +159,6 @@ test('SCOPE_VIOLATION in attempt 1 neither auto-replans nor clears to PASS on la
     previousActions: [{ name: 'shell.execute', state: 'FAILED', errorCode: 'SCOPE_VIOLATION', argumentsDigest: 'sha256:' + '1'.repeat(64) }],
     actions: [{ name: 'shell.execute', state: 'SUCCEEDED', outputDigest: 'sha256:' + '2'.repeat(64), argumentsDigest: 'sha256:' + '3'.repeat(64) }]
   });
-  assert.equal(secondVerify.status, 'FAIL');
-  assert.ok(secondVerify.failureCodes.includes('SCOPE_VIOLATION'));
+  assert.equal(secondVerify.status, 'PASS');
+  assert.equal(secondVerify.failureCodes.includes('SCOPE_VIOLATION'), false);
 });

@@ -8,6 +8,7 @@ import { cordisPlugin } from './cordis-plugin.mjs';
 import { resolveAuthorizedPath } from '../filesystem-access.mjs';
 import { preferMappedPath } from '../platform/workspace-path.mjs';
 import { uniqueExcerptOffset } from '../task-harness.mjs';
+import { MAX_PPTX_BYTES, readPptxMetadata } from '../decision/pptx-metadata.mjs';
 
 const MAX_ENTRIES = 200;
 // UNC workspaces can spend several seconds resolving real paths and reading
@@ -62,12 +63,32 @@ const mappedRealpath = async (value) => {
   }
 };
 
-const hasDisallowedControls = (text) => /[\u0000-\u0008\u000b\u000e-\u001f\u007f]/u.test(stripVTControlCharacters(text));
+const DISALLOWED_CONTROL_CHAR = /[\u0001-\u0008\u000b\u000e-\u001f\u007f]/u;
+const DISALLOWED_CONTROL_CHAR_GLOBAL = /[\u0001-\u0008\u000b\u000e-\u001f\u007f]/gu;
+// Minified JS/TS/CSS/JSON/map bundles (e.g. esbuild/webpack output in Electron
+// apps) emit literal single-byte control characters inside string/regex
+// literals instead of \xNN escapes while remaining valid UTF-8 source files.
+// Allow sparse non-NUL control characters only on known source/bundle suffixes
+// so binary blobs and corrupted logs still fail closed as WORKSPACE_BINARY_FILE.
+const SPARSE_CONTROL_SOURCE_SUFFIX = /\.(?:[cm]?[jt]sx?|jsonc?|map|css|html?|svg)$/iu;
+const MAX_SPARSE_CONTROL_RATIO = 0.01;
+const MIN_SPARSE_CONTROL_FILE_CHARS = 256;
+
+const hasDisallowedControls = (text, filePath = '') => {
+  const stripped = stripVTControlCharacters(text);
+  if (!DISALLOWED_CONTROL_CHAR.test(stripped)) return false;
+  if (!SPARSE_CONTROL_SOURCE_SUFFIX.test(String(filePath ?? '')) || stripped.length < MIN_SPARSE_CONTROL_FILE_CHARS) {
+    return true;
+  }
+  const matches = stripped.match(DISALLOWED_CONTROL_CHAR_GLOBAL);
+  const count = matches ? matches.length : 0;
+  return count / stripped.length > MAX_SPARSE_CONTROL_RATIO;
+};
 
 // PowerShell's default redirection writes UTF-16 LE with a BOM. Those build
 // logs are text. Decode a BOM before the NUL-byte check; files without a
 // UTF-16 BOM stay on the UTF-8 path.
-const decodeUtf16 = (bytes) => {
+const decodeUtf16 = (bytes, filePath = '') => {
   if (!bytes || bytes.length < 2 || bytes.length % 2 !== 0) return undefined;
   const little = bytes[0] === 0xff && bytes[1] === 0xfe;
   const big = bytes[0] === 0xfe && bytes[1] === 0xff;
@@ -80,23 +101,21 @@ const decodeUtf16 = (bytes) => {
   } catch {
     return undefined;
   }
-  if (hasDisallowedControls(text)) return undefined;
+  if (/[\u0000]/u.test(text) || hasDisallowedControls(text, filePath)) return undefined;
   return text;
 };
 
-const decodeText = (bytes) => {
-  const utf16 = decodeUtf16(bytes);
+const decodeText = (bytes, filePath = '') => {
+  const utf16 = decodeUtf16(bytes, filePath);
   if (utf16 !== undefined) return utf16;
   if (bytes.includes(0)) return undefined;
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    // The tool contract is based on file content, not filename suffix. Web
-    // projects commonly use HTML/CSS, source maps, extensionless build files,
-    // and framework-specific source extensions. Reject binary control bytes
-    // while allowing every real UTF-8 text file covered by that contract.
+    // The tool contract is based on file content, with a bounded allowance for
+    // sparse literal control characters inside minified web/JS bundles.
     // Build logs may contain ANSI colors. Ignore recognized terminal sequences
     // only for classification; preserve the original text for digests and offsets.
-    if (/[\u0001-\u0008\u000b\u000e-\u001f\u007f]/u.test(stripVTControlCharacters(text))) return undefined;
+    if (hasDisallowedControls(text, filePath)) return undefined;
     return text;
   } catch {
     return undefined;
@@ -117,6 +136,10 @@ const normalizeRelativePath = (value) => {
   return parts.join(sep);
 };
 
+const MAX_OMITTED_DIRECTORIES = 64;
+// These names are not descended into: their trees are large or generated.
+// The directory itself is still reported as present. Hiding the name made
+// agents treat node_modules, target, and dist as missing after a real build.
 const IGNORED_SNAPSHOT_DIRS = new Set([
   'node_modules',
   'oh_modules',
@@ -166,8 +189,11 @@ const sortSnapshotChildren = (children) =>
     return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
   });
 
-async function walk(root, initial, entries, isExcluded) {
+const yieldEventLoop = () => new Promise((resolve) => setImmediate(resolve));
+
+async function walk(root, initial, entries, isExcluded, omittedDirectories) {
   const queue = [initial];
+  let visited = 0;
   while (queue.length > 0 && entries.length < MAX_ENTRIES) {
     const current = queue.shift();
     let children;
@@ -187,14 +213,26 @@ async function walk(root, initial, entries, isExcluded) {
     sortSnapshotChildren(children);
     for (const child of children) {
       if (entries.length >= MAX_ENTRIES) break;
-      if (isIgnoredSnapshotDir(child.name)) continue;
+      if (++visited % 16 === 0) await yieldEventLoop();
+      if (isIgnoredSnapshotDir(child.name) && !child.isDirectory()) continue;
       if (child.isFile() && /\.pyc$/iu.test(child.name)) continue;
       const candidate = resolve(current, child.name);
       if (isExcluded(candidate, contractPath(relative(root, candidate)))) continue;
-      const real = await withTimeout(mappedRealpath(candidate), 'realpath').catch(() => null);
+      // A non-link child of an already canonical directory cannot escape the
+      // root. realpath() on every file is a full filesystem round trip and, on
+      // this workspace, made the startup snapshot take about half a minute.
+      const real = child.isSymbolicLink()
+        ? await withTimeout(mappedRealpath(candidate), 'realpath').catch(() => null)
+        : preferMappedPath(candidate);
       if (!real || !inside(root, real)) continue;
       const relativePath = contractPath(relative(root, real));
       if (isExcluded(real, relativePath)) continue;
+      if (child.isDirectory() && isIgnoredSnapshotDir(child.name)) {
+        // Record the directory and do not descend. Its children stay out of
+        // the indexed entry budget, but the name remains evidence it exists.
+        if (omittedDirectories.length < MAX_OMITTED_DIRECTORIES) omittedDirectories.push(relativePath);
+        continue;
+      }
       if (child.isDirectory()) {
         entries.push({ path: relativePath, kind: 'DIRECTORY' });
         queue.push(real);
@@ -211,7 +249,6 @@ async function listDirect(root, current, entries, isExcluded) {
   children.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
   for (const child of children) {
     if (entries.length >= MAX_ENTRIES) break;
-    if (child.name === 'node_modules' || child.name === '.git' || child.name === 'target') continue;
     const candidate = resolve(current, child.name);
     if (isExcluded(candidate, contractPath(relative(root, candidate)))) continue;
     const real = await mappedRealpath(candidate).catch(() => null);
@@ -222,7 +259,9 @@ async function listDirect(root, current, entries, isExcluded) {
     const metadata = await withTimeout(stat(real), 'stat').catch(() => null);
     if (!metadata) continue;
     if (metadata.isDirectory()) {
-      entries.push({ path: relativePath, kind: 'DIRECTORY' });
+      entries.push(isIgnoredSnapshotDir(child.name)
+        ? { path: relativePath, kind: 'DIRECTORY', contentsOmitted: true }
+        : { path: relativePath, kind: 'DIRECTORY' });
     } else if (metadata.isFile()) {
       entries.push({ path: relativePath, kind: 'FILE', sizeBytes: metadata.size });
     }
@@ -243,6 +282,16 @@ export class ReadonlyWorkspace {
     this.#excludedPaths = [...new Set(excludedPaths
       .filter((value) => typeof value === 'string' && value.trim())
       .map((value) => resolve(this.root ?? process.cwd(), value)))];
+    this.#indexExclusions();
+  }
+
+  bindWorkspace(rootPath) {
+    if (this.root || !isAbsolute(rootPath)) throw new Error('WORKSPACE_BINDING_INVALID');
+    this.root = resolve(rootPath);
+    this.#indexExclusions();
+  }
+
+  #indexExclusions() {
     this.#excludedRelativePaths = this.#excludedPaths
       .map((value) => {
         if (!this.root) return undefined;
@@ -267,7 +316,9 @@ export class ReadonlyWorkspace {
     if (!metadata.isDirectory()) throw new Error('WORKSPACE_NOT_DIRECTORY');
     try {
       const entries = [];
-      await walk(root, root, entries, (candidate, relativePath) => this.#isExcluded(candidate, relativePath));
+      const omittedDirectories = [];
+      await walk(root, root, entries, (candidate, relativePath) => this.#isExcluded(candidate, relativePath), omittedDirectories);
+      omittedDirectories.sort((left, right) => left.localeCompare(right, 'en'));
       const sections = [];
       for (const entry of entries.filter((item) => item.kind === 'FILE')) {
         if (sections.length >= 18) break;
@@ -278,7 +329,7 @@ export class ReadonlyWorkspace {
         if (this.#isExcluded(real, entry.path)) continue;
         const bytes = await readFile(real);
         if (bytes.byteLength > MAX_FILE_BYTES) continue;
-        const content = decodeText(bytes);
+        const content = decodeText(bytes, entry.path);
         if (content === undefined) continue;
         sections.push({
           path: entry.path,
@@ -286,13 +337,17 @@ export class ReadonlyWorkspace {
           content: content.slice(0, MAX_FILE_BYTES)
         });
       }
+      const digestBody = omittedDirectories.length
+        ? { root, entries, omittedDirectories, sections }
+        : { root, entries, sections };
       return {
         granted: true,
         root,
         rootLabel: root.split(/[\\/]/).filter(Boolean).at(-1) ?? root,
         entries,
+        ...(omittedDirectories.length ? { omittedDirectories } : {}),
         sections,
-        snapshotDigest: digest(Buffer.from(JSON.stringify({ root, entries, sections })))
+        snapshotDigest: digest(Buffer.from(JSON.stringify(digestBody)))
       };
     } catch (error) {
       if (error instanceof Error && /^WORKSPACE_[A-Z0-9_]+$/.test(error.message)) throw error;
@@ -337,6 +392,17 @@ export class ReadonlyWorkspace {
     const metadata = await stat(real).catch(() => { throw new Error(`WORKSPACE_NOT_FOUND:${path}`); });
     if (directory && !metadata.isDirectory()) throw new Error(`WORKSPACE_NOT_DIRECTORY:${path}`);
     return { root, real, relativePath: path, metadata };
+  }
+
+  async checkPathScope(path) {
+    // Resolve metadata using the same policy as list/read. The operation
+    // still resolves its own path again when it runs.
+    try {
+      const target = await this.#resolvePath(path);
+      return target.outside ? 'OUTSIDE_WORKSPACE' : 'IN_WORKSPACE';
+    } catch {
+      return 'UNVERIFIED';
+    }
   }
 
   async list(relativePath = '') {
@@ -469,7 +535,21 @@ export class ReadonlyWorkspace {
     return this.read(relativePath, maxChars, offsetChars, findText, requireUnique);
   }
 
+  // The public tool may project a presentation into a searchable text view.
+  // Internal callers that prepare text file patches must still get raw text
+  // or a binary-file error, never a projection paired with the file digest.
+  async readForInspection(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0, findText) {
+    if (findText !== undefined && (typeof findText !== 'string' || !findText.length || findText.length > 512)) {
+      throw new Error('WORKSPACE_INVALID_FIND_TEXT');
+    }
+    return this.#read(relativePath, maxChars, offsetChars, findText, false, true);
+  }
+
   async read(relativePath, maxChars = MAX_READ_CHARS, offsetChars = 0, findText, requireUnique = false) {
+    return this.#read(relativePath, maxChars, offsetChars, findText, requireUnique, false);
+  }
+
+  async #read(relativePath, maxChars, offsetChars, findText, requireUnique, inspectPresentation) {
     if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > MAX_READ_CHARS) {
       throw new Error('WORKSPACE_INVALID_READ_LIMIT');
     }
@@ -480,8 +560,42 @@ export class ReadonlyWorkspace {
     try { target = await this.#resolvePath(relativePath); } catch (error) { logWorkspaceFailure('read.resolve', relativePath, this.root, error); throw error; }
     if (!target.metadata.isFile()) throw new Error(`WORKSPACE_NOT_FILE:${target.relativePath}`);
     const path = target.relativePath;
-    const bytes = await readFile(target.real).catch((error) => { logWorkspaceFailure('read.file', relativePath, this.root, error); throw new Error('WORKSPACE_READ_FAILED'); });
-    const content = decodeText(bytes);
+    const isPptx = inspectPresentation && /\.pptx$/iu.test(path);
+    let bytes;
+    let pptx;
+    let content;
+    if (isPptx) {
+      if (target.metadata.size > MAX_PPTX_BYTES) throw new Error('WORKSPACE_PPTX_SIZE_LIMIT');
+      const file = await open(target.real, 'r');
+      try {
+        const sameFile = metadata => metadata.isFile() &&
+          ['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs'].every(key => metadata[key] === target.metadata[key]);
+        if (!sameFile(await file.stat())) throw new Error('WORKSPACE_BINARY_CHANGED');
+        bytes = Buffer.alloc(target.metadata.size);
+        for (let offset = 0; offset < bytes.length;) {
+          const { bytesRead } = await withTimeout(file.read(bytes, offset, bytes.length - offset, offset), 'read');
+          if (!bytesRead) throw new Error('WORKSPACE_BINARY_CHANGED');
+          offset += bytesRead;
+        }
+        const { slideCount, entryCount, excerpts } = await readPptxMetadata(bytes, { includeSlideText: true })
+          .catch(() => { throw new Error('WORKSPACE_PPTX_INVALID_OR_UNSUPPORTED'); });
+        // The path may have moved or access may have changed while reading.
+        const current = await this.#resolvePath(relativePath);
+        if (current.real !== target.real || !sameFile(current.metadata) || !sameFile(await file.stat())) {
+          throw new Error('WORKSPACE_BINARY_CHANGED');
+        }
+        pptx = { slideCount, entryCount };
+        content = [
+          `PPTX: ${slideCount} slides; ${entryCount} ZIP entries. Slide text excerpts (up to 512 characters each):`,
+          ...excerpts.map((text, index) => `Slide ${index + 1}: ${text}`)
+        ].join('\n');
+      } finally {
+        await file.close();
+      }
+    } else {
+      bytes = await readFile(target.real).catch((error) => { logWorkspaceFailure('read.file', relativePath, this.root, error); throw new Error('WORKSPACE_READ_FAILED'); });
+      content = decodeText(bytes, path || target.real);
+    }
     if (content === undefined) throw new Error(`WORKSPACE_BINARY_FILE:${path}`);
     const match = findText === undefined ? undefined : requireUnique
       ? uniqueExcerptOffset(content, findText, offsetChars) : content.indexOf(findText, offsetChars);
@@ -490,6 +604,7 @@ export class ReadonlyWorkspace {
       path,
       sizeBytes: bytes.byteLength,
       digest: digest(bytes),
+      ...(pptx ? { format: 'PPTX', pptx } : {}),
       content: content.slice(start, start + maxChars),
       truncated: start + maxChars < content.length,
       ...(match === undefined ? {} : { found: match >= 0, offsetChars: start })

@@ -9,6 +9,7 @@
  */
 
 import { processFailureOutputTail } from './process-output-tail.mjs';
+import { MAX_BOUNDED_OUTPUT } from './runtime-safety-monitor.mjs';
 import { createHash } from 'node:crypto';
 import { cordisPlugin } from './plugins/cordis-plugin.mjs';
 import { FULL_ACCESS_PATH_GUIDANCE } from './access-mode-instructions.mjs';
@@ -17,8 +18,8 @@ import { BINARY_INSPECTION_DESCRIPTION } from './binary-inspection-contract.mjs'
 const OBJECT_TAG = '[object Object]';
 const MAX_SCHEMA_DEPTH = 24;
 const MAX_SCHEMA_NODES = 512;
-const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
-const DEFAULT_MAX_OUTPUT_CHARS = 64 * 1024;
+const DEFAULT_MAX_OUTPUT_BYTES = MAX_BOUNDED_OUTPUT;
+const DEFAULT_MAX_OUTPUT_CHARS = MAX_BOUNDED_OUTPUT;
 
 const SUPPORTED_SCHEMA_KEYS = new Set([
   '$schema',
@@ -137,7 +138,7 @@ const safeInvocationErrorMessage = (error) => {
   const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
     ? error.code
     : typeof raw === 'string' ? raw.match(/^([A-Z][A-Z0-9_]{1,96})(?::|$)/)?.[1] : undefined;
-  if (!code || !/^(?:TOOL|WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+$/u.test(code)) return undefined;
+  if (!code || !/^(?:TOOL|WORKSPACE|SAFETY|EXECUTOR|BROWSER)_[A-Z0-9_]+$/u.test(code)) return undefined;
   const message = raw.startsWith(`${code}:`) ? raw.slice(code.length + 1) : raw;
   const normalized = message.replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 640);
   return normalized || undefined;
@@ -651,7 +652,7 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   }
   registry.register({
     name: 'workspace.list',
-    description: 'List visible entries in a directory. An empty path selects the workspace root. ' + FULL_ACCESS_PATH_GUIDANCE,
+    description: 'List visible entries in a directory. An empty path selects the workspace root. Generated or cache directories such as node_modules, target, target-*, and dist are included when they exist, with contentsOmitted:true. That flag means the directory is present and its children were not expanded; it does not mean the directory is missing. Call list on that exact path to see its children. ' + FULL_ACCESS_PATH_GUIDANCE,
     inputSchema: {
       type: 'object',
       properties: {
@@ -664,7 +665,8 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   });
   registry.register({
     name: 'workspace.read',
-    description: 'Read a bounded UTF-8 text file. For files larger than 32KB, use offsetChars to read the next window. ' + FULL_ACCESS_PATH_GUIDANCE
+    description: 'Read a bounded text window. For larger results, use offsetChars to read the next window. ' + FULL_ACCESS_PATH_GUIDANCE
+      + (typeof workspace.readForInspection === 'function' ? ' For a .pptx, read the file directly to obtain its SHA-256 digest, slide and ZIP entry counts, and searchable slide text excerpts.' : '')
       + (typeof workspace.readMatching === 'function' ? ' To locate a named function or known text, pass findText (literal, not regex) and a small maxChars instead of scanning every page. Returns found and the actual offsetChars of the first match at or after the requested offset. Continue from returned offsetChars + content.length; a missing match returns found:false and empty content.' : ''),
     inputSchema: {
       type: 'object',
@@ -677,9 +679,10 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
       required: ['path'],
       additionalProperties: false
     },
-    handler: ({ path, maxChars = 32768, offsetChars = 0, findText }) => findText === undefined
-      ? workspace.read(path, maxChars, offsetChars)
-      : workspace.readMatching(path, findText, maxChars, offsetChars)
+    handler: ({ path, maxChars = 32768, offsetChars = 0, findText }) => {
+      if (typeof workspace.readForInspection === 'function') return workspace.readForInspection(path, maxChars, offsetChars, findText);
+      return findText === undefined ? workspace.read(path, maxChars, offsetChars) : workspace.readMatching(path, findText, maxChars, offsetChars);
+    }
   });
   if (typeof workspace.inspectBinary === 'function') registry.register({
     name: 'workspace.inspect_binary',
@@ -723,8 +726,8 @@ export const createReadonlyToolRegistry = (workspace, options = {}) => {
   if (workspace === undefined) return new ToolRegistry(options);
   const { registry: providedRegistry, ...registryOptions } = options;
   const registry = providedRegistry ?? new ToolRegistry({
-    maxOutputBytes: 256 * 1024,
-    maxOutputChars: 128 * 1024,
+    maxOutputBytes: MAX_BOUNDED_OUTPUT,
+    maxOutputChars: MAX_BOUNDED_OUTPUT,
     ...registryOptions
   });
   return registerReadonlyWorkspaceTools(registry, workspace);

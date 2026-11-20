@@ -1,0 +1,134 @@
+{
+  "verifiedAt": "2026-11-17T05:20:00.000Z",
+  "method": "read-only: 文件摘要 + 容器结构解析 + Chrome(headless) 解码播放/seek + 逐秒与 4fps 取样像素统计",
+  "artifacts": [
+    {
+      "file": "docs/artifacts/dda-project-intro-video.mp4",
+      "bytes": 1117607,
+      "sha256": "61264263bacee9e27e9329ededa998d85127f2b7dd4dc5dba3eb6f459ba139b1"
+    },
+    {
+      "file": "docs/artifacts/dda-project-intro-video.webm",
+      "bytes": 2980269,
+      "sha256": "2df687632d8e3f9ad24572844ab2b4364f52ee79302e3ee10efcf61bfea75ca0"
+    },
+    {
+      "file": "docs/artifacts/dda-project-intro-video.html",
+      "bytes": 16593,
+      "sha256": "d5788fe63b5b7bfcb299991d35363658cb9e38f5cbc5cac3ee594ad0bf2b5f86"
+    },
+    {
+      "file": "docs/artifacts/dda-project-intro-video.render.json",
+      "bytes": 986,
+      "sha256": "5e751588ae2ac62ad7d9a726db0784a9362c90a9431a20f90e32a7a3cf814abc"
+    }
+  ],
+  "container": {
+    "mp4": {
+      "topLevel": "ftyp, moov, 6x(moof+mdat)",
+      "fragmented": true,
+      "mvhd": { "version": 1, "timescale": 1000, "duration": 0 },
+      "videoSampleEntry": "avc1 + avcC",
+      "handler": "vide",
+      "audioPresent": false,
+      "audioEvidence": "文件中不存在 mp4a box，也不存在 soun handler 或 mp4a 采样描述"
+    },
+    "webm": {
+      "ebmlMagic": "1a45dfa3",
+      "codec": "V_VP9",
+      "audioPresent": false,
+      "audioEvidence": "不存在 A_OPUS / OpusHead / vorbis 标记",
+      "index": "不存在 Cues 与 SeekHead 元素",
+      "durationElement": false
+    }
+  },
+  "playback": {
+    "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe (headless)",
+    "mp4": {
+      "duration": 87.063133,
+      "width": 1280,
+      "height": 720,
+      "readyState": 4,
+      "error": null,
+      "seekChecks": [
+        { "target": 5, "currentTime": 5 },
+        { "target": 30, "currentTime": 30 },
+        { "target": 60, "currentTime": 60 },
+        { "target": 84, "currentTime": 84 }
+      ],
+      "decodedFramesPerSecond": 7.3
+    },
+    "webm": {
+      "duration": null,
+      "width": 1280,
+      "height": 720,
+      "readyState": 4,
+      "error": null,
+      "seekChecks": [
+        { "target": 5, "currentTime": 5 },
+        { "target": 30, "currentTime": 30 },
+        { "target": 60, "currentTime": 60 },
+        { "target": 84, "currentTime": 84 }
+      ],
+      "decodedFramesPerSecond": 8
+    }
+  },
+  "content": {
+    "sampling": "1 fps, 80x45 灰度缩略图 + 全帧亮度直方图",
+    "samples": 88,
+    "meanLumaRange": [10.4, 29.8],
+    "blackFrames": "仅 0 秒处渐变起点亮度均值约 10.4（首帧入场），无整段黑屏",
+    "detectedSceneCuts": [1, 10, 21, 34, 50, 66, 78],
+    "storyboardBoundaries": [9, 20, 33, 49, 65, 77],
+    "sceneCutMatch": "7 个切点全部命中，最大偏差 1 秒（取样粒度为 1 秒）",
+    "sceneLumaMeans": {
+      "1_开场_0-9": 26.9,
+      "2_痛点_9-20": 27.2,
+      "3_定位_20-33": 26.6,
+      "4_产品_33-49": 26.3,
+      "5_安全_49-65": 29.8,
+      "6_技术_65-77": 26.0,
+      "7_结尾_77-87": 24.6
+    },
+    "subtitleAnimation": {
+      "window": "10.0-19.5s, 4 fps",
+      "captionBandBrightRatio": [0.0037, 0.04634],
+      "monotonic": true,
+      "saturatesAt": 17.25,
+      "conclusion": "逐个字符推进，画面未冻结"
+    },
+    "cardEntryAnimation": {
+      "window": "9.0-11.0s, 4 fps",
+      "frameDeltas": [71434.2, 13423.1, 34408, 10781.9, 1675.7, 7.3, 5.7, 1.4],
+      "conclusion": "卡片入场后在约 2 秒内收敛为静帧，与设计一致"
+    }
+  },
+  "sourcePage": {
+    "title": "dda · 项目介绍视频",
+    "sceneDots": 7,
+    "declaredTotal": "01:27",
+    "stageBox": { "width": 1280, "height": 720.9 },
+    "externalRequests": 0,
+    "pageErrors": 0,
+    "embeddedMedia": { "img": 0, "video": 0, "audio": 0, "linkHref": 0, "scriptSrc": 0 },
+    "keywordPresence": {
+      "dda": true,
+      "可审计": true,
+      "本地优先": true,
+      "READ_ONLY": true,
+      "ActionIntent": true,
+      "PolicyLease": true,
+      "Verifier": true,
+      "Tauri": true,
+      "Cordis": true,
+      "JSON Schema": true
+    }
+  },
+  "findings": [
+    "两个成片均为纯视频轨，无音频：与 README 中“逐字字幕、未合成语音”的说明一致，但意味着 mp4/webm 在播放器里是静音的。",
+    "mp4 为 fragmented MP4，mvhd 的 duration 为 0；Chrome 仍能解出 87.06 秒并可任意 seek，但只读 mvhd 的解析器会读到 0 时长。",
+    "webm 缺少 Cues/SeekHead/Duration 元素：Chrome 的 video.duration 返回 null，seek 正常；交付一律以 mp4 为准。",
+    "render.json 记录 captureMs=87048、frames=711，折算有效画面更新率约 8.2 fps；实测解码帧率也为 7.3-8 fps。视觉上字幕逐字推进可辨，但快速运动镜头会显得偏卡。",
+    "HTML 母版无任何外部请求、无 page error，7 个分镜与页内声明 01:27 与成片 87 秒一致。"
+  ]
+}

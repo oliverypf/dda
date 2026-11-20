@@ -293,6 +293,7 @@ export const createKernelEffectsDispatcher = ({
   executionMode = 'CONTROLLED',
   workspaceRoot,
   workspace,
+  ensureProjectWorkspace,
   invokeTool,
   canLease,
   hasLiveApprover = () => false,
@@ -347,7 +348,7 @@ export const createKernelEffectsDispatcher = ({
       throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.LEASE_NOT_GRANTED, capability);
     }
     const input = discreteInput ?? toDiscreteToolInput(kind, payload);
-    const { riskClass, assessment } = kernelEffectRiskClass({ capability, request: input, workspaceRoot });
+    const { riskClass, assessment } = kernelEffectRiskClass({ capability, request: input, workspaceRoot: workspace?.root || workspaceRoot });
     const key = kernelEffectDenylistKey({ executionMode, effectKind: kind, riskClass });
     const forced = await forcedReasons(key, context);
     const live = hasLiveApprover() === true;
@@ -480,7 +481,7 @@ export const createKernelEffectsDispatcher = ({
         const content = applyTextPatch(current.content, item.replacements);
         discreteInput = { path: current.path, content, expectedDigest: current.digest };
       }
-      const { riskClass, assessment } = kernelEffectRiskClass({ capability: CAPABILITIES.WRITE_FILE, request: discreteInput, workspaceRoot });
+      const { riskClass, assessment } = kernelEffectRiskClass({ capability: CAPABILITIES.WRITE_FILE, request: discreteInput, workspaceRoot: workspace?.root || workspaceRoot });
       const key = kernelEffectDenylistKey({ executionMode, effectKind, riskClass });
       const forced = await forcedReasons(key, context);
       prepared.push({ item, effectKind, discreteInput, riskClass, key, forced, dangerous: assessment.dangerous,
@@ -562,6 +563,7 @@ export const createKernelEffectsDispatcher = ({
     }
     if (!availability?.available) throw new KernelEffectError(KERNEL_EFFECT_ERROR_CODES.UNAVAILABLE, availability?.reason ?? 'EFFECTS_DISABLED');
     await assertAlive();
+    if (enabledKinds.has(kind) || kind === KERNEL_BATCH_KIND) await ensureProjectWorkspace?.();
     if (kind === KERNEL_BATCH_KIND) return runBatch(payload, context);
     return runEffect(kind, payload, context);
   };

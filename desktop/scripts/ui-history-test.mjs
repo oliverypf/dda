@@ -141,6 +141,7 @@ try {
   results.push({ name: 'startup history before health/recovery, summaries plus one 100-event page', pass: true });
 
   assert.match(await page.locator('[data-model-cache="composer"]').innerText(), /缓存命中率/);
+  assert.match(await page.locator('[data-model-cache="composer"]').innerText(), /0 轮/);
   await identity(page);
   await page.locator('textarea[name="prompt"]').fill('draft survives switching');
   await page.evaluate(() => window.__historyTest.release('health'));
@@ -151,10 +152,11 @@ try {
   await page.evaluate(() => window.__historyTest.release('recovery'));
   await choose(page, 'a');
   await assertIdentity(page);
-  await page.waitForFunction(() => document.querySelector('[data-model-cache="composer"]')?.textContent.includes('80.0%'));
+  await page.waitForFunction(() => window.__historyTest.calls.some((call) => call.command === 'runtime_dashboard' && call.args.details === true));
   await assertIdentity(page);
   const metric = page.locator('[data-model-cache="composer"]');
-  assert.match(await metric.innerText(), /覆盖 3\/4 次调用/);
+  assert.match(await metric.innerText(), /缓存命中率 未知/);
+  assert.doesNotMatch(await metric.innerText(), /80\.0%/);
   const box = await metric.boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= page.viewportSize().height);
   await page.screenshot({ path: resolve(output, 'cache-history.png') });

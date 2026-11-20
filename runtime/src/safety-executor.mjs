@@ -3,10 +3,10 @@ export {
   CAPABILITIES,
   EXECUTION_MODES,
   PolicyLease,
+  MAX_BOUNDED_OUTPUT,
   RuntimeSafetyMonitor,
   SAFETY_ERROR_CODES,
   SafetyError,
-  WorkspaceLeaseRegistry,
   boundOutput,
   sanitizeOutput
 } from './runtime-safety-monitor.mjs';

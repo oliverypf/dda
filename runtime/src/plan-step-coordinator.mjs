@@ -219,11 +219,13 @@ export class PlanStepCoordinator {
         };
         results.push(record);
         if (report.status === 'PASS') {
+          const userAnswer = typeof result?.userAnswer === 'string' ? result.userAnswer.trim() : '';
           await this.#update(step.stepId, {
             status: 'SUCCEEDED',
             attempt,
             ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
-            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {}),
+            ...(userAnswer ? { userAnswer } : {})
           });
           completed = true;
           break;
@@ -448,6 +450,10 @@ export class PlanStepCoordinator {
       for (const key of ['attempt', 'actionDigest', 'outputDigest', 'errorCode']) {
         if (patch[key] !== undefined) next[key] = patch[key];
         else if (patch[key] === undefined && key === 'errorCode' && Object.hasOwn(patch, key)) delete next[key];
+      }
+      if (typeof patch.userAnswer === 'string') {
+        const userAnswer = patch.userAnswer.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '').trim().slice(0, 4000);
+        if (userAnswer) next.userAnswer = userAnswer;
       }
       if (patch.diagnosisDigest !== undefined) next.diagnosisDigest = bounded(patch.diagnosisDigest, 120);
       return next;

@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createTrajectoryStore } from '../src/trajectory-store.mjs';
+import { openHarnessDatabase } from '../src/harness-store-schema.mjs';
 const execFileAsync = promisify(execFile);
 
 import {
@@ -255,6 +256,40 @@ test('CLI imports, verifies and lists legacy events through the Harness store', 
   assert.equal(purged.purged.length, 1);
   const afterPurge = await invoke('verify', '--harness-event-store', harnessPath);
   assert.deepEqual(afterPurge.verification, { ok: true, eventCount: 0, receiptCount: 0, tombstoneCount: 1 });
+});
+
+test('a tombstone archived with a null purge time is repaired on load', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-harness-tombstone-repair-'));
+  const storagePath = join(directory, 'events.db');
+  const store = createHarnessEventStore({ storagePath, now: () => 4_000 });
+  await store.append({ runId: 'run-archived', kind: 'TaskRunCompleted', payload: {} });
+  await store.purgeRun('run-archived', { reason: 'THREAD_ARCHIVED' });
+  const db = openHarnessDatabase(storagePath);
+  try {
+    const current = JSON.parse(db.prepare('SELECT envelope FROM run_tombstones WHERE run_id=?').get('run-archived').envelope);
+    const legacy = {
+      schemaVersion: current.schemaVersion,
+      tombstoneId: current.tombstoneId,
+      runId: current.runId,
+      purgedAtMs: null,
+      reasonDigest: current.reasonDigest
+    };
+    const broken = { ...legacy };
+    delete broken.purgedAtMs;
+    db.prepare('UPDATE run_tombstones SET envelope=? WHERE run_id=?').run(
+      JSON.stringify({ ...broken, recordDigest: harnessDigest(legacy) }),
+      'run-archived'
+    );
+  } finally { db.close(); }
+  const reopened = createHarnessEventStore({ storagePath, now: () => 8_000 });
+  assert.equal((await reopened.verify()).ok, true);
+  const check = openHarnessDatabase(storagePath, { readOnly: true, verifyIntegrity: false });
+  try {
+    const repaired = JSON.parse(check.prepare('SELECT envelope FROM run_tombstones WHERE run_id=?').get('run-archived').envelope);
+    assert.equal(repaired.purgedAtMs, 8_000);
+    const { recordDigest, ...unsigned } = repaired;
+    assert.equal(recordDigest, harnessDigest(unsigned));
+  } finally { check.close(); }
 });
 
 test('a failed append does not poison subsequent reads', async () => {

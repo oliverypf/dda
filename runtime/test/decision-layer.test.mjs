@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDecisionEngine } from '../src/decision/engine.mjs';
+import { observedWorkspaceRead, verifiedWorkspaceReadEvidence } from '../src/decision/evidence-claim.mjs';
 import { JevClient } from '../src/decision/jev-client.mjs';
 import {
   deterministicEvidenceJudge,
@@ -62,6 +63,43 @@ test('Jev client normalizes finite-choice answers and sends no tool surface', as
   assert.equal(Object.hasOwn(request.questions.failureType, 'choices'), false);
   assert.equal(Object.hasOwn(request, 'output'), false);
   assert.equal(Object.hasOwn(request, 'tools'), false);
+});
+
+test('public network tools ask only for a malicious URL verdict and allow uncertainty', async () => {
+  const networkUrl = 'https://public.example.test/docs';
+  for (const tool of ['network.request', 'browser.open']) {
+    for (const [answer, decision, reasonCode] of [
+      [{ choice: 'MALICIOUS', confidence: 0.99 }, 'BLOCK', 'NETWORK_URL_MALICIOUS'],
+      [{ choice: 'MALICIOUS' }, 'BLOCK', 'NETWORK_URL_MALICIOUS'],
+      [{ choice: 'MALICIOUS', confidence: 0.55 }, 'ALLOW', 'NETWORK_URL_UNKNOWN'],
+      [{ choice: 'MALICIOUS', confidence: 99 }, 'ALLOW', 'NETWORK_URL_UNKNOWN'],
+      [{ choice: 'UNKNOWN', confidence: 0.99 }, 'ALLOW', 'NETWORK_URL_UNKNOWN'],
+      [{ choice: 'BENIGN', confidence: 0.98 }, 'ALLOW', 'NETWORK_URL_BENIGN'],
+      [{ choice: 'REQUEST_EVIDENCE' }, 'ALLOW', 'NETWORK_URL_UNKNOWN'],
+      [undefined, 'ALLOW', 'NETWORK_URL_UNKNOWN'],
+      [new Error('JEV_TIMEOUT'), 'ALLOW', 'NETWORK_URL_REVIEW_UNAVAILABLE']
+    ]) {
+      let requests = 0;
+      const engine = createDecisionEngine({ enabled: true, client: { async decide({ questions, state }) {
+        requests++;
+        assert.deepEqual(Object.keys(questions), ['networkUrl']);
+        assert.deepEqual(questions.networkUrl.context, { url: networkUrl });
+        assert.deepEqual(state.evidence, []);
+        assert.equal(state.goal, '');
+        if (answer instanceof Error) throw answer;
+        return { answers: { networkUrl: answer } };
+      } } });
+      const state = { tool, goal: 'private goal', evidence: [{ id: 'sensitive', claim: 'sensitive' }] };
+      const result = await engine.decideActionGate({ state, networkUrl });
+      assert.equal(result.decision, decision);
+      assert.equal(result.reasonCode, reasonCode);
+      assert.equal(requests, 1);
+      assert.equal((await engine.decideActionGate({ state })).decision, 'ALLOW');
+      assert.equal((await engine.decideActionGate({ state, networkUrl,
+        hardDecision: { decision: 'BLOCK', reasonCode: 'HOST_POLICY_BLOCK' } })).reasonCode, 'HOST_POLICY_BLOCK');
+      assert.equal(requests, 1);
+    }
+  }
 });
 
 test('decision engine batches unresolved Jev questions and returns a finite control action', async () => {
@@ -191,7 +229,72 @@ test('Jev owns candidate selection and action gating without a model verifier ro
   assert.equal(gate.decision, 'BLOCK');
   const behavior = await engine.judgeVerification({ ruleStatus: 'PASS', state: { taskId: 'task-jev', goal: 'finish' }, evidence: [] });
   assert.equal(behavior.decision, 'UNCERTAIN');
-  assert.deepEqual(calls, [['candidate'], ['actionGate'], ['verification']]);
+  assert.deepEqual(calls, [['candidate'], ['actionGate', 'actionGateReason'], ['verification', 'verificationReason']]);
+});
+
+test('workspace read verification requires matching successful host observations', () => {
+  const definition = { readOnly: true };
+  const workspaceRead = observedWorkspaceRead('workspace.read', definition, { path: 'desktop/package.json' });
+  assert.deepEqual(workspaceRead, { path: 'desktop/package.json', scope: 'IN_WORKSPACE', readOnly: true });
+  assert.equal(observedWorkspaceRead('workspace.read', definition, { path: 'C:/other/package.json' }), undefined);
+  assert.equal(observedWorkspaceRead('workspace.read', definition, { path: '/other/package.json' }), undefined);
+  assert.equal(observedWorkspaceRead('workspace.read', definition, { path: 'README.md', found: false }), undefined);
+  assert.equal(observedWorkspaceRead('shell.execute', definition, { path: 'README.md' }), undefined);
+  assert.equal(observedWorkspaceRead('workspace.read', { readOnly: false }, { path: 'README.md' }), undefined);
+  const outputDigest = `sha256:${'a'.repeat(64)}`;
+  const action = { name: 'workspace.read', state: 'SUCCEEDED', outputDigest, verifiedResult: { workspaceRead, outputDigest } };
+  assert.equal(verifiedWorkspaceReadEvidence([action]).completedInvocations, 1);
+  assert.equal(verifiedWorkspaceReadEvidence([]), undefined);
+  assert.equal(verifiedWorkspaceReadEvidence([{ ...action, state: 'FAILED', invocationAttempted: false }]), undefined);
+  assert.equal(verifiedWorkspaceReadEvidence([{ ...action, outputDigest: 'mismatch' }]), undefined);
+  assert.equal(verifiedWorkspaceReadEvidence([action, { name: 'file.write', state: 'SUCCEEDED' }]), undefined);
+});
+
+test('a clean prerequisite retry retains prior binary-read limitations and blocked proposals without counting them as evidence', () => {
+  const outputDigest = 'sha256:' + '1'.repeat(64);
+  const current = { name: 'workspace.read', state: 'SUCCEEDED', outputDigest,
+    verifiedResult: { outputDigest, workspaceRead: { scope: 'IN_WORKSPACE', path: 'docs/build.mjs', readOnly: true } } };
+  const denied = { name: 'shell.execute', state: 'FAILED', invocationAttempted: false,
+    gateDecision: 'BLOCK', errorCode: 'TOOL_OUTSIDE_EXECUTION_SCOPE' };
+  const binary = { name: 'workspace.read', state: 'FAILED', errorCode: 'WORKSPACE_BINARY_FILE',
+    path: 'docs/demo.pptx', errorMessage: 'docs/demo.pptx' };
+  const evidence = verifiedWorkspaceReadEvidence([current], [denied, binary, current]);
+  assert.equal(evidence.completedInvocations, 1);
+  assert.equal(evidence.priorLimitCount, 2);
+  assert.deepEqual(evidence.recentResults.map(item => item.path), ['docs/build.mjs']);
+  assert.deepEqual(evidence.priorLimits.map(item => item.errorCode), ['TOOL_OUTSIDE_EXECUTION_SCOPE', 'WORKSPACE_BINARY_FILE']);
+  assert.equal(verifiedWorkspaceReadEvidence([current, binary], []), undefined);
+  assert.equal(verifiedWorkspaceReadEvidence([], [current, denied]), undefined);
+  for (const other of [
+    { ...denied, invocationAttempted: true }, { ...denied, effectApplied: true },
+    { ...denied, errorCode: 'APPROVAL_DENIED' }, { ...binary, errorMessage: 'C:/outside/demo.pptx' },
+    { ...binary, errorCode: 'WORKSPACE_SENSITIVE_PATH' }, { ...binary, name: 'file.write' },
+    { ...current, name: 'shell.execute' }, { ...current, verifiedResult: undefined }
+  ]) assert.equal(verifiedWorkspaceReadEvidence([current], [other]), undefined);
+});
+
+test('bounded Jev read verdict honors FAIL and treats an invalid reply as a provider failure', async () => {
+  const engine = createDecisionEngine({ enabled: true, client: {
+    async decide({ questions }) {
+      assert.deepEqual(Object.keys(questions), ['verification']);
+      assert.deepEqual(questions.verification.choices, ['PASS', 'FAIL']);
+      return { answers: { verification: { choice } } };
+    }
+  } });
+  const input = { state: { action: { kind: 'READ' } }, workspaceRead: {
+    completedInvocations: 1, inWorkspaceInvocations: 1, readOnlyInvocations: 1, recentResults: []
+  } };
+  let choice = 'FAIL';
+  const negative = await engine.judgeVerification(input);
+  assert.equal(negative.decision, 'FAIL');
+  assert.equal(negative.source, 'jev');
+  assert.equal(negative.reasonCode, 'JEV_WORKSPACE_READ_REJECTED');
+  choice = 'UNCERTAIN';
+  const invalid = await engine.judgeVerification(input);
+  assert.equal(invalid.decision, 'UNCERTAIN');
+  assert.equal(invalid.source, 'rule');
+  assert.equal(invalid.fallbackUsed, true);
+  assert.equal(invalid.reasonCode, 'JEV_REQUEST_FAILED');
 });
 
 test('action gates retain host hard blocks and actual Jev refusals while avoiding duplicate instruction evidence', async () => {
@@ -213,4 +316,102 @@ test('action gates retain host hard blocks and actual Jev refusals while avoidin
   assert.equal(actual.decision, 'BLOCK', 'low confidence does not silently convert an actual refusal into permission');
   assert.equal(actual.confidence, 0.05);
   assert.equal(calls, 1);
+});
+
+test('control judgments ask Jev even when a keyword rule already matches', async () => {
+  let asked;
+  const engine = createDecisionEngine({
+    enabled: true,
+    enforce: true,
+    client: {
+      async decide({ questions }) {
+        asked = Object.keys(questions).sort();
+        return { latencyMs: 3, answers: { failureType: { choice: 'CODE_ERROR', confidence: 0.9 } } };
+      }
+    }
+  });
+  const result = await engine.decide({
+    taskId: 'task-jev-first',
+    action: { kind: 'EXECUTE', summary: 'read a file' },
+    observation: { status: 'FAIL', ok: false, summary: 'permission denied' }
+  });
+  assert.deepEqual(asked, ['escalation', 'evidence', 'failureType', 'stop', 'test']);
+  assert.equal(result.failure.decision, 'CODE_ERROR');
+  assert.equal(result.failure.source, 'jev');
+});
+
+test('a missed control answer falls back to the keyword rule', async () => {
+  const engine = createDecisionEngine({
+    enabled: true,
+    enforce: true,
+    client: {
+      async decide() {
+        const error = new Error('down');
+        error.code = 'JEV_TIMEOUT';
+        throw error;
+      }
+    }
+  });
+  const result = await engine.decide({
+    taskId: 'task-rule-fallback',
+    action: { kind: 'EXECUTE', summary: 'read a file' },
+    observation: { status: 'FAIL', ok: false, summary: 'permission denied' }
+  });
+  assert.equal(result.failure.decision, 'PERMISSION');
+  assert.equal(result.failure.source, 'rule');
+  assert.equal(result.fallbackReason, 'JEV_TIMEOUT');
+});
+
+test('explicit controlJudgmentsEnabled false keeps a matched failure rule', async () => {
+  let asked = [];
+  const engine = createDecisionEngine({
+    enabled: true,
+    enforce: true,
+    config: { controlJudgmentsEnabled: false },
+    client: {
+      async decide({ questions }) {
+        asked = Object.keys(questions);
+        return { answers: { failureType: { choice: 'CODE_ERROR', confidence: 1 } } };
+      }
+    }
+  });
+  const result = await engine.decide({
+    taskId: 'task-rule-first',
+    action: { kind: 'EXECUTE' },
+    observation: { status: 'FAIL', ok: false, summary: 'permission denied' }
+  });
+  assert.equal(asked.includes('failureType'), false);
+  assert.equal(result.failure.decision, 'PERMISSION');
+  assert.equal(result.failure.source, 'rule');
+});
+
+test('candidate ranking follows Jev scores after the chosen id', async () => {
+  const engine = createDecisionEngine({
+    enabled: true,
+    enforce: true,
+    client: {
+      async decide() {
+        return {
+          latencyMs: 2,
+          answers: {
+            candidate: {
+              choice: 'full-roles',
+              confidence: 0.7,
+              scores: { 'executor-only': 0.2, 'full-roles': 0.7, 'unused': 1 }
+            }
+          }
+        };
+      }
+    }
+  });
+  const selected = await engine.selectCandidates({
+    prompt: 'Choose the role set.',
+    criteria: { 'full-roles': 'plan', 'executor-only': 'one turn' },
+    candidates: [
+      { candidateId: 'executor-only', expectedCost: 0 },
+      { candidateId: 'full-roles', expectedCost: 1 }
+    ]
+  });
+  assert.equal(selected.selectedCandidateId, 'full-roles');
+  assert.deepEqual(selected.ranking.map((item) => item.candidateId), ['full-roles', 'executor-only']);
 });

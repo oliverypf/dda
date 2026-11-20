@@ -93,6 +93,8 @@ node linux-cli/scripts/pack.mjs              # 先 (cd runtime && npm install)
 - 项目目录与 `.git` 属 BitFun 会话域 → 沙箱可读写；`/storage/Users/currentUser/.harmonybrew/Cellar` 只读+可执行+不可改
 
 **本机 git 操作的正确姿势**（brew git 修复前/沙箱内）：
+- **推送可用 SSH**：`~/.ssh/id_ed25519` 已注册 GitHub（`ssh -T git@github.com` 认证为 oliverypf），dulwich 直接 push `git@github.com:oliverypf/dda.git` 即可；系统 ssh 在 `/usr/bin/ssh` ✓（HTTPS 无凭证）
+- 提交历史（2026-11-20）：分支 `bitfun/harmonyos-pc-clt-build-adaptation` 已推送，两个提交 = modelVersion 适配 + 本记忆文档；`gh` CLI 未安装，PR 需网页创建
 ```sh
 PY=/data/service/hnp/bin/python3
 $PY -c "

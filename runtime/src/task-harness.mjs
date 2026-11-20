@@ -17,8 +17,22 @@ export function uniqueExcerptOffset(source, findText, offsetChars = 0) {
   return offset;
 }
 
-const inspections = new Set(['workspace.read', 'workspace.list', 'workspace.focus']);
+const inspections = new Set([
+  'workspace.read', 'workspace.list', 'workspace.focus',
+  'kernel.workspace_read', 'kernel.workspace_list', 'kernel.workspace_focus'
+]);
 const writes = new Set(['file.patch', 'file.write']);
+
+// A plan that still has a mutation step must not stay in read-only inspection.
+// Analysis-only plans (INSPECT, DIAGNOSE, VERIFY, …) are not in this set.
+const MUTATION_STEP_KINDS = new Set([
+  'IMPLEMENT', 'MODIFY', 'BUILD', 'PATCH', 'WRITE', 'FIX', 'CHANGE', 'EDIT'
+]);
+
+export function planRequiresWorkspaceMutation(plan) {
+  const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+  return steps.some((step) => MUTATION_STEP_KINDS.has(String(step?.actionKind ?? '').trim().toUpperCase()));
+}
 
 // Stable, non-masking diagnosis for the recovery-aware consumers (planner and
 // supervisor). These describe what stopped the attempt without rewriting the

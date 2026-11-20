@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { dirname, join } from 'node:path';
 import {
   ACTIONS,
   CAPABILITIES,
@@ -12,104 +11,41 @@ import {
   PolicyLease,
   RestrictedWindowsExecutor,
   RuntimeSafetyMonitor,
-  WorkspaceLeaseRegistry,
   SAFETY_ERROR_CODES
 } from '../src/safety-executor.mjs';
 
 const nodeCommand = process.execPath;
 
-test('defaults to READ_ONLY and refuses every side effect before spawning', async () => {
+test('defaults to CONTROLLED but refuses every side effect without a lease', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-readonly-'));
   const monitor = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  assert.equal(monitor.mode, 'CONTROLLED');
+  assert.deepEqual(EXECUTION_MODES, { CONTROLLED: 'CONTROLLED' });
+  assert.throws(() => new RuntimeSafetyMonitor({ workspaceRoot: workspace, mode: 'READ_ONLY' }), /SAFETY_INVALID_OPTIONS:mode/);
   const executor = new RestrictedWindowsExecutor({ monitor });
   await assert.rejects(executor.shell({ command: nodeCommand, args: ['-e', 'process.exit(0)'] }), (error) => {
-    assert.equal(error.code, SAFETY_ERROR_CODES.READ_ONLY);
+    assert.equal(error.code, SAFETY_ERROR_CODES.LEASE_REQUIRED);
     return true;
   });
-  assert.throws(() => monitor.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_READ_ONLY/);
+  for (const action of Object.values(ACTIONS)) {
+    await assert.rejects(monitor.authorize(action, {}), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  }
+  await assert.rejects(executor.writeFile({ path: 'must-not-exist.txt', content: 'denied' }), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  await assert.rejects(readFile(join(workspace, 'must-not-exist.txt')), { code: 'ENOENT' });
 });
 
-test('issues at most one workspace-mutating lease until execution releases it', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-workspace-lock-'));
-  const registry = new WorkspaceLeaseRegistry();
-  const first = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  const second = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  const lease = first.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] });
-  assert.throws(() => second.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  lease.releaseWorkspace();
-  assert.doesNotThrow(() => second.issueLease({ capabilities: [CAPABILITIES.SHELL] }));
-});
+test('authorizes independent commands in the same workspace without a shared lock', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-independent-'));
+  const first = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  const second = new RuntimeSafetyMonitor({ workspaceRoot: workspace });
+  const firstLease = first.issueLease({ capabilities: [CAPABILITIES.SHELL] });
+  const secondLease = second.issueLease({ capabilities: [CAPABILITIES.SHELL] });
+  const request = { command: 'node', args: ['--version'] };
 
-test('network leases do not claim the writable workspace slot', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-network-lock-'));
-  const registry = new WorkspaceLeaseRegistry();
-  const monitor = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: registry
-  });
-  monitor.issueLease({ capabilities: [CAPABILITIES.NETWORK], networkTargets: [{ host: 'example.com', methods: ['GET'] }] });
-  assert.doesNotThrow(() => monitor.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] }));
-});
-
-test('workspace lock state is shared across independent registries', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-cross-process-lock-'));
-  const lockDirectory = await mkdtemp(join(tmpdir(), 'hmcodex-safety-lock-dir-'));
-  const first = new WorkspaceLeaseRegistry({ lockDirectory });
-  const second = new WorkspaceLeaseRegistry({ lockDirectory });
-  const monitorA = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: first
-  });
-  const monitorB = new RuntimeSafetyMonitor({
-    mode: EXECUTION_MODES.CONTROLLED,
-    workspaceRoot: workspace,
-    workspaceLeaseRegistry: second
-  });
-  const lease = monitorA.issueLease({ capabilities: [CAPABILITIES.WRITE_FILE] });
-  assert.throws(() => monitorB.issueLease({ capabilities: [CAPABILITIES.SHELL] }), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  lease.releaseWorkspace();
-  assert.doesNotThrow(() => monitorB.issueLease({ capabilities: [CAPABILITIES.SHELL] }));
-});
-
-test('workspace lock rejects a competing child process and recovers after release', async (t) => {
-  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-child-lock-'));
-  const lockDirectory = await mkdtemp(join(tmpdir(), 'hmcodex-safety-child-lock-dir-'));
-  const registry = new WorkspaceLeaseRegistry({ lockDirectory });
-  const childSource = `
-    import { WorkspaceLeaseRegistry } from ${JSON.stringify(new URL('../src/runtime-safety-monitor.mjs', import.meta.url).href)};
-    const registry = new WorkspaceLeaseRegistry({ lockDirectory: ${JSON.stringify(lockDirectory)} });
-    registry.acquire(${JSON.stringify(workspace)}, 'child-lease', Date.now() + 10000);
-    console.log('WORKSPACE_LOCKED');
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => {
-      if (chunk.trim() === 'release') {
-        registry.release(${JSON.stringify(workspace)}, 'child-lease');
-        process.exit(0);
-      }
-    });
-  `;
-  const child = spawn(process.execPath, ['--input-type=module', '-e', childSource], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true
-  });
-  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill(); });
-  const [marker] = await once(child.stdout, 'data');
-  assert.equal(marker.toString().trim(), 'WORKSPACE_LOCKED');
-  assert.throws(() => registry.acquire(workspace, 'parent-lease', Date.now() + 10000), /SAFETY_WORKSPACE_LEASE_BUSY/);
-  child.stdin.write('release\n');
-  await once(child, 'exit');
-  assert.doesNotThrow(() => registry.acquire(workspace, 'parent-lease', Date.now() + 10000));
-  registry.release(workspace, 'parent-lease');
+  await assert.rejects(second.authorize(ACTIONS.SHELL, request, firstLease), { code: SAFETY_ERROR_CODES.LEASE_REQUIRED });
+  await first.authorize(ACTIONS.SHELL, request, firstLease);
+  await second.authorize(ACTIONS.SHELL, request, secondLease);
+  await assert.rejects(second.authorize(ACTIONS.SHELL, request, secondLease), { code: SAFETY_ERROR_CODES.LEASE_USED });
 });
 
 test('runs an allowlisted command with bounded, redacted output in CONTROLLED mode', async () => {
@@ -299,4 +235,46 @@ test('timeout clears a detached grandchild process tree', { skip: process.platfo
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.fail('detached grandchild survived the Windows process-tree cleanup');
+});
+
+const provisionedCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const provisionedNpxCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+const hostCliAvailable = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
+const windowsCliTest = { skip: process.platform !== 'win32' || !hostCliAvailable(provisionedCli) || !hostCliAvailable(provisionedNpxCli) };
+
+test('maps bare npm/npx commands to the provisioned Node CLI on Windows', windowsCliTest, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-npm-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: ['node'] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  for (const [command, leaseCommands] of [['npm', ['npm']], ['npm.cmd', ['npm']], ['npx.cmd', ['npx']]]) {
+    const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: leaseCommands });
+    const result = await executor.shell({ command, args: ['--version'], timeoutMs: 15000 }, { lease });
+    assert.equal(result.ok, true, command);
+    assert.match(result.stdout.trim(), /\d+\.\d+\.\d+/u, command);
+    // One-shot lease is consumed by the first authorized execution.
+    await assert.rejects(executor.shell({ command, args: ['--version'] }, { lease }), /SAFETY_LEASE_USED/);
+  }
+});
+
+test('a node-scoped lease cannot authorize npm before the CLI mapping', windowsCliTest, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-npm-deny-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: ['node'] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: ['node'] });
+  await assert.rejects(executor.shell({ command: 'npm', args: ['--version'] }, { lease }), { code: 'SAFETY_COMMAND_NOT_ALLOWED' });
+});
+
+test('spawn failures keep the generic code with a bounded OS reason only', { skip: process.platform !== 'win32' }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-safety-spawn-'));
+  const monitor = new RuntimeSafetyMonitor({ mode: EXECUTION_MODES.CONTROLLED, workspaceRoot: workspace, commandAllowlist: [] });
+  const executor = new RestrictedWindowsExecutor({ monitor });
+  const missing = 'dda-missing-tool-zz42';
+  const lease = monitor.issueLease({ capabilities: [CAPABILITIES.SHELL], commands: [missing] });
+  await assert.rejects(executor.shell({ command: missing, args: ['--secret-arg', 'api_key=private-value'] }, { lease }), (error) => {
+    assert.equal(error.code, 'EXECUTOR_SPAWN_FAILED');
+    assert.equal(error.message, 'EXECUTOR_SPAWN_FAILED:ENOENT');
+    assert.equal(error.message.includes(workspace), false);
+    assert.equal(error.message.includes('private-value'), false);
+    return true;
+  });
 });

@@ -110,7 +110,33 @@ export const createEffectJournal = ({ storagePath } = {}) => {
 
   const persist = async () => {
     if (!storagePath) throw new JournalError(JOURNAL_ERROR_CODES.UNAVAILABLE, 'no storagePath');
-    await persistJsonFile(storagePath, snapshot);
+    await persistJsonFile(storagePath, snapshot, {
+      merge: (existing, incoming) => {
+        const prior = validateSnapshot(existing);
+        const current = validateSnapshot(incoming);
+        const byId = new Map(prior.effects.map((item) => [item.effectId, item]));
+        for (const item of current.effects) {
+          const prev = byId.get(item.effectId);
+          if (!prev || TERMINAL.has(item.state) || !TERMINAL.has(prev.state)) {
+            byId.set(item.effectId, item);
+          }
+        }
+        const clearSeen = new Set();
+        const uncertainClears = [];
+        for (const clear of [...prior.uncertainClears, ...current.uncertainClears]) {
+          const key = JSON.stringify(clear);
+          if (!clearSeen.has(key)) {
+            clearSeen.add(key);
+            uncertainClears.push(clear);
+          }
+        }
+        return {
+          journalSchema: EFFECT_JOURNAL_SCHEMA,
+          effects: [...byId.values()],
+          uncertainClears
+        };
+      }
+    });
   };
 
   const loadUnlocked = async () => {
@@ -140,6 +166,12 @@ export const createEffectJournal = ({ storagePath } = {}) => {
     const now = Date.now();
     for (const effect of snapshot.effects) {
       if (effect.state === JOURNAL_STATES.STARTED) {
+        // A journal is rehydrated by a new runtime instance. The persisted PID
+        // only identifies the writer that last touched the row; it cannot prove
+        // that the interrupted operation is still active (for example, a
+        // parent process may remain alive while the child runtime is replaced).
+        // Treat every non-terminal STARTED row as UNKNOWN so reconciliation can
+        // fail closed instead of leaving the task permanently stuck in STARTED.
         effect.state = JOURNAL_STATES.UNKNOWN;
         effect.unknownAtMs = now;
         effect.unknownReason = 'RESTART_STARTED_WITHOUT_TERMINAL';
@@ -158,8 +190,10 @@ export const createEffectJournal = ({ storagePath } = {}) => {
     if (!storagePath) throw new JournalError(JOURNAL_ERROR_CODES.UNAVAILABLE, 'no storagePath');
     let effect = find(effectId);
     if (!effect) {
-      effect = { effectId, state: JOURNAL_STATES.REQUESTED, createdAtMs: Date.now() };
+      effect = { effectId, state: JOURNAL_STATES.REQUESTED, ownerPid: process.pid, createdAtMs: Date.now() };
       snapshot.effects.push(effect);
+    } else if (!TERMINAL.has(effect.state)) {
+      effect.ownerPid = process.pid;
     }
     // Idempotent terminal: never rewrite COMPLETED/FAILED/UNKNOWN to UNKNOWN via onLeaseFailed.
     if (TERMINAL.has(effect.state) && state === JOURNAL_STATES.UNKNOWN) {

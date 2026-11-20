@@ -46,6 +46,7 @@ ADR 记录长期、难以逆转或跨模块的设计选择。专项规范描述�
 | [0022](0022-prompt-cache-stable-prefix.md) | Provider prompt cache 使用稳定前缀和 usage accounting，作为 Windows Phase 4 的缓存治理基线 |
 | [0023](0023-linux-cli-client.md) | Linux 首期采用无界面 CLI，复用 Node/Cordis runtime，通过 Linux 平台适配层接入 |
 | [0024](0024-harness-facade-and-package-split.md) | 以 HarnessFacade 作为稳定入口，分步从单体 runtime 抽取 `packages/harness-core` 与 `packages/harness-model` |
+| [0026](0026-remove-read-only-execution-mode.md) | 新任务统一 CONTROLLED，废弃只读执行模式与渠道，保留观察权限和历史兼容 |
 
 ## 拟议决策
 
@@ -55,9 +56,9 @@ ADR 记录长期、难以逆转或跨模块的设计选择。专项规范描述�
 
 ## 编号缺口
 
-现存 ADR 为 `0001`–`0007`、`0021`–`0025`，共 12 份；`0025` 当前为 `Proposed`。
+现存 ADR 为 `0001`–`0007`、`0021`–`0026`，共 13 份；`0025` 当前为 `Proposed`。
 
 - `0008`–`0020` 是**未分配编号（never allocated）**：这些文件从未存在，也没有任何文档、代码或测试引用它们。看到编号跳跃不表示记录丢失或被删除，不需要寻找或补写。
 - `0021` 保持现有编号不变：`WINDOWS_PHASE2_PROGRESS.md` 已按该编号引用它，重编号会打断既有证据链。
-- 编号只增不复用，因此下一份新 ADR 从 `0026` 开始；不要回填 `0008`–`0020`。
+- 编号只增不复用，因此下一份新 ADR 从 `0027` 开始；不要回填 `0008`–`0020`。
 - `0021-candidate-failed-egress.md` 目前未使用本文件的标准模板（缺 `Status` / `Date` / `Deciders` 头，正文为英文契约说明）。内容有效，但后续修订时建议补齐头部字段以便与其他 ADR 一致。

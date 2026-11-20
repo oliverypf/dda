@@ -126,6 +126,33 @@ test('role context recovery preserves and validates adapter, thread and binding 
   assert.deepEqual(threadChanged.metadata.replacementFields, ['threadId']);
 });
 
+test('role context snapshot with an undefined field reloads after persistence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-role-undefined-'));
+  const storagePath = join(directory, 'roles.json');
+  try {
+    const manager = new RoleSessionManager({ storagePath, idFactory: () => 'fixed-undefined' });
+    const context = manager.allocate({
+      runId: 'run-undefined-snapshot',
+      role: 'council-planner',
+      threadId: 'thread-1',
+      bindingSnapshot: {
+        role: 'council-planner',
+        requested: { role: 'planner', purpose: 'PLAN_REVIEW' },
+        resolved: undefined
+      }
+    });
+    await manager.flush();
+    const reloaded = new RoleSessionManager({ storagePath });
+    await reloaded.load();
+    const restored = reloaded.get(context.contextId);
+    assert.equal(restored.bindingSnapshotDigest, context.bindingSnapshotDigest);
+    assert.equal(Object.hasOwn(restored.bindingSnapshot, 'resolved'), false);
+    assert.deepEqual(restored.bindingSnapshot.requested, { role: 'planner', purpose: 'PLAN_REVIEW' });
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test('role context persistence rejects tampered identity and binding snapshots', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-role-identity-'));
   const storagePath = join(directory, 'roles.json');
@@ -146,10 +173,10 @@ test('role context persistence rejects tampered identity and binding snapshots',
   assert.equal(context.threadId, 'thread-1');
 });
 
-test('rule router blocks modify tasks in read-only mode', () => {
+test('rule router rejects retired modes and routes observation tasks by default', () => {
   const router = new RuleRouter();
   assert.equal(router.resolve({ prompt: '请修改文件', mode: 'READ_ONLY' }).status, 'BLOCKED');
-  assert.equal(router.resolve({ prompt: '检查项目结构', mode: 'READ_ONLY' }).taskClass, 'inspect');
+  assert.equal(router.resolve({ prompt: '检查项目结构' }).taskClass, 'inspect');
 });
 
 test('rule router fails closed for invalid mode or role filters', () => {
@@ -266,6 +293,48 @@ test('reconciles persisted busy contexts only after their owner is lost', async 
   assert.equal(lost.reconciled, 1);
   assert.equal(restored.get(context.contextId).state, 'FAILED');
   assert.equal(restored.get(context.contextId).reason, 'OWNER_PROCESS_LOST');
+});
+
+test('task reconcile reports only the requested session and still closes other dead contexts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-role-session-'));
+  const storagePath = join(directory, 'roles.json');
+  const manager = new RoleSessionManager({ storagePath, ownerPid: 11, runtimeInstanceId: 'runtime-a', idFactory: () => 'fixed' });
+  const own = manager.allocate({ runId: 'run-a', sessionId: 'ui-a', role: 'planner' });
+  const other = manager.allocate({ runId: 'run-b', sessionId: 'ui-b', role: 'executor' });
+  const legacy = manager.allocate({ runId: 'run-old', role: 'verifier' });
+  manager.setBusy(own.contextId);
+  manager.setBusy(other.contextId);
+  manager.setBusy(legacy.contextId);
+  await manager.flush();
+
+  const restored = new RoleSessionManager({ storagePath, ownerPid: 12, runtimeInstanceId: 'runtime-b' });
+  const scoped = await restored.reconcile({ isOwnerAlive: () => false, sessionId: 'ui-a' });
+  assert.equal(scoped.reconciled, 1);
+  assert.equal(scoped.sessionId, 'ui-a');
+  assert.deepEqual(scoped.contexts.map((context) => context.contextId), [own.contextId]);
+  assert.equal(scoped.contexts[0].sessionId, 'ui-a');
+  assert.equal(restored.get(own.contextId).state, 'FAILED');
+  assert.equal(restored.get(other.contextId).state, 'FAILED');
+  assert.equal(restored.get(legacy.contextId).state, 'FAILED');
+  assert.equal(restored.get(own.contextId).sessionId, 'ui-a');
+});
+
+test('task reconcile without a session id reports only the current run', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-role-run-scope-'));
+  const storagePath = join(directory, 'roles.json');
+  const manager = new RoleSessionManager({ storagePath, ownerPid: 21, runtimeInstanceId: 'runtime-a' });
+  const current = manager.allocate({ runId: 'run-current', role: 'planner' });
+  const previous = manager.allocate({ runId: 'run-previous', sessionId: 'ui-old', role: 'executor' });
+  manager.setBusy(current.contextId);
+  manager.setBusy(previous.contextId);
+  await manager.flush();
+
+  const restored = new RoleSessionManager({ storagePath, ownerPid: 22, runtimeInstanceId: 'runtime-b' });
+  const scoped = await restored.reconcile({ isOwnerAlive: () => false, runId: 'run-current' });
+  assert.equal(scoped.reconciled, 1);
+  assert.equal(scoped.contexts[0].runId, 'run-current');
+  assert.equal(restored.get(previous.contextId).state, 'FAILED');
+  assert.equal(restored.get(previous.contextId).reason, 'OWNER_PROCESS_LOST');
 });
 
 test('persists a redacted task checkpoint and rejects tampering or forbidden fields', async () => {

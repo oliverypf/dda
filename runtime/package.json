@@ -9,10 +9,10 @@
   "description": "Windows Cordis runtime for the dda read-only MVP",
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node --test --test-concurrency=6",
-    "test:parallel": "node --test --test-concurrency=6",
+    "test": "node --test --test-concurrency=6 \"test/**/*.test.mjs\"",
+    "test:parallel": "node --test --test-concurrency=6 \"test/**/*.test.mjs\"",
     "test:harness-supervision": "node --test test/tool-availability.test.mjs test/task-runner-tools.test.mjs test/controlled-tools.test.mjs test/patch-workspace.test.mjs test/workspace-symbol-read.test.mjs test/workspace-readonly.test.mjs test/tool-registry.test.mjs",
-    "test:serial": "node --test --test-concurrency=1",
+    "test:serial": "node --test --test-concurrency=1 \"test/**/*.test.mjs\"",
     "build:kernel-sandbox": "npm --prefix native/kernel-sandbox run build",
     "test:phase2b": "node --test test/kernel-phase2b-journal.test.mjs test/kernel-phase2b-cell-protocol.test.mjs test/kernel-phase2b-sandbox.test.mjs"
   },
@@ -21,6 +21,9 @@
     "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-llm-deepseek": "^0.1.1-rc.2",
     "@modelcontextprotocol/client": "^2.1.0",
-    "playwright": "^1.63.0"
+    "parse5": "8.1.1",
+    "playwright": "^1.63.0",
+    "saxes": "6.0.0",
+    "yauzl": "3.4.0"
   }
 }

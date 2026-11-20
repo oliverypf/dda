@@ -44,6 +44,33 @@ const normalizeReport = (report) => {
   };
 };
 
+// Read workers collect observations concurrently. State-changing operations
+// share one ordered gate; verification/recovery waits for both observations
+// and then follows plan order, including when an executor throws.
+class ReadBatch {
+  #slots;
+  #gate = Promise.resolve();
+  constructor(stepIds) {
+    this.#slots = stepIds.map(stepId => ({ stepId, arrived: Promise.withResolvers(), done: Promise.withResolvers() }));
+  }
+  async beforeVerification(stepId) {
+    const index = this.#slots.findIndex(slot => slot.stepId === stepId);
+    this.#slots[index].arrived.resolve();
+    await Promise.all(this.#slots.map(slot => slot.arrived.promise));
+    await Promise.all(this.#slots.slice(0, index).map(slot => slot.done.promise));
+  }
+  finish(stepId) {
+    const slot = this.#slots.find(entry => entry.stepId === stepId);
+    slot.arrived.resolve();
+    slot.done.resolve();
+  }
+  serialize(operation) {
+    const next = this.#gate.then(operation, operation);
+    this.#gate = next.catch(() => {});
+    return next;
+  }
+}
+
 const stepKey = (step) => `${step.stepId}:${step.attempt ?? 0}:${step.status}`;
 
 /**
@@ -62,6 +89,7 @@ export class PlanStepCoordinator {
   #reconcileStep;
   #resumeFailed;
   #initialized = false;
+  #updates = Promise.resolve();
 
   constructor({ coordinator, plan, now = Date.now, idFactory = randomUUID, onStateChange, reconcileStep, resumeFailed = false } = {}) {
     if (!coordinator || typeof coordinator.setPlanStateAndFlush !== 'function') {
@@ -101,10 +129,11 @@ export class PlanStepCoordinator {
               : {})
           }))
         };
-        for (const running of this.#plan.steps.filter((step) => step.status === 'RUNNING')) {
-          await this.#reconcileInterrupted(running);
-        }
       }
+    }
+    const uncertain = this.#plan.steps.filter(uncertainSideEffect);
+    for (const running of this.#plan.steps.filter(step => step.status === 'RUNNING')) {
+      await this.#reconcileInterrupted(running);
     }
     // A thread checkpoint may be loaded into a fresh run store during an
     // explicit resume. Failed or blocked steps are retryable only because the
@@ -112,7 +141,6 @@ export class PlanStepCoordinator {
     // SIDE_EFFECT_OUTCOME_UNCERTAIN is not blindly retried: the same proof
     // rule runs again, and only a positive retry/completion result clears it.
     if (this.#resumeFailed) {
-      const uncertain = this.#plan.steps.filter(uncertainSideEffect);
       for (const step of uncertain) await this.#reconcileInterrupted(step, { preserveUncertain: true });
       this.#plan = {
         ...this.#plan,
@@ -128,13 +156,13 @@ export class PlanStepCoordinator {
 
   /** Return a deterministic snapshot of the next executable step. */
   nextReady() {
-    const ready = this.#plan.steps.find((step) => step.status === 'READY');
+    const ready = this.#plan.steps.find((step) => step.status === 'READY' && this.#dependenciesSatisfied(step));
     if (ready) return clone(ready);
     const pending = this.#plan.steps.find((step) => step.status === 'PENDING' && this.#dependenciesSatisfied(step));
     return pending ? clone(pending) : undefined;
   }
 
-  async run({ executeStep, verifyStep, diagnoseStep, maxAttempts = 3, signal, continueReplan, onVerificationPromoted } = {}) {
+  async run({ executeStep, verifyStep, diagnoseStep, parallelReads = false, maxAttempts = 3, signal, continueReplan, onVerificationPromoted } = {}) {
     if (typeof executeStep !== 'function' || typeof verifyStep !== 'function') throw new Error('PLAN_STEP_CALLBACKS_REQUIRED');
     if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS) throw new Error('PLAN_STEP_ATTEMPT_LIMIT_INVALID');
     if (onVerificationPromoted !== undefined && typeof onVerificationPromoted !== 'function') {
@@ -153,33 +181,7 @@ export class PlanStepCoordinator {
       }
     }
     await this.initialize();
-    const results = [];
-    while (true) {
-      if (signal?.aborted) {
-        const current = this.#plan.steps.find((step) => step.status === 'RUNNING' || step.status === 'READY');
-        if (current) await this.#update(current.stepId, { status: 'BLOCKED', errorCode: 'PLAN_CANCELLED' });
-        throw Object.assign(new Error('PLAN_CANCELLED'), { code: 'PLAN_CANCELLED' });
-      }
-      await this.#propagateBlocked();
-      const step = this.nextReady();
-      if (!step) {
-        const failed = this.#plan.steps.find((item) => item.status === 'FAILED' || item.status === 'BLOCKED');
-        if (failed) {
-          const failedRecord = [...results].reverse().find((entry) => entry.stepId === failed.stepId);
-          return {
-            ok: false,
-            plan: this.plan,
-            results,
-            failedStepId: failed.stepId,
-            report: failedRecord?.report ?? { status: failed.status, failureCodes: [failed.errorCode ?? 'STEP_FAILED'] },
-            errorCode: failed.errorCode
-          };
-        }
-        if (this.#plan.steps.every((item) => TERMINAL_STEP_STATUSES.has(item.status))) {
-          return { ok: true, plan: this.plan, results };
-        }
-        throw new Error('PLAN_NO_PROGRESS');
-      }
+    const runReady = async (step, results, readBatch) => {
       if (step.status === 'PENDING') await this.#update(step.stepId, { status: 'READY', errorCode: undefined });
       let current = this.#plan.steps.find((item) => item.stepId === step.stepId) ?? step;
       let completed = false;
@@ -198,13 +200,15 @@ export class PlanStepCoordinator {
         let result;
         let report;
         try {
-          result = await executeStep({ step: clone(current), attempt, priorResults: clone(results), signal });
+          result = await executeStep({ step: clone(current), attempt, priorResults: clone(results), signal, ...(readBatch ? { readBatch } : {}) });
+          await readBatch?.beforeVerification(step.stepId);
+          if (signal?.aborted) throw Object.assign(new Error('PLAN_CANCELLED'), { code: 'PLAN_CANCELLED' });
           report = normalizeReport(await verifyStep({ step: clone(current), attempt, result: clone(result), priorResults: clone(results), signal }));
         } catch (error) {
           await this.#update(step.stepId, {
-            status: 'FAILED',
+            status: signal?.aborted ? 'BLOCKED' : 'FAILED',
             attempt,
-            errorCode: errorCode(error)
+            errorCode: signal?.aborted ? 'PLAN_CANCELLED' : errorCode(error)
           });
           await this.#propagateBlocked();
           throw error;
@@ -219,11 +223,13 @@ export class PlanStepCoordinator {
         };
         results.push(record);
         if (report.status === 'PASS') {
+          const userAnswer = typeof result?.userAnswer === 'string' ? result.userAnswer.trim() : '';
           await this.#update(step.stepId, {
             status: 'SUCCEEDED',
             attempt,
             ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
-            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
+            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {}),
+            ...(userAnswer ? { userAnswer } : {})
           });
           completed = true;
           break;
@@ -380,19 +386,65 @@ export class PlanStepCoordinator {
         completed = false;
         break;
       }
-      if (!completed) {
+      return completed;
+    };
+    const results = [];
+    while (true) {
+      if (signal?.aborted) {
+        const current = this.#plan.steps.find((step) => step.status === 'RUNNING' || step.status === 'READY');
+        if (current) await this.#update(current.stepId, { status: 'BLOCKED', errorCode: 'PLAN_CANCELLED' });
+        throw Object.assign(new Error('PLAN_CANCELLED'), { code: 'PLAN_CANCELLED' });
+      }
+      await this.#propagateBlocked();
+      const step = this.nextReady();
+      if (!step) {
+        const failed = this.#plan.steps.find((item) => item.status === 'FAILED' || item.status === 'BLOCKED');
+        if (failed) {
+          const failedRecord = [...results].reverse().find((entry) => entry.stepId === failed.stepId);
+          return {
+            ok: false,
+            plan: this.plan,
+            results,
+            failedStepId: failed.stepId,
+            report: failedRecord?.report ?? { status: failed.status, failureCodes: [failed.errorCode ?? 'STEP_FAILED'] },
+            errorCode: failed.errorCode
+          };
+        }
+        if (this.#plan.steps.every((item) => TERMINAL_STEP_STATUSES.has(item.status))) {
+          return { ok: true, plan: this.plan, results };
+        }
+        throw new Error('PLAN_NO_PROGRESS');
+      }
+      const readyReads = [step];
+      if (parallelReads && step.actionKind === 'READ') {
+        const following = this.#plan.steps.slice(this.#plan.steps.findIndex(item => item.stepId === step.stepId) + 1);
+        const next = following.find(item => ['READY', 'PENDING'].includes(item.status) && this.#dependenciesSatisfied(item));
+        if (next?.actionKind === 'READ') readyReads.push(next);
+      }
+      const batch = readyReads.length > 1 ? new ReadBatch(readyReads.map(item => item.stepId)) : undefined;
+      const previousCount = results.length;
+      const outcomes = await Promise.allSettled(readyReads.map(async item => {
+        const records = results.slice();
+        try {
+          const completed = await runReady(item, records, batch);
+          return { completed, records: records.slice(previousCount) };
+        } finally {
+          batch?.finish(item.stepId);
+        }
+      }));
+      for (const outcome of outcomes) {
+        if (outcome.status === 'fulfilled') results.push(...outcome.value.records);
+      }
+      const error = outcomes.find(outcome => outcome.status === 'rejected');
+      if (error) throw error.reason;
+      const failedIndex = outcomes.findIndex(outcome => !outcome.value.completed);
+      if (failedIndex >= 0) {
         await this.#propagateBlocked();
-        const failed = this.#plan.steps.find((item) => item.stepId === step.stepId);
-        const failedRecord = [...results].reverse().find((entry) => entry.stepId === step.stepId);
-        return {
-          ok: false,
-          plan: this.plan,
-          results,
-          failedStepId: step.stepId,
-          report: failedRecord?.report ?? { status: failed?.status ?? 'FAIL', failureCodes: [failed?.errorCode ?? 'STEP_FAILED'] },
-          errorCode: failed?.errorCode,
-          step: failed
-        };
+        const failed = this.#plan.steps.find(item => item.stepId === readyReads[failedIndex].stepId);
+        const failedRecord = results.findLast(entry => entry.stepId === failed.stepId);
+        return { ok: false, plan: this.plan, results, failedStepId: failed.stepId,
+          report: failedRecord?.report ?? { status: failed.status, failureCodes: [failed.errorCode ?? 'STEP_FAILED'] },
+          errorCode: failed.errorCode, step: failed };
       }
     }
   }
@@ -437,7 +489,13 @@ export class PlanStepCoordinator {
     }
   }
 
-  async #update(stepId, patch = {}) {
+  #update(stepId, patch = {}) {
+    const write = () => this.#commitStep(stepId, patch);
+    this.#updates = this.#updates.then(write, write);
+    return this.#updates;
+  }
+
+  async #commitStep(stepId, patch) {
     const target = this.#plan.steps.find((step) => step.stepId === stepId);
     if (!target) throw new Error('PLAN_STEP_NOT_FOUND');
     const status = patch.status === undefined ? target.status : statusOf(patch.status);
@@ -449,20 +507,21 @@ export class PlanStepCoordinator {
         if (patch[key] !== undefined) next[key] = patch[key];
         else if (patch[key] === undefined && key === 'errorCode' && Object.hasOwn(patch, key)) delete next[key];
       }
+      if (typeof patch.userAnswer === 'string') {
+        const userAnswer = patch.userAnswer.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '').trim().slice(0, 4000);
+        if (userAnswer) next.userAnswer = userAnswer;
+      }
       if (patch.diagnosisDigest !== undefined) next.diagnosisDigest = bounded(patch.diagnosisDigest, 120);
       return next;
     });
-    const { currentStepId: priorCurrentStepId, ...planWithoutCursor } = this.#plan;
-    const currentStepId = status === 'RUNNING'
-      ? stepId
-      : priorCurrentStepId && priorCurrentStepId !== stepId
-        ? priorCurrentStepId
-        : undefined;
+    const { currentStepId: priorCursor, ...planWithoutCursor } = this.#plan;
+    const running = nextSteps.filter(step => step.status === 'RUNNING');
+    const currentStepId = running[0]?.stepId;
     this.#plan = {
       ...planWithoutCursor,
       steps: nextSteps,
       ...(currentStepId ? { currentStepId } : {}),
-      pendingActions: status === 'RUNNING' ? [`execute step ${stepId}`] : [],
+      pendingActions: running.map(step => `execute step ${step.stepId}`),
       updatedAtMs: this.#now()
     };
     await this.#persist(stepKey(this.#plan.steps.find((step) => step.stepId === stepId)));

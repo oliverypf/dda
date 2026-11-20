@@ -127,7 +127,7 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   ], {
     env: {
       ...process.env,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_TRAJECTORY_STORE: trajectory,
       DDA_HARNESS_EVENT_STORE: harness
     },
@@ -136,6 +136,8 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
   assert.ok(payload.plugins.some((item) => item.pluginId === plugin.pluginId));
+  assert.deepEqual(payload.pluginGovernanceStatus, { state: 'AVAILABLE' });
+  assert.deepEqual(payload.supportBundle?.stores.plugins, { status: 'AVAILABLE', count: payload.plugins.length });
   assert.ok(payload.evolution.proposals.some((item) => item.proposalId === proposal.proposalId));
   assert.ok(payload.evolution.reports.some((item) => item.reportId === report.reportId));
   assert.ok(payload.execution.records.some((record) => record.recordId === intent.recordId && record.state === 'SAFETY_EVALUATING'));
@@ -168,4 +170,65 @@ test('dashboard reads plugin and evolution state from the Harness Event Store', 
   assert.equal(payload.supportBundle?.stores.modelUsage.cachedInputTokens, 80);
   assert.equal(payload.supportBundle?.privacy.scan.ok, true);
   assert.equal(JSON.stringify(await eventStore.list()).includes('Event thread'), false);
+});
+
+test('dashboard reports a blocked plugin projection without mutating governance audit events', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-dashboard-blocked-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const trajectory = join(directory, 'trajectory.jsonl');
+  const harness = join(directory, 'events.db');
+  const eventStore = createHarnessEventStore({ storagePath: harness });
+  await eventStore.load();
+  // Two legitimate writers with independent JSON stores discover the same
+  // plugin into one shared audit log, leaving two complete discovery chains.
+  const manifest = pluginManifest('duplicate-plugin', 'Duplicate Plugin', 'skill', ['test.capability'], ['trajectory.read.redacted']);
+  const earlier = createPluginGovernance({ eventStore, now: () => 1_000, storagePath: join(directory, 'earlier-plugin-governance.json') });
+  await earlier.load();
+  await earlier.discoverDurably(manifest, { source: 'LOCAL_DEVELOPMENT' });
+  const later = createPluginGovernance({ eventStore, now: () => 2_000, storagePath: join(directory, 'later-plugin-governance.json') });
+  await later.load();
+  await later.discoverDurably(manifest, { source: 'LOCAL_DEVELOPMENT' });
+  await assert.rejects(
+    createPluginGovernance({ eventStore }).load(),
+    (error) => error.message === 'PLUGIN_GOVERNANCE_INVALID'
+  );
+  const threads = createThreadStore({ eventStore });
+  await threads.load();
+  const thread = await threads.create({ cwd: directory, title: 'Blocked plugin thread' });
+  const memory = createMemoryJournal({ eventStore });
+  await memory.load();
+  const memoryRecord = await memory.proposeDurably({
+    runId: 'run-blocked-memory',
+    statement: 'Verified task outcome: class=inspect; verifier=PASS; outputDigest=sha256:blocked',
+    sourceEventIds: ['event-blocked'],
+    scope: 'workspace',
+    kind: 'TASK_OUTCOME',
+    confidence: 0.9
+  });
+  const before = JSON.stringify(await eventStore.list());
+
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('DDA_')));
+  const result = await promisify(execFile)(process.execPath, [
+    fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
+    'dashboard'
+  ], {
+    env: {
+      ...inherited,
+      LOCALAPPDATA: join(directory, 'localappdata'),
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+      DDA_TRAJECTORY_STORE: trajectory,
+      DDA_HARNESS_EVENT_STORE: harness
+    },
+    windowsHide: true
+  });
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.pluginGovernanceStatus, { state: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_INVALID' });
+  assert.deepEqual(payload.plugins, []);
+  assert.deepEqual(payload.pluginVersions, []);
+  assert.deepEqual(payload.supportBundle?.stores.plugins, { status: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_INVALID', count: 0 });
+  assert.ok(payload.threads.some((item) => item.id === thread.id));
+  assert.ok(payload.memories.some((item) => item.memoryId === memoryRecord.memoryId));
+  assert.equal(payload.supportBundle?.privacy.scan.ok, true);
+  assert.equal(JSON.stringify(await eventStore.list()), before);
 });

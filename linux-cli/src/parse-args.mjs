@@ -46,7 +46,7 @@ export function parseCli(argv) {
   if (options.format !== undefined && !['human', 'jsonl'].includes(options.format)) {
     throw Object.assign(new Error('FORMAT_INVALID'), { code: 'FORMAT_INVALID' });
   }
-  if (options.executionMode !== undefined && !['READ_ONLY', 'CONTROLLED'].includes(options.executionMode)) {
+  if (options.executionMode !== undefined && options.executionMode !== 'CONTROLLED') {
     throw Object.assign(new Error('EXECUTION_MODE_INVALID'), { code: 'EXECUTION_MODE_INVALID' });
   }
   if (options.approvalMode !== undefined && !['prompt', 'deny', 'jsonl'].includes(options.approvalMode)) {

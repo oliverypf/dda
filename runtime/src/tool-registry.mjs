@@ -8,14 +8,18 @@
  * writable definition is rejected at registration time.
  */
 
+import { processFailureOutputTail } from './process-output-tail.mjs';
+import { MAX_BOUNDED_OUTPUT } from './runtime-safety-monitor.mjs';
 import { createHash } from 'node:crypto';
 import { cordisPlugin } from './plugins/cordis-plugin.mjs';
+import { FULL_ACCESS_PATH_GUIDANCE } from './access-mode-instructions.mjs';
+import { BINARY_INSPECTION_DESCRIPTION } from './binary-inspection-contract.mjs';
 
 const OBJECT_TAG = '[object Object]';
 const MAX_SCHEMA_DEPTH = 24;
 const MAX_SCHEMA_NODES = 512;
-const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
-const DEFAULT_MAX_OUTPUT_CHARS = 64 * 1024;
+const DEFAULT_MAX_OUTPUT_BYTES = MAX_BOUNDED_OUTPUT;
+const DEFAULT_MAX_OUTPUT_CHARS = MAX_BOUNDED_OUTPUT;
 
 const SUPPORTED_SCHEMA_KEYS = new Set([
   '$schema',
@@ -134,7 +138,7 @@ const safeInvocationErrorMessage = (error) => {
   const code = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,96}$/.test(error.code)
     ? error.code
     : typeof raw === 'string' ? raw.match(/^([A-Z][A-Z0-9_]{1,96})(?::|$)/)?.[1] : undefined;
-  if (!code || !/^(?:TOOL|WORKSPACE|SAFETY|EXECUTOR)_[A-Z0-9_]+$/u.test(code)) return undefined;
+  if (!code || !/^(?:TOOL|WORKSPACE|SAFETY|EXECUTOR|BROWSER)_[A-Z0-9_]+$/u.test(code)) return undefined;
   const message = raw.startsWith(`${code}:`) ? raw.slice(code.length + 1) : raw;
   const normalized = message.replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 640);
   return normalized || undefined;
@@ -569,13 +573,32 @@ export class ToolRegistry {
         throw error;
       }
       if (this.#onInvocation) {
+        // A valid result with ok:false (e.g. a timed-out process) is an
+        // operation failure — never record it as a successful invocation.
+        const processTool = ['shell.execute', 'test.execute'].includes(name);
+        const outputTail = processTool && value?.ok === false
+          ? processFailureOutputTail(value)
+          : '';
         const summary = Object.freeze({
           name,
-          ok: true,
+          ok: value?.ok === false ? false : true,
           inputDigest,
           outputDigest: digest(value),
           outputBytes: bytes,
           outputChars: serialized.length,
+          ...(processTool && typeof safeInput?.command === 'string' && safeInput.command
+            ? { command: safeInput.command.slice(0, 500) } : {}),
+          ...(processTool && Array.isArray(safeInput?.args)
+            ? { args: safeInput.args.slice(0, 64).map((part) => String(part).slice(0, 300)) } : {}),
+          ...(processTool && typeof safeInput?.cwd === 'string' && safeInput.cwd
+            ? { cwd: safeInput.cwd.slice(0, 300) } : {}),
+          ...(typeof safeInput?.path === 'string' && safeInput.path ? { path: safeInput.path.slice(0, 512) } : {}),
+          ...(outputTail ? { outputTail } : {}),
+          ...(value?.timedOut === true ? { timedOut: true } : {}),
+          ...(value?.aborted === true ? { aborted: true } : {}),
+          ...(Number.isInteger(value?.timeoutMs) && value.timeoutMs >= 1 ? { timeoutMs: value.timeoutMs } : {}),
+          ...(Number.isInteger(value?.exitCode) ? { exitCode: value.exitCode } : {}),
+          ...(Number.isInteger(value?.processDurationMs) && value.processDurationMs >= 0 ? { processDurationMs: value.processDurationMs } : {}),
           durationMs: Math.max(0, Date.now() - startedAt)
         });
         try { await this.#onInvocation(summary); } catch (error) {
@@ -586,10 +609,18 @@ export class ToolRegistry {
       return result;
     } catch (error) {
       if (this.#onInvocation && !invocationCallbackFailed) {
+        const processTool = ['shell.execute', 'test.execute'].includes(name);
         const summary = Object.freeze({
           name: typeof name === 'string' ? name : String(name),
           ok: false,
           ...(inputDigest ? { inputDigest } : {}),
+          ...(processTool && typeof input?.command === 'string' && input.command
+            ? { command: input.command.slice(0, 500) } : {}),
+          ...(processTool && Array.isArray(input?.args)
+            ? { args: input.args.slice(0, 64).map((part) => String(part).slice(0, 300)) } : {}),
+          ...(processTool && typeof input?.cwd === 'string' && input.cwd
+            ? { cwd: input.cwd.slice(0, 300) } : {}),
+          ...(typeof input?.path === 'string' && input.path ? { path: input.path.slice(0, 512) } : {}),
           errorCode: error?.code ?? 'TOOL_ERROR',
           ...(safeInvocationErrorMessage(error) ? { message: safeInvocationErrorMessage(error) } : {}),
           ...(typeof error?.details?.path === 'string' ? { path: error.details.path.slice(0, 512) } : {}),
@@ -621,7 +652,7 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   }
   registry.register({
     name: 'workspace.list',
-    description: "List visible entries in the authorized workspace or a child directory. path MUST be relative, such as empty string or src; never pass a drive-letter or UNC absolute path.",
+    description: 'List visible entries in a directory. An empty path selects the workspace root. Generated or cache directories such as node_modules, target, target-*, and dist are included when they exist, with contentsOmitted:true. That flag means the directory is present and its children were not expanded; it does not mean the directory is missing. Call list on that exact path to see its children. ' + FULL_ACCESS_PATH_GUIDANCE,
     inputSchema: {
       type: 'object',
       properties: {
@@ -634,7 +665,8 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
   });
   registry.register({
     name: 'workspace.read',
-    description: "Read a bounded UTF-8 text file from the authorized workspace. path MUST be relative, such as README.md or src/main.ts; never pass a drive-letter or UNC absolute path. For files larger than 32KB, use offsetChars to read the next window."
+    description: 'Read a bounded text window. For larger results, use offsetChars to read the next window. ' + FULL_ACCESS_PATH_GUIDANCE
+      + (typeof workspace.readForInspection === 'function' ? ' For a .pptx, read the file directly to obtain its SHA-256 digest, slide and ZIP entry counts, and searchable slide text excerpts.' : '')
       + (typeof workspace.readMatching === 'function' ? ' To locate a named function or known text, pass findText (literal, not regex) and a small maxChars instead of scanning every page. Returns found and the actual offsetChars of the first match at or after the requested offset. Continue from returned offsetChars + content.length; a missing match returns found:false and empty content.' : ''),
     inputSchema: {
       type: 'object',
@@ -647,13 +679,37 @@ export const registerReadonlyWorkspaceTools = (registry, workspace) => {
       required: ['path'],
       additionalProperties: false
     },
-    handler: ({ path, maxChars = 32768, offsetChars = 0, findText }) => findText === undefined
-      ? workspace.read(path, maxChars, offsetChars)
-      : workspace.readMatching(path, findText, maxChars, offsetChars)
+    handler: ({ path, maxChars = 32768, offsetChars = 0, findText }) => {
+      if (typeof workspace.readForInspection === 'function') return workspace.readForInspection(path, maxChars, offsetChars, findText);
+      return findText === undefined ? workspace.read(path, maxChars, offsetChars) : workspace.readMatching(path, findText, maxChars, offsetChars);
+    }
+  });
+  if (typeof workspace.inspectBinary === 'function') registry.register({
+    name: 'workspace.inspect_binary',
+    description: BINARY_INSPECTION_DESCRIPTION + ' ' + FULL_ACCESS_PATH_GUIDANCE,
+    readOnly: true,
+    metadata: { actionClass: 'OBSERVE' },
+    inputSchema: { type: 'object', properties: { path: { type: 'string', minLength: 1, maxLength: 512 } }, required: ['path'], additionalProperties: false },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        schemaVersion: { type: 'string' }, path: { type: 'string' }, format: { type: 'string' },
+        sizeBytes: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, mz: { type: 'string' }, peSignature: { type: 'string' },
+        peOffset: { type: 'integer', minimum: 0 }, optionalHeaderMagic: { type: 'integer' },
+        bits: { type: 'integer' }, machineCode: { type: 'integer', minimum: 0 }, machineHex: { type: 'string' },
+        architecture: { type: 'string' }, dll: { type: 'boolean' },
+        executable: { type: 'boolean' }, characteristicsCode: { type: 'integer', minimum: 0, maximum: 65535 },
+        subsystemCode: { type: 'integer', minimum: 0 }, subsystem: { type: 'string' },
+        sectionCount: { type: 'integer', minimum: 0 }
+      },
+      required: ['schemaVersion', 'path', 'format', 'sizeBytes', 'mz', 'peSignature', 'peOffset', 'optionalHeaderMagic', 'bits', 'machineCode', 'machineHex', 'architecture', 'dll', 'subsystemCode', 'subsystem', 'sectionCount', 'executable', 'characteristicsCode'],
+      additionalProperties: false
+    },
+    handler: ({ path }) => workspace.inspectBinary(path)
   });
   if (typeof workspace.readMatching === 'function') registry.register({
     name: 'workspace.focus',
-    description: 'Extract current source data around one unique literal locator in a known relative file. Prefer this for a remaining defect or named function instead of rescanning the repository. Returns the full-file SHA-256 digest, actual offset and at most 6000 characters of untrusted source data. Missing or ambiguous locators fail; narrow the locator before retrying. The digest can be used as expectedDigest for a subsequent file patch/write.',
+    description: 'Extract current source data around one unique literal locator in a known file. Prefer this for a remaining defect or named function instead of rescanning the repository. Returns the full-file SHA-256 digest, actual offset and at most 6000 characters of untrusted source data. Missing or ambiguous locators fail; narrow the locator before retrying. The digest can be used as expectedDigest for a subsequent file patch/write. ' + FULL_ACCESS_PATH_GUIDANCE,
     inputSchema: {
       type: 'object', properties: {
         path: { type: 'string', minLength: 1, maxLength: 512 },
@@ -670,8 +726,8 @@ export const createReadonlyToolRegistry = (workspace, options = {}) => {
   if (workspace === undefined) return new ToolRegistry(options);
   const { registry: providedRegistry, ...registryOptions } = options;
   const registry = providedRegistry ?? new ToolRegistry({
-    maxOutputBytes: 256 * 1024,
-    maxOutputChars: 128 * 1024,
+    maxOutputBytes: MAX_BOUNDED_OUTPUT,
+    maxOutputChars: MAX_BOUNDED_OUTPUT,
     ...registryOptions
   });
   return registerReadonlyWorkspaceTools(registry, workspace);

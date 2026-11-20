@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { classifyStatefulEvent } from '../src/event-classification.mjs';
@@ -90,16 +90,32 @@ test('a CLI timeout records an UNKNOWN outcome that recovery surfaces', async (t
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   const dataDir = join(root, 'timeout-data');
+  // An explicit config file keeps the fixture hermetic: on hosts where the
+  // runtime's default config path resolves to a real model-config.json (for
+  // example %LOCALAPPDATA%\hmCodex on Windows), the file route wins over the
+  // DDA_MODEL_* fallbacks and the test still talks to this stub server.
+  const modelConfigPath = join(root, 'model-config.json');
+  await writeFile(modelConfigPath, `${JSON.stringify({
+    provider: 'openai-chat',
+    protocol: 'chat-completions',
+    endpoint: `http://127.0.0.1:${port}/chat/completions`,
+    apiKeyEnv: 'OPENCODE_GO_API_KEY'
+  })}\n`);
   const taskEnv = {
     ...env,
+    DDA_PLATFORM: 'linux-cli',
     OPENCODE_GO_API_KEY: 'timeout-key',
     DDA_MODEL_API_KEY_ENV: 'OPENCODE_GO_API_KEY',
     DDA_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
+    DDA_MODEL_CONFIG: modelConfigPath,
     DDA_JEV_ENABLED: '0'
   };
   const timedOut = await run([
     'task', '--workspace', workspace, '--prompt', 'hang please', '--format', 'jsonl',
-    '--data-dir', dataDir, '--timeout-ms', '1500'
+    // 6s gives the runtime time to finish persisting its role-context and
+    // execution stores before the kill; the endpoint never answers, so the
+    // timeout still fires inside the model call rather than mid-startup.
+    '--data-dir', dataDir, '--timeout-ms', '6000'
   ], taskEnv);
   assert.equal(timedOut.code, EXIT.RUNTIME_ERROR, timedOut.stdout + timedOut.stderr);
   const lines = timedOut.stdout.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));

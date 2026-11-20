@@ -46,6 +46,16 @@ const makeAttributed = ({ severity = 'SEV2', incidentId = 'inc-1', entityId = 'e
   return { incident, events: [event] };
 };
 
+test('excluding SANDBOX floors still applies a matching CONFIRM floor', () => {
+  const match = { entityId: 'executor-a', capabilityId: 'shell.execute' };
+  const policyStore = {
+    listPolicies: () => ['CONFIRM', 'SANDBOX'].map(stateFloor => ({ match, effect: { stateFloor } }))
+  };
+
+  assert.equal(effectiveStateFloor({ match, policyStore }), 'SANDBOX');
+  assert.equal(effectiveStateFloor({ match, policyStore, includeSandbox: false }), 'CONFIRM');
+});
+
 test('T-s5-1 SEV2 Incident → Candidate floor=CONFIRM; not enabled → no gate effect', async () => {
   const store = createSafetyPolicyStore();
   await store.load();

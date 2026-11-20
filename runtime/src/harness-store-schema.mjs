@@ -40,10 +40,10 @@ export function openHarnessDatabase(storagePath, { readOnly = false, verifyInteg
   try {
     // secure_delete keeps purged prompt/source bytes out of freed pages; a
     // plain DELETE only unlinks rows and leaves the payload on disk.
-    db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
-    // Interactive read-only projections validate returned envelopes. Audits and
-    // every writable connection still run the complete integrity check.
-    if (!readOnly || verifyIntegrity) {
+    db.exec('PRAGMA busy_timeout=30000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;');
+    // Startup and audits check the full database by default. An initialized
+    // event store can skip repeat scans when opening a connection to append.
+    if (verifyIntegrity) {
       const integrity = db.prepare('PRAGMA integrity_check').all();
       if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') throw new Error('HARNESS_DATABASE_CORRUPT');
     }
@@ -168,12 +168,16 @@ export function readHarnessDatabase(db) {
   } catch (error) { rollbackAfterFailure(db, 'ROLLBACK TO harness_read; RELEASE harness_read'); throw error; }
 }
 
-const eventFilter = ({ runId, aggregateType, aggregateId } = {}) => {
+const eventFilter = ({ runId, aggregateType, aggregateId, kinds } = {}) => {
   const clauses = [];
   const params = [];
   if (typeof runId === 'string' && runId) { clauses.push('run_id=?'); params.push(runId); }
   if (typeof aggregateType === 'string' && aggregateType) { clauses.push('aggregate_type=?'); params.push(aggregateType); }
   if (typeof aggregateId === 'string' && aggregateId) { clauses.push('aggregate_id=?'); params.push(aggregateId); }
+  if (Array.isArray(kinds) && kinds.length > 0) {
+    clauses.push("json_extract(envelope, '$.kind') IN (SELECT value FROM json_each(?))");
+    params.push(JSON.stringify(kinds));
+  }
   return { where: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
 };
 
@@ -206,6 +210,29 @@ export function readHarnessEventPage(db, { limit = 500, afterRunId, afterSequenc
   };
 }
 
+// Read all events belonging to the N most recent TaskRun runs without scanning
+// and cloning the entire historical trajectory database.
+export function readRecentHarnessRunsEvents(db, { excludeRunId, maxRuns = 4 } = {}) {
+  const cappedRuns = Number.isInteger(maxRuns) && maxRuns > 0 ? Math.min(32, maxRuns) : 4;
+  const runRows = excludeRunId
+    ? db.prepare(`SELECT run_id FROM trajectory_events
+        WHERE aggregate_type = 'TaskRun' AND run_id <> ?
+        GROUP BY run_id
+        ORDER BY MAX(json_extract(envelope, '$.emittedAtMs')) DESC, run_id DESC
+        LIMIT ?`).all(excludeRunId, cappedRuns)
+    : db.prepare(`SELECT run_id FROM trajectory_events
+        WHERE aggregate_type = 'TaskRun'
+        GROUP BY run_id
+        ORDER BY MAX(json_extract(envelope, '$.emittedAtMs')) DESC, run_id DESC
+        LIMIT ?`).all(cappedRuns);
+  if (!runRows.length) return [];
+  const runIds = runRows.map((row) => row.run_id);
+  const rows = db.prepare(`SELECT * FROM trajectory_events
+    WHERE run_id IN (SELECT value FROM json_each(?))
+    ORDER BY run_id, sequence`).all(JSON.stringify(runIds));
+  return rows.map(parseEventRow);
+}
+
 // Read the newest events for one run without scanning and materializing its full history.
 export function readHarnessEventTail(db, { runIds = [], kinds = [], before, limit = 100 } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('THREAD_HISTORY_LIMIT_INVALID');
@@ -223,6 +250,57 @@ export function readHarnessEventTail(db, { runIds = [], kinds = [], before, limi
     .all(...params, limit + 1);
   return { events: rows.slice(0, limit).reverse().map(parseEventRow), hasMore: rows.length > limit };
 }
+const THREAD_PROJECTION_KINDS = new Set([
+  'ThreadCreated',
+  'ThreadTurnAppended',
+  'ThreadStateChanged',
+  'ThreadCheckpointCommitted',
+  'ThreadCheckpointCleared',
+  'ThreadRunAttached',
+  'ThreadWorkspaceBound'
+]);
+
+// Thread membership lives on the Thread aggregate (indexed). Checkpoints are
+// stored on the task run, but every one of them has a `thread-*` receipt, which
+// is indexed by command id. Filtering `json_extract(envelope, '$.kind')` instead
+// scans the whole trajectory once per page and costs tens of seconds once the
+// log reaches tens of thousands of task events.
+export function readThreadProjectionEvents(db, threadId) {
+  const byId = new Map();
+  const add = (row) => {
+    const event = parseEventRow(row);
+    if ((!threadId || event.payload?.threadId === threadId) && THREAD_PROJECTION_KINDS.has(event.kind)) byId.set(event.eventId, event);
+  };
+  const members = threadId
+    ? db.prepare('SELECT * FROM trajectory_events WHERE aggregate_type = ? AND aggregate_id = ? ORDER BY aggregate_version').all('Thread', threadId)
+    : db.prepare('SELECT * FROM trajectory_events WHERE aggregate_type = ? ORDER BY run_id, sequence').all('Thread');
+  for (const row of members) add(row);
+  const receiptRange = db.prepare('SELECT receipt FROM command_dedup WHERE command_id >= ? AND command_id < ?');
+  const receipts = threadId
+    ? ['thread-checkpoint:', 'thread-checkpoint-clear:'].flatMap(prefix =>
+        receiptRange.all(prefix + threadId + ':', prefix + threadId + ';'))
+    : db.prepare(
+    "SELECT receipt FROM command_dedup WHERE command_id >= 'thread-' AND command_id < 'thread.'"
+  ).all();
+  const missing = [];
+  for (const row of receipts) {
+    let receipt;
+    try { receipt = JSON.parse(row.receipt); } catch { continue; }
+    const ids = Array.isArray(receipt?.eventIds) ? receipt.eventIds : [];
+    for (const id of ids) {
+      if (typeof id === 'string' && id && !byId.has(id)) missing.push(id);
+    }
+  }
+  for (let offset = 0; offset < missing.length; offset += 200) {
+    const chunk = missing.slice(offset, offset + 200);
+    const placeholders = chunk.map(() => '?').join(',');
+    for (const row of db.prepare(
+      `SELECT * FROM trajectory_events WHERE event_id IN (${placeholders})`
+    ).all(...chunk)) add(row);
+  }
+  return [...byId.values()];
+}
+
 export function readHarnessEventsByIds(db, eventIds) {
   if (!Array.isArray(eventIds) || eventIds.length === 0) return [];
   const placeholders = eventIds.map(() => '?').join(',');

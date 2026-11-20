@@ -79,10 +79,11 @@ describe('provider catalog settings surface', () => {
   const formStart = modal.indexOf('data-form="model-settings"');
   const formEnd = modal.indexOf('</form>');
 
-  it('keeps the catalog page outside the form and also exposes fetch on roles/models', () => {
+  it('shows the model catalog on the roles and models page', () => {
     expect(formStart).toBeGreaterThan(-1);
-    expect(modal.indexOf('renderProviderCatalogPanel()')).toBeGreaterThan(formEnd);
     const formHtml = modal.slice(formStart, formEnd);
+    expect(formHtml).toContain('renderProviderCatalogPanel()');
+    expect(formHtml.indexOf('renderProviderCatalogPanel()')).toBeGreaterThan(formHtml.indexOf('settings-panel-model'));
     expect(formHtml).toContain('renderRolesModelField(config)');
     const rolesField = mainSource.slice(
       mainSource.indexOf('function renderRolesModelField'),
@@ -98,7 +99,8 @@ describe('provider catalog settings surface', () => {
     expect(rolesField).toContain('modelMissingFromCatalog');
     expect(rolesField).not.toContain('<datalist');
     expect(rolesField).not.toContain('list="provider-catalog-model-options"');
-    expect(panel).toContain('data-settings-panel="catalog"');
+    expect(panel).toContain('data-settings-panel="model"');
+    expect(mainSource).not.toContain("catalog: { title: '模型目录'");
     expect(panel).toContain('获取可用模型');
     expect(panel).not.toContain('添加提供方');
     expect(panel).not.toContain('删除提供方');

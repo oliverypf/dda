@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, sep as pathSep } from 'node:path';
-import { CAPABILITIES, EXECUTION_MODES, SAFETY_ERROR_CODES, SafetyError } from './runtime-safety-monitor.mjs';
-import { resolveShellTimeout } from './shell-timeout.mjs';
+import { CAPABILITIES, EXECUTION_MODES, MAX_BOUNDED_OUTPUT, SAFETY_ERROR_CODES, SafetyError, commandMatches, parseCommand } from './runtime-safety-monitor.mjs';
+import { currentAccessMode } from './filesystem-access.mjs';
+import { FULL_ACCESS_PATH_GUIDANCE, BUILD_EXECUTION_GUIDANCE } from './access-mode-instructions.mjs';
+import { BINARY_INSPECTION_GUIDANCE } from './binary-inspection-contract.mjs';
+import { DEFAULT_PROCESS_TIMEOUT_MS, MAX_PROCESS_TIMEOUT_MS, LEGACY_PROCESS_TIMEOUT_MS, PROCESS_LEASE_MARGIN_MS } from './process-limits.mjs';
+import { webLookupTools, webLookupRequest, webLookupResult } from './web-lookup.mjs';
 import { applyTextPatch, MAX_PATCH_TEXT, MAX_PATCH_FILE_BYTES, TextPatchError, textDigest, unifiedTextDiff } from './text-patch.mjs';
 import { RestrictedWindowsExecutor } from './restricted-windows-executor.mjs';
 import { canonicalJson } from './model-tool-calls.mjs';
@@ -73,9 +78,9 @@ const commandInputSchema = {
     args: { type: 'array', maxItems: MAX_ARGUMENTS, items: { type: 'string', maxLength: MAX_ARGUMENT_LENGTH } },
     cwd: { type: 'string', maxLength: MAX_PATH_LENGTH },
     input: { type: 'string', maxLength: 64 * 1024 },
-    timeoutMs: { type: 'integer', minimum: 1, maximum: 60 * 60 * 1000 },
-    maxOutputBytes: { type: 'integer', minimum: 1, maximum: 256 * 1024 },
-    maxOutputChars: { type: 'integer', minimum: 1, maximum: 256 * 1024 }
+    timeoutMs: { type: 'integer', minimum: 1, maximum: MAX_PROCESS_TIMEOUT_MS },
+    maxOutputBytes: { type: 'integer', minimum: 1, maximum: MAX_BOUNDED_OUTPUT },
+    maxOutputChars: { type: 'integer', minimum: 1, maximum: MAX_BOUNDED_OUTPUT }
   },
   required: ['command'],
   additionalProperties: false
@@ -104,7 +109,7 @@ const processOutputSchema = {
     stdout: { type: 'string' },
     stderr: { type: 'string' },
     durationMs: { type: 'integer', minimum: 0 },
-    timeoutMs: { type: 'integer', minimum: 0 },
+    timeoutMs: { type: 'integer', minimum: 1, maximum: MAX_PROCESS_TIMEOUT_MS },
     action: { type: 'string' },
     commandDigest: { type: 'string' },
     cwd: { type: 'string' },
@@ -214,8 +219,8 @@ const networkInputSchema = {
     path: { type: 'string', minLength: 1, maxLength: 2048 },
     body: { type: 'string', maxLength: MAX_FILE_CHARS },
     timeoutMs: { type: 'integer', minimum: 1, maximum: 60 * 1000 },
-    maxResponseBytes: { type: 'integer', minimum: 1, maximum: 256 * 1024 },
-    maxResponseChars: { type: 'integer', minimum: 1, maximum: 256 * 1024 }
+    maxResponseBytes: { type: 'integer', minimum: 1, maximum: MAX_BOUNDED_OUTPUT },
+    maxResponseChars: { type: 'integer', minimum: 1, maximum: MAX_BOUNDED_OUTPUT }
   },
   required: ['host'],
   additionalProperties: false
@@ -247,6 +252,36 @@ const normalizeList = (value) => Array.isArray(value)
 // must reach a human when one can answer, and must never be silently granted a
 // lease when no live approver exists.
 export const APPROVAL_OUTCOMES = Object.freeze({ PROMPT: 'PROMPT', REFUSE: 'REFUSE', AUTO_APPROVE: 'AUTO_APPROVE' });
+
+export const COMMAND_OUTSIDE_SESSION_LEASE = 'COMMAND_OUTSIDE_SESSION_LEASE';
+
+/**
+ * A non-empty session command list is the pre-authorized set. An executable
+ * outside it is not a hard deny: the host must ask the user, then issue a
+ * one-shot lease for that executable only. An empty list is not a restriction
+ * this helper can see (callers that refuse empty lists do so earlier).
+ */
+export const classifySessionCommand = (approvedCommands, request) => {
+  if (!Array.isArray(approvedCommands) || approvedCommands.length === 0) return { outside: false };
+  if (approvedCommands.some((item) => item === '*')) return { outside: false };
+  let parsed;
+  try { parsed = parseCommand(request); } catch { return { outside: false }; }
+  const allow = new Set(approvedCommands.map((item) => String(item).toLowerCase()));
+  if (commandMatches(allow, parsed.commandName)) return { outside: false, commandName: parsed.commandName };
+  return { outside: true, commandName: parsed.commandName };
+};
+
+/**
+ * A real Jev ALLOW for one proposed action. Rule fallback, a raised safety
+ * gate, and any mandatory approval do not count. This does not issue a lease
+ * and does not override a dangerous assessment; the host still does both.
+ */
+export const isJevOutsideCommandAllow = (gate) =>
+  gate?.source === 'jev'
+  && gate?.fallbackUsed !== true
+  && gate?.decision === 'ALLOW'
+  && gate?.requireApproval !== true
+  && gate?.mandatoryApproval !== true;
 
 // These codes describe a live approval card that was settled without granting
 // a lease. They must remain distinct from SAFETY_LEASE_REQUIRED, which means
@@ -328,38 +363,166 @@ const pathEscapesWorkspace = (path, workspaceRoot) => {
   return rel === '..' || rel.startsWith(`..${pathSep}`) || rel.startsWith('../') || isAbsolute(rel);
 };
 
+const DELETE_COMMANDS = new Set(['rm', 'unlink', 'del', 'erase', 'rd', 'rmdir', 'remove-item']);
+const INLINE_INTERPRETERS = new Set(['powershell', 'pwsh', 'cmd', 'sh', 'bash', 'zsh']);
+const EXTREME_DISK_COMMANDS = new Set(['format', 'diskpart', 'format-volume', 'clear-disk']);
+const DELETE_RECURSIVE_FLAGS = new Set(['-r', '-rf', '-fr', '-r -f', '/s', '-recurse', '--recursive']);
+const DELETE_FLAG_TOKENS = new Set(['-r', '-rf', '-fr', '-f', '/s', '/q', '/f', '/a', '-recurse', '-force', '-recursive', '-whatif', '-confirm:$false']);
+const INLINE_FLAGS = {
+  default: ['-command', '-encodedcommand', '-enc', '-ec', '-e', '-c', '/c', '/k', '-lc'],
+  node: ['-e', '--eval', '--print', '-p', '-pe']
+};
+
+const stripQuotePair = (value) => {
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1);
+  }
+  return value;
+};
+
+// Any delete target outside the workspace, the workspace root itself, or an
+// unresolvable/ambiguous operand must stay behind a human approval. Operand
+// list comes pre-filtered so POSIX paths like /etc/x are not lost as flags.
+const deletionTargetDangerous = (operands, cwd, workspaceRoot) => {
+  if (!operands.length) return true;
+  const root = workspaceRoot ? resolvePath(workspaceRoot) : undefined;
+  if (!root) return true;
+  const cwdText = typeof cwd === 'string' ? cwd : '';
+  const base = cwdText ? (isAbsolute(cwdText) ? resolvePath(cwdText) : resolvePath(root, cwdText)) : root;
+  for (const operand of operands) {
+    const value = stripQuotePair(operand.trim());
+    if (!value) return true;
+    if (/[*?]|%[^%]+%|\$\(|^\$|\$\{/.test(value)) return true;
+    const resolved = resolvePath(base, value);
+    const rel = relativePath(root, resolved);
+    if (resolved === root || rel === '..' || rel.startsWith(`..${pathSep}`) || isAbsolute(rel)) return true;
+  }
+  return false;
+};
+
 const hasRecursiveForceRemove = (line) => /\brm\b/.test(line)
   && (/(^|\s)-{1,2}[a-z]*r[a-z]*f/i.test(line) || /(^|\s)-{1,2}[a-z]*f[a-z]*r/i.test(line)
     || (/--recursive/i.test(line) && /--force/i.test(line))
     || (/(^|\s)-[a-z]*r/i.test(line) && /(^|\s)-[a-z]*f/i.test(line)));
 
+// A `.git` directory or worktree file at the workspace root. Parent repositories
+// do not count: the grant is the working tree the user opened, not an ancestor.
+const workspaceOwnsGit = (workspaceRoot) => {
+  if (typeof workspaceRoot !== 'string' || !workspaceRoot.trim()) return false;
+  try {
+    const git = statSync(resolvePath(workspaceRoot, '.git'));
+    return git.isDirectory() || git.isFile();
+  } catch {
+    return false;
+  }
+};
+
+const pathInsideWorkspace = (target, workspaceRoot) => {
+  if (typeof workspaceRoot !== 'string' || !workspaceRoot.trim()) return false;
+  const root = resolvePath(workspaceRoot);
+  const rel = relativePath(root, target);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${pathSep}`) && !rel.startsWith('../') && !isAbsolute(rel));
+};
+
+// Omitted cwd is the workspace root. An absolute or `..` cwd that leaves the
+// workspace does not inherit the git-workspace inline exemption.
+const cwdInsideWorkspace = (cwd, workspaceRoot) => {
+  if (typeof workspaceRoot !== 'string' || !workspaceRoot.trim()) return false;
+  const root = resolvePath(workspaceRoot);
+  const cwdText = typeof cwd === 'string' ? cwd.trim() : '';
+  const base = cwdText ? (isAbsolute(cwdText) ? resolvePath(cwdText) : resolvePath(root, cwdText)) : root;
+  return pathInsideWorkspace(base, root);
+};
+
 /**
- * A small, deterministic danger check applied before any lease is issued. It
- * never relaxes a decision: a match forces HIGH risk and an explicit approval,
- * independent of (and in addition to) the Jev action gate. It covers the
- * highest-impact irreversible actions: recursive force removal, privilege
- * escalation, destructive git operations, piping a download into a shell, and
- * writes that escape the workspace or target secret material.
+ * A small, deterministic danger check applied before any lease is issued.
+ * A match forces HIGH risk and an explicit approval, independent of (and in
+ * addition to) the Jev action gate. It covers the highest-impact irreversible
+ * actions: recursive force removal, privilege escalation, destructive git
+ * operations, piping a download into a shell, and writes that escape the
+ * workspace or target secret material.
+ *
+ * One exception: under FULL_ACCESS, an inline or encoded interpreter whose
+ * cwd stays inside a workspace that itself has `.git` is not sent to a human.
+ * The approval card cannot show a reviewer anything they can actually judge,
+ * and the opened directory is a git work tree. Deletes, elevation, disk
+ * operations, secrets, and destructive git stay on the human path.
  */
-export const assessRequestRisk = ({ capability, request = {}, workspaceRoot } = {}) => {
+export const assessRequestRisk = ({ capability, request = {}, workspaceRoot, accessMode = 'REQUIRE_APPROVAL' } = {}) => {
   const reasons = [];
+  const fullAccess = accessMode === 'FULL_ACCESS';
   if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
-    const command = typeof request.command === 'string' ? request.command : '';
-    const args = Array.isArray(request.args) ? request.args.filter((item) => typeof item === 'string') : [];
-    const line = [command, ...args].join(' ');
-    const lower = line.toLowerCase();
-    if (hasRecursiveForceRemove(lower)) reasons.push('DANGEROUS_RECURSIVE_REMOVE');
-    if (/(^|\s|[\\/])sudo(\s|$)/.test(lower)) reasons.push('DANGEROUS_PRIVILEGE_ESCALATION');
-    if (/\bgit\s+push\b/.test(lower)) reasons.push('DANGEROUS_GIT_PUSH');
-    if (/\bgit\s+reset\b[\s\S]*--hard\b/.test(lower)) reasons.push('DANGEROUS_GIT_RESET_HARD');
-    if (/\bgit\s+clean\b[\s\S]*(^|\s)-[a-z]*f/.test(lower)) reasons.push('DANGEROUS_GIT_CLEAN_FORCE');
-    if (/\b(curl|wget|fetch)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|dash|python[0-9.]*|node|ruby|perl)\b/.test(lower)
-      || /\|\s*(sudo\s+)?(sh|bash|zsh|dash)\b/.test(lower)) reasons.push('DANGEROUS_PIPE_TO_SHELL');
+    let parsed;
+    try {
+      parsed = parseCommand(request);
+    } catch {
+      parsed = undefined;
+    }
+    if (!parsed) {
+      reasons.push('COMMAND_INVALID');
+    } else {
+      const { command, args, commandName: rawBase } = parsed;
+      // Extensions must not bypass the command checks: rm.exe, powershell.exe,
+      // python3.11.exe all normalize to their executable stem.
+      const base = rawBase.replace(/\.(?:exe|cmd|bat|ps1)$/iu, '');
+      const line = [base, ...args].join(' ');
+      const lower = line.toLowerCase();
+      if (hasRecursiveForceRemove(lower)) reasons.push('DANGEROUS_RECURSIVE_REMOVE');
+      if (/(^|\s|[\\/])sudo(\s|$)/.test(lower)) reasons.push('DANGEROUS_PRIVILEGE_ESCALATION');
+      if (/\bgit\s+push\b/.test(lower)) reasons.push('DANGEROUS_GIT_PUSH');
+      if (/\bgit\s+reset\b[\s\S]*--hard\b/.test(lower)) reasons.push('DANGEROUS_GIT_RESET_HARD');
+      if (/\bgit\s+clean\b[\s\S]*(^|\s)-[a-z]*f/.test(lower)) reasons.push('DANGEROUS_GIT_CLEAN_FORCE');
+      if (/\b(curl|wget|fetch)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|dash|python[0-9.]*|node|ruby|perl)\b/.test(lower)
+        || /\|\s*(sudo\s+)?(sh|bash|zsh|dash)\b/.test(lower)) reasons.push('DANGEROUS_PIPE_TO_SHELL');
+      const argLowers = args.map((a) => a.toLowerCase());
+      const isPython = /^python(?:\d+(?:\.\d+)*)?$/u.test(base);
+      if (DELETE_COMMANDS.has(base)) {
+        if (args.some((a) => DELETE_RECURSIVE_FLAGS.has(a.toLowerCase()))) reasons.push('DANGEROUS_RECURSIVE_DELETE');
+        const operands = args.filter((a) => !DELETE_FLAG_TOKENS.has(a.toLowerCase()));
+        if (deletionTargetDangerous(operands, request.cwd, workspaceRoot)) reasons.push('DANGEROUS_DELETE_TARGET');
+      }
+      // Node inline-code flags (-e/-p/--eval/--print, incl. attached forms
+      // like -eCODE/-pCODE/-peCODE/-epCODE) are only interpreter flags while
+      // Node is still parsing its own options. A direct script entrypoint —
+      // the first argv token being a non-option path (not '-' stdin), or an
+      // explicit '--' followed by a non-stdin token — ends Node's option
+      // processing, so script arguments like `tsc -p tsconfig.json` are not
+      // eval flags. Option-prefixed/ambiguous invocations keep scanning every
+      // arg so option operands can't be misclassified as a script boundary.
+      const nodeInlineDangerous = base === 'node' && (() => {
+        let scanEnd = args.length;
+        if (args[0] === '--' && args[1] !== undefined && args[1] !== '-') scanEnd = 1;
+        else if (args[0] !== undefined && !args[0].startsWith('-')) scanEnd = 0;
+        return argLowers.slice(0, scanEnd).some((a) => INLINE_FLAGS.node.includes(a)
+          || a.startsWith('--eval=') || a.startsWith('--print=')
+          || /^-[ep]{1,2}\S/u.test(a));
+      })();
+      const inlineFlags = INLINE_FLAGS.default;
+      const inlineInterpreter = nodeInlineDangerous
+        || ((INLINE_INTERPRETERS.has(base) || isPython)
+          && argLowers.some((a) => inlineFlags.includes(a) || a.startsWith('--eval=')));
+      // FULL_ACCESS plus a git work tree replaces the human review for opaque
+      // inline scripts. The card cannot establish scope either, and the opened
+      // directory is versioned. Cwd outside that tree, no `.git` at the root,
+      // or any other danger reason still requires a person.
+      const gitWorkspaceCoversInline = fullAccess
+        && workspaceOwnsGit(workspaceRoot)
+        && cwdInsideWorkspace(request.cwd, workspaceRoot);
+      if (inlineInterpreter && !gitWorkspaceCoversInline) {
+        reasons.push('DANGEROUS_INLINE_INTERPRETER');
+      }
+      if (EXTREME_DISK_COMMANDS.has(base)) reasons.push('EXTREME_DISK_OPERATION');
+      if (base === 'runas' || (base === 'start-process' && argLowers.includes('runas'))) {
+        reasons.push('DANGEROUS_PRIVILEGE_ESCALATION');
+      }
+    }
   }
   if (capability === CAPABILITIES.WRITE_FILE) {
     const path = typeof request.path === 'string' ? request.path : '';
     if (path) {
-      if (pathEscapesWorkspace(path, workspaceRoot)) reasons.push('DANGEROUS_WRITE_OUTSIDE_WORKSPACE');
+      // FULL_ACCESS intentionally relaxes the workspace boundary for ordinary
+      // writes only; secrets stay hard-denied and every other check applies.
+      if (pathEscapesWorkspace(path, workspaceRoot) && !fullAccess) reasons.push('DANGEROUS_WRITE_OUTSIDE_WORKSPACE');
       if (isSecretPath(path)) reasons.push('DANGEROUS_SECRET_FILE_PATH');
     }
   }
@@ -372,7 +535,7 @@ export const assessRequestRisk = ({ capability, request = {}, workspaceRoot } = 
  * model never receives this callback or a lease object; the host decides
  * whether an explicitly approved capability may get one one-shot lease.
  */
-export const createExplicitLeaseProvider = ({ monitor, capabilities = [], commands = [], networkTargets = [], ttlMs, requestApproval, gateDecisionFor, onLeaseIssued } = {}) => {
+export const createExplicitLeaseProvider = ({ monitor, capabilities = [], commands = [], networkTargets = [], ttlMs, requestApproval, gateDecisionFor, onLeaseIssued, getWorkspaceAccessMode } = {}) => {
   const approvedCapabilities = new Set(normalizeList(capabilities));
   const approvedCommands = normalizeList(commands);
   const approvedNetworkTargets = (Array.isArray(networkTargets) ? networkTargets : []).map((target) => {
@@ -388,12 +551,51 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
     if ((capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) && approvedCommands.length === 0) {
       return undefined;
     }
+    // Long-running process requests need a lease that outlives the declared
+    // deadline plus the kill/flush margin. This preflight runs BEFORE any
+    // approval callback so a misconfigured TTL can't leave an APPROVED
+    // intent with no lease behind it.
+    const requestedTimeout = [CAPABILITIES.SHELL, CAPABILITIES.TEST].includes(capability)
+      ? request?.timeoutMs
+      : undefined;
+    if (requestedTimeout !== undefined && requestedTimeout > LEGACY_PROCESS_TIMEOUT_MS
+      && (!Number.isInteger(requestedTimeout) || requestedTimeout > MAX_PROCESS_TIMEOUT_MS)) {
+      throw new SafetyError('SAFETY_COMMAND_INVALID', 'timeoutMs must be an integer within the process deadline bound.');
+    }
+    const longProcessTtl = Number.isInteger(requestedTimeout) && requestedTimeout > LEGACY_PROCESS_TIMEOUT_MS
+      ? Math.min(requestedTimeout + PROCESS_LEASE_MARGIN_MS, MAX_PROCESS_TIMEOUT_MS + PROCESS_LEASE_MARGIN_MS)
+      : undefined;
+    if (longProcessTtl !== undefined && ttlMs !== undefined && ttlMs < longProcessTtl) {
+      throw new SafetyError('SAFETY_LEASE_TTL_TOO_SHORT', 'Configured lease duration does not cover the requested command deadline.');
+    }
+    const effectiveTtl = ttlMs !== undefined ? ttlMs : longProcessTtl;
+    if (longProcessTtl !== undefined && Number.isInteger(monitor.maxLeaseMs)
+      && effectiveTtl > monitor.maxLeaseMs) {
+      throw new SafetyError('SAFETY_LEASE_TTL_TOO_SHORT', 'Configured lease ceiling does not cover the requested command deadline.');
+    }
     // A mid-task Jev REQUIRE_APPROVAL (persisted by tool-call id/arg hash) or a
     // deterministic danger match forces an explicit approval. Pre-approved,
     // non-risky actions keep their prior host-policy path.
-    const assessment = assessRequestRisk({ capability, request, workspaceRoot: monitor.workspaceRoot });
     const gate = typeof gateDecisionFor === 'function' ? await gateDecisionFor({ capability, request, context }) : undefined;
-    const requireApproval = assessment.dangerous || gate?.requireApproval === true;
+    // The persisted FULL_ACCESS grant covers ordinary Jev require-approval
+    // signals. Mandatory gates and dangerous assessments keep a human, except
+    // an inline interpreter inside a git workspace (see assessRequestRisk).
+    const fullAccess = await currentAccessMode(getWorkspaceAccessMode) === 'FULL_ACCESS';
+    const assessment = assessRequestRisk({ capability, request, workspaceRoot: monitor.workspaceRoot,
+      accessMode: fullAccess ? 'FULL_ACCESS' : 'REQUIRE_APPROVAL' });
+    const sessionCommand = (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST)
+      ? classifySessionCommand(approvedCommands, request)
+      : { outside: false };
+    // An executable outside the session list is Jev's judgment: a real ALLOW
+    // may run once. No Jev opinion, a fallback, or a dangerous assessment
+    // still asks. With nobody to ask, keep the static lease so the executor
+    // denies the command instead of running it.
+    const outside = sessionCommand.outside === true;
+    const jevAllowedOutside = outside && assessment.dangerous !== true && isJevOutsideCommandAllow(gate);
+    const askForOutsideCommand = outside && !jevAllowedOutside && typeof requestApproval === 'function';
+    const requireApproval = assessment.dangerous || askForOutsideCommand || gate?.mandatoryApproval === true
+      || (!fullAccess && gate?.requireApproval === true);
+    const mandatoryApproval = gate?.mandatoryApproval === true || askForOutsideCommand;
     // Fail closed: a risky action may never receive a lease when there is no
     // approval mechanism at all to answer for it.
     if (requireApproval && typeof requestApproval !== 'function') return undefined;
@@ -407,6 +609,10 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
         request,
         context,
         requireApproval,
+        mandatoryApproval,
+        allowRememberedCommand: gate?.mandatoryApproval !== true,
+        policyReasonCodes: gate?.reasonCodes ?? (gate?.reasonCode ? [gate.reasonCode] : []),
+        ...(jevAllowedOutside ? { jevAllowsOutsideCommand: true } : {}),
         risk: assessment.risk,
         dangerReasons: assessment.reasons,
         onApprovalFailure: approvalFailure
@@ -419,27 +625,16 @@ export const createExplicitLeaseProvider = ({ monitor, capabilities = [], comman
         return undefined;
       }
     }
-    let leaseTtlMs = ttlMs;
-    if (capability === CAPABILITIES.SHELL || capability === CAPABILITIES.TEST) {
-      try {
-        const resolved = resolveShellTimeout({
-          command: typeof request?.command === 'string' ? request.command : '',
-          args: Array.isArray(request?.args) ? request.args : [],
-          requested: request?.timeoutMs
-        });
-        // The lease does not kill the child. It must still outlive the command
-        // so the workspace lock is not dropped in the middle of a build.
-        leaseTtlMs = Math.max(ttlMs ?? 60 * 1000, resolved.timeoutMs);
-      } catch (error) {
-        if (error?.code === 'SAFETY_COMMAND_INVALID') throw new SafetyError(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
-        throw error;
-      }
-    }
+    const oneShotOutside = outside && sessionCommand.commandName
+      && (jevAllowedOutside || askForOutsideCommand);
+    const leaseCommands = oneShotOutside
+      ? [sessionCommand.commandName]
+      : approvedCommands;
     const lease = monitor.issueLease({
       capabilities: [capability],
-      ...(approvedCommands.length ? { commands: approvedCommands } : {}),
+      ...(leaseCommands.length ? { commands: leaseCommands } : {}),
       ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
-      ...(leaseTtlMs === undefined ? {} : { ttlMs: leaseTtlMs })
+      ...(effectiveTtl === undefined ? {} : { ttlMs: effectiveTtl })
     });
     await onLeaseIssued?.({ capability, request, lease, context });
     return lease;
@@ -476,8 +671,8 @@ export const registerExecutorTools = (registry, executor, {
   const commandMetadata = capability => ({ ...effectMetadata(capability),
     ...(Array.isArray(leaseProvider?.approvedCommands) ? { approvedCommands: leaseProvider.approvedCommands } : {}) });
   const commandGuidance = Array.isArray(leaseProvider?.approvedCommands)
-    ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}; executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. Use workspace.list/workspace.read for inspection. Do not substitute an unapproved shell or bypass a denied command.`
-    : '';
+    ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}. An executable outside this list is not pre-authorized. Jev decides whether that command can run once or must ask the user. A clear inspection such as --version may proceed when Jev allows it. Installing software or an opaque program still asks the user once, does not gain administrator rights, and does not join the automatic allow list. Do not conclude the machine cannot install software before that question. Do not wrap the command in cmd, powershell, or another shell. Executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`
+    : ` ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`;
   const executeWithLease = async (capability, input, operation, context) => {
     let lease;
     let effectStarted = false;
@@ -502,14 +697,12 @@ export const registerExecutorTools = (registry, executor, {
       // error above; structured safety/approval errors and executor errors pass through.
       if (!effectStarted && !error?.code) throw new Error('Lease preparation failed', { cause: error });
       throw error;
-    } finally {
-      lease?.releaseWorkspace?.();
     }
   };
 
   registry.register({
     name: 'shell.execute',
-    description: 'Run one explicitly approved executable in the authorized workspace. cargo build, cargo test, npm/pnpm/yarn install, npm run build, and tauri build use DDA_BUILD_TIMEOUT_MS (default 15 minutes, hard cap 60 minutes). A timeout failure includes that enforced millisecond limit. Other commands stay within 60 seconds.' + commandGuidance,
+    description: 'Run one explicitly approved executable in the authorized workspace.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
@@ -521,13 +714,14 @@ export const registerExecutorTools = (registry, executor, {
   });
   registry.register({
     name: 'file.write',
-    description: 'Write UTF-8 text to one explicitly approved file in the workspace. Supply expectedDigest from the latest workspace read (null for a new file). The host checks the source version before and after approval; a conflict requires a fresh read.',
+    description: 'Write UTF-8 text to one explicitly approved file in the workspace. Supply expectedDigest from the latest workspace read (null for a new file). The host checks the source version before and after approval; a conflict requires a fresh read. ' + FULL_ACCESS_PATH_GUIDANCE,
     inputSchema: writeInputSchema,
     outputSchema: writeOutputSchema,
     readOnly: false,
     metadata: effectMetadata(CAPABILITIES.WRITE_FILE),
     handler: async (input, context) => {
       let request = input;
+      let hostFileReview;
       let currentDigest = null;
       let resolvedPath = typeof input.path === 'string' ? input.path : '';
       if (workspace && typeof workspace.read === 'function') {
@@ -542,6 +736,17 @@ export const registerExecutorTools = (registry, executor, {
         const expected = typeof input.expectedDigest === 'string' ? input.expectedDigest.toLowerCase().replace(/^(?!sha256:)/, 'sha256:') : input.expectedDigest;
         if (expected !== undefined && expected !== currentDigest) throw new TextPatchError('WRITE_STALE_DIGEST');
         request = { ...input, expectedDigest: currentDigest };
+        // Build review data from the host's read, never from model-supplied
+        // preview fields. Large/unreadable sources fall back to new-content preview.
+        try {
+          const before = current ? await readCompleteText(workspace, input.path, { maxBytes: MAX_PATCH_FILE_BYTES }) : null;
+          if (before && before.digest !== currentDigest) throw new TextPatchError('WRITE_STALE_DIGEST');
+          hostFileReview = { ...diffPreview(before?.content ?? '', input.content, resolvedPath),
+            path: request.path, contentDigest: textDigest(input.content) };
+        } catch (error) {
+          if (error?.code === 'WRITE_STALE_DIGEST') throw error;
+          // Preview availability must not change write authorization semantics.
+        }
       }
       const writeKey = ledgerKey(resolvedPath, ledgerDigest(String(input.content ?? '')));
       const prior = appliedWrites.get(writeKey);
@@ -563,7 +768,8 @@ export const registerExecutorTools = (registry, executor, {
           throw new TextPatchError('WRITE_STALE_DIGEST');
         }
       }
-      const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }), context);
+      const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }),
+        { ...context, hostFileReview });
       // Ledger write after lease consumed, before registry output validation (Fix 1c / B4).
       touchLedger(appliedWrites, writeKey, {
         beforeDigest: currentDigest,
@@ -580,7 +786,7 @@ export const registerExecutorTools = (registry, executor, {
         inputSchema: diffInputSchema,
         outputSchema: diffOutputSchema,
         readOnly: true,
-        metadata: { actionClass: 'READ_ONLY' },
+        metadata: { actionClass: 'OBSERVE' },
         handler: async ({ path, baseContent, maxChars = MAX_FILE_CHARS }) => {
           const current = await readCompleteText(workspace, path, { maxChars });
           const preview = diffPreview(baseContent, current.content, current.path);
@@ -598,7 +804,7 @@ export const registerExecutorTools = (registry, executor, {
     }
     registry.register({
       name: 'file.patch',
-      description: 'Apply small exact replacements to a complete authorized workspace file (source and result up to 1 MiB UTF-8; each replacement up to 256 KiB). Prefer small separate patches within tool-call argument limits. Optional expectedDigest accepts sha256:hex or the same 64 hex digits and rejects stale content.',
+      description: 'Apply small exact replacements to a complete authorized workspace file (source and result up to 1 MiB UTF-8; each replacement up to 256 KiB). Prefer small separate patches within tool-call argument limits. Optional expectedDigest accepts sha256:hex or the same 64 hex digits and rejects stale content. ' + FULL_ACCESS_PATH_GUIDANCE,
       inputSchema: patchInputSchema,
       outputSchema: patchOutputSchema,
       readOnly: false,
@@ -636,7 +842,7 @@ export const registerExecutorTools = (registry, executor, {
           const latest = await workspace.read(current.path);
           if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');
           return executor.writeFile({ path: current.path, content, expectedDigest: current.digest }, { lease });
-        }, context);
+        }, { ...context, hostFileReview: { ...preview, path: current.path, contentDigest: afterDigest } });
         // Ledger must be written even if registry later rejects the output (AFTER_EFFECT path).
         touchLedger(appliedWrites, patchKey, {
           beforeDigest: current.digest,
@@ -661,7 +867,7 @@ export const registerExecutorTools = (registry, executor, {
   }
   registry.register({
     name: 'test.execute',
-    description: 'Run one explicitly approved test command in the authorized workspace. cargo test and other build-class commands use DDA_BUILD_TIMEOUT_MS (default 15 minutes). A timeout failure includes that enforced millisecond limit.' + commandGuidance,
+    description: 'Run one explicitly approved test command in the authorized workspace.' + commandGuidance,
     inputSchema: commandInputSchema,
     outputSchema: processOutputSchema,
     readOnly: false,
@@ -674,9 +880,21 @@ export const registerExecutorTools = (registry, executor, {
   });
   if (networkAdapter) {
     if (typeof networkAdapter.request !== 'function') throw new TypeError('EXECUTOR_NETWORK_ADAPTER_INVALID');
+    for (const tool of webLookupTools) registry.register({
+      ...tool,
+      readOnly: false,
+      metadata: effectMetadata(CAPABILITIES.NETWORK),
+      handler: async (input, context) => {
+        const request = webLookupRequest(tool.name, input);
+        if (!request) throw new SafetyError(SAFETY_ERROR_CODES.NETWORK_INVALID, 'web lookup request');
+        return executeWithLease(CAPABILITIES.NETWORK, request, async lease => webLookupResult(
+          tool.name, input, await networkAdapter.request(request, { lease, signal: context?.signal })
+        ), context);
+      }
+    });
     registry.register({
       name: 'network.request',
-      description: 'Send one explicitly approved network request to an authorized target.',
+      description: 'Fetch one public http(s) URL. You choose the host and path, and you decide whether that URL is appropriate and safe for this task. Skip unrelated sites, credential endpoints, and anything you would not open yourself. Private, local, and metadata addresses are rejected. Redirects are not followed; request the final URL instead.',
       inputSchema: networkInputSchema,
       outputSchema: networkOutputSchema,
       readOnly: false,

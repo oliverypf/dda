@@ -1,0 +1,4 @@
+export const DEFAULT_PROCESS_TIMEOUT_MS = 15 * 1000;
+export const MAX_PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
+export const LEGACY_PROCESS_TIMEOUT_MS = 60 * 1000;
+export const PROCESS_LEASE_MARGIN_MS = 30 * 1000;

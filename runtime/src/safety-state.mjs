@@ -3,7 +3,7 @@
 // Incident tighten maps SEV2→CONFIRM / SEV1→SANDBOX / SEV0→QUARANTINE; SEV3 no-op.
 // Recover: one rank down only; QUARANTINE needs reviewer.approved → DENY only.
 
-import { persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
+import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 
 export const SAFETY_STATE_POLICY_VERSION = 'safety-state-r1';
 export const SAFETY_STATES = Object.freeze([
@@ -200,7 +200,9 @@ export class SafetyStateStore {
       policyVersion: SAFETY_STATE_POLICY_VERSION,
       records: [...this.#records.values()].map(clone)
     };
-    await persistJsonFile(this.#storagePath, payload);
+    await persistJsonFile(this.#storagePath, payload, {
+      merge: (existing, incoming) => mergeRecordsById(existing, incoming, { collection: 'records', id: 'key' })
+    });
   }
 
   #enqueue(work) {

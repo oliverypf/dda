@@ -35,7 +35,7 @@ await page.addInitScript(() => {
     transformCallback() { return ++id; },
     async invoke(command, args = {}) {
       if (command.startsWith('plugin:event|')) return ++id;
-      if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', runtimeReady: true, readOnly: true, workspaceRead: true, releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' };
+      if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', runtimeReady: true, readOnly: true, workspaceRead: true, releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
       if (command === 'default_workspace') return { rootLabel: 'Fixture', rootPath: 'C:/fixture' };
       if (command === 'list_workspace') return [];
       if (command === 'reconcile_runtime_state') return { ok: true, reconciled: 0 };

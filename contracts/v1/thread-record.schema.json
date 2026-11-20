@@ -39,6 +39,8 @@
         "phase": { "enum": ["CLASSIFYING", "PRECHECKING", "ROUTING", "ALLOCATING_CONTEXTS", "PLANNING", "EXECUTING", "VERIFYING", "DIAGNOSING", "RECOVERING"] },
         "state": { "enum": ["IDLE", "RUNNING", "PAUSED", "FAILED", "COMPLETED"] },
         "updatedAtMs": { "type": "integer", "minimum": 0 },
+        "ownerPid": { "type": "integer", "minimum": 1 },
+        "goalDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "checkpointDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "plan": { "type": ["object", "array"] }
       }

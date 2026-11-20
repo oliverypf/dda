@@ -3,8 +3,8 @@
  * must also be operationally independent from the executor's provider, or the
  * result must fail closed before any success claim is recorded.
  */
-export const isHighRiskTask = ({ mode, taskClass } = {}) =>
-  mode === 'CONTROLLED' || ['modify', 'test'].includes(taskClass);
+export const isHighRiskTask = ({ taskClass } = {}) =>
+  ['modify', 'test'].includes(taskClass);
 
 export const evaluateSemanticVerifierIndependence = ({
   mode,

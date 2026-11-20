@@ -200,3 +200,13 @@ Router 只读取 registry 生成的 capability snapshot，不扫描文件系统�
 ## 多版本生命周期
 
 运行时通过 PluginGovernance.versionLifecycle 管理 side-by-side 版本。新版本必须先完成配置迁移 dry-run、self-test 和 shadow；任一步失败都保持旧 active 版本，失败版本进入 DEGRADED。激活后保留 previous-version，可显式 rollback。
+
+### 为任务角色选择插件工作流
+
+在模型配置的 `roleBindings` 中，`planner`、`executor` 和 `critic` 可通过 `skill`、`agentProfile` 选择已加载的贡献。`executor` 还支持 `executorId`。建议使用完整的 `插件ID:贡献ID`。仅配置工作流时沿用该角色原有的模型选择。
+
+```json
+{"roleBindings":{"executor":{"skill":"presentation-workflows:presentation-authoring"}}}
+```
+
+`skill`、`agent`、`executor` 类型的贡献可声明 `workflow.roles` 和 `workflow.instructions`。技能的可选 `workflow.matches` 按任务文本匹配，显式绑定技能优先。执行器必须声明 `workflow.tools`，执行时取该列表与本步骤、宿主租约允许工具的交集。运行事件 `role.workflows_selected` 会记录实际选择。

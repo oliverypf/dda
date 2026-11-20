@@ -43,7 +43,7 @@ test('usage and version stay on the contract exit codes', async () => {
   assert.equal(JSON.parse(unknown.stdout).error.code, 'UNKNOWN_COMMAND');
   assert.equal(unknown.stdout.trim().split('\n').length, 1);
 
-  const version = await run(['--version', '--format', 'jsonl'], env);
+  const version = await run(['--version', '--format', 'jsonl'], { ...env, DDA_PLATFORM: 'linux-cli' });
   assert.equal(version.code, 0);
   const payload = JSON.parse(version.stdout);
   assert.equal(payload.platform, 'linux-cli');
@@ -95,13 +95,13 @@ test('support-info follows the detected Windows and HarmonyOS profiles', async (
 
 test('health runs without a display and prints one JSON object', async () => {
   const { env } = await isolatedEnv();
-  const result = await run(['health', '--format', 'jsonl'], env);
+  const result = await run(['health', '--format', 'jsonl'], { ...env, DDA_PLATFORM: 'linux-cli' });
   assert.equal(result.code, 0, result.stderr + result.stdout);
   const lines = result.stdout.trim().split('\n');
   assert.equal(lines.length, 1);
   const payload = JSON.parse(lines[0]);
   assert.equal(payload.ok, true);
-  assert.equal(payload.runtime.platform, 'linux');
+  assert.equal(payload.runtime.platform, process.platform);
   assert.equal(payload.model.provider.length > 0, true);
   assert.doesNotMatch(result.stdout, /secret|Bearer /u);
 });
@@ -109,11 +109,11 @@ test('health runs without a display and prints one JSON object', async () => {
 test('support-info reports the linux platform and the selected data root', async () => {
   const { env, root } = await isolatedEnv();
   const dataDir = join(root, 'explicit-data');
-  const result = await run(['support-info', '--format', 'jsonl', '--data-dir', dataDir], env);
+  const result = await run(['support-info', '--format', 'jsonl', '--data-dir', dataDir], { ...env, DDA_PLATFORM: 'linux-cli' });
   assert.equal(result.code, 0, result.stderr + result.stdout);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.platform, 'linux-cli');
-  assert.equal(payload.policyChannel, 'READ_ONLY');
+  assert.equal(payload.policyChannel, 'CONTROLLED');
   assert.equal(payload.executor, 'linux-posix');
   assert.equal(payload.protocolVersion, '1.0');
   assert.equal(payload.dataRoot, dataDir);
@@ -122,10 +122,10 @@ test('support-info reports the linux platform and the selected data root', async
   assert.equal(payload.runtimeVersion, runtimePackage.version);
 });
 
-test('read-only task arguments fail closed before a model call', async () => {
+test('task arguments fail closed before a model call', async () => {
   const { env, root } = await isolatedEnv();
-  // node --test may leave process.stdin open; pass an empty stream so READ_ONLY
-  // prompt resolution cannot hang waiting for EOF.
+  // node --test may leave process.stdin open; pass an empty stream so prompt
+  // resolution cannot hang waiting for EOF.
   const emptyStdin = () => ({ stdin: Readable.from([]), approvalTTY: false });
   const missingPrompt = await run(['task', '--workspace', root, '--format', 'jsonl'], env, emptyStdin());
   assert.equal(missingPrompt.code, 2);
@@ -134,9 +134,12 @@ test('read-only task arguments fail closed before a model call', async () => {
   assert.equal(JSON.parse(missingWorkspace.stdout).error.code, 'WORKSPACE_NOT_FOUND');
   const forbidden = await run(['task', '--prompt', '看看', '--workspace', '/proc', '--format', 'jsonl'], env);
   assert.equal(forbidden.code, 4);
-  const controlled = await run(['task', '--prompt', '跑一下', '--workspace', root, '--execution-mode', 'CONTROLLED', '--format', 'jsonl'], env);
-  assert.equal(controlled.code, 5);
-  assert.equal(JSON.parse(controlled.stdout).error.code, 'APPROVAL_UNAVAILABLE');
+  const retired = await run(['task', '--prompt', '看看', '--workspace', root, '--execution-mode', 'READ_ONLY', '--format', 'jsonl'], env);
+  assert.equal(retired.code, 2);
+  assert.equal(JSON.parse(retired.stdout).error.code, 'EXECUTION_MODE_INVALID');
+  const noApprover = await run(['task', '--prompt', '跑一下', '--workspace', root, '--approval-mode', 'prompt', '--format', 'jsonl'], env);
+  assert.equal(noApprover.code, 5);
+  assert.equal(JSON.parse(noApprover.stdout).error.code, 'APPROVAL_UNAVAILABLE');
 });
 
 test('thread list uses the Linux data root and returns an empty catalog', async () => {
@@ -175,12 +178,12 @@ test('migrate-data plans and copies into a fresh data directory', async () => {
   const target = join(root, 'new');
   await mkdir(source, { recursive: true });
   await writeFile(join(source, 'threads.json'), '{"threads":[]}\n');
-  const planned = await run(['migrate-data', '--from', source, '--data-dir', target, '--format', 'jsonl'], env);
+  const planned = await run(['migrate-data', '--from', source, '--data-dir', target, '--format', 'jsonl'], { ...env, DDA_PLATFORM: 'linux-cli' });
   assert.equal(planned.code, 0, planned.stderr + planned.stdout);
   const plannedPayload = JSON.parse(planned.stdout);
   assert.equal(plannedPayload.status, 'PLANNED');
   assert.equal(plannedPayload.filesCopied, 0);
-  const applied = await run(['migrate-data', '--from', source, '--data-dir', target, '--apply', '--format', 'jsonl'], env);
+  const applied = await run(['migrate-data', '--from', source, '--data-dir', target, '--apply', '--format', 'jsonl'], { ...env, DDA_PLATFORM: 'linux-cli' });
   assert.equal(applied.code, 0, applied.stderr + applied.stdout);
   const appliedPayload = JSON.parse(applied.stdout);
   assert.equal(appliedPayload.status, 'COMPLETED');

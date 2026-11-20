@@ -29,7 +29,9 @@ const manifestWith = (permissions, permissionCeiling) => ({
   }]
 });
 
-test('a READ_ONLY ceiling cannot declare control-level permissions', () => {
+test('OBSERVE and legacy READ_ONLY ceilings cannot declare control-level permissions', () => {
+  assert.throws(() => validatePluginManifest(manifestWith(['executor.invoke.controlled'], 'OBSERVE')), /PLUGIN_PERMISSION_CEILING_EXCEEDED/u);
+  assert.doesNotThrow(() => validatePluginManifest(manifestWith(['workspace.read.content'], 'OBSERVE')));
   const exceeding = manifestWith(['workspace.read.content', 'executor.invoke.controlled'], 'READ_ONLY');
   assert.deepEqual(permissionsExceedingCeiling(exceeding), [
     { contributionId: 'ceiling-fixture.contribution', ceiling: 'READ_ONLY', permission: 'executor.invoke.controlled' }
@@ -43,11 +45,12 @@ test('a READ_ONLY ceiling cannot declare control-level permissions', () => {
 
 test('an undeclared ceiling keeps the historical vocabulary and a declared one narrows it', () => {
   assert.equal(effectivePermissionCeiling(manifestWith(['executor.invoke.controlled'])), 'CONTROLLED');
-  assert.equal(effectivePermissionCeiling(manifestWith(['executor.invoke.controlled'], 'READ_ONLY')), 'READ_ONLY');
+  assert.equal(effectivePermissionCeiling(manifestWith(['executor.invoke.controlled'], 'READ_ONLY')), 'OBSERVE');
+  assert.equal(effectivePermissionCeiling(manifestWith(['executor.invoke.controlled'], 'OBSERVE')), 'OBSERVE');
   assert.deepEqual(permissionsWithinCeiling(manifestWith(['executor.invoke.controlled', 'workspace.read.content'], 'READ_ONLY')), ['workspace.read.content']);
   // READ_ONLY never contains a mutating or egress permission.
   for (const permission of ['executor.invoke.controlled', 'process.execute.shell', 'filesystem.write.workspace', 'network.connect.host', 'trajectory.write']) {
-    assert.equal(CEILING_PERMISSIONS.READ_ONLY.includes(permission), false, permission);
+    assert.equal(CEILING_PERMISSIONS.OBSERVE.includes(permission), false, permission);
   }
 });
 

@@ -60,7 +60,7 @@ Safety 是硬约束，不参与可被质量、成本或速度抵消的加权总�
 判定分为：
 
 - `decision`: `ALLOW | DENY | QUARANTINE`
-- `requiredControls`: `MONITOR | CONFIRM | SANDBOX | READ_ONLY | NETWORK_ALLOWLIST | RESOURCE_LIMIT | ...`
+- `requiredControls`: `MONITOR | CONFIRM | SANDBOX | OBSERVE | NETWORK_ALLOWLIST | RESOURCE_LIMIT | ...`（历史 `READ_ONLY` 按 `OBSERVE` 读取）
 - `governanceStage`: `ALLOW | MONITOR | CONFIRM | SANDBOX | DENY | QUARANTINE`
 
 治理阶段用于长期画像；实时 decision 仍针对当前对象。不能把历史 `ALLOW` 当作当前动作授权。
@@ -79,7 +79,7 @@ interface ActionIntent {
   executorId: string;
   workspaceId: string;
   workspaceSnapshotId: string;
-  actionClass: string; // READ_ONLY | SIDE_EFFECT
+  actionClass: string; // OBSERVE | SIDE_EFFECT; legacy READ_ONLY means OBSERVE
   actionType: string;
   normalizedScope: Array<ResourceScope>;
   argumentsCanonicalJson: string;
@@ -111,7 +111,9 @@ interface RollbackPlan {
 }
 ```
 
-模型只生成候选参数。Core 负责 schema 校验、规范化和 digest；Safety/Executor 使用同一 canonical representation。任何参数、cwd、环境、scope 或 snapshot 改变都会创建新 intent。`READ_ONLY` 不等于绝对安全：读取秘密、越权路径或敏感外传仍可被拒绝；它只表示该操作不应改变外部状态且不签发副作用 lease。
+模型只生成候选参数。Core 负责 schema 校验、规范化和 digest；Safety/Executor 使用同一 canonical representation。任何参数、cwd、环境、scope 或 snapshot 改变都会创建新 intent。`OBSERVE` 不等于绝对安全：读取秘密、越权路径或敏感外传仍可被拒绝；它只表示该操作不应改变外部状态且不签发副作用 lease。
+
+按 [ADR-0026](adr/0026-remove-read-only-execution-mode.md)，新任务只有 `CONTROLLED` 执行方式，默认仍没有副作用授权。观察操作受 Workspace/Tool Port 约束；命令、写入、测试与网络操作仍须具有明确的宿主授权范围，并经审批与一次性 PolicyLease。旧 `READ_ONLY` 事件仅供历史读取，新命令不得用旧值请求执行。插件的旧 `READ_ONLY` 权限上限必须按 `OBSERVE` 收紧读取，不能映射为执行权限。
 
 ## 6. PolicyLease
 

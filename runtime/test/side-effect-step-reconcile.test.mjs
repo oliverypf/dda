@@ -558,7 +558,7 @@ test('retries a rejected step across more than eight resumed runs and rejects a 
   assert.equal(classify(chain(3, { dropRoot: true })).reason, 'LINEAGE_UNKNOWN');
 });
 
-test('read-only observation retry is unchanged and does not clear a persisted uncertain step', () => {
+test('a legacy mode or caller observation flag cannot bypass effect reconciliation', () => {
   const executed = expiredInspectEvidence({
     extraEvents: [{ runId: 'run-a', kind: 'ActionExecuted', payload: { intentId: 'intent-1' } }]
   });
@@ -567,7 +567,7 @@ test('read-only observation retry is unchanged and does not clear a persisted un
     readOnlyObservationRetry: true,
     ...executed
   });
-  assert.deepEqual(running, { status: 'RETRY', reason: 'READ_ONLY_OBSERVATION' });
+  assert.deepEqual(running, { status: 'UNCERTAIN', reason: 'EXECUTION_MODE_INVALID' });
 
   const stuck = classify({
     mode: 'READ_ONLY',
@@ -575,7 +575,7 @@ test('read-only observation retry is unchanged and does not clear a persisted un
     step: { stepId: 'inspect', status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' },
     ...expiredInspectEvidence()
   });
-  assert.deepEqual(stuck, { status: 'UNCERTAIN', reason: 'READ_ONLY_UNCHANGED' });
+  assert.deepEqual(stuck, { status: 'UNCERTAIN', reason: 'EXECUTION_MODE_INVALID' });
 
   const disabled = classify({
     mode: 'READ_ONLY',
@@ -585,5 +585,21 @@ test('read-only observation retry is unchanged and does not clear a persisted un
     records: [],
     sourceRunId: 'run-a'
   });
-  assert.deepEqual(disabled, { status: 'UNCERTAIN', reason: 'READ_ONLY_UNCHANGED' });
+  assert.deepEqual(disabled, { status: 'UNCERTAIN', reason: 'EXECUTION_MODE_INVALID' });
+});
+
+test('observation retries require actual host evidence and no intent or journal effects', () => {
+  const observation = { runId: 'run-a', eventId: 'observed', kind: 'ToolInvocationCompleted',
+    payload: { name: 'workspace.read', ok: true, durationMs: 1 } };
+  const evidence = {
+    events: [{ runId: 'run-a', kind: 'TaskRunCreated', payload: { requestedMode: 'CONTROLLED' } }, observation],
+    records: [], journalEffects: [], sourceRunId: 'run-a'
+  };
+  assert.deepEqual(classify(evidence), { status: 'RETRY', reason: 'OBSERVATION_ONLY' });
+  assert.equal(classify({ ...evidence, journalStatus: 'unreadable' }).status, 'UNCERTAIN');
+  assert.equal(classify({ ...evidence, step: { stepId: 'inspect', status: 'BLOCKED', errorCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' } }).status, 'UNCERTAIN');
+  for (const kind of ['ActionRequested', 'ActionAuthorized', 'ActionExecuted', 'ExecutionStateChanged', 'TaskFileWritten']) {
+    assert.equal(classify({ ...evidence, events: [...evidence.events, { runId: 'run-a', kind, payload: {} }] }).status, 'UNCERTAIN', kind);
+  }
+  assert.equal(classify({ ...evidence, events: [evidence.events[0], { ...observation, payload: { name: 'workspace.read', ok: true } }] }).status, 'UNCERTAIN');
 });

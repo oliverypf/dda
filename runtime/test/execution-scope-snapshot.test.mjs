@@ -80,14 +80,14 @@ test('every execution scope field mismatch is detected (S2-02 field matrix)', ()
     runId: 'run-1', operationId: 'op-1', workspaceRootDigest: 'ws', canonicalRootDigest: 'canonical',
     repositoryRootDigest: 'repo', beforeHead: 'head', allowedPathRoots: ['src/a.txt'], allowedPathGlobs: ['src/**'],
     forbiddenPathGlobs: ['.env'], allowedCapabilities: ['read'], allowedCommands: ['git status'],
-    allowedNetworkTargets: ['api.example.test'], executionMode: 'CONTROLLED',
+    allowedNetworkTargets: ['api.example.test'], allowedPathScope: 'WORKSPACE', executionMode: 'CONTROLLED',
     releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED', policyVersion: 'runtime-safety-1',
     bindingSnapshotDigest: 'binding', approvalScopeDigest: 'approval', leaseScopeDigest: 'lease',
     decisionIds: ['d1'], createdAtMs: 42
   };
   const base = createExecutionScopeSnapshot(baseInput);
   const fields = Object.keys(base).filter((field) => field !== 'snapshotDigest');
-  assert.equal(fields.length, 20);
+  assert.equal(fields.length, 21);
   for (const field of fields) {
     const current = base[field];
     const mutated = Array.isArray(current)
@@ -98,4 +98,34 @@ test('every execution scope field mismatch is detected (S2-02 field matrix)', ()
     assert.equal(comparison.ok, false, `${field} change must fail the comparison`);
     assert.ok(comparison.mismatchedFields.includes(field), `${field} must be listed as mismatched`);
   }
+});
+
+test('WORKSPACE path scope accepts repository changes but still fails on metadata drift', () => {
+  const path = sha256Digest('src/result.txt');
+  const other = sha256Digest('other.txt');
+  const scope = createExecutionScopeSnapshot({ allowedPathScope: 'WORKSPACE' });
+  const before = {
+    available: true,
+    headDigest: 'head-a', indexDigest: 'index-a', repositoryRootDigest: 'repo-a',
+    workingTreeDigest: 'tree-a', untrackedDigest: 'untracked-a',
+    status: { pathDigests: [] }
+  };
+  const after = {
+    ...before,
+    workingTreeDigest: 'tree-b',
+    status: { pathDigests: [path, other] }
+  };
+  const allowed = compareGitObservations(before, after, scope);
+  assert.equal(allowed.ok, true);
+  assert.deepEqual(allowed.outOfScopePathDigests, []);
+  assert.deepEqual(allowed.changedPathDigests, [path, other].sort());
+  const metadata = compareGitObservations(before, { ...after, indexDigest: 'index-b' }, scope);
+  assert.equal(metadata.ok, false);
+  assert.equal(metadata.metadataChanged, true);
+  const headLink = compareGitObservations(before, { ...after, metadataLinkDetected: true }, scope);
+  assert.equal(headLink.ok, false);
+  const defaultScope = createExecutionScopeSnapshot({});
+  const strict = compareGitObservations(before, after, defaultScope);
+  assert.equal(strict.ok, false);
+  assert.equal(strict.outOfScopePathDigests.length, 2);
 });

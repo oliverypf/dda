@@ -47,8 +47,8 @@ const HELP = `dda <command> [subcommand] [options]
   --workspace PATH       --timeout-ms N  --events stdout
   --quiet --verbose --help --version
 
-默认执行模式是 READ_ONLY。CONTROLLED 必须显式指定，并且在没有终端时只能使用
---approval-mode jsonl 或 deny。
+任务统一使用 CONTROLLED。副作用需要授权范围、逐项审批和一次性租约。
+有终端时默认 --approval-mode prompt；无终端时默认 deny，可显式选择 jsonl。
 
 同一入口可在 Linux、Windows 和鸿蒙 PC 上运行。平台由当前系统决定，也可以用
 DDA_PLATFORM=linux-cli|windows-cli|harmonyos-cli 显式指定。
@@ -242,7 +242,7 @@ export async function main(argv, io = {}) {
     return reportError(error?.code === 'ENOSPC' ? 'ENOSPC' : 'STORAGE_ERROR');
   }
 
-  const executionMode = parsed.options.executionMode ?? 'READ_ONLY';
+  const executionMode = 'CONTROLLED';
   let workspace;
   if (parsed.command === 'task' || parsed.command === 'tools' || (parsed.command === 'thread' && parsed.subcommand === 'create')) {
     if (!parsed.options.workspace) return reportError(parsed.command === 'task' ? 'ARGUMENT_INVALID' : 'WORKSPACE_NOT_FOUND');
@@ -279,20 +279,18 @@ export async function main(argv, io = {}) {
     if (!resolved.ok) return reportError(resolved.code);
     taskPrompt = resolved.prompt;
     approvalMode = resolved.approvalMode;
-    if (executionMode === 'CONTROLLED') {
-      if (!approvalMode || (approvalMode === 'prompt' && !approvalTTY)) return reportError('APPROVAL_UNAVAILABLE');
-      // A mode that needs host input but has no reader would leave every
-      // request pending until it expires; fail early instead.
-      if (approvalMode === 'prompt' && typeof io.readApprovalLine !== 'function') return reportError('APPROVAL_UNAVAILABLE');
-      if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
-    }
+    if (!approvalMode || (approvalMode === 'prompt' && !approvalTTY)) return reportError('APPROVAL_UNAVAILABLE');
+    // A mode that needs host input but has no reader would leave every
+    // request pending until it expires; fail early instead.
+    if (approvalMode === 'prompt' && typeof io.readApprovalLine !== 'function') return reportError('APPROVAL_UNAVAILABLE');
+    if (approvalMode === 'jsonl' && !io.approvalInput) return reportError('APPROVAL_UNAVAILABLE');
   }
 
   const configPath = parsed.options.config ?? (env.DDA_MODEL_CONFIG?.trim() || undefined);
   const keyNames = await providerKeyNames(configPath ?? paths.modelConfigPath(), env);
   const childEnv = buildRuntimeEnv(env, { extraKeys: keyNames });
   childEnv.DDA_PLATFORM = host;
-  childEnv.DDA_RELEASE_CHANNEL = releaseChannelForPolicy(executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY');
+  childEnv.DDA_RELEASE_CHANNEL = releaseChannelForPolicy('CONTROLLED');
   childEnv.DDA_DATA_DIR = paths.dataDir();
   delete childEnv.DDA_BAKED_RELEASE_CHANNEL;
   if (configPath) childEnv.DDA_MODEL_CONFIG = configPath;
@@ -352,7 +350,7 @@ export async function main(argv, io = {}) {
   // it emitted an event this headless CLI cannot interpret (fail closed).
   let observedCancelled = false;
   let unsupportedEvent;
-  const policy = executionMode === 'CONTROLLED' ? 'CONTROLLED' : 'READ_ONLY';
+  const policy = 'CONTROLLED';
   try {
     const outcome = await runRuntimeCommand({
       supervisor,

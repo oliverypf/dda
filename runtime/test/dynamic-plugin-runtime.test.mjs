@@ -12,6 +12,9 @@ import { DynamicPluginLoader } from '../src/plugin-loader.mjs';
 import { EvolutionRegistry } from '../src/plugins/evolution-registry.mjs';
 import { EvolutionEvaluator } from '../src/evolution-evaluator.mjs';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
+import { installPluginTrustKey, signPluginManifest } from './helpers/sign-plugin.mjs';
+
+installPluginTrustKey();
 
 const run = (args, env = {}) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, ['src/index.mjs', ...args], {
@@ -87,10 +90,14 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
   const registry = new EvolutionRegistry({ storagePath: evolutionPath });
   const evaluator = new EvolutionEvaluator({ registry, storagePath: evaluationPath });
   const loader = new DynamicPluginLoader({ rootDir: pluginRoot, governance, registry: new PluginRegistry() });
-  const active = await loader.discover({ manifest: fixtureManifest('com.example.active'), entryPath: 'active.mjs' });
-  const inactive = await loader.discover({ manifest: fixtureManifest('com.example.inactive'), entryPath: 'inactive.mjs' });
-  const failing = await loader.discover({ manifest: fixtureManifest('com.example.failing'), entryPath: 'failing.mjs' });
-  const unauthorized = await loader.discover({ manifest: fixtureManifest('com.example.unauthorized'), entryPath: 'unauthorized.mjs' });
+  const discoverSigned = (id, entryPath) => {
+    const pluginManifest = fixtureManifest(`com.example.${id}`);
+    return loader.discover({ manifest: pluginManifest, entryPath, signature: signPluginManifest(pluginManifest) });
+  };
+  const active = await discoverSigned('active', 'active.mjs');
+  const inactive = await discoverSigned('inactive', 'inactive.mjs');
+  const failing = await discoverSigned('failing', 'failing.mjs');
+  const unauthorized = await discoverSigned('unauthorized', 'unauthorized.mjs');
   await activate(governance, active.pluginId, evaluator, registry);
   await activate(governance, failing.pluginId, evaluator, registry);
   await activate(governance, unauthorized.pluginId, evaluator, registry);
@@ -125,19 +132,14 @@ test('runTask activates only ACTIVE dynamic plugins and isolates failures', asyn
     DDA_TRAJECTORY_STORE: join(root, 'trajectory.jsonl'),
     DDA_DECISION_TRACE_STORE: join(root, 'decision-trace.json')
   };
-  const phase1 = await run(taskArgs, { ...taskEnv, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' });
-  assert.equal(phase1.code, 0, phase1.stdout);
-  const phase1Payload = JSON.parse(phase1.stdout.trim());
-  assert.ok(phase1Payload.dynamicPlugins.every((plugin) => plugin.state === 'DISABLED'));
   await assert.rejects(readFile(importedMarker), { code: 'ENOENT' });
-  const phase1Governance = JSON.parse(await readFile(governancePath, 'utf8'));
-  assert.equal(phase1Governance.plugins.find((plugin) => plugin.pluginId === active.pluginId).state, 'ACTIVE');
+  // Controlled channels load governed ACTIVE plugins: the signature gate lives
+  // at discover, not at a per-channel disable.
   const directLoad = await run(['plugin', 'load', '--plugin-id', active.pluginId], {
-    ...taskEnv, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY'
+    ...taskEnv, DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED'
   });
-  assert.equal(directLoad.code, 1);
-  assert.equal(JSON.parse(directLoad.stdout.trim()).error, 'RELEASE_CHANNEL_DYNAMIC_PLUGIN_DISABLED');
-  await assert.rejects(readFile(importedMarker), { code: 'ENOENT' });
+  assert.equal(directLoad.code, 0, `${directLoad.stderr}\n${directLoad.stdout}`);
+  assert.equal(await readFile(importedMarker, 'utf8'), 'imported');
   const result = await run(taskArgs, taskEnv);
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = JSON.parse(result.stdout.trim());

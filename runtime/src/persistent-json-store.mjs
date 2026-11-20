@@ -8,7 +8,7 @@ import { copyFile } from 'node:fs/promises';
 // at the same time.  The token check in release() prevents an old process from
 // removing a lock that was reclaimed after a crash.
 const DEFAULTS = Object.freeze({
-  lockTimeoutMs: 15_000,
+  lockTimeoutMs: 30_000,
   staleLockMs: 60_000,
   retryDelayMs: 8,
   maxRetryDelayMs: 250,

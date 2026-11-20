@@ -19,8 +19,15 @@ describe('conversation timeline visibility (live and history share one filter)',
     expect(isConversationTimelineItem({ kind: 'STATUS', status: 'ERROR', evidenceKind: VERIFICATION_FAILURE_REASON })).toBe(true);
     expect(isConversationTimelineItem({ kind: 'STATUS', status: 'PENDING', evidenceKind: VERIFICATION_FAILURE_REASON })).toBe(true);
     expect(isConversationTimelineItem({ kind: 'STATUS', status: 'ERROR', evidenceKind: 'rule-verification-check' })).toBe(true);
+    expect(isConversationTimelineItem({ kind: 'STATUS', status: 'COMPLETE', evidenceKind: 'semantic-verification-summary' })).toBe(true);
+    expect(isConversationTimelineItem({ kind: 'STATUS', status: 'COMPLETE', evidenceKind: 'conversation-notice' })).toBe(true);
     // the 未达到验收条件 item is tagged with the reason evidenceKind
     expect(mainSource).toMatch(/title: '未达到验收条件',\s*evidenceKind: VERIFICATION_FAILURE_REASON/);
+  });
+  it('does not keep a second tool-execution list under the conversation', () => {
+    expect(mainSource).not.toContain('工具执行过程');
+    expect(mainSource).not.toContain('data-execution-group');
+    expect(mainSource).not.toContain('data-live-tools');
   });
   it('history and live both use the filter', () => {
     expect(mainSource).toContain('timelineItems.filter(isConversationTimelineItem)');

@@ -3,6 +3,8 @@ import { renderMarkdown } from './markdown';
 import { syncRegionContent } from './keyed-list';
 
 // Keep completed rows untouched; append large bursts over several frames.
+const activeContainerTimeline = new WeakMap<HTMLElement, LiveTimeline>();
+
 export class LiveTimeline {
   private rows = new Map<string, { element: HTMLElement; item: TimelineItem; paintedAt: number }>();
   private items: TimelineItem[] = [];
@@ -10,7 +12,14 @@ export class LiveTimeline {
   private streamTimer: number | undefined;
 
   constructor(private container: HTMLElement, private html: (item: TimelineItem) => string,
-    private initialize: (element: HTMLElement) => void, private afterPaint: () => void) {}
+    private initialize: (element: HTMLElement) => void, private afterPaint: () => void) {
+    const previous = activeContainerTimeline.get(container);
+    if (previous && previous !== this) previous.pause();
+    activeContainerTimeline.set(container, this);
+    // Session switches reuse the live workbench container; clear any DOM nodes
+    // left by the previous session before mounting this session's items.
+    container.replaceChildren();
+  }
 
   update(items: TimelineItem[]): void {
     this.items = items;
@@ -24,10 +33,55 @@ export class LiveTimeline {
     this.streamTimer = undefined;
   }
 
+  clear(): void {
+    this.pause();
+    this.items = [];
+    this.rows.clear();
+    if (activeContainerTimeline.get(this.container) === this) {
+      this.container.replaceChildren();
+      activeContainerTimeline.delete(this.container);
+    }
+  }
+
+  hasRows(): boolean {
+    return this.rows.size > 0;
+  }
+
+  isMountedIn(container: HTMLElement): boolean {
+    return this.container === container;
+  }
+
+  /**
+   * Detach the painted rows from the visible transcript without destroying
+   * them. A later retarget puts the same nodes back, so switching tasks does
+   * not parse Markdown again.
+   */
+  park(): void {
+    this.pause();
+    const holder = document.createElement('div');
+    while (this.container.firstChild) holder.appendChild(this.container.firstChild);
+    if (activeContainerTimeline.get(this.container) === this) activeContainerTimeline.delete(this.container);
+    this.container = holder;
+    activeContainerTimeline.set(holder, this);
+  }
+
+  retarget(container: HTMLElement): void {
+    this.pause();
+    const previous = activeContainerTimeline.get(container);
+    if (previous && previous !== this) previous.pause();
+    const holder = this.container;
+    if (holder === container) return;
+    if (activeContainerTimeline.get(holder) === this) activeContainerTimeline.delete(holder);
+    this.container = container;
+    activeContainerTimeline.set(container, this);
+    container.replaceChildren();
+    while (holder.firstChild) container.appendChild(holder.firstChild);
+  }
+
   private flush(): void {
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
-    if (!this.container.isConnected) return;
+    if (!this.container.isConnected || activeContainerTimeline.get(this.container) !== this) return;
     const wanted = new Set(this.items.map((item) => item.itemId));
     for (const [id, row] of this.rows) {
       if (!wanted.has(id)) { row.element.remove(); this.rows.delete(id); }
@@ -87,8 +141,33 @@ export class LiveTimeline {
   private patchStream(row: { element: HTMLElement; item: TimelineItem }, next: TimelineItem): boolean {
     const previous = row.item;
     if (previous.kind !== 'AGENT' || next.kind !== 'AGENT'
-      || Object.keys({ ...previous, ...next }).some((key) => key !== 'body' && key !== 'status'
+      || Boolean(previous.thinking) !== Boolean(next.thinking)
+      || Object.keys({ ...previous, ...next }).some((key) =>
+        key !== 'body' && key !== 'status' && key !== 'thinkingCompletedAtMs' && key !== 'thinkingLabel'
         && previous[key as keyof TimelineItem] !== next[key as keyof TimelineItem])) return false;
+    if (next.thinking) {
+      const details = row.element.querySelector<HTMLDetailsElement>('.timeline-thinking-details');
+      const body = row.element.querySelector<HTMLElement>('.timeline-thinking-body');
+      const summaryLabel = row.element.querySelector<HTMLElement>('.timeline-thinking-label');
+      if (!details || !body || !summaryLabel) return false;
+      if (next.body !== previous.body) {
+        body.classList.add('markdown-body');
+        syncRegionContent(body, renderMarkdown(next.body), () => {});
+      }
+      row.element.dataset.status = next.status;
+      if (previous.status !== next.status) {
+        const baseLabel = next.thinkingLabel || '思考过程';
+        if (next.status === 'COMPLETE') {
+          const secs = Math.max(1, Math.round(((next.thinkingCompletedAtMs ?? Date.now()) - next.createdAtMs) / 1000));
+          summaryLabel.textContent = `已${baseLabel}（${secs} 秒）`;
+          if (details.dataset.userToggled !== '1') details.open = false;
+          row.element.querySelector('.timeline-thinking-spinner')?.remove();
+        } else {
+          summaryLabel.textContent = `${baseLabel}…`;
+        }
+      }
+      return true;
+    }
     const body = row.element.querySelector<HTMLElement>('.timeline-body');
     if (!body) return false;
     if (next.body !== previous.body) {

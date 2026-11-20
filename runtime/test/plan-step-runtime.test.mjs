@@ -2,9 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
@@ -17,21 +15,47 @@ const scorePositions = (letter, probability) => [
   ] }
 ];
 
-const run = (args, env) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, ['src/index.mjs', ...args], {
-    cwd: new URL('..', import.meta.url),
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe']
+async function createRuntimeFixture(t, verify = () => 'PASS') {
+  const dataDir = await mkdtemp(join(tmpdir(), 'hmcodex-plan-data-'));
+  let lastVerdict = 'PASS';
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const choices = { actionGate: 'ALLOW', actionGateReason: 'UNSPECIFIED', evidence: 'SUFFICIENT',
+      failureType: 'NONE', test: 'NONE', escalation: 'LOCAL_CONTINUE' };
+    if (body.questions.verification) lastVerdict = verify(body);
+    choices.verification = lastVerdict;
+    choices.stop = lastVerdict === 'PASS' ? 'STOP_SUCCESS' : 'NEED_MORE_EVIDENCE';
+    const answers = Object.fromEntries(Object.entries(body.questions).map(([id, question]) =>
+      [id, { choice: choices[id] ?? Object.keys(question.criteria)[0], confidence: 0.99 }]));
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ answers }));
   });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (chunk) => { stdout += chunk; });
-  child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.once('error', reject);
-  child.once('close', (code) => resolve({ code, stdout, stderr }));
-});
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const port = await listenOnFetchablePort(server);
+  const hostEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^DDA_/iu.test(name)));
+  const fixtureEnv = { DDA_DATA_DIR: dataDir, LOCALAPPDATA: dataDir, APPDATA: dataDir,
+    XDG_CONFIG_HOME: dataDir, XDG_DATA_HOME: dataDir, DDA_CONTEXT_PROVIDER: 'journal',
+    DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1', DDA_JEV_ENDPOINT: `http://127.0.0.1:${port}/jev`,
+    DDA_JEV_API_KEY_ENV: 'DDA_FIXTURE_JEV_KEY', DDA_FIXTURE_JEV_KEY: 'test-key' };
+  return (args, env) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['src/index.mjs', ...args], {
+      cwd: new URL('..', import.meta.url),
+      env: { ...hostEnv, ...fixtureEnv, ...env },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
 
 test('executes a multi-step planner DAG one step at a time and persists step checkpoints', async (t) => {
+  const run = await createRuntimeFixture(t);
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-plan-runtime-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
   const requests = [];
@@ -99,7 +123,8 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   // must not fan out a separate model verifier role for each step.
   assert.equal(requests.filter((item) => /Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 0);
   assert.equal(requests.filter((item) => !/Planner role|Semantic Verifier role/iu.test(String(item.instructions ?? ''))).length, 2);
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const listed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(listed.stdout.trim()).events;
   const stepEvents = events.filter((event) => event.kind === 'PlanStepStateChanged');
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'first' && step.status === 'SUCCEEDED')));
   assert.ok(stepEvents.some((event) => event.payload.steps.some((step) => step.stepId === 'second' && step.status === 'SUCCEEDED')));
@@ -111,8 +136,8 @@ test('executes a multi-step planner DAG one step at a time and persists step che
   const decisionTrace = JSON.parse(await readFile(`${trajectory}.decision-trace.json`, 'utf8'));
   const plannerDecision = decisionTrace.decisions.find((decision) => decision.decisionType === 'CREATE_PLAN');
   assert.deepEqual(plannerDecision.assumptions.map((item) => item.statement), [
-    'README evidence is available',
-    'both steps produce evidence'
+    'ASSUMPTION_REDACTED',
+    'ASSUMPTION_REDACTED'
   ]);
   assert.deepEqual(plannerDecision.assumptions.map((item) => item.testable), [false, true]);
   assert.ok(plannerDecision.uncertaintyCodes.includes('PLAN_ASSUMPTIONS_UNVERIFIED'));
@@ -128,6 +153,7 @@ test('executes a multi-step planner DAG one step at a time and persists step che
 });
 
 test('multi-agent runtime reviews a complex plan through isolated Council turns', async (t) => {
+  const run = await createRuntimeFixture(t);
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-council-runtime-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
   const requests = [];
@@ -224,16 +250,18 @@ test('multi-agent runtime reviews a complex plan through isolated Council turns'
   const councilDecision = decisionTrace.decisions.find((decision) => decision.decisionType === 'REVIEW_PLAN');
   assert.ok(councilDecision.outputRefs.some((ref) => ref.startsWith('council-ranking-')));
   assert.ok(councilDecision.assumptions.some((item) =>
-    item.statement === 'selected the bounded plan' && item.source === 'MODEL_INFERENCE'));
+    item.statement === 'ASSUMPTION_REDACTED' && item.source === 'MODEL_INFERENCE'));
   const selectedCouncilOption = councilDecision.options.find((option) => option.optionId === councilDecision.selectedOptionId);
   assert.equal(selectedCouncilOption.expectedQuality, 0.8);
   assert.ok(councilDecision.options.some((option) => option.rejectionReasonCodes.includes('RANK_2')));
 });
 
 test('resumes a failed thread from its checkpoint without rerunning completed steps', async (t) => {
+  const run = await createRuntimeFixture(t);
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-plan-resume-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
   const threadStore = join(workspace, 'threads.json');
+  await writeFile(join(workspace, 'receipt.txt'), 'source marker 649003');
   const requests = [];
   const inputTextOf = (body) => [
     JSON.stringify(body.input ?? []),
@@ -262,6 +290,16 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
       const resuming = inputText.includes('resume attempt');
       const resumeStep = inputText.includes('Current plan step: resume')
         || inputText.includes('Current validated plan step: resume');
+      if (!resumeStep && inputText.includes('Current validated plan step: completed') && !body.input.some(item => item.type === 'function_call_output')) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        const emit = event => response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+        emit({ type: 'response.output_item.added', output_index: 0,
+          item: { type: 'function_call', id: 'read-input', call_id: 'call_input', name: 'workspace.read', arguments: '' } });
+        emit({ type: 'response.function_call_arguments.done', item_id: 'read-input', output_index: 0, arguments: JSON.stringify({ path: 'receipt.txt' }) });
+        emit({ type: 'response.completed' });
+        response.end();
+        return;
+      }
       text = resumeStep && !resuming ? '' : 'executor evidence';
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -277,13 +315,16 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
     '--workspace', workspace, '--trajectory-store', trajectory, '--thread-store', threadStore,
     '--max-recovery-attempts', '2'
   ];
-  const first = await run([...common, '--prompt', 'initial attempt'], { DDA_RESUME_KEY: 'resume-key' });
+  const env = { DDA_RESUME_KEY: 'resume-key' };
+  const first = await run([...common, '--prompt', 'initial attempt'], env);
   assert.equal(first.code, 1, `${first.stderr}\n${first.stdout}`);
   const persisted = JSON.parse(await readFile(threadStore, 'utf8'));
   const thread = persisted.threads[0];
   assert.ok(thread?.checkpoint?.plan);
   assert.equal(thread.checkpoint.plan.steps.find((step) => step.stepId === 'completed').status, 'SUCCEEDED');
   assert.equal(thread.checkpoint.plan.steps.find((step) => step.stepId === 'resume').status, 'FAILED');
+  assert.equal(thread.checkpoint.plan.stepFindings?.[0]?.stepId, 'completed');
+  assert.ok(!JSON.stringify(thread.checkpoint.plan).includes('source marker 649003'));
   const evaluated = await run(['evaluate', '--run-id', thread.checkpoint.runId], {
     DDA_TRAJECTORY_STORE: trajectory
   });
@@ -293,10 +334,11 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   assert.equal(evaluation.optionCoverage.percent, 100);
   assert.equal(evaluation.evidenceLinkRate.percent, 100);
   assert.equal(evaluation.decisionOutcomeLinkRate.percent, 100);
-  const failureEvents = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-  assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && event.payload?.code === 'EMPTY_MODEL_RESPONSE'));
+  const failureListed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const failureEvents = JSON.parse(failureListed.stdout.trim()).events;
+  assert.ok(failureEvents.some((event) => event.kind === 'TaskRunFailed' && (event.payload?.payload ?? event.payload)?.code === 'EMPTY_MODEL_RESPONSE'));
   const beforeResumeRequests = requests.length;
-  const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], { DDA_RESUME_KEY: 'resume-key' });
+  const second = await run([...common, '--resume', '--thread-id', thread.id, '--prompt', 'resume attempt'], env);
   assert.equal(second.code, 0, `${second.stderr}\n${second.stdout}`);
   const payload = JSON.parse(second.stdout.trim());
   assert.equal(payload.ok, true);
@@ -305,10 +347,19 @@ test('resumes a failed thread from its checkpoint without rerunning completed st
   const resumeRequests = requests.slice(beforeResumeRequests);
   assert.equal(resumeRequests.filter((item) => /Planner role/iu.test(String(item.instructions ?? ''))).length, 0);
   assert.equal(resumeRequests.filter((item) => inputTextOf(item).includes('Current validated plan step: completed')).length, 0);
-  assert.equal(resumeRequests.filter((item) => inputTextOf(item).includes('Current validated plan step: resume')).length, 1);
+  const resumedReports = resumeRequests.filter(item => inputTextOf(item).includes('Current validated plan step: resume'));
+  assert.equal(resumedReports.length, 1);
+  assert.match(inputTextOf(resumedReports[0]), /completed \| receipt.txt source marker 649003/);
 });
 
 test('recovers from a binary workspace read and verifies a colored build log through the runtime', async (t) => {
+  const run = await createRuntimeFixture(t, ({ state }) => {
+    const hostReads = state.evidence.filter(item => item.id.startsWith('host-tool-observation-'))
+      .map(item => JSON.parse(item.claim));
+    const logWasRead = state.evidence.some(item => item.type === 'path_observation' && JSON.parse(item.claim).path === 'build.log')
+      && hostReads.some(action => action.name === 'workspace.read' && action.state === 'SUCCEEDED');
+    return logWasRead ? 'PASS' : 'UNCERTAIN';
+  });
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-log-recovery-'));
   const trajectory = join(workspace, 'trajectory.jsonl');
   const log = '\x1b[32mBUILD SUCCESSFUL\x1b[0m\n';
@@ -349,8 +400,15 @@ test('recovers from a binary workspace read and verifies a colored build log thr
   assert.match(firstOutput.output, /WORKSPACE_BINARY_FILE/);
   const recoveredOutput = requests[3].input.find((item) => item.type === 'function_call_output');
   assert.equal(JSON.parse(recoveredOutput.output).content, log);
-  const events = (await readFile(trajectory, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const verifiedListed = await run(['harness-events', 'list', '--trajectory-store', trajectory], {});
+  const events = JSON.parse(verifiedListed.stdout.trim()).events;
   const verifications = events.filter((event) => event.kind === 'VerificationCompleted' && event.payload.status);
-  assert.deepEqual(verifications.map((event) => event.payload.status), ['CONTINUE', 'PASS']);
+  assert.deepEqual(verifications.map((event) => event.payload.status), ['UNCERTAIN', 'PASS']);
+  assert.ok(verifications[0].payload.failureCodes.includes('JEV_EVIDENCE_REQUIRED'));
+  const decisions = events.filter(event => event.kind === 'DecisionLayerEvaluated' && event.payload.action);
+  assert.deepEqual(decisions.map(({ payload }) => [payload.action, payload.stop]), [
+    ['CONTINUE', 'NEED_MORE_EVIDENCE'], ['STOP', 'STOP_SUCCESS']
+  ]);
+  assert.ok(events.some(event => event.kind === 'RecoveryStarted'));
   assert.equal(events.some((event) => event.kind === 'TaskRunFailed'), false);
 });

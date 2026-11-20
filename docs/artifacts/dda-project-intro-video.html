@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dda · 项目介绍视频</title>
+<style>
+:root{
+  --bg:#070b16;--panel:#0f1629;--line:#23304d;--txt:#e8eefc;--muted:#93a4c4;
+  --cyan:#38bdf8;--green:#34d399;--amber:#fbbf24;--violet:#a78bfa;--pink:#f472b6;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+  font-family:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+.app{max-width:1360px;margin:0 auto;padding:18px 20px 28px}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.5px}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--cyan),var(--violet));
+  display:grid;place-items:center;font-size:15px;box-shadow:0 0 24px #38bdf866}
+.hint{font-size:12px;color:var(--muted)}
+.stage-wrap{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);
+  background:radial-gradient(1200px 500px at 20% -10%,#16305c55,transparent),
+             radial-gradient(900px 500px at 100% 100%,#3b1d6e55,transparent),#0a1020;
+  box-shadow:0 30px 80px #0008}
+.stage{aspect-ratio:16/9;width:100%;position:relative;padding:5.5% 6.5%;display:flex;flex-direction:column}
+.head{margin-bottom:2.2%}
+.kicker{font-size:clamp(9px,1.05vw,15px);letter-spacing:.28em;color:var(--cyan);font-weight:700}
+h1{font-size:clamp(28px,5.2vw,74px);margin:.22em 0 0;line-height:1.05;letter-spacing:-.02em}
+.body{flex:1;display:flex;flex-direction:column;justify-content:center;position:relative}
+.subtitle{position:absolute;left:6.5%;right:6.5%;bottom:3.2%;min-height:2.5em;
+  font-size:clamp(11px,1.45vw,20px);line-height:1.5;color:#dbe7ff;
+  background:linear-gradient(90deg,#071024ee,#07102499 70%,transparent);
+  padding:.55em .9em;border-left:3px solid var(--cyan);border-radius:0 8px 8px 0}
+.anim{animation:up .6s both}
+.cards3 .card:nth-child(2),.steps4 span:nth-child(2){animation-delay:.1s}
+.cards3 .card:nth-child(3),.steps4 span:nth-child(3){animation-delay:.2s}
+.steps4 span:nth-child(4){animation-delay:.3s}
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.hero{text-align:center}
+.heroLogo{font-size:clamp(70px,15vw,200px);font-weight:900;letter-spacing:-.05em;line-height:1;
+  background:linear-gradient(135deg,#7dd3fc,#a78bfa 55%,#f472b6);
+  -webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 30px #38bdf855)}
+.heroSub{font-size:clamp(16px,2.8vw,40px);font-weight:700;margin-top:.15em}
+.heroTag{letter-spacing:.4em;color:var(--muted);font-size:clamp(9px,1.1vw,15px);margin-top:1em}
+.plats{display:flex;gap:12px;justify-content:center;margin-top:1.4em;flex-wrap:wrap}
+.plats span{border:1px solid var(--line);background:#ffffff08;padding:.5em 1.1em;border-radius:999px;font-size:clamp(10px,1.3vw,17px)}
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:2%}
+.card{background:linear-gradient(160deg,#121c33,#0d1426);border:1px solid var(--line);border-radius:14px;padding:4%}
+.card .ic{font-size:clamp(20px,3vw,40px)}
+.card h3{font-size:clamp(14px,2vw,28px);margin:.5em 0}
+.card p{color:var(--muted);font-size:clamp(10px,1.3vw,17px);line-height:1.5;margin:0}
+.split{display:grid;grid-template-columns:1.1fr .9fr;gap:4%;align-items:center}
+.bullets{list-style:none;padding:0;margin:0}
+.bullets li{padding:.7em 0;border-bottom:1px dashed var(--line);font-size:clamp(11px,1.45vw,19px)}
+.bullets b{color:var(--cyan)}
+.arch{display:flex;flex-direction:column;gap:8px;align-items:center}
+.node{border:1px solid var(--line);background:#ffffff08;border-radius:8px;padding:.5em 1.2em;font-size:clamp(10px,1.25vw,16px)}
+.node.core{background:linear-gradient(90deg,#0e3a5f,#2a1a55);border-color:#3b6ea5}
+.arrow{color:var(--cyan)}
+.ui{display:grid;grid-template-columns:150px 1fr 190px;border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;min-height:0;height:100%;font-size:clamp(8px,1vw,13px)}
+.uinav{background:#0b1222;border-right:1px solid var(--line);padding:12px 8px;display:flex;flex-direction:column;gap:6px}
+.uinav div{padding:8px;border-radius:7px;color:var(--muted)}
+.uinav div.on{background:#16345a;color:#fff}
+.uimain{padding:12px;display:flex;flex-direction:column;gap:10px}
+.uibar{background:#0f1a30;border:1px solid var(--line);border-radius:8px;padding:8px}
+.uitimeline{display:flex;flex-direction:column;gap:7px;flex:1}
+.ti{border-left:3px solid var(--cyan);background:#ffffff08;padding:7px 10px;border-radius:6px}
+.ti.ok{border-color:var(--green)}.ti.warn{border-color:var(--amber)}
+.uicomposer{border:1px solid var(--line);border-radius:8px;padding:9px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.uicomposer b{color:#04121f;background:var(--cyan);padding:3px 10px;border-radius:6px}
+.uicontext{background:#0b1222;border-left:1px solid var(--line);padding:12px 8px;color:var(--muted)}
+.uicontext div{padding:8px;border-bottom:1px dashed var(--line)}
+.flow{display:flex;align-items:center;gap:1%;flex-wrap:wrap;justify-content:center;margin-bottom:3%}
+.step{border:1px solid #3b6ea5;background:#0e2740;border-radius:10px;padding:.7em 1.05em;font-size:clamp(10px,1.3vw,17px)}
+.step.ok{border-color:var(--green);background:#0d3a30}
+.flow span{color:var(--cyan);font-size:1.2em}
+.jev{border:1px solid var(--violet);background:linear-gradient(135deg,#1a1636,#0f1a30);border-radius:14px;padding:3%}
+.jev h3{margin:0 0 .6em;color:var(--violet);font-size:clamp(14px,1.9vw,26px)}
+.jevrow{display:flex;gap:8px;flex-wrap:wrap}
+.jevrow span{border:1px solid #4c3f7a;border-radius:999px;padding:.4em 1em;font-size:clamp(9px,1.2vw,15px)}
+.jev p{color:var(--muted);font-size:clamp(10px,1.3vw,17px);margin:.9em 0 0}
+.chips{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-content:center;height:100%}
+.chips span{border:1px solid var(--line);background:#ffffff08;border-radius:999px;padding:.55em 1.2em;font-size:clamp(10px,1.35vw,18px)}
+.chips span:nth-child(-n+4){border-color:var(--cyan);color:#bfe9ff}
+.cta{text-align:center}
+.steps4{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.steps4 span{background:#ffffff08;border:1px solid var(--line);border-radius:10px;padding:.7em 1.2em;font-size:clamp(10px,1.35vw,18px)}
+.links{color:var(--muted);font-size:clamp(10px,1.2vw,16px);margin-top:2em;letter-spacing:.05em}
+.endline{font-size:clamp(16px,2.6vw,36px);font-weight:800;margin-top:1em;
+  background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.controls{display:flex;align-items:center;gap:12px;margin-top:14px;color:var(--muted);font-size:13px}
+.controls button{background:#16213a;color:#e8eefc;border:1px solid var(--line);border-radius:9px;padding:8px 14px;cursor:pointer;font-size:14px}
+.controls button:hover{border-color:var(--cyan)}
+.track{flex:1;height:6px;background:#1c2740;border-radius:99px;cursor:pointer;overflow:hidden}
+#bar{height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:99px}
+#dots{display:flex;gap:6px}
+#dots i{width:8px;height:8px;border-radius:50%;background:#33415e;cursor:pointer}
+#dots i.on{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+@media(prefers-reduced-motion:reduce){.anim{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><span class="logo">◆</span><span>dda</span><span class="tag"> · 项目介绍</span></div>
+    <div class="hint">空格 播放/暂停 · ← → 切换分镜 · 点击下方圆点跳转</div>
+  </div>
+  <div class="stage-wrap">
+    <div id="stage" class="stage"></div>
+    <div id="subtitle" class="subtitle"></div>
+  </div>
+  <div class="controls">
+    <button id="play" title="播放/暂停">❚❚</button>
+    <button id="prev" title="上一幕">◀</button>
+    <button id="next" title="下一幕">▶</button>
+    <button id="replay" title="从头播放">⟲</button>
+    <div id="track" class="track"><div id="bar"></div></div>
+    <span id="time">00:00 / 00:00</span>
+    <div id="dots"></div>
+  </div>
+  <div class="hint" style="margin-top:10px">
+    本文件是分镜源与可播放演示；成片为同目录 dda-project-intro-video.mp4 / .webm，重新渲染执行
+    node docs/render-project-intro-video.mjs（详见同目录 README）。
+  </div>
+</div>
+<script>
+const SCENES=[
+ {kicker:'DECISION-DRIVEN AGENT',title:'',dur:9,
+  narration:'这是 dda —— 一个把智能、安全和可审计性放在同一起点的本地 AI Agent 工作台。',
+  render(){return '<div class="hero anim">'+
+   '<div class="heroLogo">dda</div>'+
+   '<div class="heroSub">可审计 · 可控制 · 本地优先</div>'+
+   '<div class="heroTag">AI AGENT WORKSPACE</div>'+
+   '<div class="plats"><span>HarmonyOS</span><span>Windows</span><span>Linux</span></div>'+
+   '</div>'}},
+ {kicker:'WHY',title:'为什么需要 dda？',dur:11,
+  narration:'今天的 Agent 常常是黑箱：它在做什么、凭什么做，我们说不清；一旦给了权限，命令、文件和网络就可能失控；出了问题，也没有可追溯的证据链。',
+  render(){return '<div class="cards3">'+
+   '<div class="card anim"><div class="ic">◈</div><h3>黑箱决策</h3><p>模型在做什么、为什么这样做，说不清。</p></div>'+
+   '<div class="card anim"><div class="ic">⚠</div><h3>权限失控</h3><p>一旦授权，命令、文件与网络可能随意发生。</p></div>'+
+   '<div class="card anim"><div class="ic">⌁</div><h3>难以追溯</h3><p>出错后缺少证据链，无法复盘与归因。</p></div>'+
+   '</div>'}},
+ {kicker:'POSITIONING',title:'一个工作台，三种平台',dur:13,
+  narration:'dda 采用本地优先架构：Windows 桌面客户端驱动一个自研的 Node 与 Cordis 运行时；HarmonyOS、Windows 和 Linux 共用一套版本化协议契约；数据留在你的设备上。',
+  render(){return '<div class="split anim"><div>'+
+   '<ul class="bullets">'+
+   '<li><b>本地优先</b>：Windows 客户端 + 自研 Cordis runtime</li>'+
+   '<li><b>多平台契约</b>：三端共用版本化 JSON Schema</li>'+
+   '<li><b>数据本地化</b>：SQLite 存储 + 脱敏 Trajectory</li>'+
+   '</ul></div><div class="arch">'+
+   '<div class="node">HarmonyOS</div><div class="node">Windows</div><div class="node">Linux</div>'+
+   '<div class="arrow">▼</div>'+
+   '<div class="node core">contracts/v1 · HarnessReadModel · 本地 Runtime</div>'+
+   '</div></div>'}},
+ {kicker:'PRODUCT',title:'六个页面，一目了然',dur:16,
+  narration:'从工作台到运行记录，从工作区到记忆、能力与安全，六个页面把 Agent 的每一步都摊开给你看；时间线、审批卡片与可展开证据随任务实时更新。',
+  render(){return '<div class="ui anim">'+
+   '<div class="uinav"><div class="on">▦ 工作台</div><div>▤ 运行记录</div><div>◱ 工作区</div>'+
+   '<div>❂ 记忆</div><div>⛨ 能力与安全</div><div>⚙ 设置与诊断</div></div>'+
+   '<div class="uimain"><div class="uibar">工作台 · 运行 #A1F3 · <b style="color:#34d399">SUCCEEDED</b></div>'+
+   '<div class="uitimeline">'+
+   '<div class="ti">用户 · 分析这个仓库并给出结构说明</div>'+
+   '<div class="ti">Route · 选定 Planner / Executor 角色</div>'+
+   '<div class="ti warn">Approval · 读取工作区目录（批准一次）</div>'+
+   '<div class="ti ok">Rule Verifier · PASS · 证据已附加</div>'+
+   '</div><div class="uicomposer"><span>输入目标，选择工作区…</span><b>发送</b></div></div>'+
+   '<div class="uicontext"><b style="color:#e8eefc">Context</b>'+
+   '<div>Route / 候选</div><div>Safety / 策略</div><div>Workspace / 快照</div><div>Verify / 检查项</div>'+
+   '</div></div>'}},
+ {kicker:'SAFETY',title:'每一步，都在受控范围',dur:16,
+  narration:'dda 默认只读。任何副作用都要经过动作意图、一次性策略租约、逐项审批和确定性核验。Jev 决策平面记录候选、证据、选择与预期，可审计，却从不保存隐藏思维链。',
+  render(){return '<div>'+
+   '<div class="flow anim"><div class="step">READ_ONLY</div><span>→</span>'+
+   '<div class="step">ActionIntent</div><span>→</span><div class="step">PolicyLease</div><span>→</span>'+
+   '<div class="step">Approval</div><span>→</span><div class="step ok">Rule Verifier</div></div>'+
+   '<div class="jev anim"><h3>Jev Decision Plane</h3>'+
+   '<div class="jevrow"><span>候选</span><span>证据</span><span>选择</span><span>预期</span><span>结果</span></div>'+
+   '<p>结构化决策轨迹可审计 · 不记录隐藏思维链 · 命令与写入仍需安全组件、租约与审批共同授权</p>'+
+   '</div></div>'}},
+ {kicker:'TECHNOLOGY',title:'可插拔，可验证',dur:12,
+  narration:'技术上，它用 Tauri 2 与 TypeScript 构建客户端，模型提供方可以自由切换；关键协议固化为 JSON Schema；API 密钥只从环境变量读取，不写进项目代码。',
+  render(){return '<div class="chips anim">'+
+   '<span>Tauri 2</span><span>TypeScript</span><span>Rust</span><span>Node / Cordis</span>'+
+   '<span>OpenAI Responses</span><span>Chat Completions</span><span>兼容网关</span><span>DeepSeek Harness</span>'+
+   '<span>contracts/v1 JSON Schema</span><span>本地 SQLite</span><span>环境变量密钥</span><span>脱敏 Trajectory</span>'+
+   '</div>'}},
+ {kicker:'GET STARTED',title:'',dur:10,
+  narration:'安装客户端，授权工作区，配置模型，就可以开始。dda —— 让 Agent 的智能，始终在你的掌控之中。',
+  render(){return '<div class="cta">'+
+   '<h1 style="font-size:clamp(26px,4.6vw,62px);margin:0 0 1em">开始使用 dda</h1>'+
+   '<div class="steps4 anim"><span>① 安装客户端</span><span>② 授权工作区</span><span>③ 配置模型</span><span>④ 开始任务</span></div>'+
+   '<div class="links">README · 阶段四实施计划 · contracts/v1 契约目录</div>'+
+   '<div class="endline">让 Agent 的智能，始终在你的掌控之中。</div>'+
+   '</div>'}}
+];
+const TOTAL=SCENES.reduce((a,s)=>a+s.dur,0);
+const starts=[];(function(){let a=0;SCENES.forEach(s=>{starts.push(a);a+=s.dur})})();
+const stage=document.getElementById('stage'),sub=document.getElementById('subtitle');
+const bar=document.getElementById('bar'),timeEl=document.getElementById('time');
+const track=document.getElementById('track'),dots=document.getElementById('dots');
+const btnPlay=document.getElementById('play');
+SCENES.forEach((s,i)=>{const d=document.createElement('i');d.title='第 '+(i+1)+' 幕';d.onclick=()=>{t=starts[i]};dots.appendChild(d)});
+let t=0,playing=true,last=0,cur=-1,lastChars=-1;
+function sceneAt(x){for(let i=SCENES.length-1;i>=0;i--){if(x>=starts[i])return i}return 0}
+function render(i){const s=SCENES[i];
+  stage.innerHTML='<div class="head"><div class="kicker">'+s.kicker+'</div>'+(s.title?'<h1>'+s.title+'</h1>':'')+'</div><div class="body">'+s.render()+'</div>';
+  Array.from(dots.children).forEach((d,k)=>d.className=k===i?'on':'');
+  lastChars=-1;
+}
+function fmt(x){return String(Math.floor(x/60)).padStart(2,'0')+':'+String(Math.floor(x%60)).padStart(2,'0')}
+function setPlayIcon(){btnPlay.textContent=playing?'❚❚':'▶'}
+function loop(now){
+  if(!last)last=now;const dt=(now-last)/1000;last=now;
+  if(playing){t+=dt;if(t>=TOTAL){t=TOTAL;playing=false;setPlayIcon()}}
+  const i=sceneAt(t);if(i!==cur){cur=i;render(i)}
+  const s=SCENES[i],local=t-starts[i],len=s.narration.length;
+  const n=Math.min(len,Math.floor(local/(s.dur*0.72)*len));
+  if(n!==lastChars){lastChars=n;sub.textContent=s.narration.slice(0,n)}
+  bar.style.width=(t/TOTAL*100)+'%';timeEl.textContent=fmt(t)+' / '+fmt(TOTAL);
+  requestAnimationFrame(loop);
+}
+btnPlay.onclick=()=>{playing=!playing;setPlayIcon()};
+document.getElementById('prev').onclick=()=>{t=starts[Math.max(0,cur-1)]};
+document.getElementById('next').onclick=()=>{t=starts[Math.min(SCENES.length-1,cur+1)]};
+document.getElementById('replay').onclick=()=>{t=0;playing=true;setPlayIcon()};
+track.onclick=e=>{const r=track.getBoundingClientRect();t=(e.clientX-r.left)/r.width*TOTAL};
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();btnPlay.onclick()}
+  else if(e.code==='ArrowRight'){document.getElementById('next').onclick()}
+  else if(e.code==='ArrowLeft'){document.getElementById('prev').onclick()}
+});
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

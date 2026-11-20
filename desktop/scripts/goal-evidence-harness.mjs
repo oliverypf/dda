@@ -108,7 +108,7 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
   const runRoot = join(batchRoot, `${iteration}-${task.taskId}-${experimentCondition}`);
   const runKey = `${batchId}/${iteration}-${task.taskId}-${experimentCondition}`;
   const caseStartedAtMs = Date.now();
-  const mode = task.mode ?? 'READ_ONLY';
+  const mode = task.mode ?? 'CONTROLLED';
   const timeoutMs = Number(option('--case-timeout-ms', mode === 'CONTROLLED' ? '300000' : '180000'));
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1200000) throw Error('CASE_TIMEOUT_INVALID');
   console.log(JSON.stringify({ event: 'CASE_START', runKey, mode, atMs: caseStartedAtMs }));
@@ -117,7 +117,7 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
   const files = goalTaskFiles(task, marker);
   for (const [name, content] of Object.entries(files)) await writeFile(join(workspace, name), content);
   const initialDigest = digest(JSON.stringify(files));
-  const env = { EVIDENCE_FIXTURE_KEY: 'local-fixture-key', DDA_RELEASE_CHANNEL: mode === 'CONTROLLED' ? 'WINDOWS_FULL_LOCAL' : 'WINDOWS_PHASE1_READ_ONLY',
+  const env = { EVIDENCE_FIXTURE_KEY: 'local-fixture-key', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
     DDA_EXECUTION_MODE: mode, DDA_CONTEXT_PROVIDER: 'journal',
     DDA_DATA_DIR: runRoot, DDA_MODEL_CONFIG: join(runRoot, 'model-config.json'),
     DDA_TRAJECTORY_STORE: join(runRoot, 'trajectory.jsonl'), DDA_THREAD_STORE: join(runRoot, 'threads.json'),
@@ -150,7 +150,7 @@ const runCase = async ({ fixture, jev, cli, task, iteration, condition, experime
     await saveJson(join(runRoot, 'invocation.json'), { command, args, cwd, model: fixture.model, condition: experimentCondition, client: condition,
       codexVersion: condition === 'ordinary-codex' ? version : null,
       runtimeSourceSha256: condition === 'hmcodex-runtime' ? sourceManifest.sha256 : null,
-      workspacePolicy: mode === 'CONTROLLED' ? 'WORKSPACE_WRITE_ONLY' : 'READ_ONLY', timeoutMs, initialDigest });
+      workspacePolicy: mode === 'CONTROLLED' ? 'WORKSPACE_WRITE_ONLY' : 'OBSERVE', timeoutMs, initialDigest });
     result = await runEvidenceProcess(command, args, { env, cwd, dropEnv: [...(fixture.privateEnvKeys ?? []), ...(jev?.privateEnvKeys ?? ['JEV_API_KEY'])], timeoutMs });
     await writeFile(join(runRoot, 'stdout.jsonl'), result.stdout);
     await writeFile(join(runRoot, 'stderr.log'), result.stderr);

@@ -28,6 +28,17 @@ async function spawnDda(t, { handler, env: extraEnv = {}, args = [] } = {}) {
   const server = createServer(handler);
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const port = await listenOnFetchablePort(server);
+  // An explicit config file keeps the fixture hermetic: on hosts where the
+  // runtime's default config path resolves to a real model-config.json (for
+  // example %LOCALAPPDATA%\hmCodex on Windows), the file route wins over the
+  // DDA_MODEL_* fallbacks and the test still talks to this stub server.
+  const modelConfigPath = join(root, 'model-config.json');
+  await writeFile(modelConfigPath, `${JSON.stringify({
+    provider: 'openai-chat',
+    protocol: 'chat-completions',
+    endpoint: `http://127.0.0.1:${port}/chat/completions`,
+    apiKeyEnv: 'DDA_TEST_MODEL_KEY'
+  })}\n`);
   const env = {
     PATH: process.env.PATH,
     HOME: join(root, 'home'),
@@ -39,6 +50,7 @@ async function spawnDda(t, { handler, env: extraEnv = {}, args = [] } = {}) {
     DDA_TEST_MODEL_KEY: 'fix2-nit-key',
     DDA_MODEL_API_KEY_ENV: 'DDA_TEST_MODEL_KEY',
     DDA_MODEL_ENDPOINT: `http://127.0.0.1:${port}/chat/completions`,
+    DDA_MODEL_CONFIG: modelConfigPath,
     DDA_JEV_ENABLED: '0',
     DDA_MODEL_STREAM_RETRY_DELAY_MS: '0',
     ...extraEnv
@@ -46,7 +58,7 @@ async function spawnDda(t, { handler, env: extraEnv = {}, args = [] } = {}) {
   await mkdir(env.HOME, { recursive: true });
   const child = spawn(process.execPath, [
     BIN, 'task', '--workspace', workspace, '--prompt', 'say hi', '--format', 'jsonl',
-    '--execution-mode', 'READ_ONLY', '--data-dir', join(root, 'dda-data'), '--timeout-ms', '45000',
+    '--execution-mode', 'CONTROLLED', '--data-dir', join(root, 'dda-data'), '--timeout-ms', '45000',
     ...args
   ], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';

@@ -72,7 +72,7 @@ test('release-check reports channel, versions, side-effect rejection, read model
   ], {
     env: {
       ...process.env,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_TRAJECTORY_STORE: trajectory,
       DDA_HARNESS_EVENT_STORE: harness,
       DDA_DECISION_TRACE_STORE: decisionTracePath
@@ -82,13 +82,13 @@ test('release-check reports channel, versions, side-effect rejection, read model
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
   const report = payload.report;
-  assert.equal(report.releaseChannel, 'WINDOWS_PHASE1_READ_ONLY');
+  assert.equal(report.releaseChannel, 'WINDOWS_PHASE1_5_CONTROLLED');
   assert.equal(report.versions.storageSchemaVersion, 1);
   assert.equal(report.versions.protocolVersion, '1.0');
   assert.equal(report.versions.policyVersion, 'runtime-safety-1');
   assert.equal(report.versions.producerVersion, 'hmcodex-runtime@0.1.0');
   assert.equal(report.sideEffectRejection.blocked, true);
-  assert.equal(report.sideEffectRejection.errorCode, 'RELEASE_CHANNEL_READ_ONLY');
+  assert.equal(report.sideEffectRejection.errorCode, 'SAFETY_LEASE_REQUIRED');
   assert.match(report.readModel.projectionChecksum, /^sha256:[0-9a-f]{64}$/u);
   assert.equal(report.decisionTrace.minDecisionCoverage, 100);
   assert.equal(report.decisionTrace.minOptionCoverage, 100);
@@ -148,7 +148,7 @@ test('release-check excludes incomplete runs from learning instead of failing th
   ], {
     env: {
       ...process.env,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
+      DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
       DDA_TRAJECTORY_STORE: trajectory,
       DDA_HARNESS_EVENT_STORE: harness,
       DDA_DECISION_TRACE_STORE: decisionTracePath
@@ -167,7 +167,7 @@ test('release-check excludes incomplete runs from learning instead of failing th
   assert.equal(report.decisionTrace.allEligibleComplete, true);
 });
 
-test('release-check accepts a controlled channel and does not claim side-effect rejection', async (t) => {
+test('release-check reports lease-gated side-effect rejection under a controlled channel', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-check-controlled-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const trajectory = join(directory, 'trajectory.jsonl');
@@ -195,7 +195,7 @@ test('release-check accepts a controlled channel and does not claim side-effect 
   });
   const report = JSON.parse(result.stdout).report;
   assert.equal(report.releaseChannel, 'WINDOWS_PHASE1_5_CONTROLLED');
-  assert.deepEqual(report.sideEffectRejection, { blocked: false });
+  assert.deepEqual(report.sideEffectRejection, { blocked: true, errorCode: 'SAFETY_LEASE_REQUIRED' });
   assert.equal(report.checks.releaseChannel, true);
   assert.equal(report.checks.sideEffectRejection, true);
   assert.equal(report.passed, true);
@@ -231,11 +231,11 @@ test('release-check accepts the phase-2 WINDOWS_FULL_LOCAL channel instead of fa
   assert.equal(report.releaseChannel, 'WINDOWS_FULL_LOCAL');
   assert.equal(report.checks.releaseChannel, true);
   assert.equal(report.checks.sideEffectRejection, true);
-  assert.deepEqual(report.sideEffectRejection, { blocked: false });
+  assert.deepEqual(report.sideEffectRejection, { blocked: true, errorCode: 'SAFETY_LEASE_REQUIRED' });
   assert.equal(report.passed, true);
 });
 
-test('release-check still rejects an unapproved pre-phase-1 build', async (t) => {
+test('release-check fails closed on a retired pre-phase-1 channel', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-release-check-baseline-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const trajectory = join(directory, 'trajectory.jsonl');
@@ -247,21 +247,20 @@ test('release-check still rejects an unapproved pre-phase-1 build', async (t) =>
   const trace = new AgentDecisionTrace({ storagePath: decisionTracePath, eventStore });
   await proposeEligibleDecisions(trace, 'run-baseline');
 
-  const result = await promisify(execFile)(process.execPath, [
-    fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
-    'release-check'
-  ], {
-    env: {
-      ...process.env,
-      DDA_RELEASE_CHANNEL: 'WINDOWS_MVP_PRE_PHASE1',
-      DDA_TRAJECTORY_STORE: trajectory,
-      DDA_HARNESS_EVENT_STORE: harness,
-      DDA_DECISION_TRACE_STORE: decisionTracePath
-    },
-    windowsHide: true
-  });
-  const report = JSON.parse(result.stdout).report;
-  assert.equal(report.releaseChannel, 'WINDOWS_MVP_PRE_PHASE1');
-  assert.equal(report.checks.releaseChannel, false);
-  assert.equal(report.passed, false);
+  await assert.rejects(
+    promisify(execFile)(process.execPath, [
+      fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
+      'release-check'
+    ], {
+      env: {
+        ...process.env,
+        DDA_RELEASE_CHANNEL: 'WINDOWS_MVP_PRE_PHASE1',
+        DDA_TRAJECTORY_STORE: trajectory,
+        DDA_HARNESS_EVENT_STORE: harness,
+        DDA_DECISION_TRACE_STORE: decisionTracePath
+      },
+      windowsHide: true
+    }),
+    (error) => JSON.parse(error.stdout).error === 'RELEASE_CHANNEL_RETIRED'
+  );
 });

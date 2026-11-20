@@ -12,66 +12,42 @@ import {
   digest,
   nodeSpawnCommand
 } from './runtime-safety-monitor.mjs';
-import { planChildSpawn } from './windows-cmd-spawn.mjs';
-import {
-  annotateProcessFailure,
-  defaultProbeLock,
-  detectBuildOutputLock,
-  hostExecutableCandidates,
-  resolveShellTimeout
-} from './shell-timeout.mjs';
+import { resolveWindowsProcessCommand } from './platform/windows-command.mjs';
+import { spawnErrorReason } from './platform/process-error.mjs';
+import { DEFAULT_PROCESS_TIMEOUT_MS, MAX_PROCESS_TIMEOUT_MS } from './process-limits.mjs';
 
+const MAX_TIMEOUT_MS = MAX_PROCESS_TIMEOUT_MS;
 const MAX_INPUT_BYTES = 64 * 1024;
 const SECRET_ENV = /(?:key|token|secret|password|credential|private|authorization)/i;
-const INHERITED_ENV = new Set(['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'ComSpec', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']);
 
 const fail = (code, message = '') => { throw new SafetyError(code, message); };
-
-const normalizePathEnvironment = (environment) => {
-  const normalized = {};
-  let pathValue;
-  let pathExtValue;
-  for (const [key, value] of Object.entries(environment)) {
-    const lowerKey = key.toLowerCase();
-    if (lowerKey === 'path') {
-      pathValue = value;
-    } else if (lowerKey === 'pathext') {
-      pathExtValue = value;
-    } else {
-      normalized[key] = value;
-    }
-  }
-  if (pathValue !== undefined) normalized.PATH = pathValue;
-  if (pathExtValue !== undefined) normalized.PATHEXT = pathExtValue;
-  return normalized;
-};
 
 const safeEnvironment = (provided) => {
   const inherited = {};
   // Keep only process-discovery and temporary-directory variables. In
   // particular, API keys and arbitrary user configuration are not inherited.
-  for (const key of Object.keys(process.env)) {
-    if (!INHERITED_ENV.has(key) && !['path', 'pathext'].includes(key.toLowerCase())) continue;
+  for (const key of ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'ComSpec', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']) {
     if (typeof process.env[key] === 'string') inherited[key] = process.env[key];
   }
-  const inheritedEnvironment = normalizePathEnvironment(inherited);
-  if (provided === undefined) return inheritedEnvironment;
+  if (provided === undefined) return inherited;
   if (!provided || typeof provided !== 'object' || Array.isArray(provided) || Object.keys(provided).length > 32) {
     fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'env');
   }
-  const providedEnvironment = {};
   for (const [key, value] of Object.entries(provided)) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || SECRET_ENV.test(key) || typeof value !== 'string' || value.length > 4096 || value.includes('\0')) {
       fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'env');
     }
-    providedEnvironment[key] = value;
+    inherited[key] = value;
   }
-  return { ...inheritedEnvironment, ...normalizePathEnvironment(providedEnvironment) };
+  return inherited;
 };
 
-const boundedLimit = (value, maximum, fallback) => {
+const boundedLimit = (value, maximum, fallback, fieldName = 'limit') => {
   if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || value < 1 || value > maximum) fail(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    fail(SAFETY_ERROR_CODES.COMMAND_INVALID,
+      `${fieldName} must be an integer between 1 and ${maximum}; received ${JSON.stringify(value)}`);
+  }
   return value;
 };
 
@@ -121,7 +97,7 @@ const terminateProcessTree = async (rootPid) => {
   for (const pid of [...discovered].reverse()) await killPid(pid);
 };
 
-const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = false, hostPath = '', input, signal, maxOutputBytes, maxOutputChars, spawnImpl = spawn, platform = process.platform, fileExists }) => new Promise((resolve, reject) => {
+const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, input, signal, maxOutputBytes, maxOutputChars }) => new Promise((resolve, reject) => {
   if (input !== undefined && (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > MAX_INPUT_BYTES)) {
     reject(new SafetyError(SAFETY_ERROR_CODES.COMMAND_INVALID, 'input'));
     return;
@@ -136,25 +112,16 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = fals
   }
   const startedAt = performance.now();
   let child;
-  let planned;
   try {
-    planned = planChildSpawn({ command, args, platform, env, fileExists });
-  } catch (error) {
-    reject(error instanceof SafetyError ? error : new SafetyError('EXECUTOR_SPAWN_FAILED'));
-    return;
-  }
-  try {
-    const spawnOptions = {
+    child = spawn(command, args, {
       cwd,
       env,
       shell: false,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
-    };
-    if (planned.windowsVerbatimArguments === true) spawnOptions.windowsVerbatimArguments = true;
-    child = spawnImpl(planned.file, planned.args, spawnOptions);
-  } catch {
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+    });
+  } catch (error) {
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
     return;
   }
   const rawLimit = Math.max(maxOutputBytes * 2, 128 * 1024);
@@ -182,7 +149,6 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = fals
     truncated = true;
     void startProcessTreeCleanup();
   }, timeoutMs);
-  timer.unref?.();
   const onAbort = () => {
     aborted = true;
     truncated = true;
@@ -192,12 +158,12 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = fals
   if (signal?.aborted) onAbort();
   child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
-  child.once('error', () => {
+  child.once('error', (error) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);
-    reject(new SafetyError('EXECUTOR_SPAWN_FAILED'));
+    reject(new SafetyError('EXECUTOR_SPAWN_FAILED', spawnErrorReason(error)));
   });
   child.once('close', async (exitCode, terminationSignal) => {
     if (settled) return;
@@ -215,16 +181,8 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = fals
       timedOut,
       truncated: truncated || stdoutBound.truncated || stderrBound.truncated,
       stdout: stdoutBound.text,
-      stderr: annotateProcessFailure({
-        stderr: stderrBound.text,
-        stdout: stdoutBound.text,
-        timedOut,
-        timeoutMs,
-        build,
-        hostPath
-      }),
-      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      timeoutMs
+      stderr: stderrBound.text,
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt))
     });
   });
   if (input !== undefined) {
@@ -236,21 +194,14 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, build = fals
 
 /**
  * Windows-oriented executor with a shell:false process boundary. It also
- * works on other hosts for tests. .cmd/.bat shims (npm, npx, yarn, pnpm) are
- * the exception: they are resolved with PATHEXT and run through cmd.exe
- * /d /s /c with escaped argv. shell:true is never used.
+ * works on other hosts for tests, but never delegates a command to cmd.exe or
+ * PowerShell implicitly.
  */
 export class RestrictedWindowsExecutor extends ExecutorPort {
   #monitor;
-  #spawnImpl;
-  #platform;
-  #fileExists;
 
-  constructor({ monitor, workspaceRoot, spawnImpl, platform, fileExists, ...options } = {}) {
+  constructor({ monitor, workspaceRoot, ...options } = {}) {
     super();
-    this.#spawnImpl = typeof spawnImpl === 'function' ? spawnImpl : spawn;
-    this.#platform = typeof platform === 'string' ? platform : process.platform;
-    this.#fileExists = typeof fileExists === 'function' ? fileExists : undefined;
     this.#monitor = monitor instanceof RuntimeSafetyMonitor
       ? monitor
       : new RuntimeSafetyMonitor({ workspaceRoot, ...options });
@@ -314,68 +265,34 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
 
   async #process(authorization, request, options = {}) {
     const limits = this.#monitor.limits;
-    let resolvedTimeout;
-    try {
-      resolvedTimeout = resolveShellTimeout({
-        command: authorization.command.command,
-        args: authorization.command.args,
-        requested: request.timeoutMs
-      });
-    } catch (error) {
-      if (error?.code === 'SAFETY_COMMAND_INVALID') throw new SafetyError(SAFETY_ERROR_CODES.COMMAND_INVALID, 'limit');
-      throw error;
-    }
-    const maxOutputBytes = boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes);
-    const maxOutputChars = boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars);
-    const hostExecutables = Array.isArray(options.hostExecutables)
-      ? options.hostExecutables
-      : hostExecutableCandidates(process.env, options.execPath ?? process.execPath);
-    const collision = detectBuildOutputLock({
+    const timeoutMs = boundedLimit(request.timeoutMs, MAX_TIMEOUT_MS, DEFAULT_PROCESS_TIMEOUT_MS, 'timeoutMs');
+    const maxOutputBytes = boundedLimit(request.maxOutputBytes, limits.maxOutputBytes, limits.maxOutputBytes, 'maxOutputBytes');
+    const maxOutputChars = boundedLimit(request.maxOutputChars, limits.maxOutputChars, limits.maxOutputChars, 'maxOutputChars');
+    // npm/npx resolve to the provisioned Node CLI only after authorization, so
+    // the approved command name and lease scope stay anchored on the request.
+    const resolved = await resolveWindowsProcessCommand({
       command: authorization.command.command,
-      args: authorization.command.args,
-      cwd: authorization.cwd.absolutePath,
-      hostExecutables,
-      probeLock: options.probeLock ?? (this.#platform === 'win32' ? defaultProbeLock : undefined),
-      platform: this.#platform
+      args: authorization.command.args
     });
-    const described = {
-      action: authorization.action,
-      commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
-      cwd: authorization.cwd.path || '.',
-      lease: authorization.lease?.id ?? null,
-      timeoutMs: resolvedTimeout.timeoutMs
-    };
-    if (collision) {
-      return {
-        ok: false,
-        exitCode: 1,
-        signal: null,
-        aborted: false,
-        timedOut: false,
-        truncated: false,
-        stdout: '',
-        stderr: collision.message,
-        durationMs: 0,
-        ...described
-      };
-    }
     const result = await collectProcessOutput({
-      command: nodeSpawnCommand(authorization.command.command),
-      args: authorization.command.args,
+      command: nodeSpawnCommand(resolved.command),
+      args: resolved.args,
       cwd: authorization.cwd.absolutePath,
       env: safeEnvironment(request.env),
-      timeoutMs: resolvedTimeout.timeoutMs,
-      build: resolvedTimeout.build,
-      hostPath: hostExecutables[0] ?? '',
+      timeoutMs,
       input: request.input,
       signal: options.signal,
       maxOutputBytes,
-      maxOutputChars,
-      spawnImpl: this.#spawnImpl,
-      platform: this.#platform,
-      fileExists: this.#fileExists
+      maxOutputChars
     });
-    return { ...result, ...described };
+    return {
+      ...result,
+      action: authorization.action,
+      commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
+      cwd: authorization.cwd.path || '.',
+      timeoutMs,
+      lease: authorization.lease?.id ?? null
+    };
   }
 }
 

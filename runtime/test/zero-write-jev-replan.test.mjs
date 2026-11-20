@@ -7,6 +7,8 @@ import {
   isAgentMissReplanEligible,
   isSoleHardDenyFailure,
   zeroWriteJevReplanHostNote,
+  recoveryContinuationText,
+  stampJevEvidenceRequired,
   runVerifierRecovery
 } from '../src/task-recovery-controller.mjs';
 
@@ -24,6 +26,52 @@ const writesAgent = (extra = {}) => ({
   onZeroWriteJevReplan: (evt) => (extra.zwEvents ??= []).push(evt),
   onPostMissReplan: (evt) => (extra.postEvents ??= []).push(evt),
   ...extra
+});
+
+for (const writesApplied of [0, 1]) {
+  test(`read-only prerequisite recovers its own evidence after ${writesApplied} prior writes`, async () => {
+    const writes = { writesApplied, successfulWrites: writesApplied };
+    const objective = 'Read README.md and runtime/package.json to collect slide content.';
+    const result = await runVerifierRecovery({
+      maxAttempts: 1,
+      readOnlyObjective: objective,
+      agentMiss: { getWriteCounts: () => writes, onReplan: assert.fail, onZeroWriteJevReplan: assert.fail },
+      preflight: { requiresWorkspaceMutation: true, getWriteCounts: () => writes, onIntercept: assert.fail },
+      execute: async ({ attempt, recovery }) => {
+        if (attempt === 1) return { actions: [{ name: 'shell.execute', state: 'FAILED',
+          invocationAttempted: false, gateDecision: 'BLOCK', errorCode: 'TOOL_OUTSIDE_EXECUTION_SCOPE' }] };
+        const message = recoveryContinuationText(recovery);
+        assert.ok(message.includes(objective));
+        assert.match(message, /read-only tools/u);
+        assert.match(message, /TOOL_OUTSIDE_EXECUTION_SCOPE/u);
+        assert.doesNotMatch(message, /Must file.write|apply a small new patch/u);
+        return { actions: [{ name: 'workspace.read', state: 'SUCCEEDED', path: 'README.md' }] };
+      },
+      verify: async ({ attempt, result }) => {
+        if (attempt > 1) return { status: result.actions[0].path === 'README.md' ? 'PASS' : 'FAIL' };
+        return writesApplied
+          ? stampJevEvidenceRequired({ status: 'PASS', nextAction: 'COMPLETE' })
+          : { status: 'FAIL', nextAction: 'REQUEST_EVIDENCE',
+              failureCodes: ['JEV_BEHAVIOR_REJECTED', 'RESULT_CONTRADICTS_EVIDENCE'] };
+      }
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.attempts, 2);
+  });
+}
+
+test('read-only evidence recovery preserves a repeated failure and stops at a hard refusal', async () => {
+  for (const hardRefusal of [false, true]) {
+    const result = await runVerifierRecovery({
+      readOnlyObjective: 'Read the project manifest',
+      execute: async () => ({ actions: [] }),
+      verify: async () => ({ status: 'FAIL', nextAction: 'REQUEST_EVIDENCE',
+        failureCodes: ['JEV_BEHAVIOR_REJECTED', ...(hardRefusal ? ['SCOPE_VIOLATION'] : [])] })
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.attempts, hardRefusal ? 1 : 2);
+    assert.equal(result.report.status, 'FAIL');
+  }
 });
 
 // T-zw-1: writes=0 + FAIL/JEV_BEHAVIOR_REJECTED → exactly 1× zero-write replan; second still stops

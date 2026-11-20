@@ -1,10 +1,10 @@
-const TASK_CLASSES = Object.freeze(['inspect', 'modify', 'test', 'unknown']);
-const EXECUTION_MODES = Object.freeze(['READ_ONLY', 'CONTROLLED']);
+import { EXECUTION_MODES } from './runtime-safety-monitor.mjs';
+import { TASK_CLASSES } from './rule-router.mjs';
 
 const boundedPrompt = (prompt) => typeof prompt === 'string' && prompt.trim().length > 0 && prompt.length <= 100_000;
 
 export class TaskSafetyPrecheck {
-  evaluate({ prompt, taskClass = 'unknown', mode = 'READ_ONLY', workspaceRoot = '' } = {}) {
+  evaluate({ prompt, taskClass = 'unknown', mode = 'CONTROLLED', workspaceRoot = '', workspaceDeferred = false } = {}) {
     const checks = [
       {
         id: 'prompt.valid',
@@ -18,13 +18,13 @@ export class TaskSafetyPrecheck {
       },
       {
         id: 'execution_mode.valid',
-        status: EXECUTION_MODES.includes(mode) ? 'PASS' : 'FAIL',
-        reason: EXECUTION_MODES.includes(mode) ? 'EXECUTION_MODE_ACCEPTED' : 'EXECUTION_MODE_INVALID'
+        status: Object.values(EXECUTION_MODES).includes(mode) ? 'PASS' : 'FAIL',
+        reason: Object.values(EXECUTION_MODES).includes(mode) ? 'EXECUTION_MODE_ACCEPTED' : 'EXECUTION_MODE_INVALID'
       },
       {
         id: 'controlled.workspace',
-        status: mode !== 'CONTROLLED' || (typeof workspaceRoot === 'string' && workspaceRoot.trim()) ? 'PASS' : 'FAIL',
-        reason: mode !== 'CONTROLLED' || (typeof workspaceRoot === 'string' && workspaceRoot.trim())
+        status: workspaceDeferred || (typeof workspaceRoot === 'string' && workspaceRoot.trim()) ? 'PASS' : 'FAIL',
+        reason: workspaceDeferred ? 'PROJECT_TOOLS_REQUIRE_WORKSPACE_CLAIM' : typeof workspaceRoot === 'string' && workspaceRoot.trim()
           ? 'WORKSPACE_SCOPE_AVAILABLE'
           : 'CONTROLLED_WORKSPACE_REQUIRED'
       }
@@ -37,7 +37,7 @@ export class TaskSafetyPrecheck {
       mode,
       constraints: Object.freeze({
         workspaceScoped: Boolean(workspaceRoot),
-        sideEffectsRequireApproval: mode === 'CONTROLLED',
+        sideEffectsRequireApproval: true,
         networkAllowed: false
       }),
       checks: Object.freeze(checks.map((check) => Object.freeze(check)))

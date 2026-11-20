@@ -134,22 +134,35 @@ const textFromContent = (content) => (Array.isArray(content) ? content : [conten
   })
   .join('');
 
+const imageBlocksFromContent = (blocks) => blocks.filter(
+  (block) => block?.type === 'input-image'
+    && typeof block.dataUrl === 'string'
+    && block.dataUrl.startsWith('data:image/')
+);
+
 /* Translate provider-neutral history, including the assistant/tool pair that
  * precedes a follow-up tool round. Responses uses typed input items while
  * Chat Completions uses assistant tool_calls and standalone tool messages. */
 const responseInput = (messages) => messages.flatMap((message) => {
   const blocks = Array.isArray(message.content) ? message.content : [{ type: 'text', text: textFromContent(message.content) }];
   const textBlocks = blocks.filter((block) => block?.type === 'text' && typeof block.text === 'string');
+  const imageBlocks = message.role === 'assistant' ? [] : imageBlocksFromContent(blocks);
   const toolCalls = blocks.filter((block) => block?.type === 'tool-call');
   const toolResults = blocks.filter((block) => block?.type === 'tool-result');
   const items = [];
-  if (textBlocks.length) {
+  if (textBlocks.length || imageBlocks.length) {
     items.push({
       role: message.role === 'assistant' ? 'assistant' : 'user',
-      content: textBlocks.map((block) => ({
-        type: message.role === 'assistant' ? 'output_text' : 'input_text',
-        text: block.text
-      }))
+      content: [
+        ...textBlocks.map((block) => ({
+          type: message.role === 'assistant' ? 'output_text' : 'input_text',
+          text: block.text
+        })),
+        ...imageBlocks.map((img) => ({
+          type: 'input_image',
+          image_url: img.dataUrl
+        }))
+      ]
     });
   }
   if (message.role === 'assistant') {
@@ -170,6 +183,7 @@ const responseInput = (messages) => messages.flatMap((message) => {
 const chatMessages = (messages) => messages.flatMap((message) => {
   const blocks = Array.isArray(message.content) ? message.content : [{ type: 'text', text: textFromContent(message.content) }];
   const text = blocks.filter((block) => block?.type === 'text' && typeof block.text === 'string').map((block) => block.text).join('');
+  const imageBlocks = message.role === 'assistant' ? [] : imageBlocksFromContent(blocks);
   const toolCalls = blocks.filter((block) => block?.type === 'tool-call');
   const toolResults = blocks.filter((block) => block?.type === 'tool-result');
   const wire = [];
@@ -187,6 +201,17 @@ const chatMessages = (messages) => messages.flatMap((message) => {
         } : {})
       });
     }
+  } else if (imageBlocks.length) {
+    wire.push({
+      role: message.role === 'tool' ? 'user' : message.role,
+      content: [
+        ...(text ? [{ type: 'text', text }] : []),
+        ...imageBlocks.map((img) => ({
+          type: 'image_url',
+          image_url: { url: img.dataUrl }
+        }))
+      ]
+    });
   } else if (text) {
     wire.push({ role: message.role === 'tool' ? 'user' : message.role, content: text });
   }
@@ -230,9 +255,13 @@ const parseJson = (raw) => {
   }
 };
 
-const failureMessage = (status, payload) => {
-  const detail = payload?.error?.message ?? payload?.message ?? `HTTP_${status}`;
-  return `${status}:${detail}`.slice(0, 1000);
+const isHttpContextLengthOverflow = (status, rawText, parsed) => {
+  if (status === 413) return true;
+  if (status !== 400 && status !== 422) return false;
+  const code = String(parsed?.error?.code ?? parsed?.code ?? '').toLowerCase();
+  if (code === 'context_length_exceeded' || code === 'string_above_max_length') return true;
+  const msg = String(parsed?.error?.message ?? parsed?.message ?? rawText ?? '').toLowerCase();
+  return /maximum context length|context_length_exceeded|context window|prompt is too long|too many tokens|input is too long|exceeds the maximum|token limit/i.test(msg);
 };
 
 const finishKind = (reason) => {
@@ -515,7 +544,9 @@ async function* sseEvents(body) {
 const responseDelta = (event, payload) => {
   const type = payload?.type ?? event;
   if (type === 'response.output_text.delta') return { type: 'text-delta', text: payload.delta ?? '' };
-  if (type === 'response.reasoning_text.delta' || type === 'response.reasoning_summary_text.delta') {
+  if (type === 'response.reasoning_text.delta'
+    || type === 'response.reasoning_summary_text.delta'
+    || type === 'response.reasoning.delta') {
     return { type: 'reasoning-delta', text: payload.delta ?? '' };
   }
   if (type === 'response.failed' || type === 'error') {
@@ -531,19 +562,25 @@ const responseDelta = (event, payload) => {
   return undefined;
 };
 
-const chatDelta = (event, payload) => {
+const chatChunks = (event, payload) => {
   if (event === 'error' || payload?.error) {
     const error = payload.error ?? payload;
-    return {
+    return [{
       type: 'finish',
       reason: { kind: 'error', failure: { code: error.code ?? 'MODEL_ERROR', message: error.message ?? 'Model request failed' } }
-    };
+    }];
   }
   const choice = payload?.choices?.[0];
-  if (choice?.delta?.content) return { type: 'text-delta', text: choice.delta.content };
-  if (choice?.delta?.reasoning_content) return { type: 'reasoning-delta', text: choice.delta.reasoning_content };
-  if (choice?.finish_reason) return { type: 'finish', reason: { kind: finishKind(choice.finish_reason) } };
-  return undefined;
+  const chunks = [];
+  const reasoning = typeof choice?.delta?.reasoning_content === 'string' && choice.delta.reasoning_content
+    ? choice.delta.reasoning_content
+    : typeof choice?.delta?.reasoning === 'string' && choice.delta.reasoning
+      ? choice.delta.reasoning
+      : '';
+  if (reasoning) chunks.push({ type: 'reasoning-delta', text: reasoning });
+  if (choice?.delta?.content) chunks.push({ type: 'text-delta', text: choice.delta.content });
+  if (choice?.finish_reason) chunks.push({ type: 'finish', reason: { kind: finishKind(choice.finish_reason) } });
+  return chunks;
 };
 
 const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
@@ -629,9 +666,11 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
       if (!response.ok || !response.body) {
         const raw = await response.text().catch(() => '');
         const status = response.status;
-        // Provider detail stays out of Error.message so CLI error.code stays a stable code.
-        void failureMessage(status, parseJson(raw));
-        throw tagTransport(new Error(classifyModelHttpStatus(status)), 'HTTP', { httpStatus: status });
+        const parsed = parseJson(raw);
+        throw tagTransport(new Error(classifyModelHttpStatus(status)), 'HTTP', {
+          httpStatus: status,
+          ...(isHttpContextLengthOverflow(status, raw, parsed) ? { contextLengthExceeded: true } : {})
+        });
       }
       let finished = false;
       let usage;
@@ -670,24 +709,25 @@ const createOpenAICompatiblePlugin = (options = {}) => cordisPlugin((ctx) => {
           if (Array.isArray(positions) && positions.length) yield { type: 'score-logprobs', positions };
         }
         for (const toolCall of toolCalls) yield toolCall;
-        const chunk = protocol === 'responses'
-          ? responseDelta(event.event, event.parsed)
-          : chatDelta(event.event, event.parsed);
-        if (!chunk) continue;
-        if (chunk.type === 'finish' && !['error', 'aborted', 'max-tokens'].includes(chunk.reason.kind)) {
-          // A gateway may report `stop` even when it streamed function-call
-          // fragments. Complete pending calls before publishing the terminal
-          // reason so consumers never observe a call after finish.
-          for (const toolCall of toolState.flush()) yield toolCall;
+        const emittedChunks = protocol === 'responses'
+          ? [responseDelta(event.event, event.parsed)].filter(Boolean)
+          : chatChunks(event.event, event.parsed);
+        for (const chunk of emittedChunks) {
+          if (chunk.type === 'finish' && !['error', 'aborted', 'max-tokens'].includes(chunk.reason.kind)) {
+            // A gateway may report `stop` even when it streamed function-call
+            // fragments. Complete pending calls before publishing the terminal
+            // reason so consumers never observe a call after finish.
+            for (const toolCall of toolState.flush()) yield toolCall;
+          }
+          if (chunk.type === 'finish' && chunk.reason.kind === 'stop' && toolState.size > 0) {
+            chunk.reason = { kind: 'tool-calls' };
+          }
+          if (chunk.type === 'finish') {
+            pendingFinish = chunk;
+            continue;
+          }
+          yield chunk;
         }
-        if (chunk.type === 'finish' && chunk.reason.kind === 'stop' && toolState.size > 0) {
-          chunk.reason = { kind: 'tool-calls' };
-        }
-        if (chunk.type === 'finish') {
-          pendingFinish = chunk;
-          continue;
-        }
-        yield chunk;
       }
       if (!finished) {
         for (const toolCall of toolState.flush()) yield toolCall;

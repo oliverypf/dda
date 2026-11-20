@@ -36,7 +36,7 @@ await page.addInitScript(() => {
       if (command.startsWith('plugin:event|')) return ++id;
       if (command === 'runtime_snapshot') return { platform: 'WINDOWS', version: 'fixture', runtimeReady: true,
         readOnly: true, workspaceRead: true, commandExecution: false, networkSideEffects: false,
-        releaseChannel: 'WINDOWS_PHASE1_READ_ONLY' };
+        releaseChannel: 'WINDOWS_PHASE1_5_CONTROLLED' };
       if (command === 'reconcile_runtime_state') return { ok: true, reconciled: 0 };
       if (command === 'default_workspace') return { rootLabel: 'Fixture', rootPath: 'C:/fixture' };
       if (command === 'list_workspace') return [];

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Context } from '@deepseek-ai/cordis';
@@ -29,7 +29,7 @@ const waitFor = async (predicate, attempts = 50) => {
   assert.fail('timed out waiting for condition');
 };
 
-const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now, eventStore } = {}) => {
+const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now, eventStore, workspaceRoot, commandApprovalDirectory } = {}) => {
   const events = [];
   const store = createExecutionStateStore({ eventStore });
   const real = createTaskRunCoordinator({ runId: 'run-cell-approval' });
@@ -58,6 +58,8 @@ const harness = ({ live = true, ttlMs = 120_000, hooks, coordinatorInject, now, 
     ...(now ? { now } : {}),
     cellOpSinks,
     hooks,
+    workspaceRoot,
+    commandApprovalDirectory,
     hasLiveApprover: () => live,
     executionState: () => store,
     coordinator: () => coordinator,
@@ -103,6 +105,87 @@ const cellContext = (cellId, cellOpIndex, extra = {}) => ({
 });
 
 const requested = (events) => events.filter((event) => event.kind === 'approval.requested');
+
+test('always allow persists the reviewed command across sessions and preserves mandatory checks', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'saved-command-approval-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const workspaceRoot = join(directory, 'workspace');
+  const anotherWorkspace = join(directory, 'another-workspace');
+  const commandApprovalDirectory = join(directory, 'config', 'command-approvals');
+  await Promise.all([workspaceRoot, anotherWorkspace].map(root => mkdir(join(root, 'desktop'), { recursive: true })));
+  const command = { command: 'npm', args: ['run', 'build:windows:full-local'], cwd: 'desktop' };
+  const launch = (request = command, { root = workspaceRoot, mandatory = false, capability = CAPABILITIES.SHELL } = {}) => {
+    const { session, events } = harness({ workspaceRoot: root, commandApprovalDirectory });
+    const monitor = new RuntimeSafetyMonitor({ workspaceRoot: root });
+    const lease = createExplicitLeaseProvider({
+      monitor,
+      commands: ['git'],
+      capabilities: [capability],
+      requestApproval: session.requestApproval,
+      gateDecisionFor: () => ({ mandatoryApproval: mandatory })
+    })({ capability, request });
+    return { session, events, lease };
+  };
+  const review = async ({ session, events }) => {
+    await waitFor(() => requested(events).length === 1);
+    const { requestId, requestDigest, canAlwaysAllow } = requested(events)[0].payload;
+    const reply = (fields = {}) => session.handleLine(JSON.stringify({
+      type: 'approval_response', requestId, displayedDigest: requestDigest, approved: true, ...fields
+    }));
+    return { reply, canAlwaysAllow };
+  };
+
+  const initial = launch(command, { mandatory: true });
+  const first = await review(initial);
+  assert.equal(first.canAlwaysAllow, true);
+  first.reply({ alwaysAllow: true, displayedDigest: DIGEST });
+  assert.equal(initial.session.pendingApprovals.size, 1);
+  first.reply({ alwaysAllow: true });
+  assert.deepEqual((await initial.lease).commands, ['npm']);
+  assert.ok(initial.events.some(event => event.kind === 'approval.resolved' && event.payload.alwaysAllowSaved === true));
+
+  const repeat = launch();
+  assert.deepEqual((await repeat.lease).commands, ['npm']);
+  assert.equal(requested(repeat.events).length, 0);
+  assert.ok(repeat.events.some(event => event.kind === 'approval.auto_approved' && event.payload.mode === 'ALWAYS_ALLOW'));
+
+  const stillNeedsReview = [
+    launch({ ...command, args: ['run', 'test'] }),
+    launch({ ...command, cwd: '.' }),
+    launch(command, { root: anotherWorkspace }),
+    launch(command, { mandatory: true }),
+    launch(command, { capability: CAPABILITIES.TEST })
+  ];
+  await Promise.all(stillNeedsReview.map(async (run) => {
+    const { reply } = await review(run);
+    reply();
+    assert.ok(await run.lease);
+    assert.equal(run.events.find(event => event.kind === 'approval.resolved').payload.alwaysAllowSaved, undefined);
+  }));
+
+  const dangerous = launch({ command: 'git', args: ['reset', '--hard'], cwd: '.' });
+  const dangerReview = await review(dangerous);
+  assert.equal(dangerReview.canAlwaysAllow, undefined);
+  dangerReview.reply({ alwaysAllow: true });
+  assert.equal(dangerous.session.pendingApprovals.size, 1);
+  dangerReview.reply();
+  assert.ok(await dangerous.lease);
+});
+
+test('an unavailable command approval store falls back to one approval and reports the save failure', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'saved-command-approval-failure-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const commandApprovalDirectory = join(directory, 'command-approvals');
+  await writeFile(commandApprovalDirectory, 'invalid store');
+  const { session, events } = harness({ workspaceRoot: directory, commandApprovalDirectory });
+  const approval = session.requestApproval({ capability: CAPABILITIES.SHELL, request: { command: 'npm', args: ['run', 'build'] }, requireApproval: true });
+  await waitFor(() => requested(events).length === 1);
+  const { requestId, requestDigest, canAlwaysAllow } = requested(events)[0].payload;
+  assert.equal(canAlwaysAllow, true);
+  session.handleLine(JSON.stringify({ type: 'approval_response', requestId, displayedDigest: requestDigest, approved: true, alwaysAllow: true }));
+  assert.equal(await approval, true);
+  assert.equal(events.find(event => event.kind === 'approval.resolved').payload.alwaysAllowSaved, false);
+});
 
 for (const fromCell of [false, true]) {
   test(`expired approval rejects the action, preserves audit evidence, and permits reapproval (cell=${fromCell})`, async (t) => {
@@ -208,12 +291,14 @@ test('declined approval still fails the task and reports APPROVAL_DENIED', async
   assert.equal(real.state, 'FAILED');
   assert.deepEqual(failures, [{ code: 'APPROVAL_DENIED', requestId: card.requestId, state: 'DECLINED' }]);
   assert.equal(store.get(card.approvalId).state, 'DECLINED');
+  assert.equal(store.get(card.approvalId).transition.metadata.reason, 'USER_DECLINED');
   assert.equal(store.get(card.intentId).state, 'REJECTED');
+  assert.equal(store.get(card.intentId).transition.metadata.reason, 'USER_DECLINED');
   assert.ok(events.some((event) => event.kind === 'approval.resolved' && event.payload.state === 'DECLINED'));
   assert.equal(events.some((event) => event.kind === 'approval.expired'), false);
 });
 
-test('the model observes APPROVAL_EXPIRED and retries with no effect until fresh approval', async (t) => {
+test('an APPROVAL_EXPIRED tool failure stops the run; a fresh approval needs a new explicit request', async (t) => {
   const { session, events, real } = harness({ ttlMs: 80 });
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'approval-expiry-continue-'));
   t.after(() => rm(workspaceRoot, { recursive: true, force: true }));
@@ -245,47 +330,33 @@ test('the model observes APPROVAL_EXPIRED and retries with no effect until fresh
     provider: 'fixture', protocol: 'fixture', model: 'approval-expiry',
     async *stream(request) {
       rounds += 1;
-      if (rounds === 2) {
-        const observation = request.messages.find((message) => message.source?.kind === 'tool');
-        assert.match(JSON.stringify(observation), /APPROVAL_EXPIRED/);
-        assert.equal(real.state, 'EXECUTING');
-        assert.deepEqual(effects, []);
-        assert.equal(leases, 0);
-      }
-      if (rounds <= 2) {
-        yield { type: 'tool-call', id: `write-${rounds}`, name: 'file.write',
+      if (rounds === 1) {
+        yield { type: 'tool-call', id: 'write-1', name: 'file.write',
           arguments: JSON.stringify({ path: 'retry.txt', content: 'ok' }) };
         yield { type: 'finish', reason: { kind: 'tool-calls' } };
       } else {
-        yield { type: 'text-delta', text: 'Fresh approval completed the write.' };
-        yield { type: 'finish', reason: { kind: 'stop' } };
+        // A terminal approval outcome must never reach another model turn.
+        yield { type: 'tool-call', id: `write-${rounds}`, name: 'file.write',
+          arguments: JSON.stringify({ path: 'retry.txt', content: 'ok' }) };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
       }
     }
   }), 'approval-expiry-fixture'));
   await root.plugin(taskRunnerPlugin);
   const observations = [];
-  const run = root.taskRunner.run({ prompt: 'Write the requested file.', mode: 'CONTROLLED',
+  const failure = await root.taskRunner.run({ prompt: 'Write the requested file.', mode: 'CONTROLLED',
     workspace: { granted: true, rootLabel: workspaceRoot, snapshotDigest: DIGEST, entries: [], sections: [] },
-    onEvent: (event) => observations.push(event) });
-  const approveRetry = async () => {
-    await waitFor(() => requested(events).length === 2);
-    const retry = requested(events)[1].payload;
-    assert.deepEqual(effects, []);
-    session.handleLine(JSON.stringify({ type: 'approval_response', requestId: retry.requestId,
-      approved: true, displayedDigest: retry.requestDigest }));
-  };
-  const [result] = await Promise.all([run, approveRetry()]);
-  assert.equal(result.text, 'Fresh approval completed the write.');
-  assert.equal(rounds, 3);
-  assert.deepEqual(effects, ['write']);
-  assert.equal(leases, 1);
+    onEvent: (event) => observations.push(event) }).then(() => undefined, (error) => error);
+  assert.equal(failure?.code, 'APPROVAL_EXPIRED');
+  assert.equal(rounds, 1, 'the runner stops instead of re-planning around the expired approval');
+  assert.deepEqual(effects, []);
+  assert.equal(leases, 0);
+  assert.equal(requested(events).length, 1, 'no second approval request is issued');
   assert.equal(real.state, 'EXECUTING');
   assert.ok(observations.some((event) => event.kind === 'tool.result'
-    && event.id === 'write-1' && event.ok === false && event.errorCode === 'APPROVAL_EXPIRED'));
-  assert.ok(observations.some((event) => event.kind === 'tool.result' && event.id === 'write-2' && event.ok === true));
-  real.transition('VERIFYING');
-  real.transition('SUCCEEDED');
-  assert.equal(real.state, 'SUCCEEDED');
+    && event.id === 'write-1' && event.ok === false
+    && event.errorCode === 'APPROVAL_EXPIRED'
+    && event.nextAction === 'WAIT_FOR_USER_APPROVAL'));
 });
 
 test('cell and non-cell digests, and both paths stamp cellId on the pending entry', async () => {
@@ -546,8 +617,10 @@ test('cell end settles the pending approval and rejects queued waiters with no c
   assert.equal(marks.some((mark) => mark.id === '2' && mark.state === 'CANCELLED'), true);
   const approval = store.list().find((record) => record.recordType === 'approval');
   assert.equal(approval.state, 'CANCELLED');
+  assert.equal(approval.transition.metadata.reason, 'CELL_ENDED_BEFORE_DECISION');
   const intent = store.list().find((record) => record.recordType === 'intent');
   assert.equal(intent.state, 'REJECTED');
+  assert.equal(intent.transition.metadata.reason, 'CELL_ENDED_BEFORE_DECISION');
 });
 
 test('settlement race: one winner, mismatched digest does not settle, catch keeps the promise', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseNetworkTargetsText } from './network-targets';
+import { effectiveLeaseNetworkTargets, networkAccessSummary, parseNetworkTargetsText } from './network-targets';
 
 describe('parseNetworkTargetsText', () => {
   it('returns no targets for empty text', () => {
@@ -17,6 +17,17 @@ describe('parseNetworkTargetsText', () => {
     expect(parseNetworkTargetsText('not json').error).toContain('JSON');
     expect(parseNetworkTargetsText('["host"]').error).toContain('对象');
     expect(parseNetworkTargetsText('[]').targets).toEqual([]);
+  });
+
+  it('opens public internet when the box is blank and keeps an explicit list', () => {
+    expect(effectiveLeaseNetworkTargets('', [], '')).toEqual([{ host: '*' }]);
+    expect(effectiveLeaseNetworkTargets('   ', [], '').map((target) => target.host)).toEqual(['*']);
+    expect(effectiveLeaseNetworkTargets('[]', [], '')).toEqual([]);
+    expect(effectiveLeaseNetworkTargets('[{"host":"cloud.tencent.com"}]', [{ host: 'cloud.tencent.com' }], '')).toEqual([{ host: 'cloud.tencent.com' }]);
+    expect(effectiveLeaseNetworkTargets('{bad', [], '格式无效：需要 JSON 数组')).toEqual([]);
+    expect(networkAccessSummary('', [], '')).toEqual({ open: true, label: '默认开放公网 · 模型选择网址' });
+    expect(networkAccessSummary('[]', [], '').open).toBe(false);
+    expect(networkAccessSummary('{bad', [], '格式无效：需要 JSON 数组').open).toBe(false);
   });
 
   it('rejects invalid host, port, scheme and methods', () => {

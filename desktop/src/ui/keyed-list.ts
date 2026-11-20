@@ -62,6 +62,13 @@ function reconcileRegionChildren(container: Node, desired: Node): void {
 // Only changed/new rows are parsed. Existing rows retain focus, disclosure
 // state and DOM identity when older pages are prepended.
 const rendered = new WeakMap<Element, string>();
+
+export type KeyedListHooks<T> = {
+  /** Skip HTML when the mounted row already represents this exact item. */
+  reuse?: (element: HTMLElement, item: T) => boolean;
+  /** Remember which item a row displays, including rows that were just reused. */
+  bind?: (element: HTMLElement, item: T) => void;
+};
 const createRow = (id: string, content: string,
   initialize: (element: HTMLElement) => void): HTMLElement => {
   const template = document.createElement('template');
@@ -74,7 +81,8 @@ const createRow = (id: string, content: string,
 };
 
 export function syncKeyedList<T>(container: HTMLElement, items: T[], key: (item: T) => string,
-  html: (item: T) => string, initialize: (element: HTMLElement) => void = () => {}): void {
+  html: (item: T) => string, initialize: (element: HTMLElement) => void = () => {},
+  hooks?: KeyedListHooks<T>): void {
   const existing = new Map([...container.children].map((element) => [(element as HTMLElement).dataset.key, element as HTMLElement]));
   let position = container.firstElementChild;
   const seen = new Set<string>();
@@ -82,18 +90,25 @@ export function syncKeyedList<T>(container: HTMLElement, items: T[], key: (item:
     const id = key(item);
     if (seen.has(id)) continue;
     seen.add(id);
-    const content = html(item);
     let element = existing.get(id);
-    if (!element || rendered.get(element) !== content) {
-      const next = createRow(id, content, initialize);
-      if (element) {
-        const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
-        next.querySelectorAll('details').forEach((detail, index) => { detail.open = disclosures[index] ?? detail.open; });
-        if (position === element) position = next;
-        element.replaceWith(next);
+    // Rebuilding Markdown for every row is the expensive part of a task switch.
+    // A row that already displays this object stays mounted.
+    if (element && hooks?.reuse?.(element, item)) {
+      hooks.bind?.(element, item);
+    } else {
+      const content = html(item);
+      if (!element || rendered.get(element) !== content) {
+        const next = createRow(id, content, initialize);
+        if (element) {
+          const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
+          next.querySelectorAll('details').forEach((detail, index) => { detail.open = disclosures[index] ?? detail.open; });
+          if (position === element) position = next;
+          element.replaceWith(next);
+        }
+        element = next;
+        rendered.set(element, content);
       }
-      element = next;
-      rendered.set(element, content);
+      hooks?.bind?.(element, item);
     }
     if (position !== element) container.insertBefore(element, position);
     position = element.nextElementSibling;
@@ -105,7 +120,7 @@ export function syncKeyedList<T>(container: HTMLElement, items: T[], key: (item:
 // frame-sized batches so a conversation switch yields to input and paint.
 export async function syncKeyedListIncrementally<T>(container: HTMLElement, items: T[], key: (item: T) => string,
   html: (item: T) => string, initialize: (element: HTMLElement) => void = () => {},
-  isCancelled: () => boolean = () => false, batchSize = 16): Promise<void> {
+  isCancelled: () => boolean = () => false, batchSize = 16, hooks?: KeyedListHooks<T>): Promise<void> {
   const unique = new Map<string, T>();
   for (const item of items) unique.set(key(item), item);
   const existing = new Map([...container.children].map((element) => [(element as HTMLElement).dataset.key!, element as HTMLElement]));
@@ -118,7 +133,9 @@ export async function syncKeyedListIncrementally<T>(container: HTMLElement, item
     if (isCancelled()) return;
     const fragment = document.createDocumentFragment();
     for (const [id, item] of newItems.slice(offset, offset + batchSize)) {
-      fragment.append(createRow(id, html(item), initialize));
+      const row = createRow(id, html(item), initialize);
+      hooks?.bind?.(row, item);
+      fragment.append(row);
     }
     if (insertionAnchor?.parentNode === container) container.insertBefore(fragment, insertionAnchor);
     else container.append(fragment);
@@ -130,9 +147,17 @@ export async function syncKeyedListIncrementally<T>(container: HTMLElement, item
   for (const [id, item] of unique) {
     const element = existing.get(id);
     if (!element) continue;
+    if (hooks?.reuse?.(element, item)) {
+      hooks.bind?.(element, item);
+      continue;
+    }
     const content = html(item);
-    if (rendered.get(element) === content) continue;
+    if (rendered.get(element) === content) {
+      hooks?.bind?.(element, item);
+      continue;
+    }
     const next = createRow(id, content, initialize);
+    hooks?.bind?.(next, item);
     const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
     next.querySelectorAll('details').forEach((detail, index) => { detail.open = disclosures[index] ?? detail.open; });
     element.replaceWith(next);

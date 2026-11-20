@@ -1,23 +1,26 @@
 import { existsSync } from 'node:fs';
-import { readRunResponse } from './run-response-store.mjs';
+import { planFailureFacts } from './plan-failure-facts.mjs';
+import { readRunImages, readRunResponse, readRunThinking } from './run-response-store.mjs';
 import { createHash } from 'node:crypto';
+import { archiveDatabasePath, readArchivedRunIds } from './harness-event-archive.mjs';
 import { openHarnessDatabase, readHarnessEventTail } from './harness-store-schema.mjs';
 import { createHarnessEventStore } from './harness-event-store.mjs';
 import { createThreadStore, THREAD_STATES, checkpointDigest, titleDigest,
-  compareThreadEvents as compare, checkpointClearApplies, checkpointResumeMode } from './thread-store.mjs';
+  compareThreadEvents as compare, checkpointClearApplies, checkpointResumeMode,
+  checkpointRecoveryBlock } from './thread-store.mjs';
 import { readPersistentJsonFile } from './persistent-json-store.mjs';
 import { createTrajectoryStore } from './trajectory-store.mjs';
 
 const historyKinds = [
   'TaskRunCreated', 'RunStateChanged', 'ModelRouteResolved', 'RoleContextsAllocated',
-  'WorkspaceSnapshotCreated', 'PlanStepStateChanged', 'ToolInvocationCompleted',
+  'WorkspaceSnapshotCreated', 'PlanStepStateChanged', 'ToolCallRequested', 'ToolInvocationCompleted', 'ToolActionNotExecuted',
   'VerificationCompleted', 'SemanticVerificationCompleted', 'CouncilPlanReviewCompleted',
   'TaskRunCompleted', 'TaskRunFailed', 'TaskHarnessProgress', 'ApprovalRequested', 'ApprovalResolved',
   'ActionIntentCreated', 'LeaseIssued', 'LeaseClaimed', 'LeaseConsumed', 'LeaseFailed',
   'CandidateSelected', 'CandidateVerificationCompleted', 'FeedbackFactRecorded'
 ];
 const metadataKinds = ['ThreadCreated', 'ThreadTurnAppended', 'ThreadStateChanged',
-  'ThreadCheckpointCommitted', 'ThreadCheckpointCleared'];
+  'ThreadCheckpointCommitted', 'ThreadCheckpointCleared', 'ThreadRunAttached', 'ThreadWorkspaceBound'];
 const canonical = (v) => Array.isArray(v) ? `[${v.map(canonical).join(',')}]`
   : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`
     : JSON.stringify(v) ?? 'null';
@@ -31,10 +34,22 @@ const validate = (event) => {
 };
 const recoverySummary = (checkpoint) => {
   const resumeMode = checkpointResumeMode(checkpoint);
-  return { resumeMode, resumable: resumeMode === 'PLAN' || resumeMode === 'PREPARATION' };
+  const recoveryBlock = checkpointRecoveryBlock(checkpoint);
+  return {
+    resumeMode,
+    resumable: (resumeMode === 'PLAN' || resumeMode === 'PREPARATION') && !recoveryBlock,
+    ...(recoveryBlock ? { recoveryBlock } : {})
+  };
 };
-const summary = ({ turns = [], checkpoint, ...thread }) => ({ ...thread,
-  turnCount: turns.length, ...recoverySummary(checkpoint) });
+const rememberHistoryRun = (ids, runId) => {
+  if (typeof runId === 'string' && runId && !runId.startsWith('thread:')) ids.add(runId);
+};
+
+const summary = ({ turns = [], checkpoint, runIds: _runIds, ...thread }) => {
+  // A stale block must never survive a checkpoint replacement or clear.
+  delete thread.recoveryBlock;
+  return { ...thread, turnCount: turns.length, ...recoverySummary(checkpoint) };
+};
 
 // Thread titles are local presentation metadata. The durable event keeps only
 // titleDigest so support bundles and event exports never contain the prompt.
@@ -43,11 +58,12 @@ const summary = ({ turns = [], checkpoint, ...thread }) => ({ ...thread,
 const readThreadTitleCache = async (threadPath) => {
   if (!threadPath) return new Map();
   try {
+    const titles = await readPersistentJsonFile(threadPath + '.titles.json');
     const parsed = await readPersistentJsonFile(threadPath);
-    if (parsed?.schemaVersion !== '1.0' || !Array.isArray(parsed.threads)) return new Map();
-    return new Map(parsed.threads.flatMap((thread) => typeof thread?.id === 'string' && thread.id
+    const legacy = parsed?.schemaVersion === '1.0' && Array.isArray(parsed.threads) ? parsed.threads : [];
+    return new Map([...Object.entries(titles ?? {}), ...legacy.flatMap((thread) => typeof thread?.id === 'string' && thread.id
       && typeof thread.title === 'string' && thread.title && thread.title.length <= 240
-      ? [[thread.id, thread.title]] : []));
+      ? [[thread.id, thread.title]] : [])]);
   } catch {
     return new Map();
   }
@@ -98,22 +114,42 @@ function readSqliteMetadata(db, threadId, includeRuns, titles = new Map()) {
         thread.turnCount++;
         if (includeRuns && p.turn.runId) record.runIds.add(p.turn.runId);
       }
+    } else if (event.kind === 'ThreadWorkspaceBound') {
+      if (!thread.cwd && typeof p.cwd === 'string') thread.cwd = p.cwd;
     } else if (event.kind === 'ThreadStateChanged') {
+      if (p.expectedRunId && (thread.activeRunId !== p.expectedRunId || thread.state !== 'RUNNING')) continue;
       if (THREAD_STATES.includes(p.state)) thread.state = p.state;
       if (typeof p.activeRunId === 'string' && p.activeRunId) thread.activeRunId = p.activeRunId;
       else delete thread.activeRunId;
       if (typeof p.stateReason === 'string' && p.stateReason) thread.stateReason = p.stateReason;
+    } else if (event.kind === 'ThreadRunAttached') {
+      // Once a conversation has a session id, later runs of that same task
+      // join it. A different session's checkpoint must not be pulled in.
+      const attachedSession = typeof p.sessionId === 'string' && p.sessionId ? p.sessionId : undefined;
+      if (!thread.sessionId && attachedSession) thread.sessionId = attachedSession;
+      if (includeRuns && (!thread.sessionId || !attachedSession || attachedSession === thread.sessionId)) {
+        rememberHistoryRun(record.runIds, p.runId);
+      }
     } else if (event.kind === 'ThreadCheckpointCommitted') {
+      // Runs from before session ids were stored are still one conversation:
+      // every checkpoint on the thread belongs to it until a session is bound.
+      if (includeRuns && !thread.sessionId) {
+        rememberHistoryRun(record.runIds, p.runId);
+        rememberHistoryRun(record.runIds, p.checkpoint?.runId);
+        rememberHistoryRun(record.runIds, event.runId);
+      }
       if (THREAD_STATES.includes(p.state)) thread.state = p.state;
       if (typeof p.runId === 'string' && p.runId) thread.activeRunId = p.runId;
       if (p.checkpoint && p.checkpoint.checkpointDigest === checkpointDigest(p.checkpoint)) {
         record.checkpointRunId = p.checkpoint.runId;
+        delete thread.recoveryBlock;
         Object.assign(thread, recoverySummary(p.checkpoint));
         thread.state = THREAD_STATES.includes(p.checkpoint.state) ? p.checkpoint.state : 'RUNNING';
       }
     } else if (event.kind === 'ThreadCheckpointCleared') {
       if (!checkpointClearApplies(record.checkpointRunId, event)) continue;
       record.checkpointRunId = undefined;
+      delete thread.recoveryBlock;
       Object.assign(thread, recoverySummary(undefined));
       if (THREAD_STATES.includes(p.state)) thread.state = p.state;
       delete thread.activeRunId;
@@ -142,16 +178,30 @@ export function parseHistoryOptions({ limit = 100, before, threadId } = {}) {
 // This is a read-only UI projection, never a checkpoint or execution authority.
 // SQLite opens a read transaction and validates only the metadata/current page;
 // the normal Harness APIs retain whole-store verification for audits/writes.
+const mergeHistoryPages = (pages, limit) => {
+  const byId = new Map();
+  for (const page of pages) {
+    for (const event of page.events ?? []) byId.set(event.eventId, event);
+  }
+  const events = [...byId.values()].sort(compare);
+  return {
+    events: events.length > limit ? events.slice(-limit) : events,
+    hasMore: pages.some((page) => page.hasMore) || events.length > limit
+  };
+};
+
 export async function readThreadHistory({ harnessPath, threadPath, trajectoryPath, explicitThreadStore,
   threadId, limit = 100, before, listOnly = false, summariesOnly = false }) {
   const options = parseHistoryOptions({ limit, before, threadId });
   const sqlite = harnessPath?.endsWith('.db');
   const titleCache = explicitThreadStore ? new Map() : await readThreadTitleCache(threadPath);
+  const readers = [];
   let db;
   try {
     if (sqlite && existsSync(harnessPath)) {
       db = openHarnessDatabase(harnessPath, { readOnly: true, verifyIntegrity: false });
       db.exec('BEGIN');
+      readers.push(db);
     }
     let threads;
     let thread;
@@ -161,7 +211,9 @@ export async function readThreadHistory({ harnessPath, threadPath, trajectoryPat
       if (listOnly) return { ok: true, threads: [...records.values()].map((r) => r.thread).sort((a, b) => b.updatedAtMs - a.updatedAtMs) };
       const record = records.get(threadId);
       thread = record?.thread;
-      runIds = record ? [...new Set([...record.runIds, thread.activeRunId, record.checkpointRunId].filter(Boolean))] : [];
+      runIds = !record ? [] : thread.sessionId
+        ? [...record.runIds]
+        : [...new Set([...record.runIds, thread.activeRunId, record.checkpointRunId].filter(Boolean))];
     } else {
       threads = createThreadStore(!explicitThreadStore && harnessPath
         ? { storagePath: threadPath, eventStore: createHarnessEventStore({ storagePath: harnessPath }) }
@@ -169,29 +221,63 @@ export async function readThreadHistory({ harnessPath, threadPath, trajectoryPat
       if (listOnly) return { ok: true, threads: (await threads.list()).map(summary) };
       const fullThread = await threads.get(threadId);
       thread = fullThread ? summary(fullThread) : undefined;
-      runIds = [...new Set([...(fullThread?.turns ?? []).map((turn) => turn.runId),
-        fullThread?.activeRunId, fullThread?.checkpoint?.runId].filter((id) => typeof id === 'string' && id))];
+      const attached = Array.isArray(fullThread?.runIds) ? fullThread.runIds : [];
+      const turnRuns = (fullThread?.turns ?? []).map((turn) => turn.runId);
+      runIds = thread?.sessionId
+        ? [...new Set([...attached, ...turnRuns].filter((id) => typeof id === 'string' && id))]
+        : [...new Set([...attached, ...turnRuns, fullThread?.activeRunId, fullThread?.checkpoint?.runId].filter((id) => typeof id === 'string' && id))];
     }
     if (!thread) throw new Error('THREAD_NOT_FOUND');
     if (summariesOnly) return { ok: true, thread };
     let page;
     if (db) {
-      page = readHarnessEventTail(db, { runIds, kinds: historyKinds, ...options });
+      if (sqlite) {
+        const archivedRunIds = await readArchivedRunIds(harnessPath, threadId);
+        if (archivedRunIds.length) runIds = [...new Set([...runIds, ...archivedRunIds])];
+      }
+      const archivePath = sqlite ? archiveDatabasePath(harnessPath) : undefined;
+      const pages = [readHarnessEventTail(db, { runIds, kinds: historyKinds, ...options })];
+      if (archivePath && existsSync(archivePath)) {
+        const archiveDb = openHarnessDatabase(archivePath, { readOnly: true, verifyIntegrity: false });
+        archiveDb.exec('BEGIN');
+        readers.push(archiveDb);
+        pages.push(readHarnessEventTail(archiveDb, { runIds, kinds: historyKinds, ...options }));
+      }
+      page = pages.length === 1 ? pages[0] : mergeHistoryPages(pages, options.limit);
       page.events.forEach(validate);
     } else if (sqlite) {
       page = { events: [], hasMore: false };
     } else {
       const trajectory = createTrajectoryStore(trajectoryPath, harnessPath ? { harnessStoragePath: harnessPath } : {});
-      const events = (await trajectory.list()).filter((event) => runIds.includes(event.runId)
+      const listed = await trajectory.list();
+      const members = new Set(runIds);
+      if (!thread.sessionId) {
+        for (const event of listed) {
+          if (event?.kind !== 'ThreadCheckpointCommitted' || event.payload?.threadId !== threadId) continue;
+          rememberHistoryRun(members, event.payload?.runId);
+          rememberHistoryRun(members, event.payload?.checkpoint?.runId);
+          rememberHistoryRun(members, event.runId);
+        }
+      }
+      const events = listed.filter((event) => members.has(event.runId)
         && historyKinds.includes(event.kind) && (!options.before || compare(event, options.before) < 0)).sort(compare);
       page = { events: events.slice(-options.limit), hasMore: events.length > options.limit };
     }
     const responses = new Map();
+    const thinking = new Map();
+    const images = new Map();
     for (const event of page.events) {
+      if (event.kind === 'TaskRunCreated' && Array.isArray(event.payload?.imageRefs)) {
+        const restored = await readRunImages(harnessPath ?? trajectoryPath ?? threadPath, event.runId, event.payload.imageRefs);
+        if (restored.length) images.set(event.eventId, restored);
+      }
       if (event.kind !== 'TaskRunCompleted' && event.kind !== 'TaskRunFailed') continue;
       const responseText = await readRunResponse(harnessPath ?? trajectoryPath ?? threadPath,
         event.runId, event.payload.outputDigest);
       if (responseText !== undefined) responses.set(event.eventId, responseText);
+      const thinkingText = await readRunThinking(harnessPath ?? trajectoryPath ?? threadPath,
+        event.runId, event.payload.reasoningDigest);
+      if (thinkingText !== undefined) thinking.set(event.eventId, thinkingText);
     }
     const first = page.events[0];
     return {
@@ -202,10 +288,17 @@ export async function readThreadHistory({ harnessPath, threadPath, trajectoryPat
         runId: event.runId, sequence: event.sequence, emittedAtMs: event.emittedAtMs,
         kind: `history.${event.kind.replace(/([a-z0-9])([A-Z])/g, '$1.$2').toLowerCase()}`,
         payload: { ...event.payload, persistedKind: event.kind,
+          ...(event.kind === 'TaskRunFailed' && event.payload?.stepId && !event.payload.stepFacts
+            ? { stepFacts: planFailureFacts(page.events.filter(item => item.sequence < event.sequence),
+                event.runId, event.payload.stepId) } : {}),
+          ...(images.has(event.eventId) ? { images: images.get(event.eventId) } : {}),
+          ...(thinking.has(event.eventId) ? { thinkingText: thinking.get(event.eventId) } : {}),
           ...(responses.has(event.eventId) ? { responseText: responses.get(event.eventId) }
             : event.kind === 'TaskRunCompleted' ? { responseUnavailable: true } : {}) } }))
     };
   } finally {
-    if (db) { try { db.exec('ROLLBACK'); } finally { db.close(); } }
+    for (const item of readers) {
+      try { item.exec('ROLLBACK'); } finally { item.close(); }
+    }
   }
 }

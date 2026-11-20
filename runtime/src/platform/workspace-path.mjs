@@ -20,3 +20,20 @@ export const canonicalMappedPath = (value, options) => {
     return resolved;
   }
 };
+
+// A mapped Windows drive and its UNC spelling refer to the same workspace.
+// Drive-letter input keeps its spelling for I/O; only the comparison key
+// below asks for native identity.
+export const canonicalWorkspacePath = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const input = value.trim();
+  return /^[A-Za-z]:[\\/]/u.test(input)
+    ? preferMappedPath(input)
+    : canonicalMappedPath(input);
+};
+
+export const workspacePathKey = (value) => {
+  const canonical = canonicalWorkspacePath(value);
+  const normalized = canonical.replace(/[\\/]+/g, '\\');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+};

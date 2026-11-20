@@ -14,4 +14,6 @@ export const isConversationTimelineItem = (item: Pick<TimelineItem, 'kind' | 'to
   (item.kind !== 'STATUS' && item.kind !== 'WORKSPACE')
   || Boolean(item.toolName)
   || item.evidenceKind === VERIFICATION_FAILURE_REASON
+  || item.evidenceKind === 'semantic-verification-summary'
+  || item.evidenceKind === 'conversation-notice'
   || (item.evidenceKind === 'rule-verification-check' && item.status === 'ERROR');

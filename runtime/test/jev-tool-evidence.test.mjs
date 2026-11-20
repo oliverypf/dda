@@ -9,6 +9,8 @@ import { runEvidenceProcess } from '../../desktop/scripts/goal-evidence-process.
 import { emitGoalResponse } from '../../desktop/scripts/goal-model-fixture.mjs';
 import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
+const inputTextOf = (body) => JSON.stringify(body.input ?? []);
+
 test('decision observations keep only bounded terminal host facts', () => {
   const actions = Array.from({ length: 22 }, (_, i) => ({
     name: 'workspace.read', state: 'FAILED', errorCode: 'WORKSPACE_NOT_FOUND',
@@ -93,7 +95,7 @@ test('Jev gates receive the observed failure before the next tool and before rec
       const text = `${'Long introduction '.repeat(120)} \`GOAL_TOOL_FACTS_PASSED\` ${'Further explanation '.repeat(100)}`;
       emitGoalResponse(res, [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }]); return;
     }
-    const path = outputs.length || String(body.instructions).includes('continuing verifier recovery') ? 'README.md' : 'missing.txt';
+    const path = outputs.length || inputTextOf(body).includes('continuing verifier recovery') ? 'README.md' : 'missing.txt';
     reads.push(path);
     emitGoalResponse(res, [{ type: 'function_call', id: `call-${reads.length}`, call_id: `call-${reads.length}`, name: 'workspace.read', arguments: JSON.stringify({ path }) }]);
   });
@@ -185,7 +187,7 @@ test('a controlled failing test can be repaired only after the Jev wire carries 
   const result = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'task', '--config', config, '--workspace', workspace,
     '--prompt', 'Run the tests, repair broken.mjs after the observed failure, then run the same tests successfully.',
     '--trajectory-store', join(root, 'trajectory.jsonl'), '--thread-store', join(root, 'threads.json'),
-    '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node'], {
+    '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute,filesystem.write.workspace,workspace.write.patch', '--lease-commands', 'node'], {
     cwd: new URL('..', import.meta.url), env: { GOAL_PROCESS_INTENT_KEY: 'local-key', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
       DDA_CONTEXT_PROVIDER: 'journal', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' }, timeoutMs: 30000
   });
@@ -285,16 +287,30 @@ for (const diagnosticRetry of [false, true]) test(diagnosticRetry
   const config = join(root, 'config.json');
   await writeFile(config, JSON.stringify({ provider: 'openai', protocol: 'responses', model: 'fixture', endpoint: `http://127.0.0.1:${port}/model`, apiKeyEnv: 'GOAL_CURRENT_CONTEXT_KEY',
     decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'GOAL_CURRENT_CONTEXT_KEY', timeoutMs: 5000 } }));
+  // Live approval channel: --events stdout arms the stdin protocol and soft
+  // gates (e.g. the accumulated risk vector) legitimately elevate to
+  // REQUIRE_APPROVAL mid-run. Every effect still passes intent → approval →
+  // one-shot lease; the fixture answers each request over stdin.
+  const approvals = [];
   const result = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'task', '--config', config, '--workspace', workspace,
     '--prompt', 'First run the tests and observe failure, repair only broken.mjs, verify the tests were preserved and run the same tests successfully.',
     '--trajectory-store', join(root, 'trajectory.jsonl'), '--thread-store', join(root, 'threads.json'),
-    '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute', '--lease-commands', 'node'], {
+    '--execution-mode', 'CONTROLLED', '--lease-capabilities', 'file.write,test.execute,filesystem.write.workspace,workspace.write.patch', '--lease-commands', 'node'], {
     cwd: new URL('..', import.meta.url), env: { GOAL_CURRENT_CONTEXT_KEY: 'local-key', DDA_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL',
-      DDA_CONTEXT_PROVIDER: 'journal', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' }, timeoutMs: diagnosticRetry ? 60000 : 30000
+      DDA_CONTEXT_PROVIDER: 'journal', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1', DDA_EVENTS: 'stdout' }, timeoutMs: diagnosticRetry ? 60000 : 30000,
+    onStdoutLine: (line, child) => {
+      let event;
+      try { event = JSON.parse(line); } catch { return; }
+      if (event?.kind !== 'approval.requested') return;
+      approvals.push(event.payload.capability);
+      child.stdin.write(`${JSON.stringify({ type: 'approval_response', requestId: event.payload.requestId,
+        approved: true, displayedDigest: event.payload.requestDigest })}\n`);
+    }
   });
   assert.equal(result.timedOut, false, `Local fixture exceeded its process deadline after ${result.wallMs}ms`);
   assert.equal(result.code, 0, result.stderr + result.stdout.slice(-1000));
-  assert.equal(JSON.parse(result.stdout.trim()).ok, true);
+  assert.ok(approvals.length > 0, 'controlled effects must request live approvals rather than auto-approve');
+  assert.equal(JSON.parse(result.stdout.trim().split('\n').at(-1)).ok, true);
   assert.deepEqual(observed, { initialContext: true, updatedContext: true, failedTest: true, passedTest: true, policyPreserved: true, processScope: true, recoveredDiagnostic: diagnosticRetry });
   assert.equal(native[0].ok, false, 'the first actual tool really executes the seeded failing tests');
   assert.equal(native[0].exitCode, 1);

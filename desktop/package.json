@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "dda": {
+    "executableBuildScript": "build:windows:full-local"
+  },
   "scripts": {
     "test:ui:security": "node \"%npm_config_local_prefix%/scripts/ui-security-test.mjs\"",
     "test:ui:accessibility": "node \"%npm_config_local_prefix%/scripts/ui-accessibility-test.mjs\"",
@@ -37,6 +40,7 @@
     "test:ui:disconnect": "node \"%npm_config_local_prefix%/scripts/ui-disconnect-test.mjs\"",
     "build:windows:full-local": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\"",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:exe": "call \"C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\Common7\\Tools\\VsDevCmd.bat\" -arch=x64 -host_arch=x64 && npm run build:windows -- --no-bundle",
     "test:ui:history": "node \"%npm_config_local_prefix%/scripts/ui-history-test.mjs\"",
     "test:ui:project-archive": "node \"%npm_config_local_prefix%/scripts/ui-project-archive-test.mjs\"",
     "test:ui:memory": "node \"%npm_config_local_prefix%/scripts/ui-memory-test.mjs\"",

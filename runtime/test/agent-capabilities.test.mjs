@@ -62,5 +62,38 @@ test('browser.open uses the isolated worker interface and host allowlist', async
   const result = await registry.invoke('browser.open', { url: 'https://docs.example.test/start' });
   assert.equal(result.text, 'docs');
   assert.equal(calls[0].runId, 'run-1');
-  await assert.rejects(registry.invoke('browser.open', { url: 'https://other.example.test/' }), /TOOL_HANDLER_FAILED/);
+  // Host allowlist refusals keep their structured domain code (playwright-host.mjs)
+  // instead of collapsing to the generic TOOL_HANDLER_FAILED.
+  await assert.rejects(registry.invoke('browser.open', { url: 'https://other.example.test/' }), /BROWSER_TARGET_FORBIDDEN/);
+  const open = new ToolRegistry({ allowSideEffects: true });
+  const publicCalls = [];
+  registerPlaywrightTools(open, {
+    open: async (input) => { publicCalls.push(input); return { ok: true, url: input.url, text: 'page' }; }
+  }, {
+    leaseProvider: async () => ({ id: 'network-lease' }),
+    runId: 'run-2',
+    targets: [{ host: '*' }]
+  });
+  assert.equal((await open.invoke('browser.open', { url: 'https://cloud.tencent.com/product/hunyuan' })).text, 'page');
+  assert.equal(publicCalls[0].url, 'https://cloud.tencent.com/product/hunyuan');
+  await assert.rejects(open.invoke('browser.open', { url: 'http://127.0.0.1/' }), /BROWSER_TARGET_FORBIDDEN/);
+  await assert.rejects(open.invoke('browser.open', { url: 'http://localhost/' }), /BROWSER_TARGET_FORBIDDEN/);
+  const missing = new ToolRegistry({ allowSideEffects: true });
+  registerPlaywrightTools(missing, {
+    open: async () => {
+      throw new Error("browserType.launch: Executable doesn't exist at C:\\\\ms-playwright\\\\chrome-headless-shell.exe\nPlease run the following command to download new browsers:\n    npx playwright install");
+    }
+  }, {
+    leaseProvider: async () => ({ id: 'network-lease' }),
+    runId: 'run-3',
+    targets: [{ host: '*' }]
+  });
+  await assert.rejects(
+    missing.invoke('browser.open', { url: 'https://cloud.tencent.com/document/product/1729/97731' }),
+    (error) => {
+      assert.equal(error.code, 'BROWSER_NOT_INSTALLED');
+      assert.match(error.message, /npx playwright install chromium/);
+      return true;
+    }
+  );
 });

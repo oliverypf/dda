@@ -20,6 +20,34 @@ const boundedLimit = (value, maximum, fallback) => {
   return value;
 };
 
+const resultFits = (result, maxBytes, maxChars) => {
+  const serialized = JSON.stringify(result);
+  return serialized.length <= maxChars && Buffer.byteLength(serialized, 'utf8') <= maxBytes;
+};
+
+// The registry measures the serialized tool result. A body that fills the
+// ceiling by itself leaves no room for the result fields or JSON escapes.
+const fitResultBody = (result, maxBytes, maxChars) => {
+  if (typeof result.body !== 'string' || resultFits(result, maxBytes, maxChars)) return result;
+  const source = result.body;
+  let low = 0;
+  let high = source.length;
+  let best = 0;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    result.body = source.slice(0, mid);
+    if (resultFits(result, maxBytes, maxChars)) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  result.body = source.slice(0, best);
+  result.truncated = true;
+  return result;
+};
+
 /**
  * Network adapter behind the same one-shot lease boundary as the process and
  * file executors. Redirects always fail closed: following one would require a
@@ -94,7 +122,7 @@ export class RestrictedNetworkAdapter {
       await this.#assertResolvable(target.host);
       const body = await this.#collectBody(response, { maxResponseBytes, maxResponseChars });
       const aborted = signal?.aborted === true;
-      return {
+      return fitResultBody({
         ok: !timedOut && !aborted && response.status >= 200 && response.status < 300,
         status: response.status,
         aborted,
@@ -111,7 +139,7 @@ export class RestrictedNetworkAdapter {
           path: target.path
         })),
         lease: authorization.lease?.id ?? null
-      };
+      }, maxResponseBytes, maxResponseChars);
     } catch (error) {
       if (timedOut) {
         return {
@@ -141,7 +169,9 @@ export class RestrictedNetworkAdapter {
           lease: authorization.lease?.id ?? null
         };
       }
-      throw new SafetyError('EXECUTOR_NETWORK_FAILED', String(error?.message ?? '').slice(0, 200));
+      const cause = error?.cause?.code;
+      const detail = typeof cause === 'string' && /^[A-Z0-9_]{2,48}$/u.test(cause) ? `（${cause}）` : '';
+      throw new SafetyError('EXECUTOR_NETWORK_FAILED', `网络请求失败，未取得响应。${detail}`);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onOuterAbort);

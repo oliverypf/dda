@@ -12,8 +12,8 @@ const KERNEL_ENV = {
   DDA_RESIDENT_KERNEL: '1',
   DDA_PLATFORM: 'linux-cli',
   ...(process.platform === 'linux' ? {} : { DDA_RESIDENT_KERNEL_SANDBOX: '1' }),
-  DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-  DDA_EXECUTION_MODE: 'READ_ONLY'
+  DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+  DDA_EXECUTION_MODE: 'CONTROLLED'
 };
 
 const run = (args, env) => new Promise((resolve, reject) => {
@@ -27,7 +27,16 @@ const run = (args, env) => new Promise((resolve, reject) => {
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   child.once('error', reject);
-  child.once('close', (code) => resolve({ code, stdout, stderr }));
+  // A failed assertion in onRequest can leave the CLI waiting for a model
+  // response. Bound the child so the suite never hangs on an open server.
+  const timer = setTimeout(() => {
+    child.kill('SIGKILL');
+    reject(new Error(`KERNEL_GATE_TEST_TIMEOUT\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+  }, 30000);
+  child.once('close', (code) => {
+    clearTimeout(timer);
+    resolve({ code, stdout, stderr });
+  });
 });
 
 const emitChat = (response, frames) => {
@@ -75,7 +84,7 @@ const scriptedTask = async (t, { onRequest, prompt }) => {
     '--protocol', 'chat-completions',
     '--endpoint', `http://127.0.0.1:${address.port}/chat/completions`,
     '--api-key-env', keyName,
-    '--execution-mode', 'READ_ONLY',
+    '--execution-mode', 'CONTROLLED',
     '--prompt', prompt,
     '--workspace', workspace,
     '--trajectory-store', trajectory,
@@ -84,7 +93,7 @@ const scriptedTask = async (t, { onRequest, prompt }) => {
   return { result, requests, workspace, trajectory };
 };
 
-test('READ_ONLY kernel.workspace_list completes when the resident kernel is on', async (t) => {
+test('controlled kernel.workspace_list completes when the resident kernel is on', async (t) => {
   const { result, requests, workspace } = await scriptedTask(t, {
     prompt: 'List the authorized workspace through the resident kernel.',
     onRequest({ response, payload, requests: seen, workspace: root }) {
@@ -104,7 +113,7 @@ test('READ_ONLY kernel.workspace_list completes when the resident kernel is on',
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const payload = lastJsonLine(result.stdout);
   assert.equal(payload.ok, true);
-  assert.equal(payload.executionMode, 'READ_ONLY');
+  assert.equal(payload.executionMode, 'CONTROLLED');
   assert.equal(payload.text, 'kernel list complete');
   assert.ok(payload.tools.some((tool) => tool.name === 'kernel.workspace_list'));
   assert.ok(payload.tools.some((tool) => tool.name === 'kernel.session_list'));
@@ -113,27 +122,29 @@ test('READ_ONLY kernel.workspace_list completes when the resident kernel is on',
   assert.equal(await readFile(join(workspace, 'README.md'), 'utf8'), '# kernel readonly gate\n');
 });
 
-test('READ_ONLY still blocks kernel.host_request when the resident kernel is on', async (t) => {
-  let blockedResult;
+test('kernel.host_request answers inert probes but refuses side effects when the resident kernel is on', async (t) => {
+  const toolResults = [];
   const { result, requests } = await scriptedTask(t, {
     prompt: 'Probe the host bridge through the resident kernel.',
     onRequest({ response, payload, requests: seen }) {
       if (seen.length === 1) {
-        emitChat(response, toolCallFrames('call_host', 'kernel.host_request', { kind: 'host.ping' }));
+        emitChat(response, toolCallFrames('call_host_ping', 'kernel.host_request', { kind: 'host.ping' }));
         return;
       }
-      const tool = payload.messages.find((message) => message.role === 'tool');
-      assert.ok(tool, 'expected a blocked kernel.host_request result');
-      blockedResult = String(tool.content);
-      assert.match(blockedResult, /TOOL_ACTION_BLOCKED_BY_JEV|TOOL_NOT_ALLOWED_IN_MODE/);
-      assert.doesNotMatch(blockedResult, /KERNEL_SIDE_EFFECT_REFUSED|"pong"|host\.ping/);
-      emitChat(response, textFrames('host request blocked'));
+      if (seen.length === 2) {
+        const tool = payload.messages.find((message) => message.role === 'tool');
+        assert.ok(tool, 'expected the kernel.host_request ping result');
+        toolResults.push(String(tool.content));
+        emitChat(response, toolCallFrames('call_host_write', 'kernel.host_request', { kind: 'fs.write', payload: { path: 'blocked.txt', content: 'nope' } }));
+        return;
+      }
+      emitChat(response, textFrames('done'));
     }
   });
-  const payload = lastJsonLine(result.stdout);
-  assert.ok(blockedResult, `${result.stderr}\n${result.stdout}`);
-  assert.match(blockedResult, /TOOL_ACTION_BLOCKED_BY_JEV|TOOL_NOT_ALLOWED_IN_MODE/);
-  const harnessErrors = payload.harness?.errors ?? payload.error ?? '';
-  assert.match(JSON.stringify(harnessErrors), /TOOL_ACTION_BLOCKED_BY_JEV|TOOL_NOT_ALLOWED_IN_MODE/);
-  assert.equal(requests.length, 2);
+  // Inert probes are not side effects: the ping round-trips through the
+  // bridge. The bridge still fail-closes every effect kind without an
+  // effects capability — the fs.write attempt is refused before any
+  // approval or lease path, and the refusal is recorded in the run events.
+  assert.match(toolResults[0] ?? '', /"ok"\s*:\s*true|host\.ping/);
+  assert.match(result.stdout, /KERNEL_SIDE_EFFECT_REFUSED/);
 });

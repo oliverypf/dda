@@ -200,6 +200,32 @@ test('does not carry a protocol-specific endpoint across an explicit protocol sw
   });
 });
 
+test('keeps a per-model context limit and rejects an unusable one', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-context-limit-'));
+  const configPath = join(directory, 'model-config.json');
+  await writeFile(configPath, JSON.stringify({
+    provider: 'deepseek',
+    protocol: 'deepseek-harness',
+    model: 'deepseek-v4.1-flash',
+    apiKeyEnv: 'DEEPSEEK_API_KEY',
+    modelContextLimits: {
+      'deepseek-v4.1-flash': 200_000,
+      'mimo-v2.5-pro': 128_000
+    }
+  }));
+  const loaded = await loadModelConfig(configPath);
+  assert.equal(loaded.modelContextLimits['deepseek-v4.1-flash'], 200_000);
+  const resolved = resolveModelConfig({ fileConfig: loaded, env: {} });
+  assert.equal(resolved.modelContextLimits['deepseek-v4.1-flash'], 200_000);
+  assert.equal(resolved.model, 'deepseek-v4.1-flash');
+
+  await writeFile(configPath, JSON.stringify({
+    provider: 'openai',
+    modelContextLimits: { 'deepseek-v4.1-flash': 1000 }
+  }));
+  await assert.rejects(loadModelConfig(configPath), /MODEL_CONFIG_INVALID_FIELD:modelContextLimits/);
+});
+
 test('loads a valid JSON config and rejects invalid config fields', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-config-'));
   const configPath = join(directory, 'model-config.json');
@@ -242,7 +268,11 @@ test('resolves Jev decision settings without changing the model route', () => {
     model: 'jev-latest',
     timeoutMs: 1200,
     verificationTimeoutMs: 15000,
-    maxStateChars: 16000
+    maxStateChars: 16000,
+    roleSetEnabled: true,
+    executionProfileEnabled: true,
+    controlJudgmentsEnabled: true,
+    singleAgentPlanEnabled: true
   });
 
   assert.deepEqual(resolveDecisionConfig({
@@ -274,7 +304,11 @@ test('resolves Jev decision settings without changing the model route', () => {
     model: 'jev-file',
     timeoutMs: 900,
     verificationTimeoutMs: 15000,
-    maxStateChars: 8000
+    maxStateChars: 8000,
+    roleSetEnabled: true,
+    executionProfileEnabled: true,
+    controlJudgmentsEnabled: true,
+    singleAgentPlanEnabled: true
   });
 
   assert.deepEqual(resolveDecisionConfig({
@@ -295,7 +329,11 @@ test('resolves Jev decision settings without changing the model route', () => {
     model: 'jev-env',
     timeoutMs: 500,
     verificationTimeoutMs: 15000,
-    maxStateChars: 4000
+    maxStateChars: 4000,
+    roleSetEnabled: true,
+    executionProfileEnabled: true,
+    controlJudgmentsEnabled: true,
+    singleAgentPlanEnabled: true
   });
 });
 
@@ -327,7 +365,11 @@ test('resolves extended Jev decision flags independently', () => {
     verificationTimeoutMs: 15000,
     maxStateChars: 16000,
     recoveryDirectionEnabled: true,
-    contextPackEnabled: true
+    contextPackEnabled: true,
+    roleSetEnabled: true,
+    executionProfileEnabled: true,
+    controlJudgmentsEnabled: true,
+    singleAgentPlanEnabled: true
   });
 });
 

@@ -68,7 +68,7 @@
 
 | UI_UX_SPEC | 项 | 状态 | 证据 |
 | --- | --- | --- | --- |
-| 13 Dreaming 与 Memory | Memory/Plugin/Evolution 治理入口 | 实现 | 右侧 `renderGovernance`，记忆页 Dream 运行一次/后台开关可操作 |
+| 13 Dreaming 与 Memory | Memory/Plugin/Evolution 治理入口 | 实现 | 右侧 `renderGovernance`，记忆页打开后自动启动 Dream 后台；运行一次和停止仍可操作 |
 | 15 设置与管理 | 设置与诊断一级页面 | 实现 | `renderDiagnosticsPage` |
 | 15 设置与管理 | Support Bundle 就绪度 | 部分 | 已有 Support Bundle 状态展示；导出进度/删除/备份操作待验证 |
 

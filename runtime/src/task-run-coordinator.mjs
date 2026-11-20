@@ -78,6 +78,10 @@ const normalizePlanState = (value) => {
     for (const key of ['attempt', 'actionDigest', 'outputDigest', 'errorCode']) {
       if (raw[key] !== undefined) step[key] = typeof raw[key] === 'number' ? Math.max(0, Math.min(100, Math.floor(raw[key]))) : String(raw[key]).slice(0, 240);
     }
+    if (typeof raw.userAnswer === 'string') {
+      const userAnswer = raw.userAnswer.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '').trim().slice(0, 4000);
+      if (userAnswer) step.userAnswer = userAnswer;
+    }
     return step;
   });
   const known = new Set(steps.map((step) => step.stepId));

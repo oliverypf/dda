@@ -388,3 +388,44 @@ test('fails closed when a persisted outcome is re-signed by an unsupported actor
   await writeFile(storagePath, JSON.stringify(persisted));
   await assert.rejects(new AgentDecisionTrace({ storagePath }).load(), /DECISION_(OUTCOME_ACTOR_FORBIDDEN|STORE_INVALID)/);
 });
+
+test('run-scoped AgentDecisionTrace loads only the target run without replaying unrelated history', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-decision-run-scoped-'));
+  const storagePath = join(directory, 'hmcodex.db');
+  const eventStore = createHarnessEventStore({ storagePath });
+  const priorTrace = new AgentDecisionTrace({ eventStore, runId: 'run-prior' });
+  const priorDecision = await priorTrace.propose(input({ runId: 'run-prior' }));
+  await priorTrace.commit(priorDecision.decisionId);
+  await eventStore.append({ runId: 'run-prior', kind: 'WorkspaceSnapshotCreated', payload: { entryCount: 12 } });
+
+  const listCalls = [];
+  const wrappedStore = new Proxy(eventStore, {
+    get(target, prop, receiver) {
+      if (prop === 'list') {
+        return (opts = {}) => {
+          listCalls.push(opts);
+          return target.list(opts);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+
+  const freshRunTrace = new AgentDecisionTrace({ eventStore: wrappedStore, runId: 'run-fresh' });
+  await freshRunTrace.load();
+  assert.equal(listCalls.length, 1);
+  assert.equal(listCalls[0].runId, 'run-fresh');
+  assert.deepEqual(listCalls[0].kinds, ['DecisionTraceEvent']);
+  assert.equal(freshRunTrace.list().length, 0);
+
+  const freshDecision = await freshRunTrace.propose(input({ runId: 'run-fresh' }));
+  await freshRunTrace.commit(freshDecision.decisionId);
+  assert.equal(freshRunTrace.list().length, 1);
+
+  const evaluatePrior = new AgentDecisionTrace({ eventStore, runId: 'run-prior' });
+  await evaluatePrior.load();
+  assert.equal(evaluatePrior.list().length, 1);
+  assert.equal(evaluatePrior.get(priorDecision.decisionId)?.status, 'COMMITTED');
+});
+

@@ -9,7 +9,7 @@
   "runtime": {
     "platform": "WEB_PREVIEW",
     "version": "0.1.0",
-    "readOnly": true,
+    "readOnly": false,
     "workspaceRead": true,
     "commandExecution": false,
     "networkSideEffects": false
@@ -35,7 +35,7 @@
     "stale": false
   },
   "composer": {
-    "mode": "READ_ONLY",
+    "mode": "CONTROLLED",
     "enabled": true,
     "placeholder": "描述需要检查或分析的任务"
   }

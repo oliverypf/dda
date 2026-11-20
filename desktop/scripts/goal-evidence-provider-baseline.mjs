@@ -164,8 +164,8 @@ const runDda = async (fixture, workspace, task, index) => {
   const threadStore = join(runRoot, 'threads.json');
   const startedAt = Date.now();
   const env = {
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY',
-    DDA_EXECUTION_MODE: 'READ_ONLY',
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED',
+    DDA_EXECUTION_MODE: 'CONTROLLED',
     DDA_CONTEXT_PROVIDER: 'journal',
     DDA_EVIDENCE_TASK_ID: task.taskId,
     EVIDENCE_FIXTURE_KEY: 'fixture-key',

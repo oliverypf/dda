@@ -24,7 +24,7 @@ test('lightweight history CLI matches the main entry point and stays read-only',
     })));
   }
   const env = { ...process.env, DDA_DATA_DIR: directory, DDA_HARNESS_EVENT_STORE: harnessPath,
-    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_READ_ONLY' };
+    DDA_RELEASE_CHANNEL: 'WINDOWS_PHASE1_5_CONTROLLED' };
   delete env.DDA_BAKED_RELEASE_CHANNEL;
   delete env.DDA_THREAD_STORE;
   delete env.DDA_TRAJECTORY_STORE;

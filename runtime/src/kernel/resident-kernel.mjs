@@ -38,6 +38,8 @@ class KernelRequestError extends Error {
 export class ResidentKernel {
   #workspaceRoot;
   #excludedPaths;
+  #enableUserFileAccess = false;
+  #protectedPaths = [];
   #sessionId;
   #sessionStore;
   #env;
@@ -59,6 +61,8 @@ export class ResidentKernel {
   constructor({
     workspaceRoot,
     excludedPaths = [],
+    enableUserFileAccess = false,
+    protectedPaths = [],
     sessionId,
     sessionStore,
     env = process.env,
@@ -73,6 +77,8 @@ export class ResidentKernel {
     if (typeof sessionId !== 'string' || !sessionId.trim()) throw new Error('KERNEL_SESSION_ID_REQUIRED');
     this.#workspaceRoot = typeof workspaceRoot === 'string' && workspaceRoot ? workspaceRoot : null;
     this.#excludedPaths = Array.isArray(excludedPaths) ? excludedPaths : [];
+    this.#enableUserFileAccess = enableUserFileAccess === true;
+    this.#protectedPaths = Array.isArray(protectedPaths) ? protectedPaths : [];
     this.#sessionId = sessionId.trim();
     this.#sessionStore = sessionStore;
     this.#env = env;
@@ -101,6 +107,13 @@ export class ResidentKernel {
   async start() {
     await this.#ensureWorker();
     return { ready: this.#ready, sessionId: this.#sessionId, restarts: this.#restarts };
+  }
+
+  async bindWorkspace(root) {
+    if (this.#workspaceRoot) throw new Error('KERNEL_WORKSPACE_ALREADY_BOUND');
+    await this.#ensureWorker();
+    await this.#post('bind_workspace', { root });
+    this.#workspaceRoot = root;
   }
 
   async request(op, params = {}) {
@@ -187,6 +200,8 @@ export class ResidentKernel {
       sessionId: this.#sessionId,
       ...(this.#workspaceRoot ? { workspaceRoot: this.#workspaceRoot } : {}),
       excludedPaths: this.#excludedPaths,
+      enableUserFileAccess: this.#enableUserFileAccess,
+      protectedPaths: this.#protectedPaths,
       sessionState: { revision: snapshot.revision, entries: snapshot.entries.map(({ key, value, valueDigest }) => ({ key, value, valueDigest })) }
     }, { allowBeforeReady: true });
     if (!initResult?.ready) {

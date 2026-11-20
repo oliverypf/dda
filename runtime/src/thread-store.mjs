@@ -20,6 +20,29 @@ export const checkpointResumeMode = (checkpoint) => {
   return 'INVALID';
 };
 
+// An uncertain side-effect step is not resumed in place. Replaying it could
+// apply the same external effect twice, and continue or retry of this plan
+// would hit the same reconciliation block. Report the affected steps so the
+// caller can start a fresh plan that inspects the workspace and finishes the
+// original task. This is a read projection only; it is not a request for the
+// user to verify the outcome. checkpointResumeMode stays the shape classifier.
+export const checkpointRecoveryBlock = (checkpoint) => {
+  const plan = checkpoint?.plan;
+  const steps = plan && !Array.isArray(plan)
+    ? (Array.isArray(plan.steps) ? plan.steps : Array.isArray(plan.plan) ? plan.plan : undefined)
+    : undefined;
+  if (!steps) return undefined;
+  let blocked = false;
+  const stepIds = [];
+  for (const step of steps) {
+    if (step?.status !== 'BLOCKED' || step?.errorCode !== 'SIDE_EFFECT_OUTCOME_UNCERTAIN') continue;
+    blocked = true;
+    const stepId = typeof step.stepId === 'string' && step.stepId && step.stepId.length <= 160 ? step.stepId : undefined;
+    if (stepId && !stepIds.includes(stepId) && stepIds.length < 128) stepIds.push(stepId);
+  }
+  return blocked && stepIds.length ? { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds } : undefined;
+};
+
 // ThreadCreated stores only a title digest. The visible title in the local
 // snapshot is the original user task, recovered when its digest matches.
 export const recoverableThreadGoal = (thread) => {
@@ -78,7 +101,18 @@ export class ThreadStore {
   #loadPromise;
   #queue = Promise.resolve();
   #eventStore;
-  constructor({ storagePath, eventStore } = {}) { this.#storagePath = storagePath; this.#eventStore = eventStore; }
+  #runThreadId;
+  #checkpointRuns = new Set();
+  hasCheckpointRun(runId) { return this.#checkpointRuns.has(runId); }
+  #useTitleCache;
+  // null starts an empty per-run projection. An omitted scope is the history/list view.
+  constructor({ storagePath, eventStore, runThreadId, useTitleCache = false } = {}) {
+    this.#storagePath = storagePath;
+    this.#eventStore = eventStore;
+    this.#runThreadId = runThreadId;
+    this.#loaded = runThreadId === null;
+    this.#useTitleCache = useTitleCache;
+  }
   async load() {
     if (this.#loaded) return;
     // Coalesce concurrent calls in one process and only mark the store loaded
@@ -86,9 +120,18 @@ export class ThreadStore {
     // remain retryable instead of poisoning all subsequent operations.
     if (!this.#loadPromise) {
       this.#loadPromise = (async () => {
-        if (this.#eventStore?.list) {
+        if (this.#eventStore?.listThreadProjection || this.#eventStore?.list) {
           let events;
-          try { events = await this.#eventStore.list(); } catch { throw new Error('THREAD_STORE_INVALID'); }
+          try {
+            // listThreadProjection reads the indexed thread aggregate and
+            // thread receipts. The kind scan pages across every task event.
+            events = typeof this.#eventStore.listThreadProjection === 'function'
+              ? await this.#eventStore.listThreadProjection(this.#runThreadId)
+              : await this.#eventStore.list({
+                kinds: ['ThreadCreated', 'ThreadTurnAppended', 'ThreadStateChanged', 'ThreadCheckpointCommitted', 'ThreadCheckpointCleared', 'ThreadRunAttached', 'ThreadWorkspaceBound']
+              });
+          } catch { throw new Error('THREAD_STORE_INVALID'); }
+          if (this.#runThreadId) events = events.filter(event => event.payload?.threadId === this.#runThreadId);
           events = [...events].sort(compareThreadEvents);
           const restoredThreads = new Map();
           const titleDigests = new Map();
@@ -117,15 +160,27 @@ export class ThreadStore {
             if (event.kind === 'ThreadTurnAppended' && payload.turn?.id) {
               if (!thread.turns.some((turn) => turn.id === payload.turn.id)) thread.turns.push(structuredClone(payload.turn));
             } else if (event.kind === 'ThreadStateChanged') {
+              if (payload.expectedRunId && (thread.activeRunId !== payload.expectedRunId || thread.state !== 'RUNNING')) continue;
               if (THREAD_STATES.includes(payload.state)) thread.state = payload.state;
               if (typeof payload.activeRunId === 'string' && payload.activeRunId) thread.activeRunId = payload.activeRunId;
               else delete thread.activeRunId;
               if (typeof payload.stateReason === 'string' && payload.stateReason) thread.stateReason = payload.stateReason;
+            } else if (event.kind === 'ThreadWorkspaceBound') {
+              if (!thread.cwd && typeof payload.cwd === 'string') thread.cwd = payload.cwd;
+            } else if (event.kind === 'ThreadRunAttached') {
+              const runId = typeof payload.runId === 'string' ? payload.runId : '';
+              const sessionId = typeof payload.sessionId === 'string' && payload.sessionId ? payload.sessionId : undefined;
+              if (!thread.sessionId && sessionId) thread.sessionId = sessionId;
+              if (runId && !runId.startsWith('thread:') && (!thread.sessionId || !sessionId || sessionId === thread.sessionId)) {
+                if (!Array.isArray(thread.runIds)) thread.runIds = [];
+                if (!thread.runIds.includes(runId)) thread.runIds.push(runId);
+              }
             } else if (event.kind === 'ThreadCheckpointCommitted') {
               if (THREAD_STATES.includes(payload.state)) thread.state = payload.state;
               if (typeof payload.runId === 'string' && payload.runId) thread.activeRunId = payload.runId;
               const checkpoint = payload.checkpoint;
               if (checkpoint && checkpoint.checkpointDigest === checkpointDigest(checkpoint)) {
+                if (this.#runThreadId) this.#checkpointRuns.add(checkpoint.runId);
                 thread.checkpoint = structuredClone(checkpoint);
                 thread.state = THREAD_STATES.includes(checkpoint.state) ? checkpoint.state : 'RUNNING';
               }
@@ -148,7 +203,12 @@ export class ThreadStore {
             // persists its digest instead of the original prompt text.
             if (this.#storagePath) {
               try {
-                const local = await readPersistentJsonFile(this.#storagePath);
+                const titles = await readPersistentJsonFile(this.#storagePath + '.titles.json');
+                for (const [id, thread] of restoredThreads) {
+                  const title = titles?.[id];
+                  if (typeof title === 'string' && titleDigest(title) === titleDigests.get(id)) thread.title = title;
+                }
+                const local = this.#runThreadId && titles?.[this.#runThreadId] ? undefined : await readPersistentJsonFile(this.#storagePath);
                 if (local?.schemaVersion === '1.0' && Array.isArray(local.threads)) {
                   for (const candidate of local.threads) {
                     const restored = typeof candidate?.id === 'string' ? restoredThreads.get(candidate.id) : undefined;
@@ -167,6 +227,9 @@ export class ThreadStore {
             return;
           }
         }
+        // A legacy JSON snapshot supplies membership only when the event store
+        // has no thread history. A missing scoped row cannot revive a stale task.
+        if (this.#runThreadId && await this.#eventStore?.hasThreadRecords?.()) return;
         if (!this.#storagePath) return;
         let parsed;
         try {
@@ -178,6 +241,7 @@ export class ThreadStore {
         if (parsed?.schemaVersion !== '1.0' || !Array.isArray(parsed.threads)) throw new Error('THREAD_STORE_INVALID');
         const restoredThreads = new Map();
         for (const thread of parsed.threads) {
+          if (this.#runThreadId && thread?.id !== this.#runThreadId) continue;
           if (!thread?.id || typeof thread.id !== 'string') continue;
           const restored = structuredClone(thread);
           if (restored.state === undefined) restored.state = 'IDLE';
@@ -213,9 +277,27 @@ export class ThreadStore {
       updatedAtMs: thread.updatedAtMs,
       turns: []
     }, `thread-created:${thread.id}`);
+    if (this.#useTitleCache && this.#storagePath) {
+      await persistJsonFile(this.#storagePath + '.titles.json', { [thread.id]: thread.title }, {
+        merge: (existing, added) => ({ ...existing, ...added })
+      });
+    }
     await this.#persist();
     return structuredClone(thread);
   }
+  async bindWorkspace(threadId, cwd) {
+    await this.load();
+    const thread = this.#threads.get(threadId);
+    if (!thread || !cwd || (thread.cwd && cwd !== thread.cwd)) throw new Error('THREAD_WORKSPACE_MISMATCH');
+    if (!thread.cwd) {
+      const updatedAtMs = Date.now();
+      await this.#appendThreadEvent('ThreadWorkspaceBound', { threadId, cwd, updatedAtMs }, 'thread-workspace:' + threadId);
+      Object.assign(thread, { cwd, updatedAtMs });
+      await this.#persist();
+    }
+    return structuredClone(thread);
+  }
+
   async appendTurn(threadId, turn) {
     await this.load();
     const thread = this.#threads.get(threadId); if (!thread) throw new Error('THREAD_NOT_FOUND');
@@ -241,10 +323,11 @@ export class ThreadStore {
     return structuredClone(thread);
   }
 
-  async setState(threadId, state, { runId, reason } = {}) {
+  async setState(threadId, state, { runId, reason, expectedRunId } = {}) {
     await this.load();
     if (!THREAD_STATES.includes(state)) throw new Error('THREAD_STATE_INVALID');
     const thread = this.#threads.get(threadId); if (!thread) throw new Error('THREAD_NOT_FOUND');
+    if (expectedRunId && (thread.activeRunId !== expectedRunId || thread.state !== 'RUNNING')) return structuredClone(thread);
     thread.state = state;
     if (runId !== undefined) thread.activeRunId = String(runId).slice(0, 240);
     if (reason !== undefined) thread.stateReason = String(reason).replace(/[\u0000-\u001f\u007f\r\n]+/g, ' ').slice(0, 500);
@@ -253,11 +336,12 @@ export class ThreadStore {
     await this.#appendThreadEvent('ThreadStateChanged', {
       threadId,
       state,
+      ...(expectedRunId ? { expectedRunId } : {}),
       ...(thread.activeRunId ? { activeRunId: thread.activeRunId } : {}),
       ...(thread.stateReason ? { stateReason: thread.stateReason } : {}),
       updatedAtMs: thread.updatedAtMs
     }, `thread-state:${threadId}:${state}:${thread.updatedAtMs}`);
-    await this.#persist();
+    await this.#persist(expectedRunId ? { threadId, expectedRunId } : undefined);
     return structuredClone(thread);
   }
 
@@ -299,9 +383,43 @@ export class ThreadStore {
     await this.#persist();
     return structuredClone(thread);
   }
+
+  // The first session id sticks for the thread. Later runs of the same task
+  // join that conversation even if the desktop slot id changes.
+  async attachRun(threadId, { runId, sessionId } = {}) {
+    await this.load();
+    const thread = this.#threads.get(threadId);
+    if (!thread) throw new Error('THREAD_NOT_FOUND');
+    const safeRun = typeof runId === 'string' ? runId.trim().slice(0, 160) : '';
+    if (!safeRun || safeRun.startsWith('thread:')) throw new Error('THREAD_RUN_INVALID');
+    let safeSession;
+    if (typeof sessionId === 'string' && sessionId.trim()) {
+      safeSession = sessionId.trim().slice(0, 160);
+      if (/[\u0000-\u001f\u007f]/u.test(safeSession)) throw new Error('SESSION_ID_INVALID');
+    }
+    const conversationSession = thread.sessionId || safeSession;
+    if (!Array.isArray(thread.runIds)) thread.runIds = [];
+    if (thread.runIds.includes(safeRun) && (!conversationSession || thread.sessionId === conversationSession)) {
+      return structuredClone(thread);
+    }
+    await this.#appendThreadEvent('ThreadRunAttached', {
+      threadId,
+      runId: safeRun,
+      ...(conversationSession ? { sessionId: conversationSession } : {}),
+      updatedAtMs: Date.now()
+    }, `thread-run:${threadId}:${safeRun}`);
+    if (!thread.sessionId && conversationSession) thread.sessionId = conversationSession;
+    if (!thread.runIds.includes(safeRun)) thread.runIds.push(safeRun);
+    thread.updatedAtMs = Date.now();
+    await this.#persist();
+    return structuredClone(thread);
+  }
+
   async fork(threadId, { title } = {}) {
     await this.load(); const source = this.#threads.get(threadId); if (!source) throw new Error('THREAD_NOT_FOUND');
     const fork = { ...structuredClone(source), id: `thread-${randomUUID()}`, title: String(title ?? `${source.title} (fork)`).slice(0, 240), turns: source.turns.slice(), createdAtMs: Date.now(), updatedAtMs: Date.now(), forkedFrom: source.id };
+    delete fork.sessionId;
+    delete fork.runIds;
     this.#threads.set(fork.id, fork);
     await this.#appendThreadEvent('ThreadCreated', {
       threadId: fork.id,
@@ -338,14 +456,16 @@ export class ThreadStore {
     });
   }
 
-  async #persist() {
-    if (!this.#storagePath) return;
+  async #persist(guard) {
+    if (!this.#storagePath || this.#useTitleCache) return;
     const write = async () => {
       const incoming = { schemaVersion: '1.0', threads: [...this.#threads.values()] };
       await persistJsonFile(this.#storagePath, incoming, {
         merge: (existing, snapshot) => mergeRecordsById(existing, snapshot, {
           collection: 'threads',
           merge: (left, right) => {
+            if (guard && left.id === guard.threadId
+              && (left.activeRunId !== guard.expectedRunId || left.state !== 'RUNNING')) return left;
             const newest = (right.updatedAtMs ?? 0) >= (left.updatedAtMs ?? 0) ? right : left;
             const turns = new Map();
             for (const turn of [...(Array.isArray(left.turns) ? left.turns : []), ...(Array.isArray(right.turns) ? right.turns : [])]) {

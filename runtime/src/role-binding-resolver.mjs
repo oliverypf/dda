@@ -1,5 +1,7 @@
 import { normalizeCandidateSetSpec, planCandidateFanout } from './candidate-fanout.mjs';
 
+import { roleWorkflowRefs } from './role-workflows.mjs';
+
 const ROLES = Object.freeze(['planner', 'executor', 'verifier', 'semanticVerifier', 'critic', 'coordinator']);
 const clone = (value) => structuredClone(value);
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -50,7 +52,7 @@ export class RoleBindingResolver {
     this.#defaultBindings = clone(bindings);
   }
 
-  resolve({ roles = {}, taskClass = 'unknown', defaultModelId, profileRegistry, mode = 'READ_ONLY', bindings = {}, requireEligible = false, risk = 'LOW' } = {}) {
+  resolve({ roles = {}, taskClass = 'unknown', defaultModelId, profileRegistry, mode = 'CONTROLLED', bindings = {}, requireEligible = false, risk = 'LOW' } = {}) {
     const resolvedRoles = {};
     const rejected = [];
     // Include explicitly configured bindings even when the static route does
@@ -60,7 +62,10 @@ export class RoleBindingResolver {
     // provider.
     const roleNames = [...new Set([...Object.keys(roles), ...Object.keys(bindings), ...Object.keys(this.#defaultBindings)])].filter((role) => ROLES.includes(role));
     for (const role of roleNames) {
-      const spec = normalizeSpec(bindings[role] ?? this.#defaultBindings[role] ?? roles[role], defaultModelId);
+      const raw = bindings[role] ?? this.#defaultBindings[role] ?? roles[role];
+      const workflowRefs = roleWorkflowRefs(raw, role);
+      const workflowOnly = Object.keys(workflowRefs).length > 0 && Object.keys(raw).every(key => key in workflowRefs);
+      const spec = normalizeSpec(workflowOnly ? roles[role] : raw, defaultModelId);
       if (spec.kind === 'DETERMINISTIC') {
         resolvedRoles[role] = {
           role,
@@ -109,6 +114,7 @@ export class RoleBindingResolver {
           role,
           kind: 'MODEL',
           selector: 'CANDIDATE_SET',
+          ...workflowRefs,
           modelId: primary.modelId,
           provider: primary.provider,
           protocol: primary.protocol,
@@ -150,6 +156,7 @@ export class RoleBindingResolver {
         role,
         kind: 'MODEL',
         selector: spec.selector,
+        ...workflowRefs,
         modelId: selected.modelId,
         provider: selected.provider,
         protocol: selected.protocol,

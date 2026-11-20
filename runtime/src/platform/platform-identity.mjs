@@ -1,4 +1,4 @@
-import { DEFAULT_RELEASE_CHANNEL, isControlledRelease, isReadOnlyRelease } from '../release-channel.mjs';
+import { DEFAULT_RELEASE_CHANNEL, isControlledRelease } from '../release-channel.mjs';
 
 export const PLATFORM_IDENTITIES = Object.freeze([
   'linux-cli',
@@ -14,9 +14,8 @@ const HARMONY_MARKERS = /(?:^|[^a-z])(ohos|harmonyos|openharmony|harmony)(?:[^a-
 export const architectureLabel = (arch = process.arch) => (arch === 'x64' ? 'x64' : arch);
 
 export function policyChannelForRelease(channel) {
-  if (isReadOnlyRelease(channel)) return 'READ_ONLY';
   if (isControlledRelease(channel)) return 'CONTROLLED';
-  return 'PRE_PHASE1';
+  return 'UNSUPPORTED';
 }
 
 /**
@@ -106,6 +105,5 @@ export function scenarioPlatform(env = process.env) {
 
 export function releaseChannelForPolicy(policy) {
   if (policy === 'CONTROLLED') return 'LINUX_CLI_CONTROLLED';
-  if (policy === 'READ_ONLY') return 'LINUX_CLI_READ_ONLY';
   throw new Error('POLICY_CHANNEL_INVALID');
 }

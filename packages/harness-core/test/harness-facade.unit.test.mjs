@@ -33,8 +33,8 @@ const fakeSpawnFactory = (recorder) => (nodeBinary, argv, options) => {
 
 test('optionsToArgs builds kebab-case flags and skips falsey values', () => {
   assert.deepEqual(
-    optionsToArgs({ prompt: 'hi', executionMode: 'READ_ONLY', resume: true, verbose: false, missing: undefined }),
-    ['--prompt', 'hi', '--execution-mode', 'READ_ONLY', '--resume']
+    optionsToArgs({ prompt: 'hi', executionMode: 'CONTROLLED', resume: true, verbose: false, missing: undefined }),
+    ['--prompt', 'hi', '--execution-mode', 'CONTROLLED', '--resume']
   );
 });
 
@@ -120,7 +120,7 @@ test('a spawn error maps to DEPENDENCY_ERROR', async () => {
   assert.match(outcome.stderr, /ENOENT/);
 });
 
-test('task() requires a non-empty prompt and defaults to READ_ONLY without auto-approval', async () => {
+test('task() defaults to CONTROLLED without grants or auto-approval', async () => {
   const recorder = { calls: [], stdoutLines: [JSON.stringify({ ok: true })], childExitCode: 0 };
   const facade = new HarnessFacade({ spawn: fakeSpawnFactory(recorder) });
 
@@ -129,7 +129,9 @@ test('task() requires a non-empty prompt and defaults to READ_ONLY without auto-
   await facade.task({ prompt: 'inspect repo' });
   const argv = recorder.calls[0].argv;
   assert.ok(argv.includes('--execution-mode'));
-  assert.equal(argv[argv.indexOf('--execution-mode') + 1], 'READ_ONLY');
+  assert.equal(argv[argv.indexOf('--execution-mode') + 1], 'CONTROLLED');
+  assert.equal(argv.includes('--lease-capabilities'), false);
+  assert.throws(() => facade.task({ prompt: 'inspect', executionMode: 'READ_ONLY' }), /EXECUTION_MODE_INVALID/);
   // The facade must never inject an approval decision of its own.
   assert.ok(!argv.includes('--approval-mode'));
 });

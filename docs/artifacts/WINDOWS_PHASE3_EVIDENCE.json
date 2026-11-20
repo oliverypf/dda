@@ -1,5 +1,5 @@
 {
-  "checkedAtMs": 1791381825249,
+  "checkedAtMs": 1794446056488,
   "total": 19,
   "missing": [],
   "checks": {
@@ -9,7 +9,7 @@
     "S3-02-receipt": true,
     "S3-02-next-step": true,
     "S3-04-quarantine-terminal": true,
-    "S3-03-route-panel": true,
+    "S3-03-route-settings": true,
     "S3-04-approval-workbench": true,
     "S3-05-timeline-evidence": true,
     "S3-05-terminal-panel": true,

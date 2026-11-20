@@ -20,6 +20,10 @@
     "planReviewEnabled": false,
     "diagnosisEnabled": false,
     "recoveryDirectionEnabled": false,
-    "contextPackEnabled": false
+    "contextPackEnabled": false,
+    "roleSetEnabled": true,
+    "executionProfileEnabled": true,
+    "controlJudgmentsEnabled": true,
+    "singleAgentPlanEnabled": true
   }
 }

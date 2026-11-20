@@ -1,8 +1,9 @@
 import type { ContinuousVerifierConfig } from './verifier-config';
+import type { ComposerImageAttachment } from './image-attachments';
 
 export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'READY' | 'ERROR';
 export type ConnectionMode = 'MOCK' | 'LOCAL_RUNTIME';
-export type RuntimeExecutionMode = 'READ_ONLY' | 'CONTROLLED';
+export type RuntimeExecutionMode = 'CONTROLLED';
 export type RunState =
   | 'CREATED'
   | 'CLASSIFYING'
@@ -34,9 +35,11 @@ export interface ConnectionReadModel {
 
 export interface RuntimeReadModel {
   releaseChannel?: string;
+  buildId?: string;
   platform: 'WINDOWS' | 'WEB_PREVIEW';
   version: string;
-  readOnly: true;
+  /** Legacy capability field, independent of the execution mode. */
+  readOnly: boolean;
   workspaceRead: boolean;
   commandExecution: boolean;
   networkSideEffects: boolean;
@@ -74,6 +77,8 @@ export interface ModelConfig {
   apiKeyEnv: string;
   sessionHeader?: string;
   customInstructions?: string;
+  /** Per-model context window in tokens. Reaching it compresses older tool rounds. */
+  modelContextLimits?: Record<string, number>;
   decision?: JevDecisionConfig;
   // Operator-set continuous-verifier budget and thresholds. Leaving the section
   // out keeps the runtime defaults; clearing every field removes it again.
@@ -146,9 +151,15 @@ export interface ThreadReadModel {
   turnCount: number;
   resumable?: boolean;
   resumeMode?: 'NONE' | 'PREPARATION' | 'PLAN' | 'INVALID';
+  recoveryBlock?: {
+    reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
+    stepIds: string[];
+  };
   createdAtMs: number;
   updatedAtMs: number;
   forkedFrom?: string;
+  /** Stable conversation id. Later runs of this task join this session. */
+  sessionId?: string;
   state?: 'IDLE' | 'RUNNING' | 'PAUSED' | 'FAILED' | 'COMPLETED';
   checkpoint?: {
     runId?: string;
@@ -158,7 +169,7 @@ export interface ThreadReadModel {
   };
 }
 
-export type SubAgentState = 'STARTING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+export type SubAgentState = 'STARTING' | 'RUNNING' | 'WAITING' | 'SKIPPED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CLOSED';
 
 export interface SubAgentReadModel {
   agentId: string;
@@ -167,6 +178,11 @@ export interface SubAgentReadModel {
   state: SubAgentState;
   startedAtMs: number;
   updatedAtMs: number;
+  runtimeRole?: string;
+  runtimeRunId?: string;
+  executionKind?: 'MODEL' | 'RULE' | 'SYSTEM';
+  workStarted?: boolean;
+  activityStopped?: boolean;
 }
 
 export interface TimelineItem {
@@ -186,8 +202,16 @@ export interface TimelineItem {
   pluginVersion?: string;
   digest?: string;
   commandText?: string;
+  /** Bounded stderr/stdout tail shown under a failed process tool's message. */
+  outputTail?: string;
+  /** Process exit code. Null means the process ended without a numeric code. */
+  exitCode?: number | null;
+  /** Structured workspace-relative path from the tool payload; never extracted from body text. */
+  targetPath?: string;
   toolName?: string;
   evidenceKind?: string;
+  failureReasonCode?: string;
+  diagnosticDetail?: string;
   truncated?: boolean;
   /** Worker READY fields. Badge only when both match WINDOWS_NO_OS_SANDBOX + none. */
   warning?: string;
@@ -198,6 +222,14 @@ export interface TimelineItem {
   rows?: CellExecRow[];
   /** The matching tool step is waiting for the user's approval. */
   awaitingApproval?: boolean;
+  /** User-supplied image attachments displayed in the live conversation bubble. */
+  images?: ComposerImageAttachment[];
+  /** True when this row is a Cursor/Codex-style collapsible model thinking block. */
+  thinking?: boolean;
+  /** Role label for thinking rows (e.g. '思考规划', '思考过程'). */
+  thinkingLabel?: string;
+  /** Timestamp when this thinking segment completed. */
+  thinkingCompletedAtMs?: number;
 }
 
 export type CellExecRowState =
@@ -270,6 +302,16 @@ export interface ApprovalReadModel {
   toolName?: string;
   warning?: string;
   sandbox?: string;
+  reasonCodes?: string[];
+  commandPreview?: string;
+  commandPreviewTruncated?: boolean;
+  canAlwaysAllow?: boolean;
+  alwaysAllowSaved?: boolean;
+  reviewKind?: 'DANGER' | 'REVIEW' | 'UNKNOWN';
+  filePreview?: string;
+  filePreviewKind?: 'DIFF' | 'CONTENT';
+  filePreviewTruncated?: boolean;
+  contentBytes?: number;
 }
 
 export interface WorkspaceEntry {
@@ -304,6 +346,10 @@ export interface ComposerReadModel {
   placeholder: string;
 }
 
+export type RuntimePluginGovernanceStatus =
+  | { state: 'AVAILABLE' }
+  | { state: 'BLOCKED'; errorCode: 'PLUGIN_GOVERNANCE_INVALID' | 'PLUGIN_GOVERNANCE_READ_FAILED' };
+
 export interface HarnessReadModel {
   schemaVersion: '1.0';
   projectionVersion: number;
@@ -320,6 +366,7 @@ export interface HarnessReadModel {
   dreamRuns: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
   pluginVersions: RuntimePluginVersionSummary[];
+  pluginGovernanceStatus?: RuntimePluginGovernanceStatus;
   evolutionProposals: RuntimeEvolutionProposal[];
   evolutionReports: RuntimeEvolutionReport[];
   evolutionControl?: EvolutionControlState;
@@ -384,11 +431,12 @@ export interface ProcessVerificationReadModel {
 
 export interface RuntimeSnapshot {
   releaseChannel?: string;
+  buildId?: string;
   platform: 'WINDOWS';
   version: string;
-  readOnly: true;
+  readOnly: boolean;
   workspaceRead: true;
-  commandExecution: false;
+  commandExecution: boolean;
   networkSideEffects: false;
   runtimeReady?: boolean;
   nodeVersion?: string | null;
@@ -528,6 +576,12 @@ export interface RuntimeTaskOptions {
   leaseCapabilities?: string[];
   leaseCommands?: string[];
   leaseNetworkTargets?: NetworkTargetOption[];
+  /** Stable frontend session id; the host reserves its own runtime slot for it. */
+  clientSessionId?: string;
+  /** Workspace root frozen at launch so later project switches can't move it. */
+  workspacePath?: string;
+  /** Validated multimodal image inputs attached to this user turn. */
+  images?: Array<{ name?: string; mediaType: string; dataUrl: string }>;
 }
 
 export interface NetworkTargetOption {
@@ -550,8 +604,10 @@ export interface RuntimeExecutionRecord {
   createdAtMs: number;
   updatedAtMs: number;
   requestSummary?: Record<string, unknown>;
+  commands?: string[];
   expiresAt?: number;
   transition?: { from?: string; to?: string; atMs?: number; metadata?: Record<string, unknown> };
+  transitionHistory?: Array<{ from?: string; to?: string; atMs?: number; metadata?: Record<string, unknown> }>;
 }
 
 export interface RuntimeExecutionStateResponse {
@@ -642,6 +698,7 @@ export interface RuntimeDashboardResponse {
   dreams: RuntimeDreamRun[];
   plugins: RuntimePluginGovernanceRecord[];
   pluginVersions?: RuntimePluginVersionSummary[];
+  pluginGovernanceStatus?: RuntimePluginGovernanceStatus;
   evolution: {
     proposals: RuntimeEvolutionProposal[];
     reports: RuntimeEvolutionReport[];
@@ -727,6 +784,9 @@ export interface RuntimeMemoryRecord {
   statement: string;
   scope: string;
   kind?: string;
+  key?: string;
+  /** Directory the skill was learned in. Display name comes from this path. */
+  workspacePath?: string;
   confidence: number;
   status: string;
   sourceEventIds?: string[];
@@ -825,6 +885,8 @@ export interface RuntimeEvent {
   type: 'runtime_event';
   schemaVersion: '1.0';
   eventId?: string;
+  /** Owning frontend session injected by the native host per runtime slot. */
+  clientSessionId?: string;
   runId: string;
   sequence: number;
   kind: string;
@@ -857,7 +919,7 @@ export type RuntimeTaskResponse =
       reasoningChars: number;
       toolRounds?: number;
       toolCallCount?: number;
-      executionMode?: 'READ_ONLY' | 'CONTROLLED';
+      executionMode?: RuntimeExecutionMode;
       plugins: RuntimePluginSummary[];
       tools?: RuntimeToolSummary[];
       workspace: RuntimeWorkspaceSummary;

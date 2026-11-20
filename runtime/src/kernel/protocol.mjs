@@ -36,6 +36,7 @@ export const KERNEL_READ_OPS = Object.freeze([
   'workspace.list',
   'workspace.read',
   'workspace.focus',
+  'workspace.inspect_binary',
   'session_state.get',
   'session_state.list'
 ]);

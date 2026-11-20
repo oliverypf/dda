@@ -1,5 +1,20 @@
 import type { NetworkTargetOption } from './models';
 
+export const PUBLIC_NETWORK_TARGET: NetworkTargetOption = { host: '*' };
+
+/** Blank text means public internet. An explicit list, including [], is kept. Invalid text stays closed. */
+export const effectiveLeaseNetworkTargets = (text: string, parsed: NetworkTargetOption[], error: string): NetworkTargetOption[] => {
+  if (error || text.trim()) return parsed.map((target) => ({ ...target }));
+  return [{ ...PUBLIC_NETWORK_TARGET }];
+};
+
+export const networkAccessSummary = (text: string, parsed: NetworkTargetOption[], error: string): { open: boolean; label: string } => {
+  if (error) return { open: false, label: '名单无效，本次不开放' };
+  if (!text.trim()) return { open: true, label: '默认开放公网 · 模型选择网址' };
+  if (!parsed.length) return { open: false, label: '已关闭' };
+  return { open: true, label: `仅这些网站 · ${parsed.map((target) => target.host).join(', ')}` };
+};
+
 const NETWORK_TARGET_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
 export const parseNetworkTargetsText = (value: string): { targets: NetworkTargetOption[]; error: string } => {

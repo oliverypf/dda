@@ -128,12 +128,12 @@ export const startUiModelFixture = async ({ delayMs = 25, seedResumeThread = fal
     endpoint,
     apiKeyEnv,
     models: [
-      { modelId: 'planner-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'planner-fixture', endpoint, apiKeyEnv, roles: ['planner'] },
-      { modelId: 'executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'executor-fixture', endpoint, apiKeyEnv, roles: ['executor'] },
-      { modelId: 'strong-executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'strong-executor-fixture', endpoint, apiKeyEnv, roles: ['executor'] },
-      { modelId: 'verifier-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'verifier-fixture', endpoint, apiKeyEnv, roles: ['semanticVerifier'] }
+      { modelId: 'planner-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'planner-fixture', endpoint, apiKeyEnv, roles: ['planner'], capabilities: ['model.invoke.stream', 'tool.calls'] },
+      { modelId: 'executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'executor-fixture', endpoint, apiKeyEnv, roles: ['executor'], capabilities: ['model.invoke.stream', 'tool.calls'] },
+      { modelId: 'strong-executor-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'strong-executor-fixture', endpoint, apiKeyEnv, roles: ['executor'], capabilities: ['model.invoke.stream', 'tool.calls'] },
+      { modelId: 'verifier-fixture', provider: 'compatible', protocol: 'chat-completions', model: 'verifier-fixture', endpoint, apiKeyEnv, roles: ['semanticVerifier'], capabilities: ['model.invoke.stream'] }
     ],
-    roleBindings: { planner: 'planner-fixture', executor: 'executor-fixture', semanticVerifier: 'verifier-fixture' },
+    roleBindings: { planner: 'planner-fixture', verifier: 'rule', semanticVerifier: 'verifier-fixture' },
     decision: { enabled: false, enforce: false }
   };
   await writeFile(modelConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');

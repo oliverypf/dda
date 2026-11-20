@@ -36,9 +36,12 @@ test('executor plugin forwards lease failure cleanup to registered tools', async
   });
 
   plugin({ toolRegistry: registry, executor });
+  // Executor errors pass through with their own code (controlled-tools.mjs
+  // executeWithLease); only un-coded handler failures collapse to
+  // TOOL_HANDLER_FAILED in the registry.
   await assert.rejects(
     registry.invoke('shell.execute', { command: process.execPath }),
-    /TOOL_HANDLER_FAILED/
+    /PLUGIN_EXECUTOR_FAILED/
   );
   assert.deepEqual(calls, ['PLUGIN_EXECUTOR_FAILED']);
 });

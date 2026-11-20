@@ -7,14 +7,17 @@
 // so #15 REQUIRE_APPROVAL and every hard policy remain intact.
 
 export const READONLY_FAST_PATH_REASON = 'READONLY_FAST_PATH';
+export const isBinaryInspection = name => name === 'workspace.inspect_binary' || name === 'kernel.workspace_inspect_binary';
 
 export const READONLY_FAST_PATH_TOOLS = Object.freeze(new Set([
   'workspace.list',
   'workspace.read',
   'workspace.focus',
+  'workspace.inspect_binary',
   'kernel.workspace_list',
   'kernel.workspace_read',
-  'kernel.workspace_focus'
+  'kernel.workspace_focus',
+  'kernel.workspace_inspect_binary'
 ]));
 
 const MAX_PATH_CHARS = 512;
@@ -42,8 +45,8 @@ const proposedInput = (claim) => {
 
 /**
  * Return a deterministic ACTION_GATE ALLOW for an eligible call, or undefined
- * when the call must keep its normal gate. The caller must apply the hard
- * READ_ONLY BLOCK first; this function never overrides a block.
+ * when the call must keep its normal gate. This only skips the semantic
+ * round-trip: registry, workspace and hard policy checks still apply.
  */
 export const readonlyFastPathDecision = ({ enabled, name, registered, toolReadOnly, request, proposedInputClaim } = {}) => {
   if (enabled !== true) return undefined;
@@ -54,6 +57,8 @@ export const readonlyFastPathDecision = ({ enabled, name, registered, toolReadOn
   if (input.pathClass === 'OUTSIDE_OR_OPAQUE' || input.cwdClass === 'OUTSIDE_OR_OPAQUE') return undefined;
   if (input.pathClass !== undefined || input.cwdClass !== undefined) return undefined;
   const raw = request && typeof request === 'object' ? request : {};
+  if (isBinaryInspection(name) && (typeof raw.path !== 'string' || !/\.(exe|dll)$/iu.test(raw.path)
+    || input.path !== raw.path || Object.keys(raw).some(key => key !== 'path'))) return undefined;
   if (raw.cwd !== undefined) return undefined;
   if (!isRelativeWorkspacePath(raw.path)) return undefined;
   if (input.path !== undefined && !isRelativeWorkspacePath(input.path)) return undefined;

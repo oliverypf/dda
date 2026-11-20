@@ -1,3 +1,4 @@
+import { memoryScopeKey, memoryLessonKey } from './memory-workspace.mjs';
 import { createHash } from 'node:crypto';
 
 const MAX_STATEMENT = 2000;
@@ -11,7 +12,7 @@ const normalize = (value) => String(value ?? '')
   .trim()
   .toLowerCase();
 const digest = (value) => `sha256:${createHash('sha256').update(String(value), 'utf8').digest('hex')}`;
-const identity = (candidate) => `${String(candidate?.scope ?? 'workspace').trim().toLowerCase()}::${normalize(candidate?.statement)}`;
+const identity = candidate => JSON.stringify([memoryScopeKey(candidate), normalize(candidate.statement)]);
 
 const reject = (candidate, codes) => ({
   ...clone(candidate ?? {}),
@@ -38,7 +39,7 @@ export class MemoryVerifier {
     for (const memory of existingMemories) {
       if (!memory || !['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status)) continue;
       existingByIdentity.set(identity(memory), memory);
-      if (memory.key !== undefined) existingByKey.set(`${String(memory.scope ?? 'workspace')}::${String(memory.key)}`, memory);
+      if (memory.key !== undefined) existingByKey.set(memoryLessonKey(memory), memory);
     }
     const seen = new Map();
     return candidates.map((candidate) => {
@@ -57,7 +58,7 @@ export class MemoryVerifier {
       if (seen.has(key) || existingByIdentity.has(key)) codes.push('DUPLICATE_MEMORY');
       seen.set(key, candidate);
       if (candidate.key !== undefined) {
-        const keyIdentity = `${String(candidate.scope ?? 'workspace')}::${String(candidate.key)}`;
+        const keyIdentity = memoryLessonKey(candidate);
         const prior = existingByKey.get(keyIdentity);
         if (prior && normalize(prior.statement) !== normalize(statement)) codes.push('CONFLICTING_MEMORY');
       }

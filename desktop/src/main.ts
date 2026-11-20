@@ -1,6 +1,7 @@
 import Archive from 'lucide/dist/esm/icons/archive.mjs';
 import ArrowLeft from 'lucide/dist/esm/icons/arrow-left.mjs';
 import Bot from 'lucide/dist/esm/icons/bot.mjs';
+import Brain from 'lucide/dist/esm/icons/brain.mjs';
 import CheckCircle2 from 'lucide/dist/esm/icons/circle-check.mjs';
 import ChevronDown from 'lucide/dist/esm/icons/chevron-down.mjs';
 import ChevronRight from 'lucide/dist/esm/icons/chevron-right.mjs';
@@ -14,6 +15,7 @@ import FolderOpen from 'lucide/dist/esm/icons/folder-open.mjs';
 import Gauge from 'lucide/dist/esm/icons/gauge.mjs';
 import HeartPulse from 'lucide/dist/esm/icons/heart-pulse.mjs';
 import History from 'lucide/dist/esm/icons/rotate-ccw-clock.mjs';
+import ImagePlus from 'lucide/dist/esm/icons/image-plus.mjs';
 import LayoutDashboard from 'lucide/dist/esm/icons/layout-dashboard.mjs';
 import ListTree from 'lucide/dist/esm/icons/list-tree.mjs';
 import LoaderCircle from 'lucide/dist/esm/icons/loader-circle.mjs';
@@ -30,7 +32,10 @@ import UserRound from 'lucide/dist/esm/icons/user-round.mjs';
 import XCircle from 'lucide/dist/esm/icons/circle-x.mjs';
 import replaceElement from 'lucide/dist/esm/replaceElement.mjs';
 import { VERIFICATION_FAILURE_REASON, isConversationTimelineItem } from './domain/timeline-visibility';
+import { buildTestVerificationFailure, planFailureMessage } from './domain/plan-failure';
 import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, createPinNoticeSession, storePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
+import { TASK_COMPOSER_MODEL_STORAGE_KEY, composerChoiceBindsSession, readTaskComposerModels, resolveTaskComposerModel } from './domain/task-composer-model';
+import { DEFAULT_CONTEXT_LIMIT_TOKENS, MAX_CONTEXT_LIMIT_TOKENS, MIN_CONTEXT_LIMIT_TOKENS, parseContextLimitTokens, resolveContextLimitTokens } from './domain/model-context-limits';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
 import {
@@ -53,36 +58,56 @@ import {
   sessionBannerHtml,
   unknownJournalHtml
 } from './domain/windows-desktop-cells';
-import { approvalAuditHtml, approvalCardLeadHtml, approvalConfirmationText } from './domain/approval-card';
-import { parseNetworkTargetsText } from './domain/network-targets';
+import { effectiveLeaseNetworkTargets, networkAccessSummary, parseNetworkTargetsText } from './domain/network-targets';
 import { resolveRuntimeResultIdentity } from './domain/runtime-result-identity';
-import { deduplicateWorkspaceRoots, mergeProjectBookmarksByWorkspaceRoot, remapProjectArchiveIds, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
+import { sidebarProjectIdForCwd, sidebarProjectIdForThread } from './domain/project-sidebar';
+import { deduplicateWorkspaceRoots, dropEphemeralProjectBookmarks, isEphemeralWorkspaceRoot, mainCheckoutForTaskWorktree, mergeProjectBookmarksByWorkspaceRoot, pruneAutoPollutedBookmarks, remapProjectArchiveIds, sameProjectWorkspace, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
+import { reconciledContextsForTask } from './domain/role-activity';
+import { isUncertainSideEffectFailure, threadRecoveryBlock } from './domain/thread-recovery';
+import { commandLineForToolEvent, exitCodeForToolEvent, exitCodeLabelForToolEvent, outputTailForToolEvent, pathBadgeText, pathForToolEvent, WORKSPACE_REASON_LABELS } from './domain/tool-command';
+import { TaskSessionController, newestTaskFirst, sessionIsPristineDraft, sessionStatusText, sessionStillExecuting, sessionThreadActivity, type ScopedRunState, type TaskSession } from './domain/task-session';
+import { reconcileUnseenTasks, taskAttentionLabel, taskAttentionState, type AttentionObservation, type AttentionSnapshot } from './domain/task-attention';
+import { appendValidatedImages, DEFAULT_IMAGE_ONLY_PROMPT, extractClipboardFiles, formatAttachmentSize, MAX_COMPOSER_IMAGE_BYTES, MAX_COMPOSER_IMAGES, MAX_COMPOSER_TOTAL_IMAGE_BYTES, nextImageAttachmentId, resolveImageMediaType, type ComposerImageAttachment } from './domain/image-attachments';
+import { DesktopNoticePolicy, deliverDesktopNotice, desktopNoticeActivation, type DesktopNotice } from './domain/desktop-notifications';
+import { approvalFailureHint } from './domain/approval-failure';
 import type { HarnessReadModel, ModelConfig, ApprovalReadModel, CellExecRow,
-  ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry } from './domain/models';
+  ProcessVerificationReadModel, NetworkTargetOption, RunState, RuntimeContextSidecarStatus, RuntimeRecoveryResponse, RuntimeRemoteRecoveryStatus, RuntimeDecisionNode, RuntimeDecisionOption, RuntimeExecutionRecord, RuntimePluginGovernanceRecord, RuntimePluginVersionLifecycleSnapshot, RuntimePluginVersionSummary, RuntimeTaskOptions, SubAgentReadModel, TimelineItem, WorkspaceEntry, RuntimeDreamMaintenanceStatus } from './domain/models';
 import {
   appendTimelineItem,
   applyRuntimeSubAgentEvent,
   beginRun,
   cancelPendingApprovals,
   clearWorkspace,
-  completeStreamingAgent,
+  completeAllStreamingThinking,
+  completeStreamingResponses,
+  streamingResponseItemId,
   expireRequestedApprovals,
   createInitialReadModel,
+  isGenericTaskTitle,
   setRunState,
   setRuntimeReady,
   setCellsSession,
   setContextSidecarStatus,
   setDreamMaintenanceStatus,
-  setExecutionMode,
+  shouldAutoStartDreamMaintenance,
+  pinThreadCreatedAt,
   setActiveThread,
   setThreads,
   setWorkspace,
   setWorkspaceFile,
   upsertApproval,
   upsertStreamingAgent,
-  upsertSubAgent,
+  upsertStreamingThinking,
   discardStreamingTail
 } from './domain/store';
+import {
+  consumeInlineThinkDelta,
+  createThinkingStreamState,
+  flushInlineThinkState,
+  formatThinkingDuration,
+  splitCompleteInlineThinking,
+  type ThinkingStreamState
+} from './domain/thinking-stream';
 import { desktopBridge, type ThreadEventPage } from './services/desktopBridge';
 import {
   applyCatalogSnapshot,
@@ -102,6 +127,12 @@ import { formatVerifierFormValues, parseVerifierFormValues } from './domain/veri
 import { syncKeyedList, syncKeyedListIncrementally, syncRegionContent } from './ui/keyed-list';
 import { LiveTimeline } from './ui/live-timeline';
 import { renderMarkdown } from './ui/markdown';
+import { ComputerAccessController } from './domain/computer-access-controller';
+import { createComputerAccessControls } from './ui/computer-access-controls';
+import { ACCESS_PILL_ON, ACCESS_PILL_OFF, ACCESS_COMPOSER_NOTE_ON } from './domain/computer-access';
+import { approvalReasonLabels, approvalPreviewText, presentsCommandAuthorization, approvalReviewTitle, approvalRiskLabel, approvalHasDetectedRisk, approvalPreviewTitle, approvalReviewBlock } from './domain/approval-review';
+import { clarificationCardHtml, clarificationFailureText, clarificationFromPayload, clarificationReply, clarificationRunEnded, type ClarificationView } from './domain/clarification';
+import { describeExecutionRecord } from './domain/execution-record-copy';
 
 type IconNode = [tag: string, attrs: Record<string, string>][];
 
@@ -119,12 +150,38 @@ let transcriptStick = true;
 let transcriptScrollTop = 0;
 let contextScrollTop = 0;
 let navigationRailScrollTop = 0;
-// Programmatic restoration also emits a native scroll event. Keep that event
-// from changing the user's follow/reading preference while a render restores
-// the previous viewport.
-let restoringScroll = false;
-// Preserve the user's choice while live runtime events trigger rerenders.
-let executionGroupExpanded = false;
+const transcriptBottomTolerance = 1;
+const transcriptRestores = new WeakMap<HTMLElement, number>();
+let transcriptInputVersion = 0;
+const pauseTranscriptFollow = (transcript: HTMLElement): void => {
+  transcriptInputVersion++;
+  transcriptStick = false;
+  transcriptScrollTop = transcript.scrollTop;
+  transcriptRestores.delete(transcript);
+};
+document.addEventListener('wheel', event => {
+  const transcript = event.target instanceof Element ? event.target.closest<HTMLElement>('.transcript') : null;
+  if (transcript && event.deltaY < 0 && !event.ctrlKey && transcript.scrollHeight > transcript.clientHeight) {
+    pauseTranscriptFollow(transcript);
+  }
+}, { capture: true, passive: true });
+document.addEventListener('pointerdown', event => {
+  const transcript = event.target;
+  if (!(transcript instanceof HTMLElement) || !transcript.matches('.transcript') || event.button !== 0) return;
+  const contentRight = transcript.getBoundingClientRect().left + transcript.clientLeft + transcript.clientWidth;
+  if (event.clientX >= contentRight && transcript.scrollHeight > transcript.clientHeight) pauseTranscriptFollow(transcript);
+}, { capture: true, passive: true });
+const transcriptDistanceFromBottom = (transcript: HTMLElement): number =>
+  transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+
+const restoreTranscriptScroll = (transcript: HTMLElement, top: number): void => {
+  const previousTop = transcript.scrollTop;
+  transcript.scrollTop = top;
+  transcriptScrollTop = transcript.scrollTop;
+  if (transcriptScrollTop !== previousTop) {
+    transcriptRestores.set(transcript, transcriptScrollTop);
+  }
+};
 // Prevent overlapping history reads/replays when the user clicks rows rapidly.
 interface HistoryView {
   threadId: string;
@@ -149,17 +206,29 @@ const historyPageCache = new Map<string, {
   summaryKey?: string;
   timeline?: HarnessReadModel['timeline'];
 }>();
+// Rendered transcript rows for tasks the user has already opened. Switching
+// back reattaches these nodes instead of parsing Markdown into a new DOM.
+const PARKED_HISTORY_LIMIT = 6;
+const parkedHistory = new Map<string, { items: TimelineItem[]; holder: HTMLElement }>();
+const clearHistoryCaches = (): void => {
+  historyPageCache.clear();
+  parkedHistory.clear();
+};
 const historySummaryKey = (thread: ThreadEventPage['thread']): string | undefined => {
   if (!thread) return undefined;
   return JSON.stringify([thread.id, thread.updatedAtMs, thread.turnCount,
-    thread.state, thread.resumable, thread.resumeMode, thread.checkpoint?.runId ?? null]);
+    thread.state, thread.resumable, thread.resumeMode, thread.checkpoint?.runId ?? null,
+    thread.recoveryBlock ?? null]);
 };
 const reconcileHistoryPageCache = (threads: ThreadEventPage['thread'][]): void => {
   const summaries = new Map(threads.filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
     .map((thread) => [thread.id, historySummaryKey(thread)] as const));
   for (const [threadId, entry] of historyPageCache) {
     const summaryKey = summaries.get(threadId);
-    if (entry.page && summaryKey !== undefined && entry.summaryKey !== summaryKey) historyPageCache.delete(threadId);
+    if (entry.page && summaryKey !== undefined && entry.summaryKey !== summaryKey) {
+      historyPageCache.delete(threadId);
+      parkedHistory.delete(threadId);
+    }
   }
 };
 const loadInitialHistoryPage = (threadId: string): Promise<ThreadEventPage> => {
@@ -179,7 +248,10 @@ const loadInitialHistoryPage = (threadId: string): Promise<ThreadEventPage> => {
     return page;
   }).catch((error) => {
     const entry = historyPageCache.get(threadId);
-    if (entry?.request === request) historyPageCache.delete(threadId);
+    if (entry?.request === request) {
+      historyPageCache.delete(threadId);
+      parkedHistory.delete(threadId);
+    }
     throw error;
   });
   historyPageCache.set(threadId, { request });
@@ -195,14 +267,14 @@ const loadInitialHistoryPage = (threadId: string): Promise<ThreadEventPage> => {
 // Node/SQLite round trip behind the short pointer-to-click interval without
 // changing the selected thread or its workspace.
 const prefetchHistoryPage = (threadId: string): void => {
-  if (!threadId || running || workspaceChanging) return;
+  if (!threadId || anyTaskRunning() || workspaceChanging) return;
   const thread = model.threads.find((candidate) => candidate.id === threadId);
   if (!thread || !hasPersistedTurn(thread)) return;
   // Keep an immediate click indistinguishable from the old path (useful for
   // keyboard users and for transient rows), while a normal hover gets a head
   // start before the click lands.
   setTimeout(() => {
-    if (!running && !workspaceChanging) void loadInitialHistoryPage(threadId).catch(() => undefined);
+    if (!anyTaskRunning() && !workspaceChanging) void loadInitialHistoryPage(threadId).catch(() => undefined);
   }, 150);
 };
 const savedNavigationThreadId = (): string | undefined => {
@@ -218,8 +290,13 @@ document.addEventListener('scroll', (event) => {
   if (!target) return;
   if (target.classList?.contains('transcript')) {
     transcriptScrollTop = target.scrollTop;
-    if (!restoringScroll) {
-      transcriptStick = target.scrollTop + target.clientHeight >= target.scrollHeight - 64;
+    // Native input can share the scroll event queued by a programmatic write.
+    // Only an event at the written offset acknowledges that restoration.
+    const restored = transcriptRestores.get(target) === transcriptScrollTop;
+    transcriptRestores.delete(target);
+    if (!restored) {
+      transcriptInputVersion++;
+      transcriptStick = transcriptDistanceFromBottom(target) <= transcriptBottomTolerance;
     }
   } else if (target.classList?.contains('context-panel')) {
     contextScrollTop = target.scrollTop;
@@ -227,35 +304,34 @@ document.addEventListener('scroll', (event) => {
     navigationRailScrollTop = target.scrollTop;
   }
 }, { capture: true, passive: true });
-document.addEventListener('toggle', (event) => {
-  const group = event.target instanceof HTMLDetailsElement
-    ? event.target.closest<HTMLDetailsElement>('[data-execution-group]')
-    : null;
-  // Rendering restores disclosure state and also queues a native toggle event.
-  // Only user changes should schedule another render (especially on idle tasks).
-  if (group?.isConnected && event.target === group && group.open !== executionGroupExpanded) {
-    executionGroupExpanded = group.open;
-    if (group.closest('[data-live-workbench]')) scheduleRender();
-  }
-}, true);
-document.addEventListener('click', (event) => {
-  const target = event.target as Element | null;
-  const summary = target?.closest('[data-execution-group] > summary');
-  if (!summary) return;
-  const group = summary.closest<HTMLDetailsElement>('[data-execution-group]');
-  if (!group) return;
-  // The native details toggle runs after the click event. Read the final
-  // state on the next task so a background render cannot race it.
-  window.setTimeout(() => {
-    executionGroupExpanded = group.open;
-    scheduleRender();
-  }, 0);
-}, true);
 if (!app) throw new Error('Missing #app root');
+
+const accessController = new ComputerAccessController({
+  read: () => desktopBridge.accessMode(),
+  write: (mode, confirmed) => desktopBridge.setAccessMode(mode, confirmed),
+  onChange: () => {
+    // Sync the access-mode chrome immediately, then let the normal render
+    // coalesce the rest — the pill lives in a footer that render does not
+    // rebuild on its own.
+    if (typeof refreshModeControls === 'function') refreshModeControls();
+    if (typeof scheduleRender === 'function') scheduleRender();
+  }
+});
+const accessControls = createComputerAccessControls({
+  controller: accessController,
+  isNative: () => desktopBridge.isNative(),
+  onRender: () => { if (typeof scheduleRender === 'function') scheduleRender(); }
+});
 
 let model: HarnessReadModel = createInitialReadModel();
 let contextVisible = window.matchMedia('(min-width: 1121px)').matches;
 let running = false;
+let taskStartLock = false;
+type QueuedFollowUp = { prompt: string; images: ComposerImageAttachment[]; displayBody?: string };
+const followUpQueues = new Map<string, QueuedFollowUp[]>();
+const uncertainRecoveryKeys = new Set<string>();
+let pendingUncertainRecovery: { runtimeRunId?: string; threadId?: string } | undefined;
+const queuedFollowUpCount = (): number => followUpQueues.get(sessionController.selectedId)?.length ?? 0;
 let taskProgressMessage = '';
 let backgroundDetailsTimer: number | undefined;
 let pendingCancellationRunId: string | undefined;
@@ -273,6 +349,16 @@ let runtimeStreamObserved = false;
 // process-scoped run id. Bind the event stream after the runtime's first
 // run.started event instead of comparing those unrelated identifiers.
 let activeRuntimeRunId: string | undefined;
+interface LiveClarification extends ClarificationView {
+  runId: string;
+  submitting: boolean;
+  pendingAnswer?: string;
+}
+const clarificationsByRun = new Map<string, LiveClarification>();
+const activeClarification = (): LiveClarification | undefined => {
+  if (!activeRuntimeRunId || clarificationRunEnded(model.activeRun?.state)) return undefined;
+  return clarificationsByRun.get(activeRuntimeRunId);
+};
 const deletedRuntimeRunIds = new Set<string>();
 const runtimeFailureEvents = new Set<string>();
 let runtimeEventFloorMs = 0;
@@ -283,7 +369,7 @@ let projectionRuns: Array<{ runId: string; title: string; state: string; started
 // Keep an approval visually pending until the runtime acknowledges it. The
 // stdin write only means that the response reached the runtime; it does not
 // mean that the persisted Approval/ActionIntent transition succeeded.
-const pendingApprovalResolutions = new Set<string>();
+let pendingApprovalResolutions = new Set<string>();
 let cellOpTimer: ReturnType<typeof setInterval> | undefined;
 const ensureCellOpTimer = (): void => {
   const running = model.timeline.some((item) => item.rows?.some((row) => row.state === 'RUNNING'));
@@ -308,14 +394,12 @@ const ensureCellOpTimer = (): void => {
 const pendingRecoveryActions = new Set<string>();
 // Tauri events are delivered globally. Include the run and sequence when
 // de-duplicating so reconnects/re-renders cannot append the same event twice.
-const observedRuntimeEvents = new Set<string>();
-// Network is a separately approved capability. The target allowlist remains
-// empty until the user supplies it in Settings, so adding the capability to
-// the controlled lease does not open a network path by itself.
+let observedRuntimeEvents = new Set<string>();
+// network.request is always offered. A blank target box means public internet
+// and the model chooses the URL. Typed JSON replaces that default; [] closes it.
 const controlledCapabilities = ['shell.execute', 'file.write', 'test.execute', 'network.request'];
 const controlledCommands = ['node', 'npm', 'npx', 'cargo', 'rustc', 'git'];
-// Network stays disabled until the user types an explicit allowlist. The
-// runtime re-validates every request and every lease regardless of this text.
+// The runtime still rejects private addresses, secrets, and redirects.
 const controlledNetworkTargets = {
   text: '',
   error: '' as string,
@@ -326,8 +410,22 @@ type SubmitReceiptStatus = 'pending' | 'accepted' | 'rejected' | 'unconfirmed';
 interface SubmitReceipt { id: string; prompt: string; status: SubmitReceiptStatus; atMs: number; }
 let lastSubmitReceipt: SubmitReceipt | undefined;
 let memoryActionError = '';
+let memoryListLoading = false;
+let memoryListError = '';
 let governanceReadFailed = false;
+// Only an explicit server BLOCKED status counts; an older server without the
+// field is treated as having no status rather than as a blocked chain.
+const pluginGovernanceBlockedCode = (): string | undefined => {
+  const status = model.pluginGovernanceStatus;
+  return status?.state === 'BLOCKED' ? status.errorCode : undefined;
+};
 let governanceActionNotice: { key: string; text: string; error: boolean } | undefined;
+// Dream maintenance starts with the app. Stop applies only until the next launch.
+let dreamMaintenanceUserStopped = false;
+let dreamMaintenanceAutoStartAttempted = false;
+let dreamMaintenanceAutoStartFailed = false;
+let dreamMaintenanceStarting = false;
+let dreamMaintenanceEnsure: Promise<void> | undefined;
 const pendingGovernanceActions = new Set<string>();
 const governanceBusyKey = (element: HTMLElement): string => element.dataset.memoryId ? `memory:${element.dataset.memoryId}`
   : element.dataset.pluginId ? `plugin:${element.dataset.pluginId}` : element.dataset.proposalId ? `evolution:${element.dataset.proposalId}` : 'dream';
@@ -381,16 +479,357 @@ interface MemoryEditState {
 }
 let memoryEditState: MemoryEditState | undefined;
 let memoryEditError = '';
-// The legacy card select (localStorage 'hmcodex.pinnedModel') is gone: tasks
-// always use the Settings model and never pass a modelOverride. The key is
-// migrated once at startup (migrate-then-delete), see pinMigrationReady.
+// The legacy card select (localStorage 'hmcodex.pinnedModel') is gone. The
+// composer picker is per task: a choice stays on that task and is passed when
+// the task launches. A task that has not chosen one uses the Settings model.
+// The legacy key is migrated once at startup (migrate-then-delete), see pinMigrationReady.
 let routeFailure: (RouteFailureNotice & { threadId?: string }) | undefined;
+// A workspace digest conflict makes the old checkpoint unsafe to resume. Keep
+// the conflict bound to its thread so retry can replan against current files
+// instead of entering the same recovery check again.
+let recoveryWorkspaceConflictThreadId: string | undefined;
 let routingSettingsRunId: string | undefined;
 const pinNoticeSession = createPinNoticeSession(localStorage);
 // runtime runId -> owning thread id (recorded at run start, completed by the bridge result).
 const runThreadIds = new Map<string, string | undefined>();
 let currentRunThreadId: string | undefined;
 let pinMigrationReady: Promise<void> = Promise.resolve();
+
+// Task sessions
+// Each session owns the per-invocation fields that used to be singletons.
+// The module-level `let`s above always hold the SELECTED session's live state;
+// withSession() swaps another session's state in for a synchronous projection
+// and restores it afterwards, so existing reducers keep working untouched.
+const sessionController = new TaskSessionController({ model });
+
+const captureScopedState = (): ScopedRunState => ({
+  running,
+  taskProgressMessage,
+  pendingCancellationRunId,
+  runtimeStreamObserved,
+  activeRuntimeRunId,
+  runtimeEventFloorMs,
+  lastRuntimeEventSequence,
+  currentRunThreadId,
+  pendingApprovalResolutions,
+  observedRuntimeEvents,
+  lastSubmitReceipt,
+  routeFailure,
+  model
+});
+
+const installScopedState = (state: ScopedRunState): void => {
+  running = state.running;
+  taskProgressMessage = state.taskProgressMessage;
+  pendingCancellationRunId = state.pendingCancellationRunId;
+  runtimeStreamObserved = state.runtimeStreamObserved;
+  activeRuntimeRunId = state.activeRuntimeRunId;
+  runtimeEventFloorMs = state.runtimeEventFloorMs;
+  lastRuntimeEventSequence = state.lastRuntimeEventSequence;
+  currentRunThreadId = state.currentRunThreadId;
+  pendingApprovalResolutions = state.pendingApprovalResolutions;
+  observedRuntimeEvents = state.observedRuntimeEvents;
+  lastSubmitReceipt = state.lastSubmitReceipt as SubmitReceipt | undefined;
+  routeFailure = state.routeFailure;
+  model = state.model;
+};
+
+/** >0 while a non-selected session's state is installed; suppresses DOM writes. */
+let scopedProjectionDepth = 0;
+
+/**
+ * Synchronously project `fn` against the session that owns it. Only the
+ * selected session's globals are installed when fn runs — a background
+ * settle/event can never leak into what the user is looking at. The callback
+ * must be synchronous: an async gap would let the swapped-out globals drift.
+ */
+const selectedImageAttachments = (): ComposerImageAttachment[] =>
+  sessionController.selected()?.imageAttachments ?? [];
+
+const setSelectedImageAttachments = (attachments: ComposerImageAttachment[]): void => {
+  const selected = sessionController.selected();
+  if (selected) selected.imageAttachments = attachments.slice();
+};
+
+const renderComposerAttachmentsInnerHtml = (attachments: readonly ComposerImageAttachment[]): string => {
+  const locked = composerInputLocked();
+  return attachments.map((item) => `
+    <div class="composer-attachment-chip" data-attachment-id="${escapeHtml(item.id)}" title="${escapeHtml(`${item.name} (${formatAttachmentSize(item.sizeBytes)})`)}">
+      <img src="${escapeHtml(item.dataUrl)}" alt="${escapeHtml(item.name)}">
+      <span class="composer-attachment-meta">${escapeHtml(item.name)}</span>
+      <button class="composer-attachment-remove" type="button" data-action="remove-attachment" data-attachment-id="${escapeHtml(item.id)}" ${locked ? 'disabled' : ''} title="移除图片" aria-label="移除图片 ${escapeHtml(item.name)}">×</button>
+    </div>`).join('');
+};
+
+function syncComposerAttachments(): void {
+  const strip = app?.querySelector<HTMLElement>('[data-composer-attachments]');
+  const attachments = selectedImageAttachments();
+  if (strip) {
+    strip.hidden = attachments.length === 0;
+    const html = renderComposerAttachmentsInnerHtml(attachments);
+    if (strip.innerHTML !== html) strip.innerHTML = html;
+  }
+  const promptError = app?.querySelector<HTMLElement>('#composer-prompt-error');
+  if (promptError) {
+    promptError.hidden = !composerPromptError;
+    promptError.textContent = composerPromptError;
+  }
+  const attachBtn = app?.querySelector<HTMLButtonElement>('[data-action="attach-image"]');
+  if (attachBtn) {
+    setDisabledIfChanged(attachBtn, composerInputLocked());
+  }
+  updateThreadList();
+}
+
+const addComposerImageFiles = async (files: readonly File[]): Promise<void> => {
+  if (!files.length) return;
+  if (composerInputLocked()) {
+    composerPromptError = workspaceChanging ? '目录切换中，请稍候后再粘贴图片。' : '输入栏暂时不能使用，请稍候。';
+    syncComposerAttachments();
+    return;
+  }
+  const result = await appendValidatedImages(selectedImageAttachments(), files);
+  setSelectedImageAttachments(result.attachments);
+  composerPromptError = result.error ?? '';
+  syncComposerAttachments();
+  if (result.added.length > 0) {
+    app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus({ preventScroll: true });
+  }
+};
+
+const sessionRailSignature = (session: TaskSession): string =>
+  `${session.running ? 1 : 0}:${session.taskProgressMessage}:${sessionController.pendingApprovalCount(session)}:${session.threadId ?? session.currentRunThreadId ?? session.model.activeThreadId ?? ''}:${session.model.activeRun?.title ?? ''}:${session.model.activeRun?.state ?? ''}:${session.lastSubmitReceipt?.prompt ?? ''}:${session.imageAttachments.length}`;
+
+const withSession = <T>(clientSessionId: string, fn: () => T): T => {
+  const session = sessionController.forClientSessionId(clientSessionId);
+  if (!session) throw new Error(`TASK_SESSION_UNKNOWN:${clientSessionId}`);
+  const selected = sessionController.selected();
+  if (!selected) throw new Error('TASK_SESSION_NONE_SELECTED');
+  const run = (): T => {
+    const result = fn();
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      throw new Error('withSession callback must be synchronous');
+    }
+    return result;
+  };
+  if (session === selected) {
+    try {
+      return run();
+    } finally {
+      // Keep the controller's copy of the selected state live so expiry scans,
+      // running counts and thread lookups never read a stale model.
+      Object.assign(selected, captureScopedState());
+    }
+  }
+  Object.assign(selected, captureScopedState());
+  const selectedThreadsBefore = selected.model.threads;
+  const approvalsBefore = session.model.approvals;
+  const railBefore = sessionRailSignature(session);
+  session.model = sharedProjection(session.model, selected.model);
+  installScopedState(session);
+  scopedProjectionDepth += 1;
+  try {
+    return run();
+  } finally {
+    scopedProjectionDepth -= 1;
+    Object.assign(session, captureScopedState());
+    installScopedState(selected);
+    model = mergeSharedThreads(model, session.model);
+    syncSelectedSession();
+    if (session.model.approvals !== approvalsBefore) scheduleApprovalExpiry();
+    if (sessionRailSignature(session) !== railBefore || model.threads !== selectedThreadsBefore) {
+      scheduleRender();
+    }
+  }
+};
+
+// The controller's stored copy can lag the live selected globals between
+// withSession calls; the live flag is authoritative for the selected session.
+const anyTaskRunning = (): boolean => {
+  if (scopedProjectionDepth === 0) syncSelectedSession();
+  return running || sessionController.anyTaskRunning();
+};
+
+// Threads are shared state: a background run finishing must surface its thread
+// in the selected session's catalog without waiting for a dashboard refresh.
+const mergeSharedThreads = (into: HarnessReadModel, from: HarnessReadModel): HarnessReadModel => {
+  if (into.threads === from.threads) return into;
+  const byId = new Map(into.threads.map((thread) => [thread.id, thread]));
+  for (const thread of from.threads) {
+    const existing = byId.get(thread.id);
+    if (!existing || (thread.updatedAtMs ?? 0) > (existing.updatedAtMs ?? 0)) {
+      byId.set(thread.id, existing ? pinThreadCreatedAt(existing, thread) : thread);
+    }
+  }
+  return { ...into, threads: [...byId.values()] };
+};
+
+const sharedProjection = (target: HarnessReadModel, source: HarnessReadModel): HarnessReadModel => ({
+  ...mergeSharedThreads(target, source),
+  connection: source.connection,
+  runtime: source.runtime,
+  feedback: source.feedback,
+  memories: source.memories,
+  dreamRuns: source.dreamRuns,
+  plugins: source.plugins,
+  pluginVersions: source.pluginVersions,
+  pluginGovernanceStatus: source.pluginGovernanceStatus,
+  evolutionProposals: source.evolutionProposals,
+  evolutionReports: source.evolutionReports,
+  evolutionControl: source.evolutionControl,
+  supportBundle: source.supportBundle,
+  modelEgress: source.modelEgress,
+  modelUsage: source.modelUsage
+});
+
+const syncSelectedSession = (): void => {
+  const selected = sessionController.selected();
+  if (selected && scopedProjectionDepth === 0) Object.assign(selected, captureScopedState());
+};
+
+let sessionWorkspaceSyncSeq = 0;
+let sessionWorkspaceSyncInFlight = false;
+
+/**
+ * Park the selected session's live state and install another session's.
+ * The approval confirmation belongs to whichever session displayed it, so a
+ * switch always dismisses it — a hidden session can never be approved by a
+ * stale modal.
+ */
+const switchSession = (clientSessionId: string): boolean => {
+  if (workspaceChanging && !sessionWorkspaceSyncInFlight) return false;
+  const selected = sessionController.selected();
+  if (!selected) return false;
+  if (selected.clientSessionId === clientSessionId) {
+    if (activePage !== 'workbench' || settingsVisible || Boolean(historyView)) {
+      parkHistoryTranscript();
+      historyView = undefined;
+      historyRenderSerial++;
+      activePage = 'workbench';
+      settingsVisible = false;
+      render();
+      flushContextPanelImmediate();
+      revealLatestTranscript();
+      return true;
+    }
+    return false;
+  }
+  const target = sessionController.select(clientSessionId);
+  if (!target) return false;
+  const previousRoot = (selected.model.workspace.rootPath || selected.workspacePath || '').trim();
+  const draft = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  selected.promptDraft = draft?.value ?? selected.promptDraft;
+  Object.assign(selected, captureScopedState());
+  parkLiveTimeline(selected.clientSessionId);
+  parkHistoryTranscript();
+  if (draft) draft.value = target.promptDraft;
+  // The draft being left may be pristine — drop it rather than orphan a row.
+  sessionController.pruneIdleDrafts(target.clientSessionId);
+  target.model = sharedProjection(target.model, selected.model);
+  installScopedState(target);
+  approvalConfirmation?.close();
+  approvalConfirmation = undefined;
+  historyView = undefined;
+  historyRenderSerial++;
+  activePage = 'workbench';
+  settingsVisible = false;
+  focusedRunId = null;
+  taskActionNotice = '';
+  transcriptStick = true;
+  transcriptScrollTop = 0;
+  dismissComposerModelMenu();
+  const targetRoot = (target.model.workspace.rootPath || target.workspacePath || '').trim();
+  const needsWorkspaceSync = desktopBridge.isNative() && Boolean(targetRoot)
+    && (!previousRoot || !sameWorkspaceRoot(previousRoot, targetRoot));
+  if (needsWorkspaceSync) {
+    const syncSeq = ++sessionWorkspaceSyncSeq;
+    sessionWorkspaceSyncInFlight = true;
+    workspaceChanging = true;
+    const previousWorkspaceReady = workspaceReady;
+    workspaceReady = previousWorkspaceReady.catch(() => undefined).then(async () => {
+      try {
+        await desktopBridge.setWorkspace(targetRoot);
+      } catch (error) {
+        withSession(target.clientSessionId, () => {
+          update(appendErrorTimelineItem({
+            ...model, workspace: { ...model.workspace, stale: true },
+            composer: { ...model.composer, enabled: false }
+          }, '会话工作区', error));
+        });
+      } finally {
+        if (syncSeq === sessionWorkspaceSyncSeq) {
+          sessionWorkspaceSyncInFlight = false;
+          workspaceChanging = false;
+          scheduleRender();
+        }
+      }
+    });
+  }
+  render();
+  const composer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  if (composer) composer.value = target.promptDraft;
+  flushContextPanelImmediate();
+  revealLatestTranscript();
+  if (!needsWorkspaceSync) flushFollowUp(clientSessionId);
+  maybePresentCommandAuthorization();
+  return true;
+};
+
+/** Park the running selected session and open a clean draft for a new task. */
+const parkForNewDraft = (): void => {
+  const selected = sessionController.selected();
+  const previousComposer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  const draftText = previousComposer?.value ?? '';
+  if (selected) {
+    selected.promptDraft = draftText;
+    Object.assign(selected, captureScopedState());
+    parkLiveTimeline(selected.clientSessionId);
+  }
+  parkHistoryTranscript();
+  if (previousComposer) previousComposer.value = '';
+  // Derive the draft's model from the shared projection — workspace grant,
+  // runtime connection and threads stay; only the per-run state resets.
+  const base = model;
+  const clean: HarnessReadModel = {
+    ...base,
+    activeRun: undefined,
+    activeThreadId: undefined,
+    resumeThreadId: undefined,
+    timeline: [],
+    subAgents: [],
+    approvals: [],
+    decisions: [],
+    continuousVerification: [],
+    processVerification: undefined,
+    composer: { ...base.composer, enabled: true }
+  };
+  const cleared = setCellsSession(clean, undefined);
+  const keepUnbound = selected?.unboundProject === true;
+  const draft = sessionController.ensureDraftSession(keepUnbound ? '' : (model.workspace.rootPath ?? ''), {
+    model: cleared,
+    unboundProject: keepUnbound,
+  });
+  // Repeated "new task" clicks must not stack up empty drafts in the rail.
+  sessionController.pruneIdleDrafts(draft.clientSessionId);
+  installScopedState(draft);
+  approvalConfirmation?.close();
+  approvalConfirmation = undefined;
+  historyView = undefined;
+  historyRenderSerial++;
+  activePage = 'workbench';
+  settingsVisible = false;
+  focusedRunId = null;
+  taskActionNotice = '';
+  transcriptStick = true;
+  transcriptScrollTop = 0;
+  dismissComposerModelMenu();
+  syncSelectedSession();
+  scheduleApprovalExpiry();
+  render();
+  const composer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+  if (composer) composer.value = '';
+  flushContextPanelImmediate();
+};
 interface TaskBudget {
   maxTokens?: number;
   maxToolRounds?: number;
@@ -410,6 +849,20 @@ let taskBudget: TaskBudget = (() => {
   } catch { return {}; }
 })();
 let taskActionNotice = '';
+const desktopNoticePolicy = new DesktopNoticePolicy();
+let desktopNoticeFailed = false;
+// Notification delivery is best-effort: a rejected invoke must never abort
+// the approval/task projection, and the in-app warning shows once per session.
+const sendDesktopNotice = (notice: DesktopNotice): void => {
+  if (!desktopBridge.isNative()) return;
+  void deliverDesktopNotice(notice, (item) => desktopBridge.showDesktopNotification(item)).then((outcome) => {
+    if (outcome !== 'failed' || desktopNoticeFailed) return;
+    desktopNoticeFailed = true;
+    console.warn('[desktop-notification] delivery failed');
+    taskActionNotice = 'Windows 通知未能发送，请留意应用内审批和任务状态。';
+    render();
+  });
+};
 let composerPromptError = '';
 const primaryPages: Record<string, { title: string; description: string }> = {
   workbench: { title: '工作台', description: '' },
@@ -428,17 +881,16 @@ let settingsConfigPath = '';
 let settingsConfig: ModelConfig | undefined;
 const settingsSections = {
   connection: { title: '连接与身份', description: '查看当前平台、runtime 健康和配置来源。敏感值只显示状态。', icon: 'heart-pulse' },
-  model: { title: '角色与模型', description: '选择模型服务与连接方式。保存后从下一次任务开始生效。', icon: 'cpu' },
-  catalog: { title: '模型目录', description: '查看当前模型连接这一家的模型目录，获取可用模型后勾选写入。', icon: 'database' },
+  model: { title: '角色与模型', description: '选择模型服务与连接方式，并管理这一家的模型目录。这里保存的是全局默认模型；某个任务在输入框里另选过模型时，仍使用那个任务自己的模型。', icon: 'cpu' },
   routing: { title: '模型与路由', description: '查看每次任务的路由决策、候选方案与未采用原因，以及累计缓存命中率和成本。', icon: 'list-tree' },
   jev: { title: 'Jev 决策平面', description: '配置真实 Jev endpoint、端口、模型和认证环境变量。', icon: 'waypoints' },
-  workspace: { title: '工作区授权', description: '查看只读工作区授权目录、快照和项目来源。', icon: 'folder-open' },
+  workspace: { title: '工作区授权', description: '查看工作区授权目录、快照和项目来源。', icon: 'folder-open' },
   plugins: { title: '插件', description: '查看插件治理、版本和当前发布渠道。', icon: 'file-cog' },
   verifier: { title: '安全与质量检查', description: '调整自动质量检查设置，查看审批与安全策略的当前状态。', icon: 'shield-check' },
   memory: { title: '记忆与后台整理', description: '查看记忆状态、后台整理和治理数量。', icon: 'heart-pulse' },
   personalization: { title: '隐私/保留与个性化', description: '设置回复习惯，并查看敏感数据与保留策略状态。', icon: 'user-round' },
   storage: { title: '存储', description: '查看配置路径、投影版本和持久化状态。', icon: 'file-cog' },
-  archive: { title: '已归档', description: '查看和恢复本机归档的项目与会话。归档只在列表中隐藏，不删除配置与历史。', icon: 'archive' },
+  archive: { title: '已归档', description: '查看和恢复本机归档的项目与会话。归档只在列表中隐藏，不删除配置或历史。', icon: 'archive' },
   accessibility: { title: '无障碍', description: '查看键盘、字体、对比度和减少动画支持状态。', icon: 'settings' },
   diagnostics: { title: '开发诊断', description: '查看支持包、错误恢复和诊断入口。', icon: 'gauge' },
   cells: { title: '实验性代码 cell', description: '实验性：代码 cell（无 OS 沙箱）。任务进程是会话保持路径；新鲜健康检查仍只显示步骤 1–2。没有 OS 沙箱选项。', icon: 'square-terminal' },
@@ -453,6 +905,12 @@ let desktopCellsSettingsPath = '';
 let settingsSearch = '';
 let settingsDraft: Record<string, string> | undefined;
 let catalogSession: CatalogSession = emptyCatalogSession();
+let composerModelOpen = false;
+const loadTaskComposerModels = (): Record<string, string> => {
+  try { return readTaskComposerModels(localStorage.getItem(TASK_COMPOSER_MODEL_STORAGE_KEY)); }
+  catch { return {}; }
+};
+let taskComposerModels = loadTaskComposerModels();
 let catalogLoaded = false;
 let catalogLoading = false;
 let catalogSaving = false;
@@ -507,7 +965,9 @@ const writeThreadArchive = (id: string, archived: boolean): boolean => {
     return false;
   }
 };
-const threadArchiveBlocked = (id: string): boolean => model.activeThreadId === id && (running || liveTaskRunning());
+const threadArchiveBlocked = (id: string): boolean => (model.activeThreadId === id && (running || liveTaskRunning()))
+  || [...sessionController.sessions.values()].some((session) => session.running
+    && (session.threadId === id || session.currentRunThreadId === id || session.model.activeThreadId === id));
 const PROJECT_ARCHIVE_STORAGE_KEY = 'hmcodex.projectArchives.v1';
 interface ProjectArchiveRecord { name: string; path: string; archivedAtMs: number; }
 const readProjectArchives = (): Record<string, ProjectArchiveRecord> => {
@@ -543,8 +1003,39 @@ const writeProjectArchive = (id: string, record: ProjectArchiveRecord | null): b
     return false;
   }
 };
-const projectArchiveBlocked = (id: string): boolean => Boolean(id) && (running || liveTaskRunning()) && currentProjectId() === id;
+const projectArchiveBlocked = (id: string): boolean => Boolean(id) && ((running || liveTaskRunning()) && currentProjectId() === id
+  || [...sessionController.sessions.values()].some((session) => session.running && projectIdForPath(session.workspacePath) === id));
 const PROJECTLESS_ID = '__projectless__';
+const PROJECTLESS_THREADS_KEY = 'hmcodex.projectlessThreads.v1';
+const readProjectlessThreadIds = (): Set<string> => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PROJECTLESS_THREADS_KEY) ?? '[]');
+    if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || !id.trim())) return new Set();
+    return new Set(value.map((id: string) => id.trim()));
+  } catch {
+    return new Set();
+  }
+};
+let projectlessThreadIds = readProjectlessThreadIds();
+const rememberProjectlessThread = (threadId: string | undefined): void => {
+  const id = threadId?.trim();
+  if (!id || projectlessThreadIds.has(id)) return;
+  projectlessThreadIds.add(id);
+  try { localStorage.setItem(PROJECTLESS_THREADS_KEY, JSON.stringify([...projectlessThreadIds])); }
+  catch { /* storage may be unavailable */ }
+};
+/** True when this session was started without a saved project, even if a default cwd was filled in later. */
+const sessionStartedWithoutProject = (session: TaskSession | undefined): boolean =>
+  Boolean(session && (session.unboundProject || !(session.model.workspace.rootPath || session.workspacePath || '').trim()));
+const rememberUnboundSessionThread = (session: TaskSession | undefined, threadId?: string): void => {
+  if (!sessionStartedWithoutProject(session)) return;
+  // Only the session's own thread. model.activeThreadId can still point at a
+  // project thread the user has not started this unbound task into.
+  rememberProjectlessThread(threadId ?? session?.threadId ?? session?.currentRunThreadId);
+};
+const syncProjectlessThreadsFromSessions = (): void => {
+  for (const session of sessionController.sessions.values()) rememberUnboundSessionThread(session);
+};
 const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: string[]; lastId: string; changed: boolean; idRemap: Record<string, string> } => {
   let raw: ProjectBookmark[] = [];
   try {
@@ -556,7 +1047,10 @@ const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: stri
         && typeof (item as ProjectBookmark).path === 'string');
     }
   } catch { raw = []; }
-  const { bookmarks, idRemap } = mergeProjectBookmarksByWorkspaceRoot(raw);
+  const merged = mergeProjectBookmarksByWorkspaceRoot(raw);
+  const dropped = dropEphemeralProjectBookmarks(merged.bookmarks);
+  const bookmarks = dropped.bookmarks;
+  const idRemap = merged.idRemap;
   const remap = (id: string): string => idRemap[id] ?? id;
   let orderIds: string[] = [];
   try {
@@ -571,7 +1065,7 @@ const loadProjectCatalogState = (): { catalog: ProjectBookmark[]; orderIds: stri
   let lastId = localStorage.getItem(LAST_PROJECT_STORAGE_KEY) ?? '';
   if (lastId) lastId = remap(lastId);
   if (lastId && !bookmarks.some((project) => project.id === lastId)) lastId = '';
-  const changed = bookmarks.length !== raw.length || Object.keys(idRemap).length > 0
+  const changed = dropped.removedIds.length > 0 || bookmarks.length !== raw.length || Object.keys(idRemap).length > 0
     || bookmarks.some((project, index) => {
       const before = raw[index];
       return !before || before.id !== project.id
@@ -622,9 +1116,17 @@ const projectTargetPaths = (project: ProjectBookmark): string[] => deduplicateWo
 const persistProjectCatalog = (): void => {
   try { localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projectCatalog)); } catch { /* storage may be unavailable */ }
 };
-const rememberProject = (path: string, name?: string): ProjectBookmark | undefined => {
+const rememberProject = (path: string, name?: string, options: { explicit?: boolean } = {}): ProjectBookmark | undefined => {
   const trimmed = path.trim();
-  if (!trimmed) return undefined;
+  if (!trimmed || isEphemeralWorkspaceRoot(trimmed)) return undefined;
+  // Do not auto-create a child `.../desktop` project when its parent repo is already saved.
+  if (!options.explicit) {
+    const normalizedTrimmed = trimmed.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
+    if (normalizedTrimmed.endsWith('/desktop')) {
+      const parentCandidate = trimmed.replace(/[\\/]+desktop[\\/]*$/i, '');
+      if (parentCandidate && catalogProjectForPath(parentCandidate)) return undefined;
+    }
+  }
   const id = projectIdForPath(trimmed);
   const existing = projectCatalog.find((project) => project.id === id || projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, trimmed)));
   const project = { id: existing?.id ?? id, name: name?.trim() || existing?.name || projectNameForPath(trimmed), path: trimmed,
@@ -638,31 +1140,63 @@ const rememberProject = (path: string, name?: string): ProjectBookmark | undefin
   persistProjectCatalog();
   return project;
 };
+const catalogProjectForPath = (path: string): ProjectBookmark | undefined =>
+  projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, path)));
 const projectForThread = (thread: HarnessReadModel['threads'][number]): ProjectBookmark | undefined => {
   const path = thread.cwd?.trim();
   if (!path) return undefined;
-  return projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, path)));
+  const main = mainCheckoutForTaskWorktree(path);
+  return catalogProjectForPath(path) ?? (main ? catalogProjectForPath(main) : undefined);
 };
-const hasPersistedTurn = (thread: HarnessReadModel['threads'][number]): boolean => thread.turnCount > 0;
+const projectIdForThreadCwd = (cwd: string): string => sidebarProjectIdForCwd(cwd, {
+  isEphemeral: isEphemeralWorkspaceRoot,
+  savedProjectId: (path) => catalogProjectForPath(path)?.id,
+  mainCheckout: (path) => mainCheckoutForTaskWorktree(path),
+  projectIdForPath,
+});
+const sidebarProjectId = (thread: HarnessReadModel['threads'][number]): string =>
+  sidebarProjectIdForThread(thread, projectlessThreadIds, projectIdForThreadCwd);
+const threadListProjectName = (thread: HarnessReadModel['threads'][number]): string => {
+  if (sidebarProjectId(thread) === PROJECTLESS_ID) return '未绑定项目';
+  return projectForThread(thread)?.name
+    ?? projectNameForPath(mainCheckoutForTaskWorktree(thread.cwd) ?? thread.cwd ?? '');
+};
+const hasPersistedTurn = (thread: HarnessReadModel['threads'][number]): boolean =>
+  thread.turnCount > 0
+  || Boolean(thread.resumable || thread.recoveryBlock || thread.checkpoint
+    || (thread.resumeMode && thread.resumeMode !== 'NONE'));
 const projectGroups = (): ProjectGroup[] => {
+  syncProjectlessThreadsFromSessions();
   const visibleThreads = model.threads.filter(thread => hasPersistedTurn(thread) && !isThreadArchived(thread.id));
   const groups: ProjectGroup[] = projectCatalog.filter((project) => !isProjectArchived(project.id)).map((project) => ({
     id: project.id, name: project.name, path: project.path,
-    threads: visibleThreads.filter((thread) => Boolean(thread.cwd && projectTargetPaths(project).some((target) => sameWorkspaceRoot(thread.cwd!, target)))),
+    threads: visibleThreads.filter((thread) => sidebarProjectId(thread) === project.id),
     discovered: false
   }));
   const discovered = new Map<string, ProjectGroup>();
   const projectIds = new Set(groups.map((group) => group.id));
   const projectless: ProjectGroup = { id: PROJECTLESS_ID, name: '未绑定项目', threads: [], discovered: false };
   for (const thread of visibleThreads) {
-    const path = thread.cwd?.trim();
-    if (!path) { projectless.threads.push(thread); continue; }
-    if (projectForThread(thread) || isProjectArchived(projectIdForPath(path))) continue;
-    const id = projectIdForPath(path);
-    if (projectIds.has(id)) continue;
+    const id = sidebarProjectId(thread);
+    if (id === PROJECTLESS_ID) { projectless.threads.push(thread); continue; }
+    if (projectIds.has(id) || isProjectArchived(id)) continue;
+    const rawPath = thread.cwd?.trim();
+    const path = rawPath ? (mainCheckoutForTaskWorktree(rawPath) ?? rawPath) : '';
+    if (!path) continue;
     const existing = discovered.get(id);
     if (existing) existing.threads.push(thread);
     else discovered.set(id, { id, name: projectNameForPath(path), path, threads: [thread], discovered: true });
+  }
+  // In-memory task sessions live inside their project too: a workspace used
+  // only by a running session still gets a discovered group so its row has a
+  // home instead of a separate global switcher block.
+  for (const session of sessionController.sessions.values()) {
+    if (sessionStartedWithoutProject(session)) continue;
+    const path = sessionWorkspacePath(session);
+    if (!path || isEphemeralWorkspaceRoot(path)) continue;
+    const id = projectIdForThreadCwd(path);
+    if (id === PROJECTLESS_ID || projectIds.has(id) || discovered.has(id) || isProjectArchived(id)) continue;
+    discovered.set(id, { id, name: projectNameForPath(path), path, threads: [], discovered: true });
   }
   groups.push(...discovered.values());
   groups.push(projectless);
@@ -684,13 +1218,18 @@ const projectGroups = (): ProjectGroup[] => {
     - (positions.get(right.id) ?? Number.MAX_SAFE_INTEGER));
 };
 const currentProjectId = (): string => {
+  syncProjectlessThreadsFromSessions();
   const active = model.threads.find((thread) => thread.id === model.activeThreadId);
+  if (active && projectlessThreadIds.has(active.id)) return PROJECTLESS_ID;
   if (active?.cwd) return projectForThread(active)?.id ?? projectIdForPath(active.cwd);
   if (!model.workspace.rootPath) return PROJECTLESS_ID;
   return projectCatalog.find((project) => projectTargetPaths(project).some((target) => sameWorkspaceRoot(target, model.workspace.rootPath!)))?.id
     ?? projectIdForPath(model.workspace.rootPath);
 };
 const currentProjectName = (): string => {
+  syncProjectlessThreadsFromSessions();
+  const active = model.threads.find((thread) => thread.id === model.activeThreadId);
+  if (active && projectlessThreadIds.has(active.id)) return '未绑定项目';
   const projectId = currentProjectId();
   return projectCatalog.find((project) => project.id === projectId)?.name || model.workspace.rootLabel || '默认工作区';
 };
@@ -701,7 +1240,7 @@ const renderProjectPicker = (): string => {
   return `<div class="project-picker-backdrop" role="presentation">
     <section class="project-picker-card" role="dialog" aria-modal="true" aria-labelledby="project-picker-title">
       <header class="project-picker-header">
-        <div><span class="eyebrow">${projectPickerMode === 'new-task' ? '新建会话' : '打开历史会话'}</span><h2 id="project-picker-title">选择项目</h2><p>${projectPickerMode === 'new-task' ? '会话会归入所选项目，下一次新建会自动记住这个选择。' : '先切换到会话所属目录，再打开历史记录。'}</p></div>
+        <div><span class="eyebrow">${projectPickerMode === 'new-task' ? '新建会话' : '打开历史会话'}</span><h2 id="project-picker-title">选择项目</h2><p>${projectPickerMode === 'new-task' ? '会话会归入所选项目。每次新建都会先选择项目。' : '先切换到会话所属目录，再打开历史记录。'}</p></div>
         <button class="icon-button" type="button" data-action="close-project-picker" aria-label="关闭"><i data-lucide="x-circle"></i></button>
       </header>
       <div class="project-picker-body">
@@ -799,7 +1338,7 @@ const syncSettingsView = (): void => {
     if (section === 'cells' && !panel.hidden && !desktopCellsSettingsLoaded && !desktopCellsSettingsLoading) {
       void loadDesktopCellsSettings();
     }
-    if ((section === 'catalog' || section === 'model') && !panel.hidden && !catalogLoaded && !catalogLoading) {
+    if (section === 'model' && !panel.hidden && !catalogLoaded && !catalogLoading) {
       void loadProviderCatalog();
     }
     if (!panel.hidden) matches++;
@@ -814,7 +1353,7 @@ const syncSettingsView = (): void => {
   if (modelStack) {
     // 归档是本机列表数据：模型配置读取失败或尚未配置时也必须能进入。
     const modelPanels = [...modelStack.querySelectorAll<HTMLElement>('[data-settings-panel]')];
-    modelStack.hidden = query ? modelPanels.every((panel) => panel.hidden) : settingsSection === 'archive' || settingsSection === 'catalog';
+    modelStack.hidden = query ? modelPanels.every((panel) => panel.hidden) : settingsSection === 'archive';
   }
   const empty = dialog.querySelector<HTMLElement>('[data-settings-empty]');
   if (empty) empty.hidden = !query || matches > 0;
@@ -882,8 +1421,8 @@ const confirmExperimentalCells = (): void => {
   dialog.showModal();
 };
 
-const escapeHtml = (value: string): string =>
-  value
+const escapeHtml = (value: unknown): string =>
+  (value == null ? '' : String(value))
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -915,7 +1454,7 @@ function renderSettingsArchivePanel(): string {
     <h3>已归档会话</h3>
     <div class="settings-card"><div class="settings-field settings-field-readonly"><span>已归档会话</span><output>${archivedThreads.length} / ${archivedThreadTotal} 个会话已归档，历史内容保留</output></div></div>
     <div class="run-history-list">${archivedThreads.map((thread) => `<article class="run-history-row">
-      <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(projectForThread(thread)?.name ?? (thread.cwd ? projectNameForPath(thread.cwd) : '未绑定项目'))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
+      <div class="run-history-copy"><strong>${escapeHtml(thread.title || '未命名会话')}</strong><span>${escapeHtml(threadListProjectName(thread))} · ${thread.turnCount} 次对话</span><small>归档于 ${escapeHtml(new Date(threadArchives[thread.id]).toLocaleString('zh-CN'))}</small></div>
       <div class="governance-actions"><button class="governance-button" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" ${liveTaskRunning() ? 'disabled title="请等待当前任务结束后查看其他会话"' : ''}>查看会话</button><button class="governance-button governance-button-primary" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(thread.id)}">恢复到列表</button></div>
     </article>`).join('') || `<div class="page-status page-status-empty"><strong>${archivedThreadTotal ? '归档会话尚未载入' : '暂无已归档会话'}</strong><span>${archivedThreadTotal ? '归档标记仍保留，等待历史会话加载。' : '点击会话旁的“归档”，即可收起暂时不用的会话。'}</span></div>`}</div>
     <p class="settings-hint">${escapeHtml(settingsSections.archive.description)} “查看会话”会关闭设置并展示历史，不会自动恢复；“恢复到列表”会把会话重新放回项目列表，恢复项目也不会恢复单独归档的会话。</p>
@@ -935,20 +1474,26 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
       break;
     case 'workspace':
       rows = [
-        ['授权状态', model.workspace.granted ? '已授权（只读）' : '尚未授权'],
+        ['授权状态', model.workspace.granted ? '已授权（副作用需审批）' : '尚未授权'],
         ['授权 root', readOnlySettingsValue(model.workspace.rootPath ?? model.workspace.rootLabel)],
         ['快照状态', model.workspace.stale ? '快照已过期，需要刷新' : '当前快照'],
         ['当前目录', readOnlySettingsValue(model.workspace.currentPath || '.')]
       ];
       break;
-    case 'plugins':
+    case 'plugins': {
+      const governanceStatus = model.pluginGovernanceStatus;
+      const blockedCode = governanceStatus?.state === 'BLOCKED' ? governanceStatus.errorCode : undefined;
       rows = [
-        ['治理记录', `${model.plugins.length} 条`],
-        ['版本记录', `${model.pluginVersions.length} 条`],
+        ['治理状态', blockedCode
+          ? `审计记录校验未通过（${blockedCode}），插件状态与操作不可用`
+          : governanceStatus?.state === 'AVAILABLE' ? '校验通过' : '尚未读取'],
+        ['治理记录', blockedCode ? '不可读取' : `${model.plugins.length} 条`],
+        ['版本记录', blockedCode ? '不可读取' : `${model.pluginVersions.length} 条`],
         ['发布渠道', readOnlySettingsValue(model.runtime.releaseChannel)],
         ['写入策略', '插件变更仍需独立审批']
       ];
       break;
+    }
     case 'memory': {
       const active = experienceMemories().filter((item) => item.status === 'ACTIVE').length;
       const proposed = experienceMemories().filter((item) => item.status === 'PROPOSED').length;
@@ -994,6 +1539,36 @@ function renderSettingsReadOnlyPanel(section: SettingsSection): string {
     <p class="settings-hint">${escapeHtml(settingsSections[section].description)} 当前页面只展示状态；需要副作用的变更仍从对应流程进入并保留审计记录。</p>
   </section>`;
 }
+const CONTEXT_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$/;
+const contextLimitHint = (modelId: string): string => {
+  const source = resolveContextLimitTokens({
+    modelId,
+    limits: settingsConfig?.modelContextLimits
+  }).source;
+  if (source === 'configured') return '已保存。对话接近这个上限时会压缩较早的工具记录。';
+  if (source === 'builtin') return '已按这个模型的公开上下文窗口填入。保存后固定为该模型的上限；接近上限时会压缩。';
+  return `这个模型没有公开窗口，先按 ${DEFAULT_CONTEXT_LIMIT_TOKENS} token。保存后固定为该模型的上限；接近上限时会压缩。`;
+};
+const renderActiveContextLimitField = (modelId: string): string => {
+  const tokens = resolveContextLimitTokens({
+    modelId,
+    limits: settingsConfig?.modelContextLimits
+  }).tokens;
+  return `<label class="settings-field"><span>上下文上限（token）</span><input name="contextLimitTokens" type="number" min="${MIN_CONTEXT_LIMIT_TOKENS}" max="${MAX_CONTEXT_LIMIT_TOKENS}" step="1" required value="${tokens}" data-role="context-limit-input" data-limit-model="${escapeHtml(modelId.trim())}"><small>${escapeHtml(contextLimitHint(modelId))}</small></label>`;
+};
+const syncActiveContextLimit = (modelId: string): void => {
+  const limitInput = app?.querySelector<HTMLInputElement>('[data-role="context-limit-input"]');
+  const next = modelId.trim();
+  if (!limitInput || limitInput.dataset.limitModel === next) return;
+  limitInput.dataset.limitModel = next;
+  limitInput.value = String(resolveContextLimitTokens({
+    modelId: next,
+    limits: settingsConfig?.modelContextLimits
+  }).tokens);
+  const hint = limitInput.parentElement?.querySelector('small');
+  if (hint) hint.textContent = contextLimitHint(next);
+};
+
 function renderRolesModelField(config: ModelConfig): string {
   const modelValue = config.model ?? '';
   const missing = modelMissingFromCatalog(modelValue, catalogSession.models, catalogLoaded);
@@ -1020,6 +1595,7 @@ function renderRolesModelField(config: ModelConfig): string {
                 <ul id="provider-catalog-model-options" class="catalog-model-list" data-catalog-model-list hidden role="listbox">${listItems}</ul>
                 <small class="catalog-model-missing"${missing ? '' : ' hidden'}>不在目录</small>
               </div></div>
+              ${renderActiveContextLimitField(modelValue)}
               <div class="settings-field catalog-fetch-field"><span>获取可用模型</span><button class="secondary-button" type="button" data-action="fetch-provider-models" ${fetchDisabled ? 'disabled' : ''}>${catalogSession.fetching ? '正在获取…' : '获取可用模型'}</button></div>
               <p class="settings-hint">目录来自已保存的模型连接；改 Provider / URL 后先保存，选项才会换一家。获取可用模型只更新目录，不会改上方模型值。点开箭头始终列出完整目录；也可手输。</p>`;
 }
@@ -1055,6 +1631,7 @@ function pickCatalogModel(modelId: string): void {
   const input = root?.querySelector<HTMLInputElement>('[data-role="catalog-model-input"]');
   if (!input) return;
   input.value = modelId;
+  syncActiveContextLimit(modelId);
   syncCatalogModelMissingHint(input);
   setCatalogModelListOpen(false);
   captureSettingsDraft();
@@ -1065,15 +1642,21 @@ function pickCatalogModel(modelId: string): void {
 
 function renderProviderCatalogPanel(): string {
   const rows = catalogSession.models;
+  const activeModel = settingsConfig?.model?.trim() ?? '';
   const providerLabel = catalogSession.providerKey || '未能识别';
   const fetchDisabled = catalogSession.fetching || catalogSaving || settingsSaving || Boolean(catalogSession.picker) || !desktopBridge.isNative();
   const rowHtml = rows.length
-    ? rows.map((model) => `<div class="catalog-list-row"><strong>${escapeHtml(model.displayName || model.id)}</strong><code>${escapeHtml(model.id)}</code></div>`).join('')
+    ? rows.map((model) => {
+        const limitCell = model.id === activeModel
+          ? '<span class="catalog-limit-note">与上方当前模型相同</span>'
+          : `<label class="catalog-limit"><span>上下文上限</span><input name="contextLimit:${escapeHtml(model.id)}" data-context-limit data-model-id="${escapeHtml(model.id)}" type="number" min="${MIN_CONTEXT_LIMIT_TOKENS}" max="${MAX_CONTEXT_LIMIT_TOKENS}" step="1" required value="${resolveContextLimitTokens({ modelId: model.id, limits: settingsConfig?.modelContextLimits }).tokens}"></label>`;
+        return `<div class="catalog-list-row catalog-list-row-limit"><strong>${escapeHtml(model.displayName || model.id)}</strong><code>${escapeHtml(model.id)}</code>${limitCell}</div>`;
+      }).join('')
     : '<div class="catalog-list-row catalog-list-empty"><span>这一家还没有模型目录。</span></div>';
   const notice = catalogSession.notice
     ? `<div class="settings-message ${catalogSession.noticeTone === 'success' ? 'settings-message-success' : 'settings-message-error'}" role="status">${escapeHtml(catalogSession.notice)}</div>`
     : '';
-  return `<section class="settings-group" id="settings-panel-catalog" data-settings-panel="catalog" aria-label="${escapeHtml(settingsSections.catalog.title)}">
+  return `<section class="settings-group" id="settings-panel-catalog" data-settings-panel="model" aria-label="模型目录">
     <h3>模型目录</h3>
     <div class="settings-card">
       <div class="settings-field settings-field-readonly"><span>当前提供方</span><output>${catalogLoading ? '正在读取…' : escapeHtml(providerLabel)}</output></div>
@@ -1081,7 +1664,7 @@ function renderProviderCatalogPanel(): string {
       <div class="settings-field catalog-fetch-field"><span>获取可用模型</span><button class="secondary-button" type="button" data-action="fetch-provider-models" ${fetchDisabled ? 'disabled' : ''}>${catalogSession.fetching ? '正在获取…' : '获取可用模型'}</button></div>
     </div>
     ${notice}
-    <p class="settings-hint">只拉取当前模型连接这一家。勾选确认后写入这一家的模型目录；取消或关闭不写入。已有显示名会保留。这里不会提交「模型连接」。</p>
+    <p class="settings-hint">只拉取当前模型连接这一家。勾选确认后写入这一家的模型目录；取消或关闭不写入。已有显示名会保留。每个模型单独有上下文上限，接近上限时会压缩较早的工具记录。这里不会提交「模型连接」。</p>
   </section>`;
 }
 
@@ -1161,6 +1744,7 @@ async function loadProviderCatalog(): Promise<void> {
   if (catalogLoading) return;
   catalogLoading = true;
   render();
+  syncComposerModelPicker();
   try {
     const snapshot = await desktopBridge.providerModelCatalog();
     if (!snapshot) {
@@ -1174,6 +1758,7 @@ async function loadProviderCatalog(): Promise<void> {
   } finally {
     catalogLoading = false;
     render();
+    syncComposerModelPicker();
   }
 }
 
@@ -1264,6 +1849,7 @@ const renderSettingsModal = (): string => {
                 <label class="settings-field"><span>会话 Header（可选）</span><input name="sessionHeader" value="${escapeHtml(config.sessionHeader ?? '')}" maxlength="120" spellcheck="false"></label>
               </div>
               </div><p class="settings-hint">API Key 从环境变量读取。已有的高级模型列表和角色绑定保持不变。</p></section>
+              ${renderProviderCatalogPanel()}
               <section class="settings-group" id="settings-panel-jev" data-settings-panel="jev" aria-label="Jev 决策平面">
                 <h3>Jev 决策平面</h3><div class="settings-card">
                 <div class="settings-grid">
@@ -1312,7 +1898,6 @@ const renderSettingsModal = (): string => {
               </footer></div>
             </form>`}
         </div>
-        <div class="settings-form settings-catalog">${renderProviderCatalogPanel()}</div>
         <div class="settings-form settings-archive">${renderSettingsArchivePanel()}</div>
         <p class="settings-empty" data-settings-empty hidden>没有找到匹配的设置，请尝试“已归档”“模型”或“验证”。</p>
       </div></section>
@@ -1357,9 +1942,12 @@ const openSettings = async (): Promise<void> => {
 const compactError = (error: unknown): string => {
   const raw = error instanceof Error ? error.message : String(error);
   const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? '';
-  const recoveryCode = firstLine.match(/\b(?:THREAD_RESUME_GOAL_REQUIRED|THREAD_RESUME_PLAN_INVALID|THREAD_RESUME_CHECKPOINT_UNAVAILABLE|PERSISTENCE_LOCK_TIMEOUT)\b/u)?.[0];
+  if (firstLine.startsWith('RECOVERY_WORKSPACE_CHANGED')) {
+    return '恢复前检测到工作区文件已变化，旧任务不能直接续跑；请从当前文件重新规划（RECOVERY_WORKSPACE_CHANGED）。';
+  }
+  const recoveryCode = firstLine.match(/\b(?:THREAD_RESUME_GOAL_REQUIRED|THREAD_RESUME_PLAN_INVALID|THREAD_RESUME_CHECKPOINT_UNAVAILABLE|PERSISTENCE_LOCK_TIMEOUT|RECOVERY_LINEAGE_INVALID)\b/u)?.[0];
   if (recoveryCode) return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
-  return firstLine.length > 240 ? `${firstLine.slice(0, 237)}...` : firstLine;
+  return firstLine.length > 800 ? `${firstLine.slice(0, 797)}...` : firstLine;
 };
 
 const appendErrorTimelineItem = (
@@ -1375,7 +1963,9 @@ const appendErrorTimelineItem = (
 };
 
 const formatTime = (timestamp: number): string =>
-  new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(timestamp);
+  Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(timestamp)
+    : '时间未记录';
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -1495,7 +2085,10 @@ const statusDisplayLabel = (value: unknown, fallback = '状态未读取'): strin
 };
 
 const toolDisplayLabel = (value: unknown): string => {
-  const key = typeof value === 'string' ? value.toLowerCase() : '';
+  const raw = typeof value === 'string' ? value.toLowerCase() : '';
+  // Kernel ops are the same workspace actions with a `kernel.` prefix and
+  // underscores (`kernel.workspace_focus`). Show them as the workspace tool.
+  const key = raw.startsWith('kernel.') ? raw.slice('kernel.'.length).replaceAll('_', '.') : raw;
   const labels: Record<string, string> = {
     'workspace.list': '查看工作区目录',
     'workspace.read': '读取工作区文件',
@@ -1507,9 +2100,13 @@ const toolDisplayLabel = (value: unknown): string => {
     'file.patch': '修改文件',
     'test.execute': '运行测试',
     'network.request': '发送网络请求',
+    'web.search': '搜索网页',
+    'web.fetch': '读取网页',
+    'browser.open': '打开网页',
     'memory.search': '搜索记忆',
     'memory.write': '保存记忆',
-    'kernel.exec': '代码 cell'
+    'kernel.exec': '代码 cell',
+    'user.clarify': '询问你'
   };
   return labels[key] ?? humanizeCode(value, '受控工具');
 };
@@ -1519,7 +2116,7 @@ const reasonDisplayLabel = (value: unknown): string => {
   const key = typeof value === 'string' ? value.toUpperCase() : '';
   const labels: Record<string, string> = {
     RULE_PATTERN_MISMATCH: '与当前任务不匹配', POLICY_ALLOWED: '当前策略允许其他路线',
-    THREAD_RESUME_GOAL_REQUIRED: '上次在生成计划前中断，且未保存原始任务文字。请补充具体目标后重新规划。',
+    THREAD_RESUME_GOAL_REQUIRED: '无法恢复这次运行的完整任务文字。请补充具体目标后继续。',
     THREAD_RESUME_PLAN_INVALID: '保存的进度不是有效执行计划，无法直接续跑。请补充任务目标后重新规划。',
     THREAD_RESUME_CHECKPOINT_UNAVAILABLE: '没有找到可恢复的进度，请重新输入任务目标。',
     PERSISTENCE_LOCK_TIMEOUT: '等待本地数据存储锁超时，任务未能继续。',
@@ -1527,18 +2124,39 @@ const reasonDisplayLabel = (value: unknown): string => {
     BOUNDED_EXECUTION_REQUIRED: '需要限制执行范围', OUTCOME_NOT_VERIFIED_SUCCESS: '上次结果尚未验证成功',
     EVIDENCE_GAP_REMAINS: '仍缺少必要证据', JEV_ACTION_GATE_NOT_ALLOW: '安全决策未允许该动作',
     TOOL_NOT_ALLOWED_IN_MODE: '当前模式不允许该工具', TOOL_DUPLICATE_REQUEST: '同一轮重复请求',
+    TOOL_ACTION_REQUIRES_EVIDENCE: '等待补充证据', TOOL_ACTION_BLOCKED_BY_JEV: 'JEV 拒绝', TOOL_ACTION_BLOCKED_BY_POLICY: '运行时规则拒绝',
     TOOL_EXECUTION_FAILED: '工具执行失败', FIXTURE_UNKNOWN_OUTCOME: '执行结果无法确认',
     COUNCIL_ACCEPT_PLAN: '审议通过计划', JUDGE_RETURNED_DECISION: '比较阶段返回决定', PROBE_SELECTED: '已选择探查方案',
     OWNER_PROCESS_LOST: '原执行进程已退出', CURRENT_RUNTIME_NOT_CONFIGURED: '当前运行时未配置',
     REMOTE_SOURCE_UNAVAILABLE: '远端恢复源不可用', POLICY_DENIED: '安全策略未允许',
-    INVALID_REQUEST: '请求格式不正确', TIMEOUT: '操作超时'
+    INVALID_REQUEST: '请求格式不正确', TIMEOUT: '操作超时',
+    EXECUTOR_SPAWN_FAILED: '命令进程未能启动，请检查工具安装、工作目录和系统权限。',
+    EXECUTOR_NODE_CLI_UNAVAILABLE: '当前 Node 安装缺少 npm/npx CLI，请修复 Node 安装后再试。',
+    BROWSER_NOT_INSTALLED: '浏览器组件未安装，页面没有打开。请在 dda 的 runtime 目录（里面有 node_modules/playwright）执行 npx playwright install chromium，装好后重新发起任务。',
+    BROWSER_RUNTIME_MISSING: '找不到 playwright 包，页面没有打开。请在 dda 的 runtime 目录执行 npm install，然后执行 npx playwright install chromium，再重试。',
+    BROWSER_NAVIGATION_TIMEOUT: '页面在时限内没有加载完。可以稍后重试，或改用网络请求读取同一个地址。',
+    BROWSER_NAVIGATION_FAILED: '页面没有打开，网络连接失败。请检查本机网络后重试，或改用网络请求读取同一个地址。',
+    BROWSER_URL_INVALID: '页面地址不是合法的 http(s) 链接。请换一个完整网址。',
+    BROWSER_TARGET_FORBIDDEN: '这个地址不能用浏览器打开。请换一个公网 http(s) 页面，或改用网络请求。',
+    BROWSER_WORKER_UNAVAILABLE: '浏览器进程没有启动。请重试；若仍失败，在 dda 的 runtime 目录执行 npx playwright install chromium。',
+    BROWSER_ALLOWLIST_INVALID: '还没有可用的网站许可，浏览器没有启动。',
+    BROWSER_WORKER_FAILED: '浏览器没有打开。',
+    TOOL_HANDLER_FAILED: '工具没有完成，具体原因没有留下来。',
+    RECOVERY_LINEAGE_INVALID: '恢复记录缺失或不一致，已阻止自动续跑。请先核对上次操作结果。',
+    SIDE_EFFECT_OUTCOME_UNCERTAIN: '上次操作在中途中断，那条命令不会重放。任务会从当前文件继续做完。',
+    CLARIFICATION_EXPIRED: '还没有收到补充说明，任务已停止，没有替你猜。',
+    CLARIFICATION_NO_LIVE_USER: '当前没有可以回答问题的界面，任务已停止。',
+    CLARIFICATION_CANCELLED: '补充说明已取消。',
+    SCOPE_VIOLATION: '执行范围校验未通过（命令或写入超出了授权范围，或执行期间 Git 元数据发生变化）。',
+    EXCERPT_AMBIGUOUS: '这段文字在文件里出现了多次，无法唯一定位。',
+    EXCERPT_NOT_FOUND: '文件里没有找到这段文字。',
+    KERNEL_OP_FAILED: '内核读取这一步没有完成。',
+    PATCH_MATCH_COUNT: '补丁没有对上当前文件内容。',
+    SAFETY_WORKSPACE_LEASE_BUSY: '工作区正在被其他操作占用，这次命令没有执行。',
+    ...WORKSPACE_REASON_LABELS
   };
   return labels[key] ?? humanizeCode(value, '未提供原因');
 };
-
-const riskDisplayLabel = (value: unknown): string => ({
-  LOW: '低', MEDIUM: '中', HIGH: '高', CRITICAL: '极高'
-}[typeof value === 'string' ? value.toUpperCase() : ''] ?? humanizeCode(value, '未评估'));
 
 const sensitivityDisplayLabel = (value: unknown): string => ({
   PUBLIC: '公开', INTERNAL: '内部', SENSITIVE: '敏感', RESTRICTED: '受限', SECURITY_AUDIT: '安全审计'
@@ -1553,7 +2171,7 @@ const phaseDisplayLabel = (value: unknown): string => {
   return labels[key] ?? humanizeCode(value, '当前阶段');
 };
 
-const shortDigest = (value?: string): string => value
+const shortDigest = (value?: string): string => typeof value === 'string' && value
   ? `${value.slice(0, 18)}${value.length > 18 ? '…' : ''}`
   : '';
 
@@ -1572,14 +2190,17 @@ const timelineIcon = (item: TimelineItem): string => {
   if (item.kind === 'USER') return 'user-round';
   if (item.kind === 'WORKSPACE') return 'folder-open';
   if (item.kind === 'ERROR') return 'circle-alert';
-  if (item.kind === 'STATUS') return item.status === 'COMPLETE' ? 'check-circle-2' : 'loader-circle';
+  if (item.kind === 'STATUS') return item.status === 'ERROR' ? 'x-circle' : item.status === 'COMPLETE' ? 'check-circle-2' : 'loader-circle';
   return 'bot';
 };
 
 const subAgentStateLabel = (state: SubAgentReadModel['state']): string => {
   const labels: Record<SubAgentReadModel['state'], string> = {
-    STARTING: '准备中',
+    STARTING: '等待调用',
     RUNNING: '运行中',
+    WAITING: '等待中',
+    SKIPPED: '未调用',
+    CLOSED: '已关闭',
     SUCCEEDED: '已完成',
     FAILED: '失败',
     CANCELLED: '已取消'
@@ -1610,6 +2231,14 @@ const executionTypeLabel = (recordType: RuntimeExecutionRecord['recordType']): s
   approval: '审批请求',
   lease: '一次性授权'
 }[recordType]);
+
+const executionRecordCopy = (record: RuntimeExecutionRecord, records: RuntimeExecutionRecord[] = executionRecords): { action: string; detail: string } => {
+  const copy = describeExecutionRecord(record, records);
+  return {
+    action: copy.action,
+    detail: copy.lines.map((line) => `<p class="execution-record-detail">${escapeHtml(line)}</p>`).join('')
+  };
+};
 
 const governanceStateLabel = (state: string): string => ({
   PROPOSED: '待审核',
@@ -1659,7 +2288,7 @@ const panelFields = (fields: Array<[string, unknown]>): string => `<dl class="pa
 const panelDate = (value?: number): string => value && Number.isFinite(value)
   ? new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '时间未记录';
 const panelPurpose = (text: string): string => `<p class="panel-purpose">${escapeHtml(text)}</p>`;
-const readableTaskClass = (value: string): string => ({ inspect: '检查与阅读', modify: '文件修改', test: '测试', code: '代码处理', unknown: '未分类' }[value] ?? humanizeCode(value, '未分类'));
+const readableTaskClass = (value: string): string => ({ inspect: '检查与阅读', modify: '文件修改', test: '测试', query: '查询', code: '代码处理', unknown: '未分类' }[value] ?? humanizeCode(value, '未分类'));
 const readableDecision = (value?: string): string => ({
   SELECT_ROUTE: '选择执行路线', SELECT_CONTEXT_PACK: '选择任务上下文', ALLOCATE_ROLE_CONTEXTS: '分配角色上下文', SELECT_TOPOLOGY: '选择协作方式', CREATE_PLAN: '制定执行计划', SELECT_SAFE_MODEL_FALLBACK: '选择备用模型', ACTION_GATE: '核对操作权限', SELECT_TOOL_ACTION: '选择工具操作', SELECT_CANDIDATE: '选择候选方案', VERIFY_BEHAVIOR: '检查执行行为', VERIFY_TASK_RESULT: '核对任务结果', DIAGNOSE_VERIFICATION: '分析核验失败原因', SELECT_PROBE: '选择补充检查', SELECT_RECOVERY_DIRECTION: '选择恢复方式', SELECT_CLARIFICATION_REQUEST: '确定需要补充的信息', SELECT_REPLAN_PLAN: '调整执行计划', RECOVER_TASK: '恢复任务',
   CLASSIFY_TASK: '识别任务类型', ROUTE_MODEL: '选择执行模型', RESOLVE_ROUTE: '选择执行路线',
@@ -1679,31 +2308,105 @@ type DisplayMemory = HarnessReadModel['memories'][number];
 // as knowledge. An edited statement no longer matching a template is preserved.
 const memoryActivityRecord = (memory: DisplayMemory): { title: string; note: string } | undefined => {
   const outcome = /^Verified task outcome: class=([^;]+); verifier=PASS; outputDigest=sha256:[a-f0-9]{64}$/.exec(memory.statement);
-  if (outcome) return { title: '任务检查通过的技术记录', note: '只记录检查结果和内容校验值，没有说明可供下次使用的做法。用于排查和追溯，不需要作为经验审核。' };
+  if (outcome) return { title: '任务检查通过的技术记录', note: '只记录检查结果和内容校验值，没有说明可供下次使用的做法。用于排查和追溯，不需要作为记忆审核。' };
   const run = /^Verified run used (.+); workspace entries=(\d+); toolCalls=(\d+)\.$/.exec(memory.statement);
-  if (run) return { title: '文件读取与工具调用统计', note: `记录了 ${run[2]} 个文件或文件夹、${run[3]} 次工具调用，仅供排查运行过程。没有提炼出可复用的经验，无需审核。` };
+  if (run) return { title: '文件读取与工具调用统计', note: `记录了 ${run[2]} 个文件或文件夹、${run[3]} 次工具调用，仅供排查运行过程。没有提炼出可复用的记忆，无需审核。` };
   return undefined;
 };
-const experienceMemories = (): DisplayMemory[] => model.memories.filter(memory => !memoryActivityRecord(memory));
-const memoryUsageHelp = (memory: DisplayMemory): string => memory.scope === 'workspace'
-  ? '启用后，Agent 处理这个项目的后续任务时，可以检索这条内容作为参考。'
-  : `启用后，Agent 可在“${memory.scope}”范围内检索这条内容作为参考。`;
+const allMemoryRecords = (): DisplayMemory[] => Array.isArray(model.memories) ? model.memories : [];
+const experienceMemories = (): DisplayMemory[] => allMemoryRecords().filter(memory => !memoryActivityRecord(memory));
+type ExperiencePlacement = 'skill' | 'memory' | 'skip';
+// Keep aligned with runtime/src/experience-placement.mjs.
+const experiencePlacement = (memory: { key?: string; kind?: string; statement?: string }): ExperiencePlacement => {
+  const key = memory.key ?? '';
+  const statement = memory.statement ?? '';
+  const kind = (memory.kind ?? '').toUpperCase();
+  if (/\.codex-tmp/i.test(key) || /\.codex-tmp/i.test(statement)) return 'skip';
+  if (kind === 'SKILL' || /^(?:workflow:cmd:|workflow:skip:|workflow:timeout:|project:files:)/.test(key) || /^(?:项目命令经验|本轮经验|构建时限经验|项目改动经验)/.test(statement)) return 'skill';
+  return 'memory';
+};
+const reviewableExperiences = (): DisplayMemory[] => experienceMemories().filter((memory) => experiencePlacement(memory) !== 'skip');
+const experienceInEffect = (memory: DisplayMemory): boolean => experiencePlacement(memory) !== 'skip' && ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status);
+const pendingExperienceCount = (): number => 0;
+const skillProjectName = (memory: { workspacePath?: string }): string => {
+  const path = memory.workspacePath?.trim();
+  if (!path) return '';
+  const main = mainCheckoutForTaskWorktree(path);
+  const name = catalogProjectForPath(path)?.name
+    ?? (main ? catalogProjectForPath(main)?.name : undefined)
+    ?? projectNameForPath(main ?? path);
+  return name === '未命名项目' ? '' : name.slice(0, 80);
+};
+const experienceTitle = (memory: DisplayMemory): string => {
+  const placement = experiencePlacement(memory);
+  if (placement === 'skill') {
+    const name = skillProjectName(memory);
+    return name ? `${name} 的一条技能` : '一条项目技能';
+  }
+  if (placement === 'skip') return '一次性临时命令';
+  return '供以后参考的一条记忆';
+};
+const syncExperienceNavCount = (): void => {
+  const button = app?.querySelector<HTMLButtonElement>('.context-page-nav [data-page="memory"]');
+  if (!button) return;
+  const count = pendingExperienceCount();
+  const hint = button.querySelector('small');
+  if (hint) hint.textContent = count > 0 ? `${count} 条待审核` : '想看时再打开';
+  let badge = button.querySelector<HTMLElement>('[data-experience-count]');
+  if (count <= 0) {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('em');
+    badge.className = 'nav-count';
+    badge.dataset.experienceCount = '';
+    button.append(badge);
+  }
+  badge.textContent = String(count);
+};
+const memoryUsageHelp = (memory: DisplayMemory): string => {
+  const placement = experiencePlacement(memory);
+  if (placement === 'skill') {
+    const name = skillProjectName(memory);
+    return name
+      ? `已经生效。Agent 在“${name}”里做同类任务时，会按这里的目录、命令和时限执行。`
+      : '已经生效。来源项目没有记下来，所以不能确定它属于哪个目录。';
+  }
+  if (placement === 'skip') return '这是一次性临时命令，不做成技能，也不放进记忆。';
+  return memory.scope === 'workspace'
+    ? '已经生效。Agent 处理后续任务时，可以把这条事实当作参考。它不绑定某一次项目命令。'
+    : `已经生效。Agent 可在“${memory.scope}”范围内把这条事实当作参考。`;
+};
 const memoryStatusLabel = (status: string): string => ({ PROPOSED: '待你核对 · 尚未启用', VERIFIED: '已核验 · 等待启用', ACTIVE: '已启用', RETRACTED: '已停止使用', REJECTED: '不采用', EXPIRED: '已过期', PRUNED: '已清理' } as Record<string, string>)[status] ?? governanceStateLabel(status);
-const memoryExplanation = (memory: DisplayMemory): string => panelFields([
-  ['记住什么', memory.statement || '这条记录没有提供具体内容，请先补充。'],
-  ['有什么用', memoryUsageHelp(memory)],
-  ['现在怎么做', memoryStateHelp(memory.status)]
-]);
-const memoryStateHelp = (status: string): string => ({
-  PROPOSED: '第 1 步：打开“来源与保存信息”，确认内容准确、来源对应、以后确实有帮助。确认无误后点“确认已核验”；不准确或不想保留就点“不采用”。',
-  VERIFIED: '第 2 步：内容已经核验。点“启用记忆”后，Agent 才会在后续任务中参考它。',
-  ACTIVE: 'Agent 已经可以参考这条内容。不再适用时，点“停止使用”；记录仍会保留。',
-  REJECTED: '已拒绝收录，不会作为有效记忆使用。', RETRACTED: '已撤回，后续任务不再使用。',
-  EXPIRED: '已过期，需要重新核对内容和适用范围。'
-} as Record<string, string>)[status] ?? '状态详情见下方记录。';
+const experienceStatusLabel = (memory: DisplayMemory): string => experienceInEffect(memory) ? '已生效' : memoryStatusLabel(memory.status);
+const memoryExplanation = (memory: DisplayMemory): string => {
+  const projectName = experiencePlacement(memory) === 'skill' ? skillProjectName(memory) : '';
+  const project = projectName
+    ? `${projectName}（${memory.workspacePath}）`
+    : experiencePlacement(memory) === 'skill' ? '未记录来源项目' : '';
+  return panelFields([
+    ...(project ? [['所属项目', project] as [string, unknown]] : []),
+    ['记住什么', memory.statement || '这条记录没有提供具体内容，请先补充。'],
+    ['有什么用', memoryUsageHelp(memory)],
+    ['现在怎么做', memoryStateHelp(memory)]
+  ]);
+};
+const memoryStateHelp = (memory: DisplayMemory): string => {
+  const placement = experiencePlacement(memory);
+  const noun = placement === 'skill' ? '技能' : '记忆';
+  if (placement === 'skip') return '这是一次性临时命令。不做成技能，也不放进记忆，可以删除。';
+  if (experienceInEffect(memory)) return `已经在用。想看的时候打开来源即可。不再合适时点“停止使用”，记录仍会保留。`;
+  return ({
+    REJECTED: `已拒绝收录，不会作为有效${noun}使用。`,
+    RETRACTED: '已停止使用，后续任务不再参考。',
+    EXPIRED: '已过期，后续任务不再参考。'
+  } as Record<string, string>)[memory.status] ?? '状态详情见下方记录。';
+};
 const memoryReviewGuide = (memory: DisplayMemory): string => {
-  if (memory.status === 'PROPOSED') return '<div class="task-guidance memory-review-guide" data-memory-review-step="verify"><strong>第 1 步：先核对这条经验</strong><p>请先读“记住什么”，再打开“来源与保存信息”。按这三点判断：内容是否准确、来源是否对应这次任务、以后是否值得参考。</p><p class="task-current-goal">确认没问题后点“确认已核验”；发现错误、敏感信息或无法确认来源，就点“不采用”。</p></div>';
-  if (memory.status === 'VERIFIED') return '<div class="task-guidance task-guidance-active memory-review-guide" data-memory-review-step="activate"><strong>第 2 步：决定是否让 Agent 使用</strong><p>这条经验已经通过你的核对，但 Agent 目前还不会使用它。</p><p class="task-current-goal">确认以后确实要作为项目参考，再点“启用记忆”；不想使用时可以先保留在这里。</p></div>';
+  const placement = experiencePlacement(memory);
+  if (placement === 'skip') return '<div class="task-guidance memory-review-guide" data-memory-review-step="skip"><strong>不收录</strong><p>这是临时核对命令，只对当时那次检查有用。不做成技能，也不放进记忆。</p><p class="task-current-goal">可以删除这条记录。</p></div>';
+  if (experienceInEffect(memory)) return '<div class="task-guidance task-guidance-active memory-review-guide" data-memory-review-step="active"><strong>已经生效</strong><p>不需要先核验。想看的时候打开来源即可。</p><p class="task-current-goal">不对的话，点“停止使用”。</p></div>';
   return '';
 };
 const panelSources = (runId?: string, eventIds: string[] = []): string => {
@@ -1721,22 +2424,20 @@ const panelState = (status: string, label = governanceStateLabel(status)): strin
 const renderExperienceActions = (memory: DisplayMemory, surface: string): string => {
   const id = escapeHtml(memory.memoryId);
   const button = (operation: string, label: string, extra = '', tone = ''): string => `<button class="governance-button ${tone}" data-action="memory-action" data-operation="${operation}" data-memory-id="${id}" ${extra}>${label}</button>`;
-  const primary = memory.status === 'PROPOSED'
-    ? button('verify', '确认已核验', 'data-accepted="true"', 'governance-button-primary') + button('verify', '不采用', 'data-accepted="false"')
-    : memory.status === 'VERIFIED' ? button('activate', '启用记忆', '', 'governance-button-primary')
-    : memory.status === 'ACTIVE' ? button('retract', '停止使用') : '';
+  const placement = experiencePlacement(memory);
+  const primary = placement !== 'skip' && experienceInEffect(memory) ? button('retract', '停止使用') : '';
   const conflict = memory.conflictsWithMemoryIds?.length ? button('resolve-conflict', '处理内容冲突', '', 'governance-button-warning') : '';
   const editable = ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(memory.status);
   return `<div class="governance-actions">${primary}${conflict}</div>${editable ? panelDetails(`memory-actions:${surface}:${memory.memoryId}`, '修改内容或删除记录', `<div class="governance-actions"><button class="governance-button" data-action="memory-edit" data-memory-id="${id}">修改这条内容</button>${button('delete', '删除记录', '', 'governance-button-danger')}</div>`, surface === 'page') : ''}`;
 };
 const renderMemoryActivityArchive = (surface: 'panel' | 'page'): string => {
-  const records = model.memories.filter(memory => memoryActivityRecord(memory)).slice().sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  const records = allMemoryRecords().filter(memory => memoryActivityRecord(memory)).slice().sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0));
   if (!records.length) return '';
   const pageCount = Math.max(1, Math.ceil(records.length / 8));
   memoryRecordPage = Math.min(memoryRecordPage, pageCount);
   const visible = surface === 'panel' ? records.slice(0, 3) : records.slice((memoryRecordPage - 1) * 8, memoryRecordPage * 8);
-  return contextGroup(`memory-records:${surface}`, '自动生成的技术记录', '只用于排查运行过程，没有具体经验内容，无需逐条审核。',
-    panelPurpose('这些原始记录仍然保留，未被删除。它们不计入上面的经验数量；如果旧记录曾被启用，可以在这里停止使用。')
+  return contextGroup(`memory-records:${surface}`, '自动生成的技术记录', '只用于排查运行过程，没有具体记忆内容，无需逐条审核。',
+    panelPurpose('这些原始记录仍然保留，未被删除。它们不计入上面的记忆数量；如果旧记录曾被启用，可以在这里停止使用。')
     + visible.map(memory => {
       const copy = memoryActivityRecord(memory)!;
       return `<article class="panel-card" data-memory-id="${escapeHtml(memory.memoryId)}"><strong>${escapeHtml(copy.title)}</strong><p class="panel-note">${escapeHtml(copy.note)}</p><p class="panel-note">${escapeHtml(panelDate(memory.updatedAtMs))}</p>
@@ -1747,8 +2448,8 @@ const renderMemoryActivityArchive = (surface: 'panel' | 'page'): string => {
       : pageCount > 1 ? `<nav class="governance-actions" aria-label="技术记录分页"><button class="governance-button" data-action="memory-record-page" data-delta="-1" ${memoryRecordPage === 1 ? 'disabled' : ''}>上一页</button><span>第 ${memoryRecordPage} / ${pageCount} 页</span><button class="governance-button" data-action="memory-record-page" data-delta="1" ${memoryRecordPage === pageCount ? 'disabled' : ''}>下一页</button></nav>` : ''), `${records.length} 条 · 供维护人员查阅`);
 };
 
-// The dashboard reports version lifecycle facts directly; the plugin list
-// command is the fallback for the manual governance refresh path.
+// The dashboard reports version lifecycle facts directly; the lifecycle
+// snapshot remains only as a residual fallback when summaries are absent.
 const pluginVersionSummaries = (
   versions: RuntimePluginVersionSummary[] | undefined,
   snapshot: RuntimePluginVersionLifecycleSnapshot | undefined
@@ -1777,6 +2478,7 @@ const decisionOptionDisplayLabel = (optionId: string): string => ({
   'classify-inspect': '任务类型：检查与阅读',
   'classify-modify': '任务类型：修改文件',
   'classify-test': '任务类型：运行测试',
+  'classify-query': '任务类型：查询',
   'classify-unknown': '任务类型：暂时无法识别',
   'route-selected': '执行路径：允许继续',
   'route-blocked': '执行路径：在安全检查处停止',
@@ -1914,13 +2616,19 @@ const appendVerificationChecks = (current: HarnessReadModel, checks: unknown, ru
     const check = value as Record<string, unknown>;
     const status = typeof check.status === 'string' && ['PASS', 'FAIL', 'UNKNOWN', 'SKIPPED'].includes(check.status) ? check.status : 'UNKNOWN';
     const evidence = Array.isArray(check.evidence) ? check.evidence.filter((ref): ref is string => typeof ref === 'string') : [];
+    const message = typeof check.message === 'string' ? check.message : '未提供检查说明';
+    const verificationReason = check.id === 'external-evidence' ? 'EXTERNAL_EVIDENCE_MISSING'
+      : check.id === 'jev-behavior-judge' ? message : undefined;
+    const reasonCopy = verificationReason && Object.hasOwn(verificationFailureCopy, verificationReason)
+      ? verificationFailureCopy[verificationReason] : undefined;
     next = appendTimelineItem(next, {
       kind: 'STATUS', evidenceKind: 'rule-verification-check', sourceRole: 'runtime-rule-verifier', runId,
       title: statusDisplayLabel(status) + ' · ' + (typeof check.id === 'string' ? check.id : '未提供检查标识'),
-      body: [typeof check.message === 'string' ? check.message : '未提供检查说明',
+      body: reasonCopy ?? [message,
         status === 'SKIPPED' ? '此项未执行，不代表检查通过。' : status === 'UNKNOWN' ? '此项证据不足，不能视为通过。' : undefined,
         evidence.length ? '证据引用：\n' + evidence.join('\n') : '未提供证据引用'
       ].filter(Boolean).join('\n'),
+      ...(reasonCopy ? { diagnosticDetail: [message, ...evidence].join('\n') } : {}),
       status: status === 'PASS' ? 'COMPLETE' : status === 'FAIL' ? 'ERROR' : 'PENDING'
     });
   }
@@ -1935,19 +2643,354 @@ const verificationRunId = (): string | undefined => historyView && !model.active
   ? [...model.timeline].reverse().find(item => item.runId)?.runId
   : focusedRunId ?? activeRuntimeRunId ?? model.activeRun?.runId;
 
+const persistTaskComposerModels = (): void => {
+  try { localStorage.setItem(TASK_COMPOSER_MODEL_STORAGE_KEY, JSON.stringify(taskComposerModels)); }
+  catch { /* storage may be unavailable */ }
+};
+const rememberTaskComposerModel = (threadId: string | undefined, modelId: string): void => {
+  const id = threadId?.trim() ?? '';
+  const chosen = modelId.trim();
+  if (!id || !chosen || taskComposerModels[id] === chosen) return;
+  taskComposerModels = { ...taskComposerModels, [id]: chosen };
+  persistTaskComposerModels();
+};
+const viewedComposerThreadId = (): string | undefined => {
+  if (historyView?.threadId) return historyView.threadId;
+  const session = sessionController.selected();
+  return session?.threadId || session?.currentRunThreadId || model.activeThreadId;
+};
+const currentComposerModelId = (): string => {
+  const session = sessionController.selected();
+  const threadId = viewedComposerThreadId();
+  return resolveTaskComposerModel({
+    sessionModelId: session?.composerModelId,
+    sessionThreadId: session?.threadId || session?.currentRunThreadId,
+    historyThreadId: historyView?.threadId,
+    rememberedModelId: threadId ? taskComposerModels[threadId] : undefined,
+    defaultModelId: settingsConfig?.model || model.runtime.model?.model || ''
+  });
+};
+const dismissComposerModelMenu = (): void => {
+  if (!composerModelOpen) return;
+  composerModelOpen = false;
+};
+
+const composerModelOptionsHtml = (): string => {
+  const current = currentComposerModelId();
+  const known = new Set(catalogSession.models.map((entry) => entry.id));
+  const entries = [
+    ...(current && !known.has(current) ? [{ id: current, displayName: current }] : []),
+    ...catalogSession.models
+  ];
+  if (!entries.length) {
+    return `<li class="composer-model-empty" role="presentation"><span>${catalogLoading ? '正在读取模型…' : '还没有模型目录'}</span></li>`;
+  }
+  return entries.map((entry) => {
+    const label = catalogModelLabel(entry);
+    return `<li role="presentation"><button type="button" class="composer-model-option${entry.id === current ? ' active' : ''}" role="option" aria-selected="${entry.id === current}" data-action="pick-composer-model" data-model-id="${escapeHtml(entry.id)}">${escapeHtml(label)}</button></li>`;
+  }).join('');
+};
+
+const renderComposerModelPicker = (): string => {
+  const current = currentComposerModelId();
+  const provider = model.runtime.model?.provider ?? '';
+  const label = current || '选择模型';
+  return `<div class="composer-model" data-composer-model>
+    <button type="button" class="composer-model-button" data-action="toggle-composer-model" aria-haspopup="listbox" aria-expanded="${composerModelOpen}" title="${escapeHtml(provider ? `${provider} · ${current}` : (current || '选择这个任务使用的模型'))}" ${desktopBridge.isNative() ? '' : 'disabled'}>
+      <i data-lucide="cpu"></i><span data-composer-model-label>${escapeHtml(label)}</span><i data-lucide="chevron-down"></i>
+    </button>
+    <ul class="composer-model-list" data-composer-model-list role="listbox" aria-label="选择模型" ${composerModelOpen ? '' : 'hidden'}>${composerModelOptionsHtml()}</ul>
+  </div>`;
+};
+
+// The workbench keeps its shell while a task is on screen, so render() does not
+// rebuild the composer. Open, close, and label changes have to land on this node.
+const syncComposerModelPicker = (): void => {
+  const root = app?.querySelector<HTMLElement>('[data-composer-model]');
+  if (!root) return;
+  const button = root.querySelector<HTMLButtonElement>('.composer-model-button');
+  const list = root.querySelector<HTMLElement>('[data-composer-model-list]');
+  if (!button || !list) return;
+  const current = currentComposerModelId();
+  const provider = model.runtime.model?.provider ?? '';
+  button.disabled = !desktopBridge.isNative();
+  button.setAttribute('aria-expanded', composerModelOpen ? 'true' : 'false');
+  button.title = provider && current ? `${provider} · ${current}` : (current || '选择这个任务使用的模型');
+  const label = button.querySelector<HTMLElement>('[data-composer-model-label]');
+  if (label) label.textContent = current || '选择模型';
+  list.hidden = !composerModelOpen;
+  const options = composerModelOptionsHtml();
+  if (list.innerHTML !== options) list.innerHTML = options;
+  root.querySelector('.composer-model-error')?.remove();
+};
+
+const selectComposerModel = (modelId: string): void => {
+  const id = modelId.trim();
+  if (!desktopBridge.isNative() || !id || id === currentComposerModelId()) {
+    composerModelOpen = false;
+    syncComposerModelPicker();
+    return;
+  }
+  const session = sessionController.selected();
+  const threadId = viewedComposerThreadId();
+  if (session && composerChoiceBindsSession(session.threadId || session.currentRunThreadId, historyView?.threadId)) {
+    session.composerModelId = id;
+  }
+  rememberTaskComposerModel(threadId, id);
+  composerModelOpen = false;
+  syncComposerModelPicker();
+};
+
+type SessionModelStats = {
+  calls: number;
+  steps: number;
+  inputTokens: number;
+  cacheReportedCalls: number;
+  cacheEligibleInputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  generationMs: number;
+  ttftMs: number;
+  ttftSamples: number;
+  toolLatencyMs: number;
+  usageReportedCalls: number;
+  latestInputTokens?: number;
+  contextLimitTokens?: number;
+  latestSystemChars?: number;
+  latestToolsChars?: number;
+  latestMessageChars?: number;
+};
+type SessionStatsPanel = '' | 'session' | 'tokens' | 'context';
+const sessionModelStats = new Map<string, SessionModelStats>();
+const sessionToolStarts = new Map<string, Map<string, number>>();
+let sessionUsageRevision = 0;
+let sessionStatsPanel: SessionStatsPanel = '';
+const emptySessionStats = (): SessionModelStats => ({
+  calls: 0, steps: 0, inputTokens: 0, cacheReportedCalls: 0, cacheEligibleInputTokens: 0, cachedInputTokens: 0,
+  outputTokens: 0, latencyMs: 0, generationMs: 0, ttftMs: 0, ttftSamples: 0, toolLatencyMs: 0, usageReportedCalls: 0
+});
+const finiteCount = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : undefined;
+const mergeSessionStats = (left: SessionModelStats, right: SessionModelStats): SessionModelStats => ({
+  calls: left.calls + right.calls,
+  steps: left.steps + right.steps,
+  inputTokens: left.inputTokens + right.inputTokens,
+  cacheReportedCalls: left.cacheReportedCalls + right.cacheReportedCalls,
+  cacheEligibleInputTokens: left.cacheEligibleInputTokens + right.cacheEligibleInputTokens,
+  cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
+  outputTokens: left.outputTokens + right.outputTokens,
+  latencyMs: left.latencyMs + right.latencyMs,
+  generationMs: left.generationMs + right.generationMs,
+  ttftMs: left.ttftMs + right.ttftMs,
+  ttftSamples: left.ttftSamples + right.ttftSamples,
+  toolLatencyMs: left.toolLatencyMs + right.toolLatencyMs,
+  usageReportedCalls: left.usageReportedCalls + right.usageReportedCalls,
+  latestInputTokens: right.latestInputTokens ?? left.latestInputTokens,
+  contextLimitTokens: right.contextLimitTokens ?? left.contextLimitTokens,
+  latestSystemChars: right.latestSystemChars ?? left.latestSystemChars,
+  latestToolsChars: right.latestToolsChars ?? left.latestToolsChars,
+  latestMessageChars: right.latestMessageChars ?? left.latestMessageChars
+});
+const sessionUsageKeyFor = (ownerId: string): string => {
+  const threadId = model.activeThreadId || currentRunThreadId;
+  return threadId ? `thread:${threadId}` : `session:${ownerId}`;
+};
+const sessionUsageKey = (): string => sessionUsageKeyFor(sessionController.selectedId);
+const formatTokenCount = (value: number): string => {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return value.toLocaleString('zh-CN');
+};
+const formatDuration = (ms: number): string => {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+};
+const touchSessionUsage = (ownerId: string): void => {
+  sessionUsageRevision += 1;
+  if (ownerId === sessionController.selectedId) refreshComposerCache();
+};
+const addSessionModelUsage = (key: string, payload: Record<string, unknown>): void => {
+  const inputTokens = finiteCount(payload.inputTokens);
+  const outputTokens = finiteCount(payload.outputTokens);
+  const cachedInputTokens = finiteCount(payload.cachedInputTokens);
+  const latencyMs = finiteCount(payload.latencyMs);
+  const ttftMs = finiteCount(payload.ttftMs);
+  const usageReported = inputTokens !== undefined || outputTokens !== undefined;
+  const current = sessionModelStats.get(key) ?? emptySessionStats();
+  const next: SessionModelStats = {
+    ...current,
+    calls: current.calls + 1,
+    usageReportedCalls: current.usageReportedCalls + (usageReported ? 1 : 0),
+    inputTokens: current.inputTokens + (inputTokens ?? 0),
+    outputTokens: current.outputTokens + (outputTokens ?? 0),
+    latencyMs: current.latencyMs + (latencyMs ?? 0),
+    latestInputTokens: inputTokens ?? current.latestInputTokens,
+    contextLimitTokens: finiteCount(payload.contextLimitTokens) ?? current.contextLimitTokens,
+    latestSystemChars: finiteCount(payload.systemChars) ?? current.latestSystemChars,
+    latestToolsChars: finiteCount(payload.toolsChars) ?? current.latestToolsChars,
+    latestMessageChars: finiteCount(payload.messageChars) ?? current.latestMessageChars
+  };
+  if (latencyMs !== undefined && outputTokens !== undefined && outputTokens > 0) {
+    const generation = ttftMs !== undefined && ttftMs < latencyMs ? latencyMs - ttftMs : latencyMs;
+    next.generationMs += generation;
+  }
+  if (ttftMs !== undefined) {
+    next.ttftMs += ttftMs;
+    next.ttftSamples += 1;
+  }
+  if (payload.cacheReported === true && inputTokens !== undefined && cachedInputTokens !== undefined) {
+    next.cacheReportedCalls += 1;
+    next.cacheEligibleInputTokens += inputTokens;
+    next.cachedInputTokens += Math.min(cachedInputTokens, inputTokens);
+  }
+  sessionModelStats.set(key, next);
+};
+const rekeySessionUsage = (fromKey: string, toKey: string): void => {
+  if (fromKey === toKey) return;
+  const from = sessionModelStats.get(fromKey);
+  const starts = sessionToolStarts.get(fromKey);
+  if (!from && !starts) return;
+  if (from) {
+    const to = sessionModelStats.get(toKey);
+    sessionModelStats.set(toKey, to ? mergeSessionStats(to, from) : from);
+    sessionModelStats.delete(fromKey);
+  }
+  if (starts) {
+    const dest = sessionToolStarts.get(toKey) ?? new Map<string, number>();
+    for (const [id, at] of starts) dest.set(id, at);
+    sessionToolStarts.set(toKey, dest);
+    sessionToolStarts.delete(fromKey);
+  }
+};
+const noteSessionTool = (key: string, kind: string, callId: string, atMs: number): void => {
+  const starts = sessionToolStarts.get(key) ?? new Map<string, number>();
+  sessionToolStarts.set(key, starts);
+  if (kind === 'tool.call_requested') {
+    if (callId) starts.set(callId, atMs);
+    return;
+  }
+  const current = sessionModelStats.get(key) ?? emptySessionStats();
+  const started = callId ? starts.get(callId) : undefined;
+  if (callId) starts.delete(callId);
+  sessionModelStats.set(key, {
+    ...current,
+    steps: current.steps + 1,
+    toolLatencyMs: current.toolLatencyMs + (started !== undefined ? Math.max(0, atMs - started) : 0)
+  });
+};
+const sessionCacheRate = (stats: SessionModelStats | undefined): string =>
+  stats && stats.cacheReportedCalls > 0 && stats.cacheEligibleInputTokens > 0
+    ? `${((stats.cachedInputTokens / stats.cacheEligibleInputTokens) * 100).toFixed(1)}%`
+    : '未知';
+const sessionTokensPerSecond = (stats: SessionModelStats | undefined): number | undefined =>
+  stats && stats.outputTokens > 0 && stats.generationMs > 0
+    ? Math.round(stats.outputTokens / (stats.generationMs / 1000))
+    : undefined;
+const contextOccupancy = (used: number, limit: number): string => {
+  const pct = used / limit * 100;
+  if (!Number.isFinite(pct) || pct < 0) return '0%';
+  if (pct >= 10) return `${Math.round(pct)}%`;
+  if (pct >= 1) return `${pct.toFixed(1)}%`;
+  return `${pct.toFixed(2)}%`;
+};
+const activeContextLimit = (stats: SessionModelStats | undefined): number | undefined => {
+  if (stats?.contextLimitTokens) return stats.contextLimitTokens;
+  const modelId = currentComposerModelId().trim();
+  if (!modelId) return undefined;
+  return resolveContextLimitTokens({
+    modelId,
+    limits: settingsConfig?.modelContextLimits
+  }).tokens;
+};
+const contextShares = (stats: SessionModelStats | undefined): { system: number; tools: number; messages: number } | undefined => {
+  const input = stats?.latestInputTokens;
+  const system = stats?.latestSystemChars ?? 0;
+  const tools = stats?.latestToolsChars ?? 0;
+  const messages = stats?.latestMessageChars ?? 0;
+  const total = system + tools + messages;
+  if (input === undefined || input <= 0 || total <= 0) return undefined;
+  const scale = (part: number): number => Math.round(input * part / total);
+  return { system: scale(system), tools: scale(tools), messages: scale(messages) };
+};
+const statsRow = (label: string, value: string): string =>
+  `<div class="session-stats-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+const renderSessionStatsPopover = (panel: SessionStatsPanel, stats: SessionModelStats | undefined): string => {
+  if (!panel) return '';
+  const rate = sessionCacheRate(stats);
+  const speed = sessionTokensPerSecond(stats);
+  const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
+  const uncached = Math.max(0, (stats?.cacheEligibleInputTokens ?? 0) - (stats?.cachedInputTokens ?? 0));
+  if (panel === 'session') {
+    const ttft = stats && stats.ttftSamples > 0 ? formatDuration(stats.ttftMs / stats.ttftSamples) : '未知';
+    return `<div class="session-stats-popover" role="dialog" aria-label="会话统计"><h3><i data-lucide="gauge"></i>会话统计</h3>${statsRow('模型用时', stats && stats.calls > 0 ? formatDuration(stats.latencyMs) : '未知')}${statsRow('工具调用用时', stats && stats.steps > 0 ? formatDuration(stats.toolLatencyMs) : '未知')}${statsRow('首 token 平均（TTFT）', ttft)}${statsRow('输出速度（TPS）', speed === undefined ? '未知' : `${speed.toLocaleString('zh-CN')} tok/s`)}</div>`;
+  }
+  if (panel === 'tokens') {
+    const tokenHeading = !stats || stats.calls === 0
+      ? '未知'
+      : stats.usageReportedCalls === 0 ? '用量未返回' : `${totalTokens.toLocaleString('zh-CN')} tok`;
+    return `<div class="session-stats-popover" role="dialog" aria-label="Token 用量"><h3><i data-lucide="database"></i>Token 用量<strong>${tokenHeading}</strong></h3>${statsRow('缓存命中', rate)}${statsRow('未缓存输入', stats && stats.cacheReportedCalls > 0 ? `${uncached.toLocaleString('zh-CN')} tok` : '未知')}${statsRow('缓存读取', stats && stats.cacheReportedCalls > 0 ? `${(stats.cachedInputTokens).toLocaleString('zh-CN')} tok` : '未知')}${statsRow('输出', stats && stats.usageReportedCalls > 0 ? `${stats.outputTokens.toLocaleString('zh-CN')} tok` : '未知')}</div>`;
+  }
+  const shares = contextShares(stats);
+  const used = stats?.latestInputTokens;
+  const limit = activeContextLimit(stats);
+  const occupancy = used !== undefined && limit ? contextOccupancy(used, limit) : undefined;
+  const systemChars = stats?.latestSystemChars ?? 0;
+  const toolsChars = stats?.latestToolsChars ?? 0;
+  const messageChars = stats?.latestMessageChars ?? 0;
+  const promptChars = systemChars + toolsChars + messageChars;
+  const segmentWidth = (part: number): string => {
+    const denom = limit && limit > 0 ? limit : used;
+    if (!denom) return '0%';
+    return `${Math.min(100, Math.round(part / denom * 100))}%`;
+  };
+  const bar = shares && used
+    ? `<div class="session-stats-bar" aria-hidden="true"><i style="width:${segmentWidth(shares.system)}"></i><i style="width:${segmentWidth(shares.tools)}"></i><i style="width:${segmentWidth(shares.messages)}"></i></div>`
+    : '';
+  const heading = used !== undefined && limit
+    ? `${formatTokenCount(used)} / ${formatTokenCount(limit)}`
+    : used !== undefined
+      ? `${formatTokenCount(used)} tok`
+      : promptChars > 0 ? `约 ${formatTokenCount(promptChars)} 字符` : '未知';
+  const limitNote = limit
+    ? `<p class="session-stats-note">上限 ${formatTokenCount(limit)} tok${occupancy ? `，占用 ${occupancy}` : ''}。接近上限时会压缩较早的工具记录。</p>`
+    : '<p class="session-stats-note">分段按字符比例分摊到服务商返回的输入令牌。</p>';
+  const body = shares
+    ? `${occupancy && limit && used !== undefined ? statsRow('占用', `${formatTokenCount(used)} / ${formatTokenCount(limit)} · ${occupancy}`) : ''}${statsRow('系统提示词', `约 ${formatTokenCount(shares.system)}`)}${statsRow('工具定义', `约 ${formatTokenCount(shares.tools)}`)}${statsRow('对话消息', `约 ${formatTokenCount(shares.messages)}`)}${limitNote}`
+    : promptChars > 0
+      ? `${statsRow('系统提示词', `${formatTokenCount(systemChars)} 字符`)}${statsRow('工具定义', `${formatTokenCount(toolsChars)} 字符`)}${statsRow('对话消息', `${formatTokenCount(messageChars)} 字符`)}${limit ? limitNote : '<p class="session-stats-note">这次请求没有返回令牌用量，所以按字符显示最近一次输入。</p>'}`
+      : statsRow('构成', '这次调用没有可分摊的提示词长度');
+  return `<div class="session-stats-popover" role="dialog" aria-label="上下文"><h3><i data-lucide="cpu"></i>上下文<strong>${heading}</strong></h3><p class="session-stats-note">最近一次输入。</p>${bar}${body}</div>`;
+};
 const renderComposerCache = (): string => {
-  const usage = model.modelUsage;
-  const rate = usage?.status === 'REPORTED' && usage.cacheHitRate !== null
-    ? `${(usage.cacheHitRate * 100).toFixed(1)}%` : '未知';
-  const detail = !usage || usage.calls === 0
-    ? '暂无记录'
-    : usage.status !== 'REPORTED'
-      ? '服务商未返回缓存统计'
-      : `命中 ${usage.cachedInputTokens.toLocaleString()} / 可统计输入 ${usage.cacheEligibleInputTokens.toLocaleString()} 个令牌 · 覆盖 ${usage.cacheReportedCalls}/${usage.calls} 次调用`;
-  return `<span class="cache-metric"><i data-lucide="gauge"></i>缓存命中率 <strong>${rate}</strong></span><span class="cache-detail">${escapeHtml(detail)}</span><span class="cache-scope" title="累计已记录的模型调用；历史缺失数据不按零计算。">调用累计</span>`;
+  const stats = sessionModelStats.get(sessionUsageKey());
+  const calls = stats?.calls ?? 0;
+  const steps = stats?.steps ?? 0;
+  const speed = sessionTokensPerSecond(stats);
+  const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
+  const rate = sessionCacheRate(stats);
+  const promptChars = (stats?.latestSystemChars ?? 0) + (stats?.latestToolsChars ?? 0) + (stats?.latestMessageChars ?? 0);
+  const limit = activeContextLimit(stats);
+  const context = stats?.latestInputTokens !== undefined && limit
+    ? `上下文 ${formatTokenCount(stats.latestInputTokens)} / ${formatTokenCount(limit)}`
+    : stats?.latestInputTokens !== undefined
+      ? `上下文 ${formatTokenCount(stats.latestInputTokens)} tok`
+      : promptChars > 0 ? `上下文 约 ${formatTokenCount(promptChars)} 字符` : '上下文 —';
+  const sessionLabel = calls === 0 && steps === 0
+    ? '0 轮'
+    : `${calls.toLocaleString('zh-CN')} 轮${steps > 0 ? ` ${steps.toLocaleString('zh-CN')} 步` : ''}`;
+  const speedLabel = speed === undefined ? '— tok/s' : `${speed.toLocaleString('zh-CN')} tok/s`;
+  const tokenLabel = calls === 0
+    ? '— tok'
+    : (stats?.usageReportedCalls ?? 0) === 0 ? '用量未返回' : `${formatTokenCount(totalTokens)} tok`;
+  const chip = (panel: SessionStatsPanel, icon: string, text: string): string =>
+    `<button class="cache-chip ${sessionStatsPanel === panel ? 'active' : ''}" type="button" data-action="toggle-session-stats" data-stats-panel="${panel}" aria-expanded="${sessionStatsPanel === panel}"><i data-lucide="${icon}"></i><span>${text}</span></button>`;
+  return `${renderSessionStatsPopover(sessionStatsPanel, stats)}<div class="composer-cache-bar">${chip('session', 'gauge', `${sessionLabel} · ${speedLabel}`)}${chip('tokens', 'database', `${tokenLabel} · 缓存命中率 ${rate}`)}${chip('context', 'cpu', context)}</div>`;
 };
 const refreshComposerCache = (): void => {
-  patchLiveRegion(app.querySelector('[data-model-cache="composer"]'), [model.modelUsage], renderComposerCache);
+  patchLiveRegion(app.querySelector('[data-model-cache="composer"]'), [sessionUsageRevision, sessionStatsPanel, model.activeThreadId, currentRunThreadId, currentComposerModelId(), settingsConfig?.model], renderComposerCache);
 };
 
 const renderSupportBundle = (): string => {
@@ -1989,20 +3032,41 @@ const renderSupportBundle = (): string => {
     </section>`;
 };
 
+const dreamMaintenanceToggle = (stopLabel: string, startLabel: string): string => {
+  const native = desktopBridge.isNative();
+  const running = model.runtime.dreamMaintenance?.running === true;
+  if (running) {
+    return `<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">${stopLabel}</button>`;
+  }
+  const showStart = !native || dreamMaintenanceUserStopped || dreamMaintenanceAutoStartFailed
+    || (dreamMaintenanceAutoStartAttempted && !dreamMaintenanceStarting);
+  if (showStart) {
+    return `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>${startLabel}</button>`;
+  }
+  return '<span class="panel-note">打开后自动启用</span>';
+};
+
 const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
-  const memories = experienceMemories().slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
-  const dreams = model.dreamRuns.slice().sort((left, right) => right.startedAtMs - left.startedAtMs).slice(0, 6);
+  const memories = reviewableExperiences().slice().sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0)).slice(0, 8);
+  const dreams = (Array.isArray(model.dreamRuns) ? model.dreamRuns : []).slice().sort((left, right) => (right.startedAtMs ?? 0) - (left.startedAtMs ?? 0)).slice(0, 6);
   const plugins = model.plugins.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
+  const pluginBlockedCode = pluginGovernanceBlockedCode();
   const proposals = model.evolutionProposals.slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs).slice(0, 8);
   const native = desktopBridge.isNative();
   const maintenance = model.runtime.dreamMaintenance;
   const maintenanceRunning = maintenance?.running === true;
   const maintenanceState = maintenance ? governanceStateLabel(maintenance.state) : '未托管';
   const maintenanceDetail = maintenance?.lastErrorCode
-    ? ` · ${maintenance.lastErrorCode}`
-    : maintenance?.cycleCount
-      ? ` · 已完成 ${maintenance.cycleCount} 轮`
-      : '';
+    ? `最近一次整理出错：${maintenance.lastErrorCode}`
+    : maintenanceRunning
+      ? `已自动启用${maintenance?.cycleCount ? ` · 已完成 ${maintenance.cycleCount} 轮` : ''}`
+      : dreamMaintenanceUserStopped
+        ? '本轮已停止。需要时再开启；下次打开应用会再次自动启用。'
+        : dreamMaintenanceAutoStartFailed
+          ? '自动启用没有成功。可以再点一次启动。'
+          : native
+            ? '打开应用后自动整理，不用点按钮。有任务在跑时会等任务结束。'
+            : '当前预览不能启动后台整理。';
   const memoryAction = (memory: DisplayMemory): string => renderExperienceActions(memory, 'panel');
   const evolutionAction = (proposal: typeof proposals[number]): string => {
     if (['PROPOSED', 'VALIDATING', 'SHADOW', 'QUARANTINED'].includes(proposal.status)) {
@@ -2067,7 +3131,7 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
   }).join('');
   const memoryRows = memories.map(memory => {
     return `<article class="governance-row panel-card" data-memory-id="${escapeHtml(memory.memoryId)}">
-      <div class="panel-card-heading"><strong>供以后参考的一条经验</strong>${panelState(memory.status, memoryStatusLabel(memory.status))}</div>
+      <div class="panel-card-heading"><strong>${escapeHtml(experienceTitle(memory))}</strong>${panelState(memory.status, experienceStatusLabel(memory))}</div>
         ${memoryExplanation(memory)}
         ${memoryReviewGuide(memory)}
       ${panelDetails(`memory:${memory.memoryId}`, '来源与保存信息（建议先打开核对）', panelFields([
@@ -2123,7 +3187,7 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
     return scope === 'memory' ? panelPurpose(purpose) + content
       : contextGroup(`group:${key}`, title, purpose, content, count, 'governance-group purpose-group');
   };
-  return `<section class="context-section governance-section" aria-label="${scope === 'memory' ? '可供后续任务使用的经验' : '系统维护'}">
+  return `<section class="context-section governance-section" aria-label="${scope === 'memory' ? '可供后续任务使用的记忆' : '系统维护'}">
     <div class="section-heading"><div><h3>${scope === 'memory' ? '确认并启用后才供后续任务使用' : '维护 Agent 的扩展能力与记录'}</h3></div><button class="governance-button" data-action="refresh-governance">刷新记录</button></div>
     ${scope === 'maintenance' ? panelPurpose('供配置和维护应用的人使用。普通任务无需逐项处理这些记录。') : ''}
     ${governanceReadFailed ? '<p class="panel-error" role="alert">刷新失败，正在显示上次记录。请点击刷新后核对。</p>' : ''}
@@ -2131,10 +3195,12 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
     ${governanceActionNotice ? `<p class="${governanceActionNotice.error ? 'panel-error' : 'panel-next-step'}" role="status">${escapeHtml(governanceActionNotice.text)}</p>` : ''}
     ${group('feedback', '回看任务完成情况', `${model.feedback.length} 条记录`, '查看任务成败及反馈，供评估 Agent 效果时参考。', `<p class="panel-note">这些是历史记录，不是等待你处理的任务。显示最近 ${feedback.length} 条，共 ${model.feedback.length} 条。</p>${feedbackRows || '<p class="empty-note">任务结束后，结果记录会显示在这里。</p>'}`)}
 
-    ${group('memory', '已保存的经验', `${experienceMemories().length} 条`, '这里保存的是以后仍有用的具体内容。先核对，再启用；启用后 Agent 才可以参考。运行次数、文件数量等统计单独保存在技术记录中。', `<button class="governance-button" data-action="navigate" data-page="memory">查看全部经验</button><p class="panel-note">显示最近 ${memories.length} 条，共 ${experienceMemories().length} 条经验。</p>${memoryRows || '<p class="empty-note">暂时没有可审核的具体经验。运行统计不需要你确认。<br>有用的经验可以是项目约定或已确认的解决方法，例如“本项目使用 pnpm 安装依赖”（仅为示例，不是本项目结论）。</p>'}`)}
+    ${group('memory', '技能与记忆', `${reviewableExperiences().length} 条`, '做法按所属项目记成技能，标题会写明是哪个项目；换个项目也成立的规则留在记忆里。临时命令两边都不收。', `<button class="governance-button" data-action="navigate" data-page="memory">查看技能与记忆</button><p class="panel-note">技能 ${experienceMemories().filter((item) => experiencePlacement(item) === 'skill').length} 条 · 记忆 ${experienceMemories().filter((item) => experiencePlacement(item) === 'memory').length} 条。</p>${memoryRows || '<p class="empty-note">暂时没有已生效的技能或记忆。</p>'}`)}
     ${scope === 'memory' ? renderMemoryActivityArchive('panel') : ''}
-    ${group('dream', '从历史任务整理经验', `${model.dreamRuns.length} 次`, '回看任务历史，去重并提炼记忆候选；整理完成后仍需审核候选。', `<div class="panel-card"><div class="panel-card-heading"><strong>自动整理</strong>${panelState(maintenance?.state ?? 'DISABLED', maintenanceState)}</div><p class="panel-note">${escapeHtml(maintenanceDetail || '可先手动整理一次，查看生成的候选。')}</p><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>整理一次</button>${maintenanceRunning ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">暂停自动整理</button>' : `<button class="governance-button" data-action="start-dream-maintenance" ${native ? '' : 'disabled'}>开启自动整理</button>`}</div></div>${panelActionNotice('dream')}<p class="panel-note">最近 ${dreams.length} 次整理</p>${dreamRows}`)}
-    ${group('plugins', '检查或停用插件', `${model.plugins.length} 个`, '插件提供模型、工具等扩展能力。检查来源与权限后，再决定是否继续使用；异常插件可以隔离。', pluginRows || '<p class="empty-note">暂无插件记录。</p>')}
+    ${group('dream', '从历史任务整理记忆', `${model.dreamRuns.length} 次`, '回看任务历史，去重并提炼记忆候选；整理完成后仍需审核候选。', `<div class="panel-card"><div class="panel-card-heading"><strong>自动整理</strong>${panelState(maintenance?.state ?? 'DISABLED', maintenanceState)}</div><p class="panel-note">${escapeHtml(maintenanceDetail)}</p><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ${native ? '' : 'disabled'}>整理一次</button>${dreamMaintenanceToggle('暂停自动整理', '开启自动整理')}</div></div>${panelActionNotice('dream')}<p class="panel-note">最近 ${dreams.length} 次整理</p>${dreamRows}`)}
+    ${group('plugins', '检查或停用插件', pluginBlockedCode ? '读取受阻' : `${model.plugins.length} 个`, '插件提供模型、工具等扩展能力。检查来源与权限后，再决定是否继续使用；异常插件可以隔离。', pluginBlockedCode
+      ? `<div class="panel-card"><p class="panel-error" role="alert">插件治理审计记录校验未通过，冲突记录未用于本页插件状态或操作。历史记录已保留；插件执行仍受原有安全校验约束。（${escapeHtml(pluginBlockedCode)}）</p></div>`
+      : (pluginRows || '<p class="empty-note">暂无插件记录。</p>'))}
     ${group('evolution', '评估 Agent 改进方案', `${model.evolutionProposals.length} 个候选`, '根据任务结果评估模型或策略的改进候选，逐步试用并监测效果。', `<div class="panel-card"><div class="panel-card-heading"><strong>是否允许自动评估改进方案</strong>${panelState(control ? control.enabled ? 'ACTIVE' : 'BLOCKED' : 'UNKNOWN', control ? control.enabled ? '流程开放' : '已暂停' : '尚未读取')}</div><p class="panel-note">${control ? control.enabled ? '允许进入评估流程；每个候选仍需分别通过发布条件。' : '新的评估和发布已暂停，已有候选仍可紧急回滚。' : '刷新记录后查看总闸状态。'}</p>${control?.reason ? `<p class="panel-note">原因：${escapeHtml(reasonDisplayLabel(control.reason))}</p>` : ''}</div><p class="panel-note">显示最近 ${proposals.length} 个候选，共 ${model.evolutionProposals.length} 个。</p>${proposalRows || '<p class="empty-note">暂无策略改进候选。</p>'}`)}
   </section>`;
 };
@@ -2142,6 +3208,7 @@ const renderGovernance = (scope: 'memory' | 'maintenance'): string => {
 const subAgentIcon = (state: SubAgentReadModel['state']): string => {
   if (state === 'SUCCEEDED') return 'check-circle-2';
   if (state === 'FAILED' || state === 'CANCELLED') return 'circle-x';
+  if (state === 'WAITING' || state === 'SKIPPED' || state === 'CLOSED') return 'clock';
   return state === 'RUNNING' ? 'loader-circle' : 'bot';
 };
 
@@ -2182,7 +3249,7 @@ const renderRoutingSettingsPanel = (): string => {
     <h3>${escapeHtml(settingsSections.routing.title)}</h3>
     ${pinNoticeHtml}
     <div class="settings-card">
-      <div class="settings-field settings-field-readonly"><span>全局默认模型</span><output>${escapeHtml(settingsConfig?.model ?? model.runtime.model?.model ?? '未读取')}（在「角色与模型」中修改）</output></div>
+      <div class="settings-field settings-field-readonly"><span>全局默认模型</span><output>${escapeHtml(settingsConfig?.model ?? model.runtime.model?.model ?? '未读取')}（在「角色与模型」中修改；任务里另选的模型只属于该任务）</output></div>
       <div class="settings-field settings-field-readonly" data-routing-metric="cache"><span>累计缓存命中率（全部任务）</span><output>${escapeHtml(cacheRate)}</output></div>
       <div class="settings-field settings-field-readonly" data-routing-metric="cost"><span>累计预估成本（全部任务）</span><output>${escapeHtml(String(cost))}</output></div>
       ${Object.entries(egress?.byPhase ?? {}).map(([phase, bucket]) => `<div class="settings-field settings-field-readonly" data-routing-phase="${escapeHtml(phase)}"><span>${escapeHtml(phaseDisplayLabel(phase))}（累计）</span><output>调用 ${bucket.calls} 次 · 失败 ${bucket.failures} 次 · 预估成本 ${bucket.expectedCost ?? '未知'}</output></div>`).join('')}
@@ -2207,23 +3274,51 @@ const renderRouteFailureNotice = (): string => {
   return `<div class="route-failure-notice" role="status" data-route-failure="${notice.kind}"><i data-lucide="circle-alert"></i><span>${escapeHtml(notice.text)}</span>${link}</div>`;
 };
 
+const approvalReasonsHtml = (approval: ApprovalReadModel): string => {
+  const reasons = approvalReasonLabels(approval.reasonCodes);
+  return reasons.length
+    ? `<div class="approval-reasons"><strong>需要单独确认的原因</strong><ul>${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div>`
+    : '';
+};
+
+const approvalConfirmationDetails = (approval: ApprovalReadModel): string => `
+  ${approvalReasonsHtml(approval)}
+  <strong>${escapeHtml(approvalPreviewTitle(approval))}</strong>
+  <pre>${escapeHtml(approvalPreviewText(approval).text)}</pre>
+  ${approval.requestDigest ? `<p class="approval-meta">动作摘要 ${escapeHtml(approval.requestDigest)}</p>` : ''}`;
+
+const commandApprovalScopeText = '为当前工作区保存授权。命令、参数和工作目录一致时可自动批准，强制复核仍会提示。';
+
 const renderApprovalCard = (approval: ApprovalReadModel): string => {
   const requested = approval.state === 'REQUESTED';
   const title = approvalCardTitle(approval);
   const cancelled = approval.state === 'CANCELLED' ? ' approval-cancelled' : '';
+  const preview = approvalPreviewText(approval);
+  const previewTitle = escapeHtml(approvalPreviewTitle(approval));
+  const previewText = escapeHtml(preview.text);
+  const blocked = requested ? approvalReviewBlock(approval) : '';
   return `
     <article class="approval-card${cancelled}" data-approval-id="${escapeHtml(approval.requestId)}" role="alert" aria-live="assertive">
       <div class="approval-title"><i data-lucide="circle-alert"></i><strong>${title}</strong></div>
       ${approvalCellDetailsHtml(approval)}
-      ${approvalCardLeadHtml(approval)}
+      <div class="approval-detail"><strong>${escapeHtml(toolDisplayLabel(approval.capability))}</strong>${approval.command ? ` · 命令：${escapeHtml(approval.command)}` : ''}${approval.path ? ` · 路径：${escapeHtml(approval.path)}` : ''}${approval.cwd ? ` · 工作目录：${escapeHtml(approval.cwd)}` : ''}${approval.host ? ` · ${escapeHtml(approval.method ?? 'GET')} ${escapeHtml(approval.scheme ?? 'https')}://${escapeHtml(approval.host)}${approval.port ? `:${approval.port}` : ''}` : ''}</div>
+      ${preview.missing
+        ? `<div class="approval-preview approval-preview-missing"><strong>${previewTitle}</strong><pre>${previewText}</pre></div>`
+        : `<details class="approval-preview" open><summary>${previewTitle}${preview.truncated ? '（预览已截断）' : ''}</summary><pre>${previewText}</pre></details>`}
+      ${approvalReasonsHtml(approval)}
       <div class="approval-meta">
-        <span>${escapeHtml(toolDisplayLabel(approval.capability))}</span>
-        <span>仅本次 · Windows 受限执行器</span>
+        <span class="approval-risk approval-risk-${approvalHasDetectedRisk(approval) ? 'high' : 'medium'}">${escapeHtml(approvalRiskLabel(approval))}</span>
+        ${approval.policyVersion ? `<span>策略 ${escapeHtml(approval.policyVersion)}</span>` : ''}
+        ${approval.approvalExpiresAt ? `<span>有效至 ${escapeHtml(formatTime(approval.approvalExpiresAt))}</span>` : ''}
+        <span>${approval.alwaysAllowSaved ? '已保存始终允许 · ' : requested && approval.canAlwaysAllow ? '' : '仅本次 · '}Windows 受限执行器</span>
       </div>
-      ${panelDetails(`approval:${approval.requestId}`, '查看审批核对信息', panelPurpose('这些编号用于核对本次操作与授权是否对应。') + approvalAuditHtml(approval, approval.risk ? riskDisplayLabel(approval.risk) : undefined, approval.approvalExpiresAt ? formatTime(approval.approvalExpiresAt) : undefined))}
+      ${panelDetails(`approval:${approval.requestId}`, '查看审批核对信息', panelPurpose('这些编号用于核对本次操作与授权是否对应。') + panelFields([['工作区快照摘要', approval.scope?.snapshotDigest], ['动作摘要', approval.requestDigest], ['审批编号', approval.requestId]]))}
+      ${blocked ? `<p class="approval-preview-note">${escapeHtml(blocked)}</p>` : ''}
+      ${approval.alwaysAllowSaved === false ? '<p class="approval-preview-note">始终允许保存失败，本次按单次批准处理。</p>' : ''}
       ${requested ? `<div class="approval-actions">
         <button class="secondary-button" data-action="resolve-approval" data-approved="false" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>拒绝操作</button>
-        <button class="primary-action approval-approve" data-action="resolve-approval" data-approved="true" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : ''}>${pendingApprovalResolutions.has(approval.requestId) ? '处理中…' : '批准一次'}</button>
+        <button class="primary-action approval-approve" data-action="resolve-approval" data-approved="true" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) ? 'disabled aria-busy="true"' : blocked ? 'disabled' : ''}>${pendingApprovalResolutions.has(approval.requestId) ? '处理中…' : '批准一次'}</button>
+        ${approval.canAlwaysAllow ? `<button class="secondary-button" data-action="resolve-approval" data-approved="true" data-always-allow="true" data-approval-id="${escapeHtml(approval.requestId)}" ${pendingApprovalResolutions.has(approval.requestId) || blocked ? 'disabled' : ''}>始终允许</button>` : ''}
         <button class="secondary-button" data-action="cancel-run">取消任务</button>
       </div>` : ''}
     </article>`;
@@ -2231,34 +3326,42 @@ const renderApprovalCard = (approval: ApprovalReadModel): string => {
 
 let approvalConfirmation: { requestId: string; digest?: string; runId?: string; close: () => void } | undefined;
 
-const dispatchApproval = (requestId: string, approved: boolean, digest?: string): void => {
+const dispatchApproval = (requestId: string, approved: boolean, digest?: string, alwaysAllow = false): void => {
   update(expireRequestedApprovals(model));
   const current = model.approvals.find(item => item.requestId === requestId);
   if (current?.state !== 'REQUESTED' || current.requestDigest !== digest || pendingApprovalResolutions.has(requestId)) return;
+  if (approved && approvalReviewBlock(current)) return;
+  if (alwaysAllow && (!approved || !current.canAlwaysAllow)) return;
+  const ownerSessionId = sessionController.selectedId;
   pendingApprovalResolutions.add(requestId);
   render();
-  void desktopBridge.resolveRuntimeApproval(requestId, approved, digest).catch(error => {
-    pendingApprovalResolutions.delete(requestId);
-    update(appendErrorTimelineItem(model, '审批回执', error));
+  void desktopBridge.resolveRuntimeApproval(requestId, approved, digest,
+    { sessionId: ownerSessionId, runId: activeRuntimeRunId, alwaysAllow }).catch(error => {
+    try {
+      withSession(ownerSessionId, () => {
+        pendingApprovalResolutions.delete(requestId);
+        update(appendErrorTimelineItem(model, '审批回执', error));
+      });
+    } catch { /* session closed mid-flight */ }
+    scheduleRender();
   });
 };
 
-const confirmHighRiskApproval = (approval: ApprovalReadModel, trigger: HTMLElement): void => {
-  if (approvalConfirmation) return;
+const confirmApproval = (approval: ApprovalReadModel, trigger: HTMLElement, alwaysAllow = false): void => {
+  if (approvalConfirmation || approvalReviewBlock(approval)) return;
   const dialog = document.createElement('dialog');
   dialog.className = 'approval-confirmation';
   dialog.setAttribute('aria-labelledby', 'approval-confirmation-title');
   dialog.setAttribute('aria-describedby', 'approval-confirmation-description');
   dialog.innerHTML = `
-    <h2 id="approval-confirmation-title">确认本次高风险操作</h2>
-    <p id="approval-confirmation-description">此操作可能产生外部副作用。请核对下方动作；授权仅用于本次请求，已执行的操作不会自动撤销。</p>
-    <pre></pre>
+    <h2 id="approval-confirmation-title">${alwaysAllow ? '始终允许此命令？' : escapeHtml(approvalReviewTitle(approval))}</h2>
+    <p id="approval-confirmation-description">${alwaysAllow ? commandApprovalScopeText : `${approvalHasDetectedRisk(approval) ? '已检测到下列风险，请核对操作及触发原因。' : '本次操作需要人工复核，请核对操作详情及触发原因。'}授权仅用于本次请求。`}</p>
+    ${approvalConfirmationDetails(approval)}
     <div class="approval-confirmation-actions">
       <button class="secondary-button" data-confirmation="back" autofocus>返回检查</button>
       <button class="secondary-button" data-confirmation="reject">拒绝操作</button>
-      <button class="primary-action" data-confirmation="approve">确认批准一次</button>
+      <button class="primary-action" data-confirmation="approve">${alwaysAllow ? '确认始终允许' : '确认批准一次'}</button>
     </div>`;
-  dialog.querySelector('pre')!.textContent = approvalConfirmationText(approval);
   const close = (): void => {
     if (approvalConfirmation?.requestId === approval.requestId) approvalConfirmation = undefined;
     dialog.close();
@@ -2271,38 +3374,88 @@ const confirmHighRiskApproval = (approval: ApprovalReadModel, trigger: HTMLEleme
     const choice = (event.target as Element).closest<HTMLElement>('[data-confirmation]')?.dataset.confirmation;
     if (!choice) return;
     close();
-    if (choice !== 'back') dispatchApproval(approval.requestId, choice === 'approve', approval.requestDigest);
+    if (choice !== 'back') dispatchApproval(approval.requestId, choice === 'approve', approval.requestDigest, choice === 'approve' && alwaysAllow);
   });
   document.body.append(dialog);
   dialog.showModal();
   dialog.querySelector<HTMLButtonElement>('[data-confirmation="back"]')!.focus();
 };
 
+const presentedCommandAuthorizations = new Set<string>();
+
+const presentCommandAuthorization = (approval: ApprovalReadModel): void => {
+  if (approvalConfirmation || approval.state !== 'REQUESTED') return;
+  if (document.querySelector('dialog[open]')) return;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'approval-confirmation';
+  dialog.setAttribute('aria-labelledby', 'command-authorization-title');
+  dialog.setAttribute('aria-describedby', 'command-authorization-description');
+  dialog.innerHTML = `
+    <h2 id="command-authorization-title">授权运行此命令？</h2>
+    <p id="command-authorization-description">此命令需要授权才能运行。${approval.canAlwaysAllow ? commandApprovalScopeText : '授权仅用于本次请求。'}</p>
+    ${approvalConfirmationDetails(approval)}
+    <div class="approval-confirmation-actions">
+      <button class="secondary-button" data-confirmation="reject" autofocus>拒绝操作</button>
+      <button class="primary-action" data-confirmation="approve">批准一次</button>
+      ${approval.canAlwaysAllow && !approvalReviewBlock(approval) ? '<button class="secondary-button" data-confirmation="always">始终允许</button>' : ''}
+    </div>`;
+  presentedCommandAuthorizations.add(approval.requestId);
+  const close = (): void => {
+    presentedCommandAuthorizations.delete(approval.requestId);
+    if (approvalConfirmation?.requestId === approval.requestId) approvalConfirmation = undefined;
+    dialog.close();
+    dialog.remove();
+  };
+  approvalConfirmation = { requestId: approval.requestId, digest: approval.requestDigest, runId: model.activeRun?.runId, close };
+  dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
+  dialog.addEventListener('click', event => {
+    const choice = (event.target as Element).closest<HTMLElement>('[data-confirmation]')?.dataset.confirmation;
+    if (choice !== 'approve' && choice !== 'always' && choice !== 'reject') return;
+    const requestId = approval.requestId;
+    const digest = approval.requestDigest;
+    close();
+    dispatchApproval(requestId, choice !== 'reject', digest, choice === 'always');
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+  dialog.querySelector<HTMLButtonElement>('[data-confirmation="reject"]')!.focus();
+};
+
+const maybePresentCommandAuthorization = (): void => {
+  if (scopedProjectionDepth > 0 || approvalConfirmation) return;
+  const approval = model.approvals.find((item) => item.state === 'REQUESTED'
+    && presentsCommandAuthorization(item.reasonCodes)
+    && !approvalReviewBlock(item)
+    && !presentedCommandAuthorizations.has(item.requestId)
+    && (item.approvalExpiresAt === undefined || item.approvalExpiresAt > Date.now()));
+  if (approval) presentCommandAuthorization(approval);
+};
+
 let subAgentsCollapsed = false;
 
 const renderSubAgents = (): string => {
-  if (model.subAgents.length === 0) return '';
-  const runningCount = model.subAgents.filter((agent) => agent.state === 'RUNNING').length;
-  const startingCount = model.subAgents.filter((agent) => agent.state === 'STARTING').length;
-  const activeCount = runningCount + startingCount;
+  const visibleAgents = model.subAgents.filter(agent => agent.workStarted && agent.executionKind !== 'RULE');
+  if (visibleAgents.length === 0) return '';
+  const runningCount = visibleAgents.filter((agent) => agent.state === 'RUNNING').length;
+  const startingCount = visibleAgents.filter((agent) => agent.state === 'STARTING').length;
+  const waitingCount = visibleAgents.filter((agent) => agent.state === 'WAITING').length;
+  const activeCount = runningCount + startingCount + waitingCount;
   // 任务结束后隐藏面板，避免 sticky 面板挡住时间线里的执行结果；
   // 终态信息已由时间线事件记录，无需常驻展示。
   const runTerminal = !model.activeRun || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state);
   if (activeCount === 0 && runTerminal) return '';
+  const countText = activeCount > 0
+    ? [runningCount > 0 ? `${runningCount} 个运行中` : '', startingCount > 0 ? `${startingCount} 个等待调用` : '', waitingCount > 0 ? `${waitingCount} 个等待` : ''].filter(Boolean).join(' · ')
+    : '本次任务';
   return `
-    <section class="subagent-panel" aria-label="子 Agent 状态" aria-live="polite">
+    <section class="subagent-panel${subAgentsCollapsed ? ' subagent-panel-collapsed' : ''}" aria-label="子 Agent 状态" aria-live="polite">
       <div class="subagent-heading">
-        <div>
-          <span class="eyebrow">并行执行</span>
-          <h2>子 Agent</h2>
-        </div>
-        <span class="subagent-count">${activeCount > 0
-          ? [runningCount > 0 ? `${runningCount} 个运行中` : '', startingCount > 0 ? `${startingCount} 个准备中` : ''].filter(Boolean).join(' · ')
-          : '本次任务'}</span>
+        <span class="subagent-title">子 Agent</span>
+        <span class="subagent-count" title="${escapeHtml(countText)}">${escapeHtml(countText)}</span>
+        <button class="secondary-button" type="button" data-action="toggle-subagents" aria-expanded="${!subAgentsCollapsed}" aria-controls="subagent-list">${subAgentsCollapsed ? '展开子 Agent' : '收起子 Agent'}</button>
       </div>
-      <button class="secondary-button" type="button" data-action="toggle-subagents" aria-expanded="${!subAgentsCollapsed}" aria-controls="subagent-list">${subAgentsCollapsed ? "展开子 Agent" : "收起子 Agent"}</button>
       <div id="subagent-list" class="subagent-list" ${subAgentsCollapsed ? "hidden" : ""}>
-        ${model.subAgents.map((agent) => `
+        ${visibleAgents.map((agent) => `
           <article class="subagent-row subagent-${agent.state.toLowerCase()}" data-agent-id="${escapeHtml(agent.agentId)}">
             <div class="subagent-marker" aria-hidden="true"><i data-lucide="${subAgentIcon(agent.state)}"></i></div>
             <div class="subagent-copy">
@@ -2363,7 +3516,39 @@ const timelineBodyDisplay = (item: TimelineItem): string => {
   return item.body;
 };
 
+/** Exit code and command output printed under a failed process step. */
+const processResultHtml = (item: TimelineItem): string => {
+  const exitLabel = exitCodeLabelForToolEvent({ exitCode: item.exitCode });
+  const exit = exitLabel ? `<div class="timeline-process-exit">${escapeHtml(exitLabel)}</div>` : '';
+  const output = item.outputTail
+    ? `<div class="timeline-output-label">输出</div><pre class="timeline-command timeline-output-tail"><code>${escapeHtml(item.outputTail)}</code></pre>`
+    : '';
+  return exit || output ? `<div class="timeline-process-result">${exit}${output}</div>` : '';
+};
+
 const timelineItemHtml = (item: TimelineItem): string => {
+  // Cursor/Codex-style collapsible model thinking block
+  if (item.thinking) {
+    const isThinking = item.status === 'STREAMING' || item.status === 'PENDING';
+    const baseLabel = item.thinkingLabel || '思考过程';
+    const duration = !isThinking ? formatThinkingDuration(item.createdAtMs, item.thinkingCompletedAtMs) : '';
+    const headerText = isThinking
+      ? `${baseLabel}…`
+      : `已${baseLabel}${duration ? `（${duration}）` : ''}`;
+    return `
+        <article class="timeline-item timeline-thinking-item" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}">
+          <details class="timeline-thinking-details" ${isThinking ? 'open' : ''}>
+            <summary class="timeline-thinking-summary">
+              <span class="timeline-thinking-icon"><i data-lucide="brain"></i></span>
+              <span class="timeline-thinking-label">${escapeHtml(headerText)}</span>
+              ${isThinking ? '<span class="timeline-thinking-spinner"><i data-lucide="loader-circle" class="spin"></i></span>' : ''}
+              <i class="timeline-thinking-chevron" data-lucide="chevron-right"></i>
+            </summary>
+            <div class="timeline-thinking-body markdown-body">${renderMarkdown(item.body)}</div>
+          </details>
+        </article>`;
+  }
+
   // Codex-style tool cards: only when producer set toolName (no title/evidence heuristics).
   if (item.toolName) {
     const toolLabel = toolDisplayLabel(item.toolName);
@@ -2372,14 +3557,15 @@ const timelineItemHtml = (item: TimelineItem): string => {
     const isSuccess = item.status === 'COMPLETE';
     const isFailed = item.status === 'ERROR';
     
-    // 提取关键信息：文件名或命令
+    // 提取关键信息：文件名或命令 — structured fields only; a body-text
+    // filename regex produced misleading badges (e.g. cache-dir names from the
+    // failure message's available-paths hint), so no body fallback here.
     let targetInfo = '';
     if (item.commandText) {
       const cmd = item.commandText.split('\n')[0].trim();
       targetInfo = cmd.length > 60 ? cmd.substring(0, 60) + '...' : cmd;
-    } else if (item.body) {
-      const bodyMatch = item.body.match(/[\\/]([^\\/]+\.[a-z0-9]+)/i);
-      if (bodyMatch) targetInfo = bodyMatch[1];
+    } else if (item.targetPath) {
+      targetInfo = pathBadgeText(item.targetPath);
     }
     
     return `
@@ -2396,7 +3582,8 @@ const timelineItemHtml = (item: TimelineItem): string => {
               ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
               <time>${formatTime(item.createdAtMs)}</time>
             </div>
-            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && !targetInfo ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && (isFailed || !targetInfo) ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
+            ${processResultHtml(item)}
             ${item.commandText ? `<details class="timeline-step-details">
               <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
               <pre><code>${escapeHtml(item.commandText)}</code></pre>
@@ -2417,27 +3604,275 @@ const timelineItemHtml = (item: TimelineItem): string => {
               <time>${formatTime(item.createdAtMs)}</time>
               <span class="timeline-status timeline-status-${item.status.toLowerCase()}">${escapeHtml(statusDisplayLabel(item.status))}</span>
             </div>
-            <div class="timeline-body${item.kind === 'AGENT' ? ' markdown-body' : ''}">${item.kind === 'AGENT' ? renderMarkdown(item.body) : escapeHtml(timelineBodyDisplay(item))}</div>
+            ${item.body ? `<div class="timeline-body${item.kind === 'AGENT' ? ' markdown-body' : ''}">${item.kind === 'AGENT' ? renderMarkdown(item.body) : escapeHtml(timelineBodyDisplay(item))}</div>` : ''}
+            ${item.diagnosticDetail ? `<details><summary>查看诊断详情</summary><pre class="timeline-command"><code>${escapeHtml(item.diagnosticDetail)}</code></pre></details>` : ''}
+            ${item.images?.length ? `<div class="timeline-images">${item.images.map((img) => `<figure class="timeline-image-item"><img src="${escapeHtml(img.dataUrl)}" alt="${escapeHtml(img.name)}" loading="lazy"><figcaption>${escapeHtml(img.name)}</figcaption></figure>`).join('')}</div>` : ''}
             ${item.commandText ? `<pre class="timeline-command"><code>${escapeHtml(item.commandText)}</code></pre>` : ''}
+            ${processResultHtml(item)}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
         </article>`;
 };
 
 const historyIcons = (root: ParentNode): void => createIcons({ icons: {
-  Bot, UserRound, CircleAlert, CheckCircle2, TerminalSquare, File, Folder,
-  ShieldCheck, LoaderCircle, History, ChevronDown, ChevronRight, ArrowLeft, FolderOpen,
+  Bot, Brain, UserRound, CircleAlert, CheckCircle2, TerminalSquare, SquareTerminal: TerminalSquare, File, Folder,
+  ShieldCheck, LoaderCircle, History, ImagePlus, ChevronDown, ChevronRight, ArrowLeft, FolderOpen,
   XCircle, Cpu, FileCog, PanelRight, Gauge, HeartPulse, ListTree, LayoutDashboard, Square,
-  RotateCcwClock: History, Database, Settings, Archive
+  RotateCcwClock: History, Database, Settings, Archive, Plus, Search, Send, Waypoints
 } }, root);
-const projectThreadsHtml = (group: ProjectGroup): string => `<div class="project-thread-list">
-  ${group.threads.length ? group.threads.map((thread) => `<div class="project-thread-item"><button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
-    <span class="thread-title">${escapeHtml(thread.title || '未命名会话')}</span>
-    <span class="thread-meta">${thread.turnCount} 次 Turn${threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}</span>
-  </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>`).join('') : '<div class="project-empty">暂无会话</div>'}
+/** The thread an in-memory session is bound to (created or resumed). */
+const sessionBoundThreadId = (session: TaskSession): string | undefined =>
+  session.threadId ?? session.currentRunThreadId ?? session.model.activeThreadId;
+const sessionWorkspacePath = (session: TaskSession): string =>
+  (session.model.workspace.rootPath || session.workspacePath || '').trim();
+/** Which sidebar project group a session belongs to — same logic as threads. */
+const sessionProjectId = (session: TaskSession): string => {
+  if (session.unboundProject || projectlessThreadIds.has(sessionBoundThreadId(session) ?? '')) return PROJECTLESS_ID;
+  const path = sessionWorkspacePath(session);
+  if (!path) return PROJECTLESS_ID;
+  return projectIdForThreadCwd(path);
+};
+/** The selected session's live draft lives in the DOM between captures. */
+const sessionDraftText = (session: TaskSession): string =>
+  session.clientSessionId === sessionController.selectedId
+    ? (app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value ?? session.promptDraft)
+    : session.promptDraft;
+const sessionRowVisible = (session: TaskSession): boolean =>
+  !sessionIsPristineDraft(session) || Boolean(sessionDraftText(session).trim());
+/**
+ * Sessions rendered as their own row in this group. Pristine drafts are just
+ * the composer and get no row; a session bound to a thread already listed in
+ * the group merges into that thread's row instead of duplicating it.
+ */
+const groupSessions = (group: ProjectGroup): TaskSession[] => {
+  syncSelectedSession();
+  const bound = new Set(group.threads.map((thread) => thread.id));
+  return [...sessionController.sessions.values()].filter((session) =>
+    sessionRowVisible(session)
+    && sessionProjectId(session) === group.id
+    && !bound.has(sessionBoundThreadId(session) ?? ''));
+};
+const oneLineTitle = (value: string | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim();
+/** Title shown on a live session row. A saved thread title wins over the truncated run title. */
+const sessionDisplayTitle = (session: TaskSession): string => {
+  const boundId = sessionBoundThreadId(session);
+  const boundThread = boundId
+    ? model.threads.find((item) => item.id === boundId) ?? session.model.threads.find((item) => item.id === boundId)
+    : undefined;
+  const threadTitle = boundThread && !isGenericTaskTitle(boundThread.title) ? oneLineTitle(boundThread.title) : '';
+  if (threadTitle) return threadTitle;
+  const runTitle = oneLineTitle(session.model.activeRun?.title);
+  if (runTitle) return runTitle;
+  const prompt = oneLineTitle(session.lastSubmitReceipt?.prompt);
+  if (prompt) return prompt;
+  return session.imageAttachments.length ? `新任务草稿（${session.imageAttachments.length} 张图片）` : '新任务草稿';
+};
+/**
+ * Full name of the conversation open in the workbench. The sidebar ellipsizes
+ * this string; the top bar keeps the same name readable, the way Codex pins
+ * the thread title above the transcript.
+ */
+const conversationTitle = (): string => {
+  const viewing = historyView;
+  if (viewing) {
+    const thread = model.threads.find((item) => item.id === viewing.threadId);
+    return oneLineTitle(thread?.title) || '历史会话';
+  }
+  syncSelectedSession();
+  const session = sessionController.selected();
+  const boundId = session ? sessionBoundThreadId(session) : undefined;
+  const boundThread = boundId ? model.threads.find((item) => item.id === boundId) : undefined;
+  const boundTitle = oneLineTitle(boundThread?.title);
+  if (boundTitle && !isGenericTaskTitle(boundTitle)) return boundTitle;
+  if (session && !sessionIsPristineDraft(session)) return sessionDisplayTitle(session);
+  const activeTitle = oneLineTitle(model.threads.find((item) => item.id === model.activeThreadId)?.title);
+  if (activeTitle) return activeTitle;
+  if (boundTitle) return boundTitle;
+  const runTitle = oneLineTitle(model.activeRun?.title);
+  if (runTitle && !isGenericTaskTitle(runTitle)) return runTitle;
+  return '新任务';
+};
+const TASK_ATTENTION_STORAGE_KEY = 'hmcodex.taskAttention';
+const ATTENTION_ID_LIMIT = 400;
+const readUnseenTaskIds = (): Set<string> => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(TASK_ATTENTION_STORAGE_KEY) ?? '[]');
+    if (!Array.isArray(value)) return new Set();
+    return new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, ATTENTION_ID_LIMIT));
+  } catch {
+    return new Set();
+  }
+};
+let unseenTaskIds = readUnseenTaskIds();
+let attentionPrior = new Map<string, AttentionSnapshot>();
+let attentionInitialized = false;
+const persistUnseenTaskIds = (): void => {
+  try { localStorage.setItem(TASK_ATTENTION_STORAGE_KEY, JSON.stringify([...unseenTaskIds].slice(0, ATTENTION_ID_LIMIT))); }
+  catch { /* storage may be unavailable */ }
+};
+/** Conversation currently open in the workbench. Settings and other pages count as looking away. */
+const openConversation = (): { threadId?: string; sessionId?: string } => {
+  if (activePage !== 'workbench' || settingsVisible) return {};
+  if (historyView?.threadId) return { threadId: historyView.threadId };
+  syncSelectedSession();
+  const session = sessionController.selected();
+  if (!session) return { threadId: model.activeThreadId };
+  return { sessionId: session.clientSessionId, threadId: sessionBoundThreadId(session) };
+};
+const sessionNeedsApproval = (session: TaskSession | undefined): boolean =>
+  Boolean(session && (sessionController.pendingApprovalCount(session) > 0 || session.model.activeRun?.state === 'WAITING_APPROVAL'));
+const sessionEndedFailed = (session: TaskSession | undefined, threadState?: string): boolean => {
+  const runState = session?.model.activeRun?.state;
+  return threadState === 'FAILED' || runState === 'FAILED' || runState === 'CANCELLED' || runState === 'PAUSED_UNSUPPORTED';
+};
+const sessionAttentionId = (session: TaskSession): string =>
+  sessionBoundThreadId(session) ?? `session:${session.clientSessionId}`;
+const taskAttentionObservations = () => {
+  const open = openConversation();
+  const observations: AttentionObservation[] = [];
+  const covered = new Set<string>();
+  for (const thread of model.threads) {
+    const session = sessionController.sessionForThread(thread.id);
+    if (session) covered.add(session.clientSessionId);
+    observations.push({
+      id: thread.id,
+      aliases: session ? [`session:${session.clientSessionId}`] : [],
+      running: sessionStillExecuting(Boolean(session?.running), session?.model.activeRun?.state),
+      needsApproval: sessionNeedsApproval(session),
+      viewing: open.threadId === thread.id || Boolean(session && open.sessionId === session.clientSessionId),
+    });
+  }
+  for (const session of sessionController.sessions.values()) {
+    if (covered.has(session.clientSessionId) || !sessionRowVisible(session)) continue;
+    const bound = sessionBoundThreadId(session);
+    observations.push({
+      id: sessionAttentionId(session),
+      aliases: bound ? [`session:${session.clientSessionId}`] : [],
+      running: sessionStillExecuting(session.running, session.model.activeRun?.state),
+      needsApproval: sessionNeedsApproval(session),
+      viewing: open.sessionId === session.clientSessionId || Boolean(bound && open.threadId === bound),
+    });
+  }
+  return observations;
+};
+const syncTaskAttention = (): void => {
+  const observations = taskAttentionObservations();
+  const result = reconcileUnseenTasks(
+    unseenTaskIds,
+    attentionPrior,
+    observations,
+    attentionInitialized,
+    projectThreadsSummaryReady && (model.threads.length > 0 || observations.length > 0),
+  );
+  attentionInitialized = true;
+  attentionPrior = result.prior;
+  const same = result.unseen.size === unseenTaskIds.size && [...result.unseen].every((id) => unseenTaskIds.has(id));
+  unseenTaskIds = result.unseen;
+  if (!same) persistUnseenTaskIds();
+};
+const attentionMark = (id: string, options: { running: boolean; needsApproval: boolean; viewing: boolean; failed?: boolean }): string => {
+  const state = taskAttentionState({
+    needsApproval: options.needsApproval,
+    running: options.running,
+    viewing: options.viewing,
+    unseen: unseenTaskIds.has(id),
+  });
+  const label = taskAttentionLabel(state, options.failed);
+  return `<span class="task-attention task-attention-${state}" title="${escapeHtml(label)}"><span class="task-attention-text">${escapeHtml(label)}</span></span>`;
+};
+const sessionAttentionHtml = (session: TaskSession): string => {
+  const open = openConversation();
+  const id = sessionAttentionId(session);
+  const bound = sessionBoundThreadId(session);
+  return attentionMark(id, {
+    running: sessionStillExecuting(session.running, session.model.activeRun?.state),
+    needsApproval: sessionNeedsApproval(session),
+    viewing: open.sessionId === session.clientSessionId || open.threadId === id || Boolean(bound && open.threadId === bound),
+    failed: sessionEndedFailed(session),
+  });
+};
+const threadAttentionHtml = (thread: HarnessReadModel['threads'][number]): string => {
+  const session = sessionController.sessionForThread(thread.id);
+  const open = openConversation();
+  return attentionMark(thread.id, {
+    running: sessionStillExecuting(Boolean(session?.running), session?.model.activeRun?.state),
+    needsApproval: sessionNeedsApproval(session),
+    viewing: open.threadId === thread.id || Boolean(session && open.sessionId === session.clientSessionId),
+    failed: sessionEndedFailed(session, thread.state),
+  });
+};
+const sessionRowHtml = (session: TaskSession): string => {
+  const title = sessionDisplayTitle(session);
+  const status = sessionStatusText(
+    session.running,
+    session.taskProgressMessage,
+    session.model.activeRun?.state,
+    (state) => statusDisplayLabel(state),
+  );
+  const pending = sessionController.pendingApprovalCount(session);
+  const selected = session.clientSessionId === sessionController.selectedId;
+  const rowDisabled = workspaceChanging && !sessionWorkspaceSyncInFlight;
+  return `<div class="project-thread-item" data-key="session:${escapeHtml(session.clientSessionId)}"><button class="thread-row project-thread-row session-row ${selected ? 'active' : ''}" type="button" data-action="select-session" data-session-id="${escapeHtml(session.clientSessionId)}" aria-current="${selected}" ${rowDisabled ? 'disabled' : ''}>
+    ${sessionAttentionHtml(session)}
+    <span class="session-row-label" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+    <small class="session-row-state">${escapeHtml(status)}</small>
+    ${pending ? `<span class="session-row-badge">${pending} 待批准</span>` : ''}
+  </button></div>`;
+};
+/** Live status a session contributes to its bound thread's row. */
+const sessionThreadStatus = (session: TaskSession | undefined): string => {
+  if (!session) return '';
+  const pending = sessionController.pendingApprovalCount(session);
+  const parts: string[] = [];
+  const activity = sessionThreadActivity(
+    session.running,
+    session.taskProgressMessage,
+    session.model.activeRun?.state,
+    (state) => statusDisplayLabel(state),
+  );
+  if (activity) parts.push(activity);
+  if (pending) parts.push(`${pending} 待批准`);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+};
+/** Project groups that hold the selected or a running session stay expanded. */
+const liveSessionProjectIds = (): Set<string> => {
+  syncSelectedSession();
+  const ids = new Set<string>();
+  for (const session of sessionController.sessions.values()) {
+    if (session.running || session.clientSessionId === sessionController.selectedId) ids.add(sessionProjectId(session));
+  }
+  return ids;
+};
+/** A live session of an already saved task keeps that task's creation time.
+ * Using the moment the in-memory session was opened would jump the row to the
+ * top on every click. */
+const sessionListCreatedAtMs = (session: TaskSession): number => {
+  const boundId = sessionBoundThreadId(session);
+  const thread = boundId
+    ? model.threads.find((item) => item.id === boundId) ?? session.model.threads.find((item) => item.id === boundId)
+    : undefined;
+  const createdAtMs = thread?.createdAtMs;
+  return typeof createdAtMs === 'number' && Number.isFinite(createdAtMs) && createdAtMs > 0
+    ? createdAtMs
+    : session.createdAtMs;
+};
+const projectThreadsHtml = (group: ProjectGroup): string => {
+  // Newest-created task first: a task created later always renders above older
+  // rows, regardless of whether it is a live session or a restored thread.
+  const rows = newestTaskFirst([
+    ...groupSessions(group).map((session) => ({ createdAtMs: sessionListCreatedAtMs(session), sortId: `session:${session.clientSessionId}`, html: sessionRowHtml(session) })),
+    ...group.threads.map((thread) => ({ createdAtMs: thread.createdAtMs, sortId: `thread:${thread.id}`, html: `<div class="project-thread-item" data-key="thread:${escapeHtml(thread.id)}"><button class="thread-row project-thread-row ${thread.id === model.activeThreadId ? 'active' : ''}" type="button" data-action="select-thread" data-thread-id="${escapeHtml(thread.id)}" aria-current="${thread.id === model.activeThreadId}">
+    ${threadAttentionHtml(thread)}
+    <span class="thread-title" title="${escapeHtml(thread.title || '未命名会话')}">${escapeHtml(thread.title || '未命名会话')}</span>
+    <span class="thread-meta">${thread.turnCount > 0 ? `${thread.turnCount} 次 Turn` : (threadRecoveryMode(thread) === 'PLAN' || threadRecoveryMode(thread) === 'PREPARATION' ? '未完成' : '0 次 Turn')}${threadRecoveryBlock(thread) ? ' · 检查后继续' : threadRecoveryMode(thread) === 'PREPARATION' ? ' · 待重新规划' : threadRecoveryMode(thread) === 'PLAN' ? ' · 可恢复' : threadRecoveryMode(thread) === 'INVALID' ? ' · 恢复进度无效' : ''}${sessionThreadStatus(sessionController.sessionForThread(thread.id))}</span>
+  </button><button class="thread-archive-button" type="button" data-action="archive-thread" data-thread-id="${escapeHtml(thread.id)}" ${threadArchiveBlocked(thread.id) ? 'disabled' : ''} title="${threadArchiveBlocked(thread.id) ? '任务结束后可归档' : '归档会话（历史内容保留）'}" aria-label="归档会话：${escapeHtml(thread.title || '未命名会话')}"><i data-lucide="archive" aria-hidden="true"></i></button></div>` }))
+  ]).map((entry) => entry.html);
+  return `<div class="project-thread-list">
+  ${rows.length ? rows.join('') : '<div class="project-empty">暂无会话</div>'}
 </div>`;
+};
 const renderArchiveNotice = (): string => `${threadArchiveNotice ? `<div class="archive-notice ${threadArchiveNotice.error ? 'panel-error' : 'panel-note'}" role="status">${escapeHtml(threadArchiveNotice.text)}${threadArchiveNotice.undoId ? `<button class="governance-button" type="button" data-action="restore-thread" data-thread-id="${escapeHtml(threadArchiveNotice.undoId)}">撤销归档</button>` : ''}${threadArchiveNotice.undoProjectId ? `<button class="governance-button" type="button" data-action="restore-project" data-project-id="${escapeHtml(threadArchiveNotice.undoProjectId)}">撤销归档</button>` : ''}</div>` : ''}`;
-const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}`;
+const projectExpansionKey = (): string => `${[...expandedProjectIds].sort().join('|')}::${[...collapsedProjectIds].sort().join('|')}::${[...projectlessThreadIds].sort().join('|')}::${JSON.stringify(threadArchives)}::${JSON.stringify(projectArchives)}::${running}:${liveTaskRunning()}:${workspaceChanging && !sessionWorkspaceSyncInFlight}`;
 const renderProjectThreadList = (): string => {
   if (!projectThreadsSummaryReady) {
     return `<div class="project-list-skeleton" role="status" aria-live="polite" aria-busy="true">
@@ -2448,12 +3883,14 @@ const renderProjectThreadList = (): string => {
     </div>`;
   }
   const activeProjectId = currentProjectId();
+  const liveGroups = liveSessionProjectIds();
   return projectGroups().map((group) => {
-    const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId);
+    const open = !collapsedProjectIds.has(group.id) && (expandedProjectIds.has(group.id) || group.id === activeProjectId || liveGroups.has(group.id));
     const edit = group.id !== PROJECTLESS_ID
       ? `<button class="icon-button small project-edit-button" type="button" data-action="edit-project" data-project-id="${escapeHtml(group.id)}" title="${group.discovered ? '保存并编辑项目' : '编辑项目'}" aria-label="${group.discovered ? '保存并编辑项目' : '编辑项目'}"><i data-lucide="settings"></i></button>` : '';
-    const countLabel = group.threads.length ? `${group.threads.length} 个会话` : '暂无会话';
-    return `<section class="project-group ${open ? 'open' : ''}" data-project-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}，${countLabel}">
+    const rowCount = group.threads.length + groupSessions(group).length;
+    const countLabel = rowCount ? `${rowCount} 个会话` : '暂无会话';
+    return `<section class="project-group ${open ? 'open' : ''}" data-key="group:${escapeHtml(group.id)}" data-project-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}，${countLabel}">
       <div class="project-header-row"><button class="project-header" type="button" data-action="toggle-project" data-project-id="${escapeHtml(group.id)}" aria-expanded="${open}" aria-label="${escapeHtml(group.name)}，${open ? '收起' : '展开'}">
         <i data-lucide="${open ? 'folder-open' : 'folder'}"></i>
         <span class="project-header-copy"><strong>${escapeHtml(group.name)}</strong></span>
@@ -2464,7 +3901,7 @@ const renderProjectThreadList = (): string => {
   }).join('');
 };
 
-const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string; summaryReady: boolean }>();
+const threadListInputs = new WeakMap<HTMLElement, { threads: HarnessReadModel['threads']; activeId?: string; catalogKey: string; expansionKey: string; sessionKey: string; attentionKey: string; summaryReady: boolean }>();
 const updateThreadList = (): void => {
   patchLiveRegion(app.querySelector('[data-archive-navigation]'), [threadArchives, projectArchives, threadArchiveNotice, activePage], renderArchiveNotice);
   const list = app.querySelector<HTMLElement>('[data-region="thread-list"]');
@@ -2474,12 +3911,19 @@ const updateThreadList = (): void => {
   const previous = threadListInputs.get(list);
   const catalogKey = projectCatalog.map((project) => `${project.id}:${project.lastUsedAtMs}`).join('|');
   const expansionKey = projectExpansionKey();
-  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey && previous.summaryReady === projectThreadsSummaryReady) return;
+  // Session rows live in the project groups now: status/progress/approval
+  // changes must repaint the rail even when the thread catalog is unchanged.
+  syncSelectedSession();
+  syncTaskAttention();
+  const open = openConversation();
+  const attentionKey = `${activePage}:${settingsVisible ? 1 : 0}:${open.threadId ?? ''}:${open.sessionId ?? ''}:${[...unseenTaskIds].sort().join(',')}`;
+  const sessionKey = `${sessionController.selectedId}::${[...sessionController.sessions.values()].map((session) =>
+    `${session.clientSessionId}:${session.running ? 1 : 0}:${session.taskProgressMessage}:${sessionController.pendingApprovalCount(session)}:${sessionBoundThreadId(session) ?? ''}:${sessionProjectId(session)}:${session.model.activeRun?.state ?? ''}:${session.imageAttachments.length}:${session.model.activeRun?.title ?? session.lastSubmitReceipt?.prompt ?? sessionDraftText(session)}`).join('|')}`;
+  if (previous?.threads === model.threads && previous.activeId === model.activeThreadId && previous.catalogKey === catalogKey && previous.expansionKey === expansionKey && previous.sessionKey === sessionKey && previous.attentionKey === attentionKey && previous.summaryReady === projectThreadsSummaryReady) return;
   const scrollTop = list.scrollTop;
-  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey, summaryReady: projectThreadsSummaryReady });
-  list.innerHTML = renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>';
-  historyIcons(list);
-  // Selecting a thread changes the active-row class and rebuilds this list.
+  threadListInputs.set(list, { threads: model.threads, activeId: model.activeThreadId, catalogKey, expansionKey, sessionKey, attentionKey, summaryReady: projectThreadsSummaryReady });
+  syncRegionContent(list, renderProjectThreadList() || '<div class="thread-empty">暂无已保存任务</div>', historyIcons);
+  // Selecting a thread changes the active-row class and updates this list.
   // Restore the user's viewport so the sidebar does not jump to its top.
   list.scrollTop = scrollTop;
   requestAnimationFrame(() => {
@@ -2541,10 +3985,15 @@ const renderPrimaryNavigation = (): string => `
             ['workbench', 'layout-dashboard', '任务对话', '提需求、看回答'],
             ['runs', 'history', '历史任务', '查找过去的任务'],
             ['workspace', 'list-tree', '项目文件', '浏览文件内容'],
-            ['memory', 'file', '已保存的经验', '管理 Agent 的记忆'],
+            ['memory', 'file', '技能与记忆', '想看时再打开'],
             ['safety', 'shield-check', '操作权限', '查看授权与审批'],
             ['diagnostics', 'heart-pulse', '设置与排查', '配置模型、查故障']
-          ] as const).map(([page, icon, title, hint]) => `<button class="nav-item ${activePage === page ? 'active' : ''}" data-action="navigate" data-page="${page}" ${activePage === page ? 'aria-current="page"' : ''}><i data-lucide="${icon}"></i><span><strong>${title}</strong><small>${hint}</small></span></button>`).join('')}
+          ] as const).map(([page, icon, title, hint]) => {
+            const pending = page === 'memory' ? pendingExperienceCount() : 0;
+            const label = pending > 0 ? `${pending} 条待审核` : hint;
+            const badge = pending > 0 ? `<em class="nav-count" data-experience-count>${pending}</em>` : '';
+            return `<button type="button" class="nav-item ${activePage === page ? 'active' : ''}" data-action="navigate" data-page="${page}" ${activePage === page ? 'aria-current="page"' : ''}><i data-lucide="${icon}"></i><span><strong>${title}</strong><small>${label}</small></span>${badge}</button>`;
+          }).join('')}
          </nav>`;
 
 const renderTaskValueSummary = (): string => {
@@ -2553,6 +4002,7 @@ const renderTaskValueSummary = (): string => {
   const terminal = !running && (!run || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED', 'PAUSED', 'PAUSED_UNSUPPORTED'].includes(run.state));
   const recoveryMode = threadRecoveryMode(thread);
   const resumable = recoveryMode === 'PLAN' || recoveryMode === 'PREPARATION';
+  const recoveryBlock = threadRecoveryBlock(thread);
   const usage = model.modelUsage;
   const egress = model.modelEgress;
   const tokenCount = usage && usage.status === 'REPORTED' && Number.isInteger(usage.inputTokens)
@@ -2564,21 +4014,39 @@ const renderTaskValueSummary = (): string => {
     : '调用统计尚未读取';
   const cost = egress?.totals.actualCost;
   const costLine = !Number.isFinite(cost) ? '实际成本未知' : `实际成本 ${cost}`;
+  const waitingForClarification = activeClarification();
   const failed = run ? run.state === 'FAILED' : thread?.state === 'FAILED';
+  const taskRunId = verificationRunId();
+  const externalEvidenceMissing = failed && model.timeline.some(item => item.runId === taskRunId
+    && item.failureReasonCode === 'EXTERNAL_EVIDENCE_MISSING');
   const completed = run ? run.state === 'SUCCEEDED' : thread?.state === 'COMPLETED';
   const hasTask = Boolean(run || thread || historyView);
-  const state = running ? taskProgressMessage || runStateLabel(run?.state)
+  // `running` stays true until the runtime process exits. After cancel that
+  // lock must not keep the previous tool-progress sentence on screen.
+  const liveCopy = showLiveTaskCopy();
+  const settlingTerminal = running && clarificationRunEnded(run?.state);
+  const state = waitingForClarification
+    ? (waitingForClarification.submitting ? '正在提交你的说明' : '需要你补充说明')
+    : liveCopy ? taskProgressMessage || runStateLabel(run?.state)
+    : settlingTerminal ? runStateLabel(run?.state)
+    : recoveryBlock ? '这个任务可以继续'
+    : externalEvidenceMissing ? '缺少外部资料'
     : completed ? '任务已完成' : failed ? '任务未完成'
     : run ? runStateLabel(run.state) : thread?.state === 'PAUSED' ? '任务已暂停'
     : hasTask ? '已保存的任务' : '还没有开始任务';
-  const nextStep = running ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
+  const nextStep = waitingForClarification
+    ? '在下方选择一个选项，或输入说明后发送。当前任务会接着做，不会另开一条，也不会把它当成操作批准。'
+    : liveCopy ? '进展会自动更新。有需要你确认的操作时，会在下方单独提示。'
+    : settlingTerminal ? runStateNextStep(run?.state)
+    : recoveryBlock ? '中断的那条命令不会重放。点「继续任务」，或在下方发送「继续」。Agent 会从当前文件接着把原任务做完。'
+    : externalEvidenceMissing ? '可以查看对话中的已有结果。有可核实的来源时，补充链接或资料后继续提问。'
     : failed ? '先查看对话中的失败原因，再决定是否继续或重试。'
     : completed ? '回答在中间的对话区。可以把结果保存为文件。'
     : terminal && recoveryMode === 'PREPARATION' ? '上次在准备阶段中断。继续后，模型会结合已保存的任务和你的新消息决定下一步。'
     : terminal && resumable ? '有已保存的任务进度，可以从上次中断的地方继续。'
     : hasTask ? '可以查看已有回答；要提出新需求，请在下方输入。'
     : '在中间下方输入要完成的事情，例如“总结这个项目的功能”，然后发送。';
-  const stateTone = completed ? 'active' : failed ? 'failed' : 'pending';
+  const stateTone = completed ? 'active' : recoveryBlock ? 'pending' : failed ? 'failed' : 'pending';
   const budgetLabel = [
     taskBudget.maxTokens ? `${taskBudget.maxTokens.toLocaleString('zh-CN')} token` : 'token 未限额',
     taskBudget.maxToolRounds ? `${taskBudget.maxToolRounds} 轮工具` : '工具轮数未限额',
@@ -2586,23 +4054,34 @@ const renderTaskValueSummary = (): string => {
   ].join(' · ');
   const actionRow = (action: string, title: string, hint: string, disabled = false, primary = false): string =>
     `<button class="task-action-row ${primary ? 'task-action-primary' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}</small></span><span aria-hidden="true">›</span></button>`;
-  const continueAction = resumable && terminal
+  const continueAction = !recoveryBlock && !externalEvidenceMissing && resumable && terminal
     ? actionRow('continue-task', recoveryMode === 'PREPARATION' ? '重新规划并继续' : '继续上次任务', '把当前输入和已保存的任务交给模型，由模型决定下一步', false, !failed)
     : '';
-  const retryAction = failed && recoveryMode !== 'INVALID' && terminal
+  const retryAction = !recoveryBlock && !externalEvidenceMissing && failed && recoveryMode !== 'INVALID' && terminal
     ? actionRow('retry-task', '重试任务', '把当前输入和已保存的任务交给模型重试') : '';
+  // The interrupted command is not replayed. Continue runs the original task
+  // from the current files.
+  const recoveryBlockAction = recoveryBlock && terminal
+    ? `<div class="panel-card" data-recovery-block>
+        <p class="panel-note">中断步骤：${escapeHtml(recoveryBlock.stepIds.join('、'))}。继续后从这些步骤的当前结果接着做。</p>
+      </div>`
+      + actionRow('recover-uncertain-task', '继续任务', '从当前文件接着做完，不重放结果不明的命令', false, true)
+      + actionRow('new-task-from-blocked', '另开新任务', '保留这次记录；新任务不继承中断的检查点')
+    : '';
   const title = run?.title ?? (thread?.title && !/^Thread\s+[a-f\d]+$/i.test(thread.title) ? thread.title : undefined);
   return `<section class="context-section task-value-section" aria-label="当前任务与下一步">
           ${isThreadArchived(model.activeThreadId) ? `<div class="panel-next-step">此会话已归档。发送新消息或继续任务时会自动恢复。<button class="governance-button" data-action="restore-thread" data-thread-id="${escapeHtml(model.activeThreadId!)}">恢复到列表</button></div>` : ''}
-          <div class="section-heading"><h3>现在需要做什么</h3></div>
+          ${liveCopy && !waitingForClarification ? '' : `<div class="section-heading"><h3>现在需要做什么</h3></div>
           <div class="task-guidance task-guidance-${stateTone}">
             <strong>${escapeHtml(state)}</strong>
-            ${title ? `<p class="task-current-goal">${escapeHtml(title)}</p>` : ''}
+            ${waitingForClarification ? `<p class="task-current-goal">${escapeHtml(waitingForClarification.question)}</p>` : title ? `<p class="task-current-goal">${escapeHtml(title)}</p>` : ''}
             <p>${escapeHtml(nextStep)}</p>
-          </div>
+          </div>`}
           ${!hasTask && !running ? actionRow('focus-task-input', '输入任务需求', '告诉 Agent 你想得到什么结果', false, true) : ''}
+          ${externalEvidenceMissing && terminal ? actionRow('focus-task-input', '补充外部资料', '在对话框发送可核实的链接或资料', false, true) : ''}
           ${continueAction}
           ${retryAction}
+          ${recoveryBlockAction}
           ${hasTask ? actionRow('export-task-result', taskExportBusy ? '正在导出会话…' : '导出会话', running ? '保存目前已有的回答和审计记录（Markdown）' : '将回答和审计记录导出为 Markdown 文件', taskExportBusy) : ''}
           ${taskActionNotice ? `<div class="settings-message settings-message-success" role="status">${escapeHtml(taskActionNotice)}</div>` : ''}
           ${taskExportNotice ? `<div class="settings-message ${taskExportNotice.error ? 'settings-message-error' : 'settings-message-success'}" role="status" aria-live="polite" data-task-export-notice>${escapeHtml(taskExportNotice.text)}</div>` : ''}
@@ -2666,7 +4145,7 @@ const renderContextContent = (): string => {
 
         ${renderSelectedFile()}`, workspaceTitle)}
 
-        ${contextGroup('tools:memory', '让 Agent 记住有用经验', '先核对内容和来源，再决定是否让 Agent 使用。', renderGovernance('memory'), `${experienceMemories().filter(item => item.status === 'ACTIVE').length} 条已启用 · ${experienceMemories().filter(item => item.status === 'PROPOSED').length} 条待审核 · ${experienceMemories().filter(item => item.status === 'VERIFIED').length} 条已核验待启用`, undefined, true)}
+        ${contextGroup('tools:memory', '让 Agent 记住有用记忆', '写下来就生效。想看的时候再打开，不对的可以停止使用。', renderGovernance('memory'), `${reviewableExperiences().filter((item) => experienceInEffect(item)).length} 条已生效`, undefined, true)}
 
         ${contextGroup('tools:permissions', 'Agent 能做什么', '当前 Agent 可以访问哪些功能，哪些需要你确认。', `<section class="context-section capability-section">
           <div class="section-heading">
@@ -2677,12 +4156,12 @@ const renderContextContent = (): string => {
             <div><dt>读文件</dt><dd class="${model.workspace.granted ? 'capability-on' : ''}"><i data-lucide="${model.workspace.granted ? 'check-circle-2' : 'x-circle'}"></i>${model.workspace.granted ? '已允许' : '未授权'}</dd></div>
             <div><dt>执行命令</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '需要你确认' : '已关闭'}</dd></div>
             <div><dt>改文件</dt><dd class="${controlled ? 'capability-on' : ''}"><i data-lucide="${controlled ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? '需要你确认' : '已关闭'}</dd></div>
-            <div><dt>访问网络</dt><dd class="${controlled && controlledNetworkTargets.parsed.length ? 'capability-on' : ''}"><i data-lucide="${controlled && controlledNetworkTargets.parsed.length ? 'check-circle-2' : 'x-circle'}"></i>${controlled && controlledNetworkTargets.parsed.length ? `需要你确认 · ${escapeHtml(controlledNetworkTargets.parsed.map((target) => target.host).join(', '))}` : '已关闭'}</dd></div>
+            <div><dt>访问网络</dt><dd class="${controlled && networkAccessSummary(controlledNetworkTargets.text, controlledNetworkTargets.parsed, controlledNetworkTargets.error).open ? 'capability-on' : ''}"><i data-lucide="${controlled && networkAccessSummary(controlledNetworkTargets.text, controlledNetworkTargets.parsed, controlledNetworkTargets.error).open ? 'check-circle-2' : 'x-circle'}"></i>${controlled ? escapeHtml(networkAccessSummary(controlledNetworkTargets.text, controlledNetworkTargets.parsed, controlledNetworkTargets.error).label) : '已关闭'}</dd></div>
           </dl>
           ${controlled ? panelDetails('network-targets', '设置网络访问范围（高级）', `
-            ${panelPurpose('使用 JSON 格式列出允许 Agent 访问的网站、端口和请求方式。留空则不允许访问任何网络。')}
+            ${panelPurpose('留空时默认可访问公网，由模型判断该不该打开这个网址。填写 JSON 后只允许列出的网站。写 [] 则关闭网络。本机、内网和云元数据地址始终拒绝。')}
             <div class="network-target-editor">
-              <label for="network-targets-input">允许访问的网站列表（JSON 格式，留空=关闭网络）</label>
+              <label for="network-targets-input">网站名单（JSON，留空=公网由模型选择，[]=关闭）</label>
               <input id="network-targets-input" data-role="network-targets" type="text" spellcheck="false"
                 placeholder='[{"host":"api.example.com","port":443,"scheme":"https","methods":["GET"]}]'
                 value="${escapeHtml(controlledNetworkTargets.text)}" />
@@ -2699,15 +4178,19 @@ const renderContextContent = (): string => {
             <div><span class="section-kicker">审批与执行</span><h3>操作处理记录</h3></div>
             <button class="icon-button small" data-action="refresh-execution-state" title="刷新执行状态" aria-label="刷新执行状态"><i data-lucide="rotate-ccw-clock"></i></button>
           </div>
-          ${panelPurpose('动作请求说明要做什么，审批记录你的决定，一次性授权记录该操作是否已使用许可。')}
+          ${panelPurpose('每条记录写明当时要做什么、在哪个目录，以及为什么同意、拒绝或取消。')}
           ${executionRecords.length === 0
             ? '<div class="empty-note">暂无已保存的动作请求、审批或一次性授权</div>'
-            : `<div class="execution-record-list">${executionRecords.slice(-12).reverse().map((record) => `
+            : `<div class="execution-record-list">${executionRecords.slice(-12).reverse().map((record) => {
+              const copy = executionRecordCopy(record);
+              return `
               <div class="execution-record">
                 <div class="execution-record-heading"><strong>${executionTypeLabel(record.recordType)}</strong><span>${escapeHtml(executionStateLabel(record.state))}</span></div>
-                <div class="execution-record-meta">${escapeHtml(toolDisplayLabel(record.capability ?? '受控能力'))} · ${escapeHtml(panelDate(record.updatedAtMs))}</div>
+                <div class="execution-record-meta">${escapeHtml(copy.action)} · ${escapeHtml(panelDate(record.updatedAtMs))}</div>
+                ${copy.detail}
                 ${panelDetails(`execution:${record.recordId}`, '查看来源与授权详情', panelFields([['记录编号', record.recordId], ['操作编号', record.operationId], ['任务编号', record.runId], ['有效期', record.expiresAt ? panelDate(record.expiresAt) : '未提供']]) + panelSources(record.runId))}
-              </div>`).join('')}</div>`}
+              </div>`;
+            }).join('')}</div>`}
         </section>`, `${executionRecords.length} 条记录`)}
 
         ${contextGroup('section:decisions', '为什么这样执行', '决策记录已移到设置「模型与路由」。', ((reasonRunId) => `<button type="button" class="governance-button" data-action="view-route-reason" data-run-id="${escapeHtml(reasonRunId ?? '')}" ${reasonRunId ? '' : 'disabled aria-disabled="true" title="此会话没有路由记录"'}>在设置中查看</button>`)(selectedThreadRuntimeRunId()), `${model.decisions.length} 条记录`)}
@@ -2721,6 +4204,7 @@ const renderContextContent = (): string => {
           ${panelPurpose('查看本地服务、模型连接和记忆存储是否就绪。遇到连接问题可前往设置与诊断。')}
           <div class="runtime-line"><i data-lucide="terminal-square"></i><span>${model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览'}</span></div>
           <div class="runtime-line"><i data-lucide="heart-pulse"></i><span>${escapeHtml(runtimeHealth)}</span></div>
+          ${model.runtime.buildId ? `<div class="runtime-line"><i data-lucide="package"></i><span>当前构建 ${escapeHtml(model.runtime.buildId)}</span></div>` : ''}
           <div class="runtime-line"><i data-lucide="cpu"></i><span title="${escapeHtml(runtimeRoute)}">${escapeHtml(runtimeRoute)}</span></div>
           <div class="runtime-line"><i data-lucide="file-cog"></i><span>${escapeHtml(runtimeConfig)}</span></div>
           <div class="runtime-line"><i data-lucide="database"></i><span title="${escapeHtml(contextSidecar?.state ?? 'LOCAL')} ">本地记忆日志 · ${escapeHtml(contextSidecarState)}${escapeHtml(contextSidecarDetail)}</span></div>
@@ -2728,7 +4212,7 @@ const renderContextContent = (): string => {
           <button class="governance-button" data-action="navigate" data-page="diagnostics">打开设置与诊断</button>
         </section>`)}`)}
 
-        ${contextGroup('tools:maintenance', '高级管理', '管理插件、整理历史经验、评估 Agent 改进方案。通常由维护人员使用。', renderGovernance('maintenance'))}
+        ${contextGroup('tools:maintenance', '高级管理', '管理插件、整理历史记忆、评估 Agent 改进方案。通常由维护人员使用。', renderGovernance('maintenance'))}
 `;
 };
 
@@ -2738,10 +4222,75 @@ const setTextIfChanged = (element: Node | null, text: string): void => {
 const refreshModeControls = (): void => {
   const version = app.querySelector<HTMLElement>('.version-label');
   setTextIfChanged(version, `v${model.runtime.version}`);
+  const { loading, saving, error } = accessController.state;
+  const full = accessController.mode === 'FULL_ACCESS';
+  const busy = loading || saving || !desktopBridge.isNative();
   const note = app.querySelector<HTMLElement>('.composer-note');
-  setTextIfChanged(note, '执行命令或修改文件前，会先询问你是否同意。');
+  setTextIfChanged(note, full ? ACCESS_COMPOSER_NOTE_ON : '执行命令或修改文件前，会先询问你是否同意。');
+  app.querySelectorAll<HTMLElement>('[data-action="access-mode"]').forEach((button) => {
+    setTextIfChanged(button, full ? ACCESS_PILL_ON : ACCESS_PILL_OFF);
+    button.classList.toggle('is-on', full);
+    if (button instanceof HTMLButtonElement) button.disabled = busy;
+    button.setAttribute('aria-pressed', String(full));
+    button.title = error ?? '';
+  });
+  const statusSpan = app.querySelector<HTMLElement>('[data-access-mode-status]');
+  if (statusSpan) {
+    setTextIfChanged(statusSpan, `当前状态：${full ? ACCESS_PILL_ON : ACCESS_PILL_OFF}${error ? ` · ${error}` : ''}${busy ? ' · 处理中' : ''}`);
+  }
+  // A body-anchored popover outlives the app render — keep its switch in sync.
+  const popover = document.querySelector<HTMLElement>('.access-popover');
+  const popSwitch = popover?.querySelector<HTMLButtonElement>('.access-switch');
+  if (popSwitch) {
+    popSwitch.setAttribute('aria-checked', String(full));
+    popSwitch.classList.toggle('is-on', full);
+    popSwitch.disabled = busy;
+  }
+  const popLabel = popover?.querySelector<HTMLElement>('.access-popover-row span');
+  if (popLabel) setTextIfChanged(popLabel, full ? ACCESS_PILL_ON : ACCESS_PILL_OFF);
 };
 
+const timelineRowItem = new WeakMap<HTMLElement, TimelineItem>();
+const timelineRowHooks = {
+  reuse: (element: HTMLElement, item: TimelineItem): boolean => timelineRowItem.get(element) === item,
+  bind: (element: HTMLElement, item: TimelineItem): void => { timelineRowItem.set(element, item); }
+};
+const ensureHistoryShell = (region: HTMLElement): HTMLElement => {
+  let list = region.querySelector<HTMLElement>('[data-history-items]');
+  if (!list) {
+    region.innerHTML = `<div data-history-status role="status"></div>
+      <button class="secondary-button" data-action="history-older"><i data-lucide="history"></i><span>加载更早记录</span></button>
+      <div class="timeline" data-history-items></div>`;
+    historyIcons(region);
+    list = region.querySelector<HTMLElement>('[data-history-items]')!;
+  }
+  return list;
+};
+const sameTimelineItems = (left: TimelineItem[], right: TimelineItem[]): boolean => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return false;
+  return true;
+};
+/** Detach the open history transcript so another task can take the middle pane. */
+const parkHistoryTranscript = (): void => {
+  const view = historyView;
+  const list = app?.querySelector<HTMLElement>('[data-history-items]');
+  if (!view || view.loading || !list) return;
+  const visible = model.timeline.filter(isConversationTimelineItem);
+  const rows = [...list.children].filter((node): node is HTMLElement =>
+    node instanceof HTMLElement && node.classList.contains('timeline-item'));
+  if (rows.length === 0 || rows.length !== visible.length) return;
+  if (rows.some((row, index) => row.dataset.key !== visible[index]?.itemId || timelineRowItem.get(row) !== visible[index])) return;
+  const holder = document.createElement('div');
+  for (const row of rows) holder.appendChild(row);
+  parkedHistory.delete(view.threadId);
+  parkedHistory.set(view.threadId, { items: visible, holder });
+  while (parkedHistory.size > PARKED_HISTORY_LIMIT) {
+    const oldest = parkedHistory.keys().next().value;
+    if (oldest === undefined) break;
+    parkedHistory.delete(oldest);
+  }
+};
 const renderHistoryView = (timelineItems = model.timeline): void => {
   const view = historyView;
   if (!view || activePage !== 'workbench') return;
@@ -2759,17 +4308,10 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
     const shell = app.querySelector<HTMLElement>('.app-shell');
     if (shell) shell.inert = false;
   }
-  if (!region.querySelector('[data-history-items]')) {
-    region.innerHTML = `<div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1 data-history-title></h1></div></div>
-      <div data-history-status role="status"></div>
-      <button class="secondary-button" data-action="history-older"><i data-lucide="history"></i><span>加载更早记录</span></button>
-      <div class="timeline" data-history-items></div>`;
-    historyIcons(region);
-  }
-  region.querySelector('[data-history-title]')!.textContent = model.threads.find((thread) => thread.id === view.threadId)?.title ?? '历史会话';
+  ensureHistoryShell(region);
   region.setAttribute('aria-busy', String(view.loading));
   const threadRoot = model.threads.find((thread) => thread.id === view.threadId)?.cwd;
-  const workspaceHint = threadRoot && model.workspace.rootPath && !sameWorkspaceRoot(threadRoot, model.workspace.rootPath)
+  const workspaceHint = threadRoot && model.workspace.rootPath && !sameProjectWorkspace(threadRoot, model.workspace.rootPath)
     ? '当前工作区与此历史会话不同，发送将在当前目录创建新会话；如需续接，请先打开原目录再选择此会话。' : '';
   const responseHint = model.timeline.some((item) => item.title === '任务完成' && item.body.includes('本地没有可恢复的模型回复正文'))
     ? '此页部分旧任务未保存模型回复正文，现有运行记录无法还原原回复。' : '';
@@ -2783,7 +4325,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   // but are not rendered. eventId / sequence / digest stay on the items for export and audit.
   const historyItems = region.querySelector<HTMLElement>('[data-history-items]')!;
   const visibleHistory = timelineItems.filter(isConversationTimelineItem);
-  syncKeyedList(historyItems, visibleHistory, (item) => item.itemId, timelineItemHtml, historyIcons);
+  syncKeyedList(historyItems, visibleHistory, (item) => item.itemId, timelineItemHtml, historyIcons, timelineRowHooks);
   const emptyHistory = historyItems.querySelector('[data-history-empty]');
   if (visibleHistory.length === 0 && !view.loading) {
     if (!emptyHistory) {
@@ -2799,21 +4341,24 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   }
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
   if (composer) {
-    // Keep the editor usable while a directory read is in flight.  The send
-    // action remains gated below, so workspace changes cannot start a task,
-    // but toggling the disabled attribute no longer makes the composer flash.
-    composer.disabled = !model.composer.enabled;
-    composer.placeholder = model.composer.placeholder;
+    // Directory reads must not flash this box closed. A live task stays open
+    // even when the run projection has marked the composer disabled.
+    setDisabledIfChanged(composer, !model.composer.enabled && !composerFollowUpOpen());
+    const placeholder = showLiveTaskCopy()
+      ? '可以继续补充。发送后会在当前任务结束后接着做。'
+      : model.composer.placeholder;
+    if (composer.placeholder !== placeholder) composer.placeholder = placeholder;
   }
   const send = app.querySelector<HTMLButtonElement>('.composer .send-button');
-  if (send) send.disabled = running || !model.composer.enabled || workspaceChanging;
+  if (send) setDisabledIfChanged(send, composerInputLocked());
+  syncComposerAttachments();
   app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"]').forEach((button) => {
     button.disabled = running || workspaceChanging;
   });
   const stop = app.querySelector<HTMLButtonElement>('.composer-stop');
   if (stop) stop.disabled = true;
   const status = app.querySelector<HTMLElement>('.run-status');
-  if (status) status.textContent = taskProgressMessage || (view.loading ? '正在加载历史会话…' : '历史会话');
+  if (status) status.textContent = (showLiveTaskCopy() ? taskProgressMessage : '') || (clarificationRunEnded(model.activeRun?.state) ? runStateLabel(model.activeRun?.state) : '') || (view.loading ? '正在加载历史会话…' : '历史会话');
   const connection = app.querySelector<HTMLElement>('.connection-status');
   if (connection) {
     connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
@@ -2824,17 +4369,8 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览';
   const version = app.querySelector<HTMLElement>('.version-label');
   if (version) version.textContent = `v${model.runtime.version}`;
-  const workspaceTitle = currentProjectName();
-  const workspace = app.querySelector<HTMLElement>('.workspace-identity strong');
-  if (workspace) { workspace.textContent = workspaceTitle; workspace.title = workspaceTitle; }
-  const project = app.querySelector<HTMLElement>('.composer-project');
-  if (project) project.textContent = workspaceTitle;
-  const route = app.querySelector<HTMLElement>('.composer-summary');
-  if (route && model.runtime.model) {
-    const value = `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`;
-    route.title = value;
-    if (route.lastChild?.nodeType === Node.TEXT_NODE) route.lastChild.textContent = value;
-  }
+  refreshWorkspaceChrome();
+  syncComposerModelPicker();
   const context = app.querySelector<HTMLElement>('.context-panel');
   if (context) patchLiveRegion(context, contextPanelInputs(), renderContextContent);
 };
@@ -2844,7 +4380,7 @@ const renderWorkspaceEntries = (): string => {
     return `
       <div class="empty-state compact-empty">
         <i data-lucide="folder-open"></i>
-        <p>正在加载默认工作区，可以直接开始只读分析。</p>
+        <p>正在加载默认工作区，可以直接开始分析，必要的修改会逐项请求审批。</p>
       </div>`;
   }
   if (model.workspace.entries.length === 0) {
@@ -2884,6 +4420,11 @@ const renderSelectedFile = (): string => {
 };
 
 const exportData = async (scope: string): Promise<void> => {
+  if (desktopBridge.isNative() && (anyTaskRunning() || liveTaskRunning())) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再导出数据。';
+    render();
+    return;
+  }
   exportNotice = '正在导出…'; render();
   try {
     const result = await desktopBridge.exportData(scope);
@@ -2919,7 +4460,7 @@ const exportTaskResult = async (): Promise<void> => {
       const cursors = new Set<string>();
       let before: string | undefined;
       do {
-        if (running) throw new Error('任务已开始运行，请稍后重新导出。');
+        if (anyTaskRunning()) throw new Error('任务已开始运行，请稍后重新导出。');
         const page = await desktopBridge.listThreadEvents(threadId, { limit: 500, before });
         runId ??= page.events.at(-1)?.runId;
         events.push(...page.events.filter(event => event.runId === runId));
@@ -3077,6 +4618,11 @@ const recordRecovery = (recovery: RuntimeRecoveryResponse): void => {
 
 const runRecoveryCheck = async (): Promise<void> => {
   if (!desktopBridge.isNative()) return;
+  if (anyTaskRunning() || liveTaskRunning()) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再执行恢复检查。';
+    render();
+    return;
+  }
   try {
     const recovery = await desktopBridge.reconcileRuntimeState();
     recordRecovery(recovery);
@@ -3093,6 +4639,11 @@ const runRecoveryCheck = async (): Promise<void> => {
 
 const runRecoveryRecordAction = async (element: HTMLElement): Promise<void> => {
   if (!desktopBridge.isNative()) return;
+  if (anyTaskRunning() || liveTaskRunning()) {
+    exportNotice = '当前有任务正在运行，请等任务完成或取消后再处理历史恢复记录。';
+    render();
+    return;
+  }
   const action = element.dataset.action;
   const recordId = element.dataset.recordId ?? '';
   const expectedDigest = element.dataset.recordDigest || undefined;
@@ -3168,17 +4719,22 @@ const renderWorkspacePage = (): string => {
   </div>`;
 };
 const renderMemoryPage = (): string => {
-  const allMemories = experienceMemories().slice().sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.memoryId.localeCompare(right.memoryId));
-  const pageCount = Math.max(1, Math.ceil(allMemories.length / 8));
-  memoryPage = Math.min(memoryPage, pageCount);
-  const memories = allMemories.slice((memoryPage - 1) * 8, memoryPage * 8);
-  const dreams = model.dreamRuns.slice().sort((left, right) => right.startedAtMs - left.startedAtMs).slice(0, 6);
+  try {
+    return renderMemoryPageContent();
+  } catch (error) {
+    return '<div class="page-placeholder"><span class="eyebrow">供后续任务参考</span><h1>技能与记忆</h1><p class="panel-error">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</p></div>';
+  }
+};
+const renderMemoryPageContent = (): string => {
+  const allMemories = experienceMemories().slice().sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) || String(left.memoryId).localeCompare(String(right.memoryId)));
+  const dreams = (Array.isArray(model.dreamRuns) ? model.dreamRuns : []).slice().sort((left, right) => (right.startedAtMs ?? 0) - (left.startedAtMs ?? 0)).slice(0, 6);
+  const reviewable = allMemories.filter((memory) => experiencePlacement(memory) !== 'skip');
   const counts = {
-    active: allMemories.filter((memory) => memory.status === 'ACTIVE').length,
-    proposed: allMemories.filter((memory) => memory.status === 'PROPOSED').length,
-    verified: allMemories.filter((memory) => memory.status === 'VERIFIED').length,
-    conflicts: allMemories.filter((memory) => (memory.conflictsWithMemoryIds?.length ?? 0) > 0).length,
-    retracted: allMemories.filter((memory) => ['RETRACTED', 'PRUNED', 'REJECTED'].includes(memory.status)).length
+    active: reviewable.filter((memory) => memory.status === 'ACTIVE').length,
+    proposed: reviewable.filter((memory) => memory.status === 'PROPOSED').length,
+    verified: reviewable.filter((memory) => memory.status === 'VERIFIED').length,
+    conflicts: reviewable.filter((memory) => (memory.conflictsWithMemoryIds?.length ?? 0) > 0).length,
+    retracted: reviewable.filter((memory) => ['RETRACTED', 'PRUNED', 'REJECTED'].includes(memory.status)).length
   };
   const renderMemoryActions = (memory: DisplayMemory): string => renderExperienceActions(memory, 'page');
   const renderEditForm = (memory: typeof allMemories[number]): string => {
@@ -3202,39 +4758,60 @@ const renderMemoryPage = (): string => {
       + (memoryEditError ? '<div class="settings-message settings-message-error" role="alert">' + escapeHtml(memoryEditError) + '</div>' : '')
       + '<div class="governance-actions"><button type="button" class="secondary-button" data-action="memory-edit-cancel">取消</button><button type="submit" class="governance-button governance-button-primary">保存为新版本</button></div></form>';
   };
-  const memoryRows = memories.map((memory) => {
+  const renderMemoryRow = (memory: DisplayMemory): string => {
     const supersededBy = allMemories.find((candidate) => candidate.supersedesMemoryId === memory.memoryId);
+    const sourceIds = Array.isArray(memory.sourceEventIds) ? memory.sourceEventIds : [];
+    const conflictIds = Array.isArray(memory.conflictsWithMemoryIds) ? memory.conflictsWithMemoryIds : [];
     const relations = [
       memory.supersedesMemoryId ? '替代 ' + memory.supersedesMemoryId : '',
       supersededBy ? '已被新版本替代 ' + supersededBy.memoryId : '',
-      memory.conflictsWithMemoryIds?.length ? '冲突 ' + memory.conflictsWithMemoryIds.join(', ') : ''
+      conflictIds.length ? '冲突 ' + conflictIds.join(', ') : ''
     ].filter(Boolean).join(' · ');
-    const details = '来源 ' + ((memory.sourceEventIds ?? []).join(', ') || '未知')
+    const details = '来源 ' + (sourceIds.join(', ') || '未知')
       + ' · 有效期 ' + (memory.expiresAtMs === undefined ? '未设置' : new Date(memory.expiresAtMs).toLocaleString('zh-CN', { timeZoneName: 'short' }))
       + ' · ' + (memory.untrainable === true ? '禁止训练标记：是' : memory.untrainable === false ? '禁止训练标记：否（不代表已获训练授权）' : '训练限制：未提供')
       + (memory.sensitivity ? ' · 敏感性 ' + sensitivityDisplayLabel(memory.sensitivity) : '')
       + (memory.version !== undefined ? ' · 版本 ' + memory.version : '')
       + (relations ? ' · ' + relations : '');
     const editing = memoryEditState?.memoryId === memory.memoryId;
-    return `<article class="run-history-row memory-row" data-memory-id="${escapeHtml(memory.memoryId)}"><div class="run-history-copy"><strong>供以后参考的一条经验</strong><span>${escapeHtml(memoryStatusLabel(memory.status))}</span>${memoryExplanation(memory)}${memoryReviewGuide(memory)}${panelDetails('memory-page:' + memory.memoryId, '来源与保存信息（建议先打开核对）', panelFields([['记录信息', details], ['系统评分（不代表正确率）', memory.confidence]]) + panelSources(memory.runId, memory.sourceEventIds ?? []), true)}</div>${editing ? renderEditForm(memory) : renderMemoryActions(memory)}</article>`;
-  }).join('');
-  const statusSummary = '<div class="memory-status-summary" aria-label="记忆分类"><span>已启用 ' + counts.active + '</span><span>待审核 ' + counts.proposed + '</span><span>已核验待启用 ' + counts.verified + '</span><span class="memory-conflict-count">冲突 ' + counts.conflicts + '</span><span>已撤回 ' + counts.retracted + '</span></div>';
+    return `<article class="run-history-row memory-row" data-memory-id="${escapeHtml(memory.memoryId)}" data-experience-placement="${experiencePlacement(memory)}"><div class="run-history-copy"><strong>${escapeHtml(experienceTitle(memory))}</strong><span>${escapeHtml(experienceStatusLabel(memory))}</span>${memoryExplanation(memory)}${memoryReviewGuide(memory)}${panelDetails('memory-page:' + memory.memoryId, '来源与保存信息（建议先打开核对）', panelFields([['记录信息', details], ['系统评分（不代表正确率）', memory.confidence]]) + panelSources(memory.runId, sourceIds), true)}</div>${editing ? renderEditForm(memory) : renderMemoryActions(memory)}</article>`;
+  };
+  const placed = {
+    skill: allMemories.filter((memory) => experiencePlacement(memory) === 'skill'),
+    memory: allMemories.filter((memory) => experiencePlacement(memory) === 'memory'),
+    skip: allMemories.filter((memory) => experiencePlacement(memory) === 'skip')
+  };
+  const section = (placement: ExperiencePlacement, title: string, note: string, items: DisplayMemory[]): string => {
+    const rows = items.map(renderMemoryRow).join('');
+    const empty = memoryListLoading
+      ? '<div class="page-status page-status-loading"><i data-lucide="loader-circle" class="spin"></i><span>正在读取…</span></div>'
+      : '<div class="page-status page-status-empty"><strong>这里是空的</strong><span>' + (memoryListError ? '记忆库没有读出来，所以上面是 0。' : '当前没有这一类记录。') + '</span></div>';
+    return '<section class="memory-placement" data-experience-placement="' + placement + '"><div class="route-heading"><div><span class="eyebrow">' + (placement === 'skill' ? '项目技能' : placement === 'memory' ? '记忆' : '不收录') + '</span><h2>' + title + '</h2></div><span class="route-count">' + items.length + ' 条</span></div><p class="panel-purpose">' + note + '</p><div class="run-history-list">' + (rows || empty) + '</div></section>';
+  };
+  const statusSummary = memoryListLoading && allMemories.length === 0
+    ? '<div class="page-status page-status-loading"><i data-lucide="loader-circle" class="spin"></i><span>正在读取已保存的技能和记忆…</span></div>'
+    : '<div class="memory-status-summary" aria-label="技能与记忆分类"><span>技能 ' + placed.skill.filter(experienceInEffect).length + ' 条已生效</span><span>记忆 ' + placed.memory.filter(experienceInEffect).length + ' 条已生效</span><span>已停止 ' + counts.retracted + '</span></div>'
+      + (memoryListError ? '<div class="page-status memory-action-error" role="alert"><strong>记忆库没有读出来</strong><span>' + escapeHtml(memoryListError) + '</span></div>' : '');
   const editHint = memoryEditState ? '<div class="page-status memory-edit-hint"><strong>正在编辑 ' + escapeHtml(memoryEditState.memoryId) + '</strong><span>编辑会创建新版本，提交前请核对来源和敏感性。</span></div>' : '';
-  return '<div class="page-placeholder"><span class="eyebrow">供后续任务参考</span><h1>已保存的经验</h1><p class="panel-purpose">先看“记住什么”，再打开来源详情核对内容、来源和适用范围。确认准确且有帮助后，点“确认已核验”；最后再决定是否点“启用记忆”。Agent 只会使用已启用的经验，运行统计不计入经验数量。</p>'
+  const dreamActions = '<div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>运行一次</button>' + dreamMaintenanceToggle('停止后台', '启动后台') + '</div>';
+  return '<div class="page-placeholder"><div class="memory-page-heading"><div><span class="eyebrow">供后续任务参考</span><h1>技能与记忆</h1></div>' + dreamActions + '</div><p class="panel-purpose">和某个具体项目绑在一起的做法是技能，标题会写明是哪个项目。换个项目也成立的规则是记忆。写下来就生效，不用先核验。想看的时候再打开；不对的点“停止使用”。临时核对命令两边都不收。</p>'
     + (governanceReadFailed ? '<div class="page-status memory-action-error" role="alert"><strong>刷新未完成</strong><span>无法读取最新治理状态，当前显示上次读取的记录。请重新读取后核对。</span><button class="secondary-button" data-action="refresh-governance">重新读取</button></div>' : '')
     + (memoryActionError ? '<div class="page-status memory-action-error" role="alert"><strong>操作未完成</strong><span>请求未成功返回，结果尚未确认。请先刷新治理状态核对，再决定是否重试；页面保留上次读取的记录。</span><button class="secondary-button" data-action="refresh-governance">刷新治理状态</button></div>' : '')
     + statusSummary + editHint
-    + '<div class="run-history-list">' + (memoryRows || '<div class="page-status page-status-empty"><strong>暂时没有具体经验需要审核</strong><span>文件数量、工具调用次数不属于可复用经验。它们保留在下方的技术记录里，无需逐条确认。</span></div>') + '</div>'
-    + (pageCount > 1 ? '<nav aria-label="记忆分页" class="route-heading"><button class="secondary-button" data-action="memory-page" data-delta="-1" ' + (memoryPage === 1 ? 'disabled' : '') + '>上一页</button><span>第 ' + memoryPage + ' / ' + pageCount + ' 页 · 共 ' + allMemories.length + ' 条</span><button class="secondary-button" data-action="memory-page" data-delta="1" ' + (memoryPage === pageCount ? 'disabled' : '') + '>下一页</button></nav>' : '')
+    + section('skill', '项目技能', '已经跑通的做法会写明属于哪个项目。之后在那个项目里做同类任务时会直接参考。', placed.skill)
+    + section('memory', '记忆', '不绑定某一次项目命令的事实和工具规则，后续任务会直接参考。', placed.memory)
+    + (placed.skip.length ? section('skip', '不收录', '这些是当时用来核对产物的临时命令。不做成技能，也不放进记忆。', placed.skip) : '')
     + renderMemoryActivityArchive('page')
-    + '<div class="route-heading"><div><span class="eyebrow">后台整理</span><h2>后台整理状态</h2></div><div class="governance-actions"><button class="governance-button governance-button-primary" data-action="run-dream" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>运行一次</button>' + (model.runtime.dreamMaintenance?.running === true ? '<button class="governance-button governance-button-danger" data-action="stop-dream-maintenance">停止后台</button>' : '<button class="governance-button" data-action="start-dream-maintenance" ' + (desktopBridge.isNative() ? '' : 'disabled') + '>启动后台</button>') + '</div></div>'
+    + '<div class="route-heading"><div><span class="eyebrow">后台整理</span><h2>后台整理状态</h2></div></div>'
     + '<div class="run-history-list">' + (dreams.map((dream) => '<div class="run-history-row"><div class="run-history-copy"><strong>后台记忆整理 · ' + escapeHtml(shortDigest(dream.runId)) + '</strong><span>' + escapeHtml(statusDisplayLabel(dream.state)) + ' · ' + escapeHtml(formatTime(dream.startedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(dream.errorCode ? reasonDisplayLabel(dream.errorCode) : (dream.finishedAtMs ? '已完成' : '运行中')) + '</span></div>').join('') || '<div class="page-status page-status-empty"><strong>暂无后台整理记录</strong><span>当前没有后台记忆整理运行记录。</span></div>') + '</div>'
     + '<button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button></div>';
 };
 const renderSafetyPage = (): string => {
   const approvals = model.approvals.filter((approval) => isApprovalStatusList(approval.state));
   const controlled = model.composer.mode === 'CONTROLLED';
-  const network = controlledNetworkTargets.parsed.length ? controlledNetworkTargets.parsed.map((target) => target.host).join(', ') : '关闭';
+  const network = controlled
+    ? networkAccessSummary(controlledNetworkTargets.text, controlledNetworkTargets.parsed, controlledNetworkTargets.error).label
+    : '关闭';
   const records = executionRecords.slice(-12).reverse();
   const latestApproval = approvals[0];
   const actionRows = latestApproval ? [
@@ -3252,12 +4829,17 @@ const renderSafetyPage = (): string => {
     ['文件写入', controlled ? '需要确认' : '关闭'],
     ['外部网络', network]
   ].map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('');
-  const recordRows = records.map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>').join('');
+  const recordRows = records.map((record) => {
+    const copy = executionRecordCopy(record, executionRecords);
+    return '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(copy.action) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span>' + copy.detail + '</div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span></div>';
+  }).join('');
   return `<div class="page-placeholder"><span class="eyebrow">能力与安全</span><h1>能力与安全</h1>
+    ${accessControls.settingsHTML()}
     <div class="run-history-list">${rows}</div>
     <div class="route-heading"><div><span class="eyebrow">动作审批</span><h2>待审批动作信息</h2></div><span class="route-count">${actionRows.length ? '已记录' : '暂无'}</span></div>
     ${actionRows.length ? `<div class="run-history-list">${actionRows.map(([k, v]) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(k) + '</strong><span>' + escapeHtml(v) + '</span></div></div>').join('')}</div>` : '<div class="page-status page-status-empty"><strong>暂无待审批动作</strong><span>收到审批请求后显示已记录字段；未提供的策略信息保持未知。</span></div>'}
     <div class="route-heading"><div><span class="eyebrow">执行状态</span><h2>受控记录</h2></div><span class="route-count">${records.length} 条</span></div>
+    <p class="panel-purpose">每条写明当时的命令或路径、工作目录，以及为什么同意、拒绝或取消。</p>
     ${recordRows ? `<div class="run-history-list">${recordRows}</div>` : '<div class="page-status page-status-empty"><strong>暂无受控记录</strong><span>当前没有已保存的动作请求、审批或一次性授权。</span></div>'}
     ${approvals.length ? `<section class="workbench-approvals" aria-label="审批与授权状态"><div class="transcript-heading"><div><span class="eyebrow">审批</span><h2>审批与授权状态</h2></div></div>${approvals.map(renderApprovalCard).join('')}</section>` : ''}
     <button class="secondary-button" data-action="navigate" data-page="workbench">返回工作台</button>
@@ -3285,7 +4867,10 @@ const renderRecoveryDetails = (recovery: NonNullable<typeof lastRecovery>): stri
   };
   const approvalRows = recovery.pendingApprovalRecords.map((record) => recoveryRecordRow(record, '待处理审批'));
   const leaseRows = recovery.leaseRecords.map((record) => recoveryRecordRow(record as unknown as Record<string, unknown>, '一次性授权'));
-  const executionRows = recovery.executionRecords.slice(-12).reverse().map((record) => '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>记录 ' + escapeHtml(shortDigest(record.recordId)) + ' · ' + escapeHtml(toolDisplayLabel(record.capability ?? '受控能力')) + '</span><small>状态 ' + escapeHtml(executionStateLabel(record.state)) + ' · 更新时间 ' + escapeHtml(formatTime(record.updatedAtMs)) + (record.recordDigest ? ' · 校验摘要 ' + escapeHtml(shortDigest(record.recordDigest)) : '') + '</small></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span><button class="governance-button" data-action="view-recovery-record" data-record-id="' + escapeHtml(record.recordId) + '">查看状态</button></div>');
+  const executionRows = recovery.executionRecords.slice(-12).reverse().map((record) => {
+    const copy = executionRecordCopy(record, recovery.executionRecords);
+    return '<div class="run-history-row"><div class="run-history-copy"><strong>' + escapeHtml(executionTypeLabel(record.recordType)) + '</strong><span>' + escapeHtml(copy.action) + ' · ' + escapeHtml(formatTime(record.updatedAtMs)) + '</span>' + copy.detail + '<small>状态 ' + escapeHtml(executionStateLabel(record.state)) + (record.recordDigest ? ' · 校验摘要 ' + escapeHtml(shortDigest(record.recordDigest)) : '') + '</small></div><span class="run-history-state">' + escapeHtml(executionStateLabel(record.state)) + '</span><button class="governance-button" data-action="view-recovery-record" data-record-id="' + escapeHtml(record.recordId) + '">查看状态</button></div>';
+  });
   const workspaceLine = recovery.workspace
     ? '<div class="runtime-line"><i data-lucide="git-branch"></i><span>工作区检查：' + escapeHtml((recovery.workspace.statusCodes ?? []).join(', ') || '未发现状态码') + ' · 路径摘要 ' + String((recovery.workspace.pathDigests ?? []).length) + ' 条' + (recovery.workspace.pathDigestTruncated ? '（已截断）' : '') + '</span></div>'
     : '';
@@ -3411,62 +4996,192 @@ const contextPanelInputs = (): unknown[] => [threadArchives, model.workspace, mo
   model.plugins, model.pluginVersions, model.evolutionProposals, model.evolutionReports, model.evolutionControl,
   model.decisions, model.feedback, model.supportBundle, model.modelEgress, model.modelUsage,
   model.activeRun, model.activeThreadId, model.threads, model.processVerification,
+  activeClarification()?.requestId ?? '', activeClarification()?.submitting ?? false,
   model.continuousVerification, model.timeline, controlledNetworkTargets.text, controlledNetworkTargets.error,
-  governanceActionNotice, governanceReadFailed, memoryActionError, taskActionNotice, taskExportBusy, taskExportNotice, taskProgressMessage, running];
+  governanceActionNotice, governanceReadFailed, memoryActionError, dreamMaintenanceUserStopped, dreamMaintenanceAutoStartFailed, dreamMaintenanceStarting, taskActionNotice, taskExportBusy, taskExportNotice, taskProgressMessage, running];
 let contextPanelPatchTimer: number | undefined;
+let contextPanelPointerDown = false;
 let pendingContextPanelPatch: { element: HTMLElement; inputs: unknown[]; html: () => string } | undefined;
+const flushPendingContextPanel = (): void => {
+  contextPanelPatchTimer = undefined;
+  if (contextPanelPointerDown) return;
+  const pending = pendingContextPanelPatch;
+  pendingContextPanelPatch = undefined;
+  if (!pending || !pending.element.isConnected || pending.element !== app.querySelector('.context-panel')) return;
+  patchLiveRegion(pending.element, pending.inputs, pending.html);
+};
 const patchContextPanel = (element: HTMLElement | null, inputs: unknown[], html: () => string): void => {
   if (!element) return;
   const previous = liveRegions.get(element);
   if (previous && previous.inputs.length === inputs.length && inputs.every((value, index) => value === previous.inputs[index])) return;
   pendingContextPanelPatch = { element, inputs, html };
+  // A refresh replaces the whole panel. Doing that between pointerdown and
+  // click removes the button under the cursor, so the click never arrives.
+  if (contextPanelPointerDown) return;
   // Bound the refresh rate without postponing updates indefinitely during a stream.
   if (contextPanelPatchTimer !== undefined) return;
-  contextPanelPatchTimer = window.setTimeout(() => {
-    contextPanelPatchTimer = undefined;
-    const pending = pendingContextPanelPatch;
-    pendingContextPanelPatch = undefined;
-    if (!pending || !pending.element.isConnected || pending.element !== app.querySelector('.context-panel')) return;
-    patchLiveRegion(pending.element, pending.inputs, pending.html);
-  }, 700);
+  contextPanelPatchTimer = window.setTimeout(flushPendingContextPanel, 700);
 };
-let liveTimeline: { container: HTMLElement; human: LiveTimeline; tools: LiveTimeline;
-  source?: TimelineItem[]; focus?: string | null; expanded?: boolean } | undefined;
-const liveTaskRunning = (): boolean => Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
+function flushContextPanelImmediate(): void {
+  if (contextPanelPatchTimer !== undefined) {
+    window.clearTimeout(contextPanelPatchTimer);
+    contextPanelPatchTimer = undefined;
+  }
+  pendingContextPanelPatch = undefined;
+  if (contextVisible) {
+    patchLiveRegion(app?.querySelector<HTMLElement>('.context-panel') ?? null, contextPanelInputs(), renderContextContent);
+  }
+}
+let liveTimeline: { container: HTMLElement; human: LiveTimeline;
+  source?: TimelineItem[]; focus?: string | null } | undefined;
+const PARKED_LIVE_LIMIT = 6;
+const parkedLiveTimelines = new Map<string, LiveTimeline>();
+function resetLiveTimeline(): void {
+  if (liveTimeline) {
+    liveTimeline.human.clear();
+    liveTimeline = undefined;
+  } else {
+    app?.querySelector<HTMLElement>('[data-live-human]')?.replaceChildren();
+  }
+}
+/** Keep a session's painted transcript so the next visit does not rebuild it. */
+function parkLiveTimeline(sessionId: string | undefined): void {
+  if (!liveTimeline) return;
+  const timeline = liveTimeline.human;
+  liveTimeline = undefined;
+  if (!sessionId || !timeline.hasRows()) {
+    timeline.clear();
+    return;
+  }
+  const previous = parkedLiveTimelines.get(sessionId);
+  if (previous && previous !== timeline) previous.clear();
+  timeline.park();
+  parkedLiveTimelines.delete(sessionId);
+  parkedLiveTimelines.set(sessionId, timeline);
+  while (parkedLiveTimelines.size > PARKED_LIVE_LIMIT) {
+    const oldest = parkedLiveTimelines.keys().next().value;
+    if (oldest === undefined) break;
+    const dropped = parkedLiveTimelines.get(oldest);
+    parkedLiveTimelines.delete(oldest);
+    if (dropped && dropped !== timeline) dropped.clear();
+  }
+}
+function attachLiveTimeline(container: HTMLElement): void {
+  const humanHost = container.querySelector<HTMLElement>('[data-live-human]');
+  if (!humanHost) return;
+  const parked = parkedLiveTimelines.get(sessionController.selectedId);
+  if (parked) {
+    parkedLiveTimelines.delete(sessionController.selectedId);
+    if (!parked.isMountedIn(humanHost)) parked.retarget(humanHost);
+    liveTimeline = { container, human: parked, source: undefined, focus: undefined };
+    return;
+  }
+  if (!liveTimeline || liveTimeline.container !== container || !liveTimeline.human.isMountedIn(humanHost)) {
+    liveTimeline = { container, human: new LiveTimeline(humanHost, timelineItemHtml, historyIcons, followLiveTranscript) };
+  }
+}
+const liveTaskRunning = (): boolean => Boolean(model.activeRun && !clarificationRunEnded(model.activeRun.state));
+/**
+ * User-facing "this task is still going". The `running` bridge lock stays set
+ * after cancel until the process exits, and must not keep the old progress copy.
+ */
+const showLiveTaskCopy = (): boolean =>
+  !clarificationRunEnded(model.activeRun?.state) && (running || liveTaskRunning());
+/** A running task queues the next message, so the box stays editable. */
+const composerFollowUpOpen = (): boolean => running || liveTaskRunning();
+const composerInputLocked = (): boolean => workspaceChanging || (!model.composer.enabled && !composerFollowUpOpen());
+const setDisabledIfChanged = (control: HTMLButtonElement | HTMLTextAreaElement, locked: boolean): void => {
+  if (control.disabled !== locked) control.disabled = locked;
+};
 let transcriptFollowFrame: number | undefined;
+let transcriptRevealToken = 0;
+/** Put the latest message at the bottom of the middle transcript. */
+const scrollTranscriptToLatest = (): boolean => {
+  const transcript = app?.querySelector<HTMLElement>('.transcript');
+  if (!transcript) return false;
+  restoreTranscriptScroll(transcript, transcript.scrollHeight);
+  return transcriptDistanceFromBottom(transcript) <= transcriptBottomTolerance;
+};
 const followLiveTranscript = (): void => {
   if (!transcriptStick || transcriptFollowFrame !== undefined) return;
   // Human rows, tool rows and the surrounding shell can all request following.
   // Read layout once after their DOM writes, and respect intervening user scroll.
+  // Batched mounts add rows on later frames; follow again until the latest
+  // message is actually in view.
   transcriptFollowFrame = requestAnimationFrame(() => {
     transcriptFollowFrame = undefined;
     const transcript = app?.querySelector<HTMLElement>('.transcript');
-    if (transcript && transcriptStick) {
-      restoringScroll = true;
-      transcript.scrollTop = transcript.scrollHeight;
-      window.requestAnimationFrame(() => { restoringScroll = false; });
-    }
+    if (!transcript || !transcriptStick || transcriptDistanceFromBottom(transcript) <= transcriptBottomTolerance) return;
+    if (!scrollTranscriptToLatest()) followLiveTranscript();
   });
+};
+/**
+ * Task switches open on the latest message. Keep pinning across the frames
+ * where the conversation is still being mounted, and stop if the user scrolls.
+ */
+const revealLatestTranscript = (): void => {
+  const token = ++transcriptRevealToken;
+  transcriptStick = true;
+  let attempts = 0;
+  const step = (): void => {
+    if (token !== transcriptRevealToken || !transcriptStick) return;
+    const settled = scrollTranscriptToLatest();
+    attempts += 1;
+    if (!settled && attempts < 24) requestAnimationFrame(step);
+  };
+  step();
 };
 const renderRunControls = (): void => {
   refreshComposerCache();
   refreshModeControls();
-  patchLiveRegion(app.querySelector('.run-status'), [model.activeRun?.state, taskProgressMessage], () => `
-    <i data-lucide="${liveTaskRunning() || taskProgressMessage ? 'loader-circle' : 'shield-check'}" class="${liveTaskRunning() || taskProgressMessage ? 'spin' : ''}"></i>
-    <span>${escapeHtml(taskProgressMessage || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>`);
+  patchLiveRegion(app.querySelector('.run-status'), [model.activeRun?.state, taskProgressMessage, activeClarification()?.requestId ?? '', activeClarification()?.submitting ?? false], () => {
+    const waiting = activeClarification();
+    if (waiting) {
+      return `<i data-lucide="circle-alert"></i><span>${escapeHtml(waiting.submitting ? '正在提交你的说明' : '等待你补充说明')}</span> <small class="run-next-step">在下方回答后，当前任务会继续。</small>`;
+    }
+    const progress = showLiveTaskCopy() ? taskProgressMessage : '';
+    return `<i data-lucide="${progress ? 'loader-circle' : 'shield-check'}" class="${progress ? 'spin' : ''}"></i><span>${escapeHtml(progress || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(progress ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>`;
+  });
+  const waiting = activeClarification();
+  const clarificationHost = app.querySelector<HTMLElement>('[data-clarification-host]');
+  const clarificationCard = waiting ? clarificationCardHtml(waiting, escapeHtml) : '';
+  if (clarificationHost && clarificationHost.innerHTML !== clarificationCard) clarificationHost.innerHTML = clarificationCard;
   const composer = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
-  if (composer) { composer.disabled = !model.composer.enabled; composer.placeholder = model.composer.placeholder; }
+  if (composer) {
+    setDisabledIfChanged(composer, composerInputLocked());
+    const placeholder = waiting
+      ? '回答上面的问题。发送后当前任务会继续。'
+      : showLiveTaskCopy()
+        ? '可以继续补充。发送后会在当前任务结束后接着做。'
+        : model.composer.placeholder;
+    if (composer.placeholder !== placeholder) composer.placeholder = placeholder;
+  }
   const stop = app.querySelector<HTMLButtonElement>('.composer-stop');
-  if (stop) { stop.disabled = !liveTaskRunning(); stop.title = liveTaskRunning() ? '取消任务' : '当前没有运行中的任务'; }
+  if (stop) { setDisabledIfChanged(stop, !liveTaskRunning()); stop.title = liveTaskRunning() ? '取消任务' : '当前没有运行中的任务'; }
   const send = app.querySelector<HTMLButtonElement>('.send-button');
   if (send) {
-    send.disabled = running || liveTaskRunning() || !model.composer.enabled || workspaceChanging;
-    send.title = workspaceChanging ? '目录切换中，请稍候' : running || liveTaskRunning() ? '任务运行中，请先取消' : '发送任务';
+    setDisabledIfChanged(send, composerInputLocked());
+    send.title = workspaceChanging ? '目录切换中，请稍候' : waiting ? '发送回答并继续当前任务' : showLiveTaskCopy() ? '发送后会在当前任务结束后继续' : '发送任务';
   }
+  syncComposerAttachments();
+  syncComposerModelPicker();
   app.querySelectorAll<HTMLButtonElement>('[data-action="open-workspace"]').forEach((button) => {
     button.disabled = running || workspaceChanging;
     button.title = running || workspaceChanging ? '请等待当前任务或目录切换完成' : '';
   });
+  // Brand/version come from the hydrated runtime snapshot — the live patch
+  // path owns them too or a startup shell render stays 'Web 预览' forever.
+  const brand = app.querySelector<HTMLElement>('.brand-row strong + span');
+  if (brand) brand.textContent = model.runtime.platform === 'WINDOWS' ? 'Windows 本地运行时' : 'Web 预览';
+  const version = app.querySelector<HTMLElement>('.version-label');
+  if (version) version.textContent = `v${model.runtime.version}`;
+};
+const refreshConversationTitle = (): void => {
+  const title = conversationTitle();
+  const heading = app.querySelector<HTMLElement>('[data-conversation-title]');
+  if (!heading) return;
+  setTextIfChanged(heading, title);
+  if (heading.title !== title) heading.title = title;
 };
 const refreshWorkspaceChrome = (): void => {
   const workspaceTitle = currentProjectName();
@@ -3476,6 +5191,7 @@ const refreshWorkspaceChrome = (): void => {
     identity.title = workspaceTitle;
   }
   setTextIfChanged(app.querySelector<HTMLElement>('.composer-project'), workspaceTitle);
+  refreshConversationTitle();
 };
 const syncCellsSessionBanner = (): void => {
   const host = app.querySelector<HTMLElement>('[data-cells-session-banner-host]');
@@ -3485,16 +5201,13 @@ const syncCellsSessionBanner = (): void => {
 };
 
 const renderLiveView = (): void => {
+  syncExperienceNavCount();
   syncCellsSessionBanner();
   renderRunControls();
   refreshWorkspaceChrome();
   const container = app.querySelector<HTMLElement>('[data-live-workbench]');
   if (!container) return;
-  if (liveTimeline?.container !== container) {
-    liveTimeline = { container,
-      human: new LiveTimeline(container.querySelector('[data-live-human]')!, timelineItemHtml, historyIcons, followLiveTranscript),
-      tools: new LiveTimeline(container.querySelector('[data-live-tools]')!, timelineItemHtml, historyIcons, followLiveTranscript) };
-  }
+  attachLiveTimeline(container);
   const slot = (name: string) => container.querySelector<HTMLElement>(`[data-live-region="${name}"]`);
   patchLiveRegion(slot('route-notice'), [routeFailure, model.decisions, model.activeThreadId], renderRouteFailureNotice);
   patchLiveRegion(slot('evidence'), [model.timeline], renderEvidencePanel);
@@ -3504,29 +5217,18 @@ const renderLiveView = (): void => {
   });
   const agents = slot('agents');
   patchLiveRegion(agents, [model.subAgents, model.activeRun?.state, subAgentsCollapsed], renderSubAgents, '.subagent-list');
-  patchLiveRegion(slot('heading'), [model.activeRun?.title, focusedRunId], () => `
-    <div class="transcript-heading"><div><span class="eyebrow">任务时间线</span><h1>${escapeHtml(model.activeRun?.title ?? 'Windows 只读工作台')}</h1>
-      ${focusedRunId ? '<button class="secondary-button" data-action="clear-run-focus">清除运行筛选</button>' : ''}</div></div>`);
+  patchLiveRegion(slot('heading'), [focusedRunId], () => focusedRunId
+    ? `<div class="transcript-heading"><button class="secondary-button" data-action="clear-run-focus">清除运行筛选</button></div>`
+    : '');
   // The submit receipt card (cmd-… receipt) is no longer rendered; lastSubmitReceipt
   // state is still tracked for acknowledgement bookkeeping and evidence.
   const lists = liveTimeline!;
-  if (lists.source !== model.timeline || lists.focus !== focusedRunId || lists.expanded !== executionGroupExpanded) {
+  if (lists.source !== model.timeline || lists.focus !== focusedRunId) {
     const all = focusedRunId ? model.timeline.filter((item) => item.runId === focusedRunId) : model.timeline;
-    const tools = all.filter((item) => item.kind === 'STATUS' || item.kind === 'WORKSPACE');
-    // Tool cards stay in the main conversation so a reader can follow the
-    // active task without opening a secondary audit disclosure.  The group
-    // below still contains the complete structured execution history.
+    // Tool cards stay beside the round that requested them. Phase rows such as
+    // 任务进度 and 角色上下文 stay in the read model and are not a second list.
     lists.human.update(all.filter(isConversationTimelineItem));
-    const group = container.querySelector<HTMLDetailsElement>('[data-execution-group]')!;
-    group.hidden = tools.length === 0;
-    const activeToolCount = tools.filter((item) => Boolean(item.toolName)).length;
-    group.open = executionGroupExpanded;
-    setTextIfChanged(group.querySelector('summary'), `工具执行过程${activeToolCount ? `（${activeToolCount} 个工具步骤）` : `（${tools.length} 条事件）`}`);
-    // The full audit list remains on-demand; the human-facing tool cards above
-    // are mounted immediately and do not require a click.
-    if (executionGroupExpanded) lists.tools.update(tools);
-    else lists.tools.pause();
-    lists.source = model.timeline; lists.focus = focusedRunId; lists.expanded = executionGroupExpanded;
+    lists.source = model.timeline; lists.focus = focusedRunId;
   }
   patchLiveRegion(app.querySelector('.connection-status'), [model.connection], () => `<span></span>${escapeHtml(model.connection.label)}`);
   const connection = app.querySelector<HTMLElement>('.connection-status');
@@ -3540,6 +5242,40 @@ const renderLiveView = (): void => {
   if (projection) projection.textContent = `运行投影 v${model.projectionVersion}`;
   syncMemoryActionControls();
 };
+const renderSecondaryPageLive = (): void => {
+  syncExperienceNavCount();
+  renderRunControls();
+  refreshWorkspaceChrome();
+  syncCellsSessionBanner();
+  patchLiveRegion(app.querySelector('.connection-status'), [model.connection], () => `<span></span>${escapeHtml(model.connection.label)}`);
+  const connection = app.querySelector<HTMLElement>('.connection-status');
+  if (connection) connection.className = `connection-status ${model.connection.state === 'READY' ? 'status-ready' : model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting'}`;
+  app.querySelector('.app-shell')?.classList.toggle('context-open', contextVisible);
+  updateThreadList();
+  if (contextVisible) patchContextPanel(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
+  const conversation = app.querySelector<HTMLElement>('[data-region="conversation"]');
+  if (conversation) {
+    const pageInputs = activePage === 'safety'
+      ? [activePage, model.approvals, [...pendingApprovalResolutions].join(','), executionRecords, model.composer.mode, accessController.mode, accessController.state.saving, accessController.state.loading, accessController.state.error, controlledNetworkTargets.text]
+      : activePage === 'memory'
+        ? [activePage, model.memories, model.dreamRuns, model.runtime.dreamMaintenance, dreamMaintenanceUserStopped, dreamMaintenanceAutoStartFailed, dreamMaintenanceStarting, memoryPage, memoryRecordPage, memoryEditState, memoryEditError, governanceReadFailed, memoryActionError, governanceActionNotice, memoryListLoading, memoryListError]
+        : activePage === 'workspace'
+          ? [activePage, model.workspace, running, workspaceChanging, executionRecords, model.processVerification, lastRecovery]
+          : activePage === 'runs'
+            ? [activePage, projectionRuns, runsPage]
+            : [activePage, model.runtime, model.connection, model.supportBundle, model.modelUsage, lastRecovery, exportNotice];
+    patchLiveRegion(conversation, pageInputs, () =>
+      activePage === 'runs' ? renderRunsPage()
+      : activePage === 'diagnostics' ? renderDiagnosticsPage()
+      : activePage === 'workspace' ? renderWorkspacePage()
+      : activePage === 'memory' ? renderMemoryPage()
+      : activePage === 'safety' ? renderSafetyPage()
+      : renderPageStatus(activePage)
+    );
+  }
+  syncMemoryActionControls();
+};
+
 const render = (): void => {
   if (model.runtime.releaseChannel) app.dataset.releaseChannel = model.runtime.releaseChannel;
   const promptError = app.querySelector<HTMLElement>('#composer-prompt-error');
@@ -3555,6 +5291,14 @@ const render = (): void => {
     && settingsVisible === Boolean(app.querySelector('[data-settings-dialog]')) && !settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog
     && !app.querySelector('.project-picker-backdrop')) {
     renderLiveView();
+    return;
+  }
+  if (activePage !== 'workbench'
+    && app.querySelector<HTMLElement>('.app-shell')?.dataset.activePage === activePage
+    && app.querySelector<HTMLElement>('.app-shell')?.dataset.composerMode === model.composer.mode
+    && settingsVisible === Boolean(app.querySelector('[data-settings-dialog]')) && !settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog
+    && !app.querySelector('.project-picker-backdrop')) {
+    renderSecondaryPageLive();
     return;
   }
   const focusedSetting = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-settings-dialog]')
@@ -3573,18 +5317,15 @@ const render = (): void => {
   const statusClass = model.connection.state === 'READY' ? 'status-ready' :
     model.connection.state === 'ERROR' ? 'status-error' : 'status-waiting';
   const workspaceTitle = currentProjectName();
-  // Read-only is an execution policy, not an input lock. Keep the composer
-  // editable while the native runtime hydrates; a submitted prompt waits for
-  // that one-time read to finish before the task child is spawned.
-  const canCompose = model.composer.enabled;
-  const canSend = canCompose && !workspaceChanging;
-  const taskRunning = Boolean(model.activeRun && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun.state));
-  const runtimeRoute = model.runtime.model
-    ? `${model.runtime.model.provider} 服务 · ${model.runtime.model.model}`
-    : model.runtime.platform === 'WINDOWS' ? '模型路由未读取' : 'Web 预览无本地模型';
+  const openTaskTitle = conversationTitle();
+  // Read-only is an execution policy, not an input lock. A live task also
+  // keeps the box open: the message waits and runs after the current one.
+  const canCompose = !composerInputLocked();
+  const canSend = canCompose;
+  const taskRunning = liveTaskRunning();
 
   app.innerHTML = `
-    <div class="app-shell ${contextVisible ? 'context-open' : ''}" data-composer-mode="${model.composer.mode}">
+    <div class="app-shell ${contextVisible ? 'context-open' : ''}" data-composer-mode="${model.composer.mode}" data-active-page="${escapeHtml(activePage)}">
       <aside class="navigation-rail" aria-label="项目与设置">
         <div class="brand-row">
         <div class="brand-mark">dda</div>
@@ -3613,9 +5354,12 @@ const render = (): void => {
 
       <main class="workbench">
         <header class="topbar">
-          <div class="workspace-identity">
-            <span class="eyebrow">当前工作区</span>
-            <strong title="${escapeHtml(workspaceTitle)}">${escapeHtml(workspaceTitle)}</strong>
+          <div class="topbar-heading">
+            <h1 class="conversation-title" data-conversation-title data-history-title title="${escapeHtml(openTaskTitle)}">${escapeHtml(openTaskTitle)}</h1>
+            <div class="workspace-identity">
+              <span class="eyebrow">当前工作区</span>
+              <strong title="${escapeHtml(workspaceTitle)}">${escapeHtml(workspaceTitle)}</strong>
+            </div>
           </div>
           <div class="topbar-actions">
             <button class="icon-button" title="搜索" aria-label="搜索"><i data-lucide="search"></i></button>
@@ -3627,10 +5371,12 @@ const render = (): void => {
         <section class="run-strip" aria-live="polite">
           <div class="connection-status ${statusClass}"><span></span>${escapeHtml(model.connection.label)}</div>
           <div class="run-status">
-            ${taskProgressMessage || model.activeRun?.state === 'PLANNING' || model.activeRun?.state === 'EXECUTING_READ' || model.activeRun?.state === 'VERIFYING'
-              ? '<i data-lucide="loader-circle" class="spin"></i>'
-              : '<i data-lucide="shield-check"></i>'}
-            <span>${escapeHtml(taskProgressMessage || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>
+            ${activeClarification()
+              ? `<i data-lucide="circle-alert"></i><span>${escapeHtml(activeClarification()?.submitting ? '正在提交你的说明' : '等待你补充说明')}</span> <small class="run-next-step">在下方回答后，当前任务会继续。</small>`
+              : `${showLiveTaskCopy() && (taskProgressMessage || model.activeRun?.state === 'PLANNING' || model.activeRun?.state === 'EXECUTING_READ' || model.activeRun?.state === 'VERIFYING')
+                ? '<i data-lucide="loader-circle" class="spin"></i>'
+                : '<i data-lucide="shield-check"></i>'}
+            <span>${escapeHtml((showLiveTaskCopy() ? taskProgressMessage : '') || runStateLabel(model.activeRun?.state))}</span> <small class="run-next-step">${escapeHtml(showLiveTaskCopy() && taskProgressMessage ? '准备完成后会自动继续，无需重复点击。' : runStateNextStep(model.activeRun?.state))}</small>`}
           </div>
         </section>
 
@@ -3646,28 +5392,34 @@ const render = (): void => {
               <div class="live-region" data-live-region="heading"></div>
               <div class="timeline">
                 <div data-live-human></div>
-                <details class="execution-group" data-execution-group hidden><summary></summary><div data-live-tools></div></details>
               </div>
             </div>` : ''}
           </div>
         </section>
 
         <footer class="composer-wrap">
-          <div class="composer-cache" data-model-cache="composer" role="status" aria-label="缓存命中率">${renderComposerCache()}</div>
           <form class="composer" data-form="composer">
-            <textarea name="prompt" rows="2" aria-describedby="composer-prompt-error" placeholder="${escapeHtml(model.composer.placeholder)}" ${canCompose ? '' : 'disabled'}></textarea>
+            <div data-clarification-host>${activeClarification() ? clarificationCardHtml(activeClarification()!, escapeHtml) : ''}</div>
+            <div class="composer-attachments" data-composer-attachments ${selectedImageAttachments().length ? '' : 'hidden'}>${renderComposerAttachmentsInnerHtml(selectedImageAttachments())}</div>
+            <textarea name="prompt" rows="2" aria-describedby="composer-prompt-error" placeholder="${escapeHtml(activeClarification() ? '回答上面的问题。发送后当前任务会继续。' : showLiveTaskCopy() ? '可以继续补充。发送后会在当前任务结束后接着做。' : model.composer.placeholder)}" ${canCompose ? '' : 'disabled'}></textarea>
             <div class="composer-bottom">
               <div class="composer-context">
-                <span class="composer-project">${escapeHtml(workspaceTitle)}</span><span class="composer-summary" title="${escapeHtml(runtimeRoute)}"><i data-lucide="cpu"></i>${escapeHtml(runtimeRoute)}</span>
+                <span class="composer-project">${escapeHtml(workspaceTitle)}</span>${renderComposerModelPicker()}
+                ${accessControls.buttonHTML('access-mode-composer')}
               </div>
               <div class="composer-actions">
+                <input type="file" data-role="composer-image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+                <button class="composer-attach-button" type="button" data-action="attach-image" ${canSend ? '' : 'disabled'} title="添加或粘贴图片（Ctrl+V）" aria-label="添加图片"><i data-lucide="image-plus"></i><span>图片</span></button>
                 <button class="stop-button composer-stop" type="button" data-action="cancel-run" ${taskRunning ? '' : 'disabled'} title="${taskRunning ? '取消任务' : '当前没有运行中的任务'}" aria-label="取消任务"><i data-lucide="square"></i><span>取消任务</span></button>
-                <button class="send-button" type="submit" ${!taskRunning && canSend ? '' : 'disabled'} title="${workspaceChanging ? '目录切换中，请稍候' : taskRunning ? '任务运行中，请先取消' : '发送任务'}"><i data-lucide="send"></i><span>发送</span></button>
+                <button class="send-button" type="submit" ${canSend ? '' : 'disabled'} title="${workspaceChanging ? '目录切换中，请稍候' : activeClarification() ? '发送回答并继续当前任务' : taskRunning ? '发送后会在当前任务结束后继续' : '发送任务'}"><i data-lucide="send"></i><span>发送</span></button>
               </div>
             </div>
           </form>
           <p id="composer-prompt-error" role="alert" class="settings-message settings-message-error" ${composerPromptError ? '' : 'hidden'}>${escapeHtml(composerPromptError)}</p>
-          <p class="composer-note">执行命令或修改文件前，会先询问你是否同意。</p>
+          <div class="composer-footer-line">
+            <div class="composer-cache" data-model-cache="composer" role="status" aria-label="缓存命中率">${renderComposerCache()}</div>
+            <p class="composer-note">${queuedFollowUpCount() ? `已排队 ${queuedFollowUpCount()} 条，当前任务结束后继续。` : accessController.mode === 'FULL_ACCESS' ? '允许完全访问 · 极高危操作仍需确认' : '执行命令或修改文件前，会先询问你是否同意。'}</p>
+          </div>
         </footer>
       </main>
 
@@ -3700,6 +5452,9 @@ const render = (): void => {
       form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[name]').forEach((field) => {
         if (settingsDraft?.[field.name] !== undefined) field.value = settingsDraft[field.name];
       });
+      const modelInput = form.querySelector<HTMLInputElement>('[data-role="catalog-model-input"]');
+      const limitInput = form.querySelector<HTMLInputElement>('[data-role="context-limit-input"]');
+      if (modelInput && limitInput) limitInput.dataset.limitModel = modelInput.value.trim();
     }
     form?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input,textarea,select').forEach((field) => { field.disabled = settingsSaving; });
     syncSettingsView();
@@ -3715,6 +5470,7 @@ const render = (): void => {
       Archive,
       ArrowLeft,
       Bot,
+      Brain,
       CheckCircle2,
       ChevronDown,
       ChevronRight,
@@ -3728,6 +5484,7 @@ const render = (): void => {
       Gauge,
       HeartPulse,
       History,
+      ImagePlus,
       RotateCcwClock: History,
       LayoutDashboard,
       ListTree,
@@ -3749,15 +5506,14 @@ const render = (): void => {
   syncMemoryActionControls();
   const navigationRail = document.querySelector<HTMLElement>('.navigation-rail');
   if (navigationRail) navigationRail.scrollTop = navigationScrollTop;
+  const renderedTranscript = app.querySelector<HTMLElement>('.transcript');
+  const scrollVersion = transcriptInputVersion;
   requestAnimationFrame(() => {
     if (navigationRail?.isConnected) navigationRail.scrollTop = navigationScrollTop;
-    const transcript = document.querySelector<HTMLElement>('.transcript');
-    if (transcript) {
+    const transcript = renderedTranscript;
+    if (transcript?.isConnected && scrollVersion === transcriptInputVersion) {
       // 中间时间线：只在用户停在底部时自动跟随。
-      restoringScroll = true;
-      if (transcriptStick) transcript.scrollTop = transcript.scrollHeight;
-      else transcript.scrollTop = Math.min(transcriptScrollTop, transcript.scrollHeight);
-      window.requestAnimationFrame(() => { restoringScroll = false; });
+      restoreTranscriptScroll(transcript, transcriptStick ? transcript.scrollHeight : transcriptScrollTop);
     }
     const contextPanel = document.querySelector<HTMLElement>('.context-panel');
     if (contextPanel) {
@@ -3769,8 +5525,14 @@ const render = (): void => {
 
 const renderWithFallback = (background = false): void => {
   try {
+    if (background && (projectPickerVisible || Boolean(projectNameDialog) || Boolean(projectEditDialog))) {
+      renderRunControls();
+      updateThreadList();
+      return;
+    }
     if (background && (settingsVisible || activePage !== 'workbench')) {
       if (activePage === 'workbench' && (!historyView || model.activeRun)) renderLiveView();
+      else if (!settingsVisible && activePage !== 'workbench' && app.querySelector<HTMLElement>('.app-shell')?.dataset.activePage === activePage) renderSecondaryPageLive();
       else renderRunControls();
       return;
     }
@@ -3799,13 +5561,25 @@ const scheduleRender = (): void => {
 let approvalExpiryTimer: number | undefined;
 const scheduleApprovalExpiry = (): void => {
   window.clearTimeout(approvalExpiryTimer);
-  const deadlines = model.approvals.filter((approval) => approval.state === 'REQUESTED' && approval.approvalExpiresAt !== undefined)
+  // Every live session keeps its own pending set; the nearest deadline across
+  // all of them drives the single timer, and each expiry applies only to the
+  // session whose approvals actually reached their deadline.
+  const deadlines = [...sessionController.sessions.values()]
+    .flatMap((session) => session.model.approvals)
+    .filter((approval) => approval.state === 'REQUESTED' && approval.approvalExpiresAt !== undefined)
     .map((approval) => approval.approvalExpiresAt!);
   if (!deadlines.length) { approvalExpiryTimer = undefined; return; }
   approvalExpiryTimer = window.setTimeout(() => {
-    const next = expireRequestedApprovals(model);
-    if (next !== model) update(next);
-    else scheduleApprovalExpiry();
+    for (const session of sessionController.sessions.values()) {
+      const pending = session.model.approvals.some((approval) => approval.state === 'REQUESTED'
+        && approval.approvalExpiresAt !== undefined && approval.approvalExpiresAt <= Date.now());
+      if (!pending) continue;
+      withSession(session.clientSessionId, () => {
+        const next = expireRequestedApprovals(model);
+        if (next !== model) update(next);
+      });
+    }
+    scheduleApprovalExpiry();
   }, Math.min(2147483647, Math.max(0, Math.min(...deadlines) - Date.now())));
 };
 
@@ -3824,6 +5598,10 @@ const update = (next: HarnessReadModel, { coalesce = false }: { coalesce?: boole
     || next.activeRun?.runId !== model.activeRun?.runId
     || next.workspace.currentPath !== model.workspace.currentPath;
   model = next;
+  // While a background session's state is installed this update must not touch
+  // the DOM, navigation, or dialogs — those belong to the selected session.
+  if (scopedProjectionDepth > 0) return;
+  syncSelectedSession();
   if (approvalConfirmation) {
     const pending = model.approvals.find(item => item.requestId === approvalConfirmation!.requestId);
     if (pending?.state !== 'REQUESTED' || pending.requestDigest !== approvalConfirmation.digest
@@ -3841,7 +5619,7 @@ const update = (next: HarnessReadModel, { coalesce = false }: { coalesce?: boole
 
 const refreshExecutionState = async (options: { allowDuringRun?: boolean } = {}): Promise<void> => {
   if (!desktopBridge.isNative()) return;
-  if (running && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.allowDuringRun) {
     // The task owns the Harness database while it is running. The runtime
     // events already project the visible approval state, so defer this read
     // until the child exits instead of opening a competing SQLite connection.
@@ -3851,7 +5629,7 @@ const refreshExecutionState = async (options: { allowDuringRun?: boolean } = {})
   const runAtStart = model.activeRun?.runId;
   try {
     const records = await desktopBridge.listExecutionState();
-    if (running || model.activeRun?.runId !== runAtStart) return;
+    if (anyTaskRunning() || model.activeRun?.runId !== runAtStart) return;
     executionRecords = records;
     render();
   } catch (error) {
@@ -3867,7 +5645,7 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
     await dashboardRefreshInFlight;
     if (options.startup || dashboardDetailsLoaded) return;
   }
-  if (running && !options.startup && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.startup && !options.allowDuringRun) {
     // A dashboard read opens the same Harness SQLite database as a task. Do
     // not let a manual refresh overwrite a live run or block its first event.
     return;
@@ -3892,7 +5670,7 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
       // A non-startup refresh may have started before a task was submitted.
       // Drop its result rather than replacing live sub-agent rows with the
       // older dashboard projection.
-      if (!options.startup && (running || model.activeRun?.runId !== runAtStart)) return;
+      if (!options.startup && (anyTaskRunning() || model.activeRun?.runId !== runAtStart)) return;
       dashboardDetailsLoaded = true;
       reconcileHistoryPageCache(dashboard.threads);
       for (const runId of dashboard.deletedRunIds ?? []) deletedRuntimeRunIds.add(runId);
@@ -3909,10 +5687,11 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
           ...(dreamMaintenance ? { dreamMaintenance } : {})
         },
         feedback: dashboard.feedback,
-        memories: dashboard.memories,
+        memories: Array.isArray(dashboard.memories) && dashboard.memories.length > 0 ? dashboard.memories : model.memories,
         dreamRuns: dashboard.dreams,
-        plugins: dashboard.plugins,
-        pluginVersions: dashboard.pluginVersions ?? [],
+        plugins: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.plugins,
+        pluginVersions: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.pluginVersions ?? [],
+        pluginGovernanceStatus: dashboard.pluginGovernanceStatus,
         evolutionProposals: dashboard.evolution.proposals,
         evolutionReports: dashboard.evolution.reports,
         evolutionControl: dashboard.evolution.control,
@@ -3936,19 +5715,88 @@ const refreshDashboard = async (options: DashboardRefreshOptions = {}): Promise<
   }
 };
 
+let memoryListSeq = 0;
+const refreshMemoryList = async (): Promise<void> => {
+  if (!desktopBridge.isNative()) return;
+  const seq = ++memoryListSeq;
+  memoryListLoading = true;
+  memoryListError = '';
+  if (activePage === 'memory') renderWithFallback();
+  try {
+    const memories = await desktopBridge.listMemories();
+    if (seq !== memoryListSeq) return;
+    memoryListLoading = false;
+    update({ ...model, memories });
+  } catch (error) {
+    if (seq !== memoryListSeq) return;
+    memoryListLoading = false;
+    memoryListError = compactError(error);
+    if (activePage === 'memory') renderWithFallback();
+  }
+};
+
 const loadPageDetails = async (): Promise<void> => {
   if (!contextVisible && !['runs', 'memory', 'safety', 'diagnostics'].includes(activePage)) return;
   // Recovery must own the command slot before optional dashboard rebuilds.
   await Promise.all([historyStartupReady, runtimeHydrationReady]);
-  if (running) return;
+  if (activePage === 'memory') void refreshMemoryList();
+  if (anyTaskRunning()) return;
   if (!dashboardDetailsLoaded) await refreshDashboard();
+};
+
+const ensureDreamMaintenanceStarted = (): void => {
+  if (dreamMaintenanceEnsure) return;
+  if (model.runtime.dreamMaintenance?.running === true) dreamMaintenanceAutoStartAttempted = true;
+  if (!shouldAutoStartDreamMaintenance({
+    native: desktopBridge.isNative(),
+    runtimeReady: model.runtime.runtimeReady === true,
+    userStopped: dreamMaintenanceUserStopped,
+    taskRunning: anyTaskRunning(),
+    alreadyRunning: model.runtime.dreamMaintenance?.running === true,
+    attempted: dreamMaintenanceAutoStartAttempted
+  })) return;
+  dreamMaintenanceAutoStartAttempted = true;
+  dreamMaintenanceStarting = true;
+  dreamMaintenanceEnsure = (async () => {
+    try {
+      const status = await desktopBridge.startDreamMaintenance({
+        projectId: model.workspace.rootLabel || undefined
+      });
+      if (dreamMaintenanceUserStopped) {
+        const stopped = await desktopBridge.stopDreamMaintenance().catch(() => undefined);
+        if (stopped) update(setDreamMaintenanceStatus(model, stopped));
+        return;
+      }
+      if (status) {
+        dreamMaintenanceAutoStartFailed = false;
+        update(setDreamMaintenanceStatus(model, status));
+      } else if (!dreamMaintenanceUserStopped) {
+        dreamMaintenanceAutoStartFailed = true;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('已在运行')) {
+        dreamMaintenanceAutoStartFailed = false;
+        const status = await desktopBridge.dreamMaintenanceStatus().catch(() => undefined);
+        if (status && !dreamMaintenanceUserStopped) update(setDreamMaintenanceStatus(model, status));
+        return;
+      }
+      dreamMaintenanceAutoStartFailed = true;
+    } finally {
+      dreamMaintenanceStarting = false;
+      dreamMaintenanceEnsure = undefined;
+      if (activePage === 'memory' || contextVisible) scheduleRender();
+    }
+  })();
+  if (activePage === 'memory' || contextVisible) scheduleRender();
 };
 
 const scheduleBackgroundDetails = (): void => {
   window.clearTimeout(backgroundDetailsTimer);
   backgroundDetailsTimer = window.setTimeout(() => {
     backgroundDetailsTimer = undefined;
-    if (running) return;
+    if (anyTaskRunning()) return;
+    ensureDreamMaintenanceStarted();
     if (executionRefreshQueued || governanceRefreshQueued) {
       executionRefreshQueued = false;
       governanceRefreshQueued = false;
@@ -3963,43 +5811,42 @@ const scheduleBackgroundDetails = (): void => {
 
 const refreshGovernance = async (options: { allowDuringRun?: boolean } = {}): Promise<void> => {
   if (!desktopBridge.isNative()) return;
-  if (running && !options.allowDuringRun) {
+  if (anyTaskRunning() && !options.allowDuringRun) {
     governanceRefreshQueued = true;
     return;
   }
   const runAtStart = model.activeRun?.runId;
   try {
-    const [memories, dreamRuns, pluginGovernance, evolution, dreamMaintenance, dashboard] = await Promise.all([
-      desktopBridge.listMemories(),
-      desktopBridge.listDreamRuns(),
-      desktopBridge.listPluginGovernance(),
-      desktopBridge.listEvolution(),
+    // The dashboard aggregate is the single authority for this read path. The
+    // strict plugin list command stays reserved for plugin actions, so a
+    // blocked governance projection no longer fails the whole refresh.
+    const [dreamMaintenance, dashboard] = await Promise.all([
       desktopBridge.dreamMaintenanceStatus(),
       desktopBridge.runtimeDashboard({ details: true })
     ]);
-    if (running || model.activeRun?.runId !== runAtStart) return;
-    const plugins = pluginGovernance.plugins;
-    pluginVersionSnapshot = pluginGovernance.versionLifecycle;
-    const pluginVersions = dashboard?.pluginVersions ?? pluginVersionSummaries(undefined, pluginGovernance.versionLifecycle);
+    if (anyTaskRunning() || model.activeRun?.runId !== runAtStart) return;
+    if (!dashboard) throw new Error('DASHBOARD_UNAVAILABLE: runtime dashboard returned no data');
+    pluginVersionSnapshot = undefined;
     governanceReadFailed = false;
     memoryActionsAwaitingRefresh.clear();
     update({
       ...model,
       projectionVersion: model.projectionVersion + 1,
-      memories,
-      dreamRuns,
-      plugins,
-      pluginVersions,
-      evolutionProposals: evolution.proposals,
-      evolutionReports: evolution.reports,
-      ...(dashboard ? { evolutionControl: dashboard.evolution.control } : {}),
-      ...(dashboard ? { feedback: dashboard.feedback } : {}),
-      ...(dashboard?.projection?.decisions ? { decisions: dashboard.projection.decisions } : {}),
-      ...(dashboard?.projection?.continuousVerification ? { continuousVerification: dashboard.projection.continuousVerification } : {}),
-      ...(dashboard?.projection?.verifier ? { processVerification: dashboard.projection.verifier as ProcessVerificationReadModel } : {}),
-      ...(dashboard?.supportBundle ? { supportBundle: dashboard.supportBundle } : {}),
-      ...(dashboard?.modelEgress ? { modelEgress: dashboard.modelEgress } : {}),
-      ...(dashboard?.modelUsage ? { modelUsage: dashboard.modelUsage } : {}),
+      memories: Array.isArray(dashboard.memories) && dashboard.memories.length > 0 ? dashboard.memories : model.memories,
+      dreamRuns: dashboard.dreams,
+      plugins: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.plugins,
+      pluginVersions: dashboard.pluginGovernanceStatus?.state === 'BLOCKED' ? [] : dashboard.pluginVersions ?? [],
+      pluginGovernanceStatus: dashboard.pluginGovernanceStatus,
+      evolutionProposals: dashboard.evolution.proposals,
+      evolutionReports: dashboard.evolution.reports,
+      evolutionControl: dashboard.evolution.control,
+      feedback: dashboard.feedback,
+      ...(dashboard.projection?.decisions ? { decisions: dashboard.projection.decisions } : {}),
+      ...(dashboard.projection?.continuousVerification ? { continuousVerification: dashboard.projection.continuousVerification } : {}),
+      ...(dashboard.projection?.verifier ? { processVerification: dashboard.projection.verifier as ProcessVerificationReadModel } : {}),
+      ...(dashboard.supportBundle ? { supportBundle: dashboard.supportBundle } : {}),
+      ...(dashboard.modelEgress ? { modelEgress: dashboard.modelEgress } : {}),
+      ...(dashboard.modelUsage ? { modelUsage: dashboard.modelUsage } : {}),
       runtime: dreamMaintenance ? { ...model.runtime, dreamMaintenance } : model.runtime
     });
   } catch (error) {
@@ -4014,10 +5861,22 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
   const key = governanceBusyKey(element);
   if (pendingGovernanceActions.has(key)) return;
   const label = element.textContent?.trim() || '操作';
+  if ((anyTaskRunning() || liveTaskRunning()) && ['memory-action', 'run-dream', 'plugin-action', 'evolution-action'].includes(action)) {
+    governanceRefreshQueued = true;
+    governanceActionNotice = {
+      key,
+      text: `当前有任务正在运行，暂时无法执行「${label}」（运行时数据库由当前任务独占）。请等任务完成或取消后再试。`,
+      error: true
+    };
+    render();
+    return;
+  }
   pendingGovernanceActions.add(key);
   governanceActionNotice = { key, text: `${label}正在处理，请稍候。`, error: false };
   syncMemoryActionControls();
   let pendingMemoryId: string | undefined;
+  let dreamProposedCount: number | undefined;
+  let updatedMaintenance: RuntimeDreamMaintenanceStatus | undefined;
   try {
     if (action === 'memory-action') {
       const memoryId = element.dataset.memoryId;
@@ -4031,11 +5890,18 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
       await desktopBridge.memoryAction(operation, { memoryId, accepted, reason: operation === 'resolve-conflict' ? '用户从记忆页处理冲突' : undefined });
       memoryActionsAwaitingRefresh.add(memoryId);
     } else if (action === 'run-dream') {
-      await desktopBridge.runDream({ projectId: model.workspace.rootLabel, idle: true, safetyAllowed: true, activeRuns: 0 });
+      const dreamResult = await desktopBridge.runDream({ projectId: model.workspace.rootLabel, idle: !anyTaskRunning(), safetyAllowed: true, activeRuns: sessionController.runningSessions().length });
+      dreamProposedCount = Array.isArray(dreamResult?.proposedMemories) ? dreamResult.proposedMemories.length : undefined;
     } else if (action === 'start-dream-maintenance') {
-      await desktopBridge.startDreamMaintenance({ projectId: model.workspace.rootLabel });
+      if (!dreamMaintenanceEnsure) {
+        dreamMaintenanceUserStopped = false;
+        dreamMaintenanceAutoStartAttempted = true;
+        dreamMaintenanceAutoStartFailed = false;
+        updatedMaintenance = await desktopBridge.startDreamMaintenance({ projectId: model.workspace.rootLabel });
+      }
     } else if (action === 'stop-dream-maintenance') {
-      await desktopBridge.stopDreamMaintenance();
+      dreamMaintenanceUserStopped = true;
+      updatedMaintenance = await desktopBridge.stopDreamMaintenance();
     } else if (action === 'plugin-action') {
       const pluginId = element.dataset.pluginId;
       const operation = element.dataset.operation as 'validate' | 'transition' | undefined;
@@ -4051,11 +5917,23 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
         await desktopBridge.evolutionAction(proposalId, 'monitor');
       }
     }
+    if (updatedMaintenance) {
+      model = { ...model, runtime: { ...model.runtime, dreamMaintenance: updatedMaintenance } };
+    }
     await refreshGovernance();
     governanceActionNotice = governanceReadFailed
       ? { key, text: `${label}请求已返回，但最新记录未读到。请刷新后核对状态。`, error: true }
-      : { key, text: `${label}请求已完成，记录已刷新。`, error: false };
+      : dreamProposedCount !== undefined
+        ? {
+            key,
+            text: dreamProposedCount > 0
+              ? `后台整理完成，新增 ${dreamProposedCount} 条可复用记忆候选（请在上方“待审核”列表核对并启用）。`
+              : '后台整理完成，没有发现新的可复用记忆候选（已有候选已自动去重）。',
+            error: false
+          }
+        : { key, text: `${label}请求已完成，记录已刷新。`, error: false };
   } catch (error) {
+    if (action === 'start-dream-maintenance') dreamMaintenanceAutoStartFailed = true;
     governanceActionNotice = { key, text: `${label}未确认成功。请刷新记录后核对，再决定是否重试。`, error: true };
     if (action === 'memory-action') memoryActionError = 'FAILED';
     update(appendErrorTimelineItem(model, '治理操作', error));
@@ -4067,13 +5945,57 @@ const runGovernanceAction = async (action: string, element: HTMLElement): Promis
   }
 };
 
-const runtimeFailureText = (event: RuntimeEvent): string => {
+const verificationFailureCopy: Readonly<Partial<Record<string, string>>> = {
+  EXTERNAL_EVIDENCE_MISSING: '未取得足以核实回答的外部资料。可以查看已有结果，或补充可核实的来源。',
+  EXECUTION_EVIDENCE_MISSING: '执行记录缺少验收所需的证据。请查看诊断详情中的检查结果。',
+  RESULT_CONTRADICTS_EVIDENCE: '回答与已取得的证据不一致，未通过验收。',
+  GOAL_CONFLICT: '回答或操作超出了当前任务的范围。',
+  UNSAFE_BEHAVIOR: '验收发现操作存在安全或授权问题，任务已停止。',
+  VERIFICATION_SERVICE_UNAVAILABLE: '验证服务暂时无法确认结果，已保留执行记录。',
+  JEV_CHOICE: '验收未通过。可在诊断详情中查看检查项和证据引用。'
+};
+
+const runtimeVerificationFailure = (payload: NonNullable<RuntimeEvent['payload']>) => {
+  const checks = Array.isArray(payload.checks) ? payload.checks.filter((value): value is Record<string, unknown> =>
+    Boolean(value && typeof value === 'object')) : [];
+  const buildFailure = buildTestVerificationFailure(payload);
+  if (buildFailure) return buildFailure;
+  const reason = checks.find(check => check.id === 'jev-behavior-judge')?.message;
+  const code = Array.isArray(payload.failureCodes) && payload.failureCodes.includes('EXTERNAL_EVIDENCE_MISSING')
+    ? 'EXTERNAL_EVIDENCE_MISSING'
+    : ['RETRY_VERIFICATION', 'RESTORE_VERIFICATION_SERVICE'].includes(String(payload.nextAction))
+      ? 'VERIFICATION_SERVICE_UNAVAILABLE'
+      : typeof reason === 'string' ? reason : undefined;
+  if (!code || !Object.hasOwn(verificationFailureCopy, code)) return undefined;
+  const details = checks.flatMap(check => [
+    ...(typeof check.id === 'string' && typeof check.message === 'string' ? [check.id + ' · ' + check.message] : []),
+    ...(Array.isArray(check.evidence) ? check.evidence.filter((ref): ref is string => typeof ref === 'string') : [])
+  ]);
+  return { code, text: verificationFailureCopy[code]!, details: [...new Set(details)] };
+};
+
+const runtimeFailureText = (event: RuntimeEvent, diagnostic = false): string => {
   const payload = event.payload ?? {};
+  if (!diagnostic) {
+    const verificationFailure = runtimeVerificationFailure(payload);
+    if (verificationFailure) return verificationFailure.text;
+  }
   const reason = typeof payload.error === 'string' ? payload.error : typeof payload.message === 'string' ? payload.message : typeof payload.text === 'string' ? payload.text : '';
   const code = typeof payload.errorCode === 'string' ? payload.errorCode : typeof payload.code === 'string' ? payload.code : '';
   const recoveryCode = code || reason;
-  if (['THREAD_RESUME_GOAL_REQUIRED', 'THREAD_RESUME_PLAN_INVALID', 'THREAD_RESUME_CHECKPOINT_UNAVAILABLE', 'PERSISTENCE_LOCK_TIMEOUT'].includes(recoveryCode)) {
+  const clarificationText = clarificationFailureText(code) ?? clarificationFailureText(recoveryCode);
+  if (clarificationText) return `${clarificationText}（${code || recoveryCode}）`;
+  if (recoveryCode.startsWith('RECOVERY_WORKSPACE_CHANGED')) {
+    return '恢复前检测到工作区文件已变化，旧任务不能直接续跑；请从当前文件重新规划（RECOVERY_WORKSPACE_CHANGED）。';
+  }
+  if (['THREAD_RESUME_GOAL_REQUIRED', 'THREAD_RESUME_PLAN_INVALID', 'THREAD_RESUME_CHECKPOINT_UNAVAILABLE', 'PERSISTENCE_LOCK_TIMEOUT', 'RECOVERY_LINEAGE_INVALID'].includes(recoveryCode)) {
     return `${reasonDisplayLabel(recoveryCode)}（${recoveryCode}）`;
+  }
+  const uncertainStep = (Array.isArray(payload.failureCodes) && payload.failureCodes.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN'))
+    || code === 'SIDE_EFFECT_OUTCOME_UNCERTAIN' || payload.stepErrorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
+  if (uncertainStep) {
+    const stepId = typeof payload.stepId === 'string' && payload.stepId ? ` · 步骤 ${payload.stepId}` : '';
+    return `${reasonDisplayLabel('SIDE_EFFECT_OUTCOME_UNCERTAIN')}（SIDE_EFFECT_OUTCOME_UNCERTAIN）${stepId}`;
   }
   const phase = typeof payload.phase === 'string' ? payload.phase : '';
   const detailKeys = ['failurePhase', 'failureStatus', 'stepId', 'stepErrorCode', 'reasonCode', 'cause', 'status', 'reportStatus', 'nextAction'];
@@ -4088,9 +6010,23 @@ const runtimeFailureText = (event: RuntimeEvent): string => {
       })
     : [];
   const tool = typeof payload.toolName === 'string' ? `工具：${payload.toolName}` : typeof payload.name === 'string' ? `工具：${payload.name}` : '';
-  const parts = [phase && `阶段：${phase}`, tool, code && `错误码：${code}`, reason, ...details, ...failedChecks].filter(Boolean);
+  const approvalHint = approvalFailureHint(payload);
+  const parts = [approvalHint, phase && `阶段：${phase}`, tool, code && `错误码：${code}`, reason, ...details, ...failedChecks].filter(Boolean);
   if (parts.length) return parts.join(' · ');
   return details.length ? details.join(' · ') : '任务运行失败：运行时未提供具体原因，请检查对应工具结果和计划步骤。';
+};
+
+const runtimeFailureItem = (event: RuntimeEvent) => {
+  const payload = event.payload ?? {};
+  const failure = runtimeVerificationFailure(payload);
+  const build = typeof payload.runtimeBuildId === 'string' ? `运行构建 ${payload.runtimeBuildId}` : '';
+  return {
+    body: [planFailureMessage(payload, runtimeFailureText(event), failure?.code), build].filter(Boolean).join('\n'),
+    ...(failure ? {
+      failureReasonCode: failure.code,
+      diagnosticDetail: [runtimeFailureText(event, true), ...failure.details].join('\n')
+    } : {})
+  };
 };
 
 const logRuntimeFailure = (event: RuntimeEvent, source: string): void => {
@@ -4117,16 +6053,35 @@ const runtimeEventText = (event: RuntimeEvent): string => {
 
 const harnessProgressText = (payload: Record<string, unknown>): string => {
   const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  if (payload.taskClass === 'query') {
+    const calls = count(payload.toolResults);
+    return calls > 0
+      ? `查询已拿到 ${calls} 次结果，正在整理成回答。`
+      : '正在查询。回答会直接出现在对话里。';
+  }
+  const successfulWrites = count(payload.successfulWrites);
+  const inspections = count(payload.inspectionsSinceWrite);
+  const progress = successfulWrites > 0
+    ? `已完成 ${count(payload.toolResults)} 次工具调用，其中 ${successfulWrites} 次受控文件写入成功；最近一次成功文件写入后又读取 ${inspections} 次。`
+    : `已完成 ${count(payload.toolResults)} 次工具调用，尚未记录成功的受控文件写入；本轮已读取 ${inspections} 次。`;
   const verification = payload.verification && typeof payload.verification === 'object'
     ? payload.verification as Record<string, unknown> : undefined;
   const providerErrors = Array.isArray(verification?.providerErrors)
     ? verification.providerErrors.filter((value): value is string => typeof value === 'string') : [];
   return [
-    `已完成 ${count(payload.toolResults)} 次工具调用，其中 ${count(payload.successfulWrites)} 次写入成功；最近一次写入后又读取 ${count(payload.inspectionsSinceWrite)} 次。`,
+    progress,
     providerErrors.length ? `验证服务异常：${providerErrors.join('、')}。已保留改动和失败记录，尚未确认任务完成。` : '',
     verification?.nextAction === 'RESTORE_VERIFICATION_SERVICE' ? '请恢复验证服务后继续。' : ''
   ].filter(Boolean).join('\n');
 };
+
+function toolTimeoutText(name: string, timeoutMs: unknown): string {
+  const limit = typeof timeoutMs === 'number' && timeoutMs > 0 ? `（上限 ${Math.round(timeoutMs / 1000)} 秒）` : '';
+  if (name === 'web.search') return `网页搜索超时，未取得搜索结果。${limit}`;
+  if (name === 'web.fetch' || name === 'network.request') return `网络请求超时，未取得完整响应。${limit}`;
+  if (name === 'shell.execute' || name === 'test.execute') return `命令执行超时，已停止进程；可能已产生部分构建文件，请先核对结果。${limit}`;
+  return `工具执行超时。${limit}`;
+}
 
 const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined => {
   const payload = event.payload ?? {};
@@ -4135,13 +6090,6 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
   const digestSuffix = (value: unknown) => typeof value === 'string' && value.length > 18 ? ` · ${value.slice(0, 18)}...` : '';
   const persistedKind = typeof payload.persistedKind === 'string' ? payload.persistedKind : event.kind;
   if (NON_CONVERSATIONAL_TIMELINE_KINDS.has(persistedKind)) return undefined;
-  // Historical pages persist the completed tool fact.  Live pages also show
-  // the request itself, but replay should not invent a request that was never
-  // durably stored.
-  if (persistedKind === 'ToolCallRequested') return undefined;
-  if (persistedKind === 'ToolInvocationCompleted'
-    && payload.ok !== false
-    && String(payload.status ?? '').toUpperCase() !== 'FAILED') return undefined;
   const common = {
     itemId: `replay-${event.eventId ?? `${event.runId}-${event.sequence}`}`,
     createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
@@ -4157,7 +6105,8 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
     case 'TaskHarnessProgress':
       return { ...common, kind: 'STATUS', title: '执行记录', body: harnessProgressText(payload), status: 'COMPLETE' };
     case 'TaskRunCreated':
-      return { ...common, kind: 'STATUS', title: '任务已创建', body: '已恢复该次任务的结构化运行记录。', status: 'COMPLETE' };
+      return { ...common, kind: 'STATUS', title: '任务已创建', body: '已恢复该次任务的结构化运行记录。', status: 'COMPLETE',
+        ...(Array.isArray(payload.images) ? { images: payload.images } : {}) };
     case 'RunStateChanged':
       return {
         ...common,
@@ -4200,15 +6149,20 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       };
     case 'ToolCallRequested': {
       const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
+      const { commandLine: requestedCommandLine, display: requestedCommandDisplay } = commandLineForToolEvent(rawToolName, payload);
+      const requestedTargetPath = pathForToolEvent(payload);
       return {
         ...common,
         kind: 'STATUS',
         title: '工具调用',
-        body: `正在${toolDisplayLabel(rawToolName).replace(/^查看|^读取|^执行|^运行|^发送/, '')}`,
+        body: `正在${toolDisplayLabel(rawToolName).replace(/^查看|^读取|^执行|^运行|^发送/, '')}${requestedCommandDisplay ? ` · ${requestedCommandDisplay}` : ''}`,
         status: 'PENDING',
-        toolName: rawToolName
+        toolName: rawToolName,
+        ...(requestedCommandLine ? { commandText: requestedCommandLine } : {}),
+        ...(requestedTargetPath ? { targetPath: requestedTargetPath } : {})
       };
     }
+    case 'ToolActionNotExecuted':
     case 'ToolInvocationCompleted': {
       const rawToolName = text(payload.toolName, text(payload.name, '受控工具'));
       const toolName = toolDisplayLabel(rawToolName);
@@ -4216,17 +6170,26 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
       const errorCode = text(payload.errorCode, '');
       const message = text(payload.message, '');
       const outputChars = number(payload.outputChars);
+      const { commandLine, display: commandDisplay } = commandLineForToolEvent(rawToolName, payload);
+      const outputTail = failure ? outputTailForToolEvent(payload) : '';
+      const exitCode = failure ? exitCodeForToolEvent(payload) : undefined;
+      const completedTargetPath = pathForToolEvent(payload);
+      const reasonLabel = errorCode ? reasonDisplayLabel(errorCode) : '';
+      const extraMessage = message && message !== 'handler failed' && message !== errorCode && message !== reasonLabel ? message : '';
       const detail = failure
-        ? ['失败', errorCode ? reasonDisplayLabel(errorCode) : '', message].filter(Boolean).join('：')
+        ? payload.timedOut === true ? toolTimeoutText(rawToolName, payload.timeoutMs) : ['失败', reasonLabel, extraMessage].filter(Boolean).join('：')
         : ['已完成', outputChars === undefined ? '' : `输出 ${outputChars.toLocaleString('zh-CN')} 字符`].filter(Boolean).join(' · ');
       return {
         ...common,
         kind: failure ? 'ERROR' : 'STATUS',
-        title: '工具结果',
-        body: `${failure ? '无法完成' : '已完成'}：${toolName}${detail ? ` · ${detail}` : ''}`,
+        title: payload.invocationAttempted === false ? '工具未执行' : '工具结果',
+        body: `${failure ? '无法完成' : '已完成'}：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${detail ? ` · ${detail}` : ''}`,
         status: failure ? 'ERROR' : 'COMPLETE',
         toolName: rawToolName,
-        commandText: typeof payload.command === 'string' ? payload.command : undefined,
+        commandText: commandLine || (typeof payload.command === 'string' ? payload.command : undefined),
+        ...(outputTail ? { outputTail } : {}),
+        ...(exitCode !== undefined ? { exitCode } : {}),
+        ...(completedTargetPath ? { targetPath: completedTargetPath } : {}),
         evidenceKind: 'terminal',
         truncated: payload.truncated === true
       };
@@ -4295,7 +6258,7 @@ const replayEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined 
         ...common,
         kind: 'ERROR',
         title: '任务失败',
-        body: runtimeFailureText(failureEvent),
+        ...runtimeFailureItem(failureEvent),
         status: 'ERROR'
       };
     }
@@ -4308,14 +6271,57 @@ const replayThreadEvents = (base: HarnessReadModel, events: RuntimeEvent[]): Har
   // The backend returns one chronological page. Do not sort/truncate the full
   // history here, or older pages would silently become inaccessible.
   const seen = new Set<string>();
+  const completedToolCounts = new Map<string, number>();
+  const notExecutedToolIds = new Set<string>();
+  for (const event of events) {
+    const persistedKind = typeof event.payload?.persistedKind === 'string' ? event.payload.persistedKind : event.kind;
+    if (persistedKind === 'ToolActionNotExecuted' && typeof event.payload?.id === 'string') {
+      notExecutedToolIds.add(`${event.runId}:${event.payload.id}`);
+    }
+    if (persistedKind !== 'ToolInvocationCompleted') continue;
+    const name = typeof event.payload?.name === 'string' ? event.payload.name : '';
+    if (name) completedToolCounts.set(name, (completedToolCounts.get(name) ?? 0) + 1);
+  }
   const timeline: TimelineItem[] = [];
   for (const event of events) {
+    const eventPersistedKind = typeof event.payload?.persistedKind === 'string' ? event.payload.persistedKind : event.kind;
+    if (eventPersistedKind === 'ToolCallRequested') {
+      if (typeof event.payload?.id === 'string' && notExecutedToolIds.has(`${event.runId}:${event.payload.id}`)) continue;
+      const name = typeof event.payload?.name === 'string' ? event.payload.name : '';
+      const remaining = completedToolCounts.get(name) ?? 0;
+      // A completed invocation is rendered by its terminal result. Keep a
+      // request row only when no durable result exists (for example a crash
+      // between request and invocation).
+      if (remaining > 0) {
+        completedToolCounts.set(name, remaining - 1);
+        continue;
+      }
+    }
     const item = replayEventTimelineItem(event);
     if (!item || seen.has(item.itemId)) continue;
+    const persistedKind = typeof event.payload?.persistedKind === 'string' ? event.payload.persistedKind : event.kind;
+    const thinkingText = typeof event.payload?.thinkingText === 'string' ? event.payload.thinkingText.trim() : '';
+    if ((persistedKind === 'TaskRunCompleted' || persistedKind === 'TaskRunFailed') && thinkingText) {
+      timeline.push({
+        itemId: `${item.itemId}-thinking`,
+        eventId: event.eventId,
+        eventSequence: event.sequence,
+        runId: event.runId,
+        kind: 'AGENT',
+        title: '思考过程',
+        body: thinkingText,
+        status: 'COMPLETE',
+        createdAtMs: item.createdAtMs,
+        thinking: true,
+        thinkingLabel: '思考过程',
+        thinkingCompletedAtMs: item.createdAtMs
+      });
+    }
     if (event.payload?.persistedKind === 'TaskRunFailed'
       && typeof event.payload.responseText === 'string' && event.payload.responseText.trim()) {
       timeline.push({ ...item, itemId: `${item.itemId}-response`, kind: 'AGENT',
-        title: 'dda（中断前的回复）', body: event.payload.responseText, status: 'COMPLETE' });
+        title: item.failureReasonCode === 'EXTERNAL_EVIDENCE_MISSING' ? 'dda（已有结果）' : 'dda（中断前的回复）',
+        body: event.payload.responseText, status: 'COMPLETE', failureReasonCode: undefined, diagnosticDetail: undefined });
     }
     seen.add(item.itemId);
     timeline.push(item);
@@ -4338,6 +6344,75 @@ const replaceTimelineItem = (current: HarnessReadModel, itemId: string, patch: P
   return { ...current, projectionVersion: current.projectionVersion + 1, timeline };
 };
 
+const applyClarificationClear = (
+  current: HarnessReadModel,
+  runId: string,
+  state: 'ANSWERED' | 'EXPIRED' | 'CANCELLED' | 'CLOSED',
+  answer?: string
+): HarnessReadModel => {
+  const pending = clarificationsByRun.get(runId);
+  if (!pending) return current;
+  clarificationsByRun.delete(runId);
+  const itemId = `clarification-${pending.requestId}`;
+  let next = current.timeline.some((item) => item.itemId === itemId)
+    ? replaceTimelineItem(current, itemId, {
+      status: state === 'EXPIRED' || state === 'CANCELLED' ? 'ERROR' : 'COMPLETE',
+      body: state === 'EXPIRED'
+        ? `${pending.question}\n（还没有收到回答，没有替你猜。）`
+        : state === 'CANCELLED'
+          ? `${pending.question}\n（这次补充已取消。）`
+          : pending.question
+    })
+    : current;
+  const answerText = state === 'ANSWERED' ? (answer || pending.pendingAnswer || '').trim() : '';
+  const answerId = `clarification-answer-${pending.requestId}`;
+  if (answerText && !next.timeline.some((item) => item.itemId === answerId)) {
+    next = appendTimelineItem(next, {
+      itemId: answerId,
+      runId,
+      kind: 'USER',
+      title: '你',
+      body: answerText,
+      status: 'COMPLETE'
+    });
+  }
+  return next;
+};
+
+const sendClarification = async (
+  request: LiveClarification,
+  reply: { answer: string; selectedOptionId?: string }
+): Promise<void> => {
+  const live = clarificationsByRun.get(request.runId);
+  if (!live || live.requestId !== request.requestId || live.submitting) return;
+  live.submitting = true;
+  live.pendingAnswer = reply.answer;
+  composerPromptError = '';
+  const ownerSessionId = sessionController.selectedId;
+  render();
+  try {
+    await desktopBridge.resolveRuntimeClarification(request.requestId, reply.answer, {
+      sessionId: ownerSessionId,
+      runId: request.runId,
+      ...(reply.selectedOptionId ? { selectedOptionId: reply.selectedOptionId } : {})
+    });
+  } catch {
+    const current = clarificationsByRun.get(request.runId);
+    if (current?.requestId === request.requestId) {
+      current.submitting = false;
+      current.pendingAnswer = undefined;
+    }
+    composerPromptError = '回答没有送到当前任务，请再发一次。';
+    render();
+    return;
+  }
+  withSession(ownerSessionId, () => {
+    const current = clarificationsByRun.get(request.runId);
+    if (current?.requestId !== request.requestId) return;
+    update(applyClarificationClear(model, request.runId, 'ANSWERED', reply.answer));
+  });
+};
+
 const toolTimelineItemId = (event: RuntimeEvent, callId: string): string => `tool-${event.runId}-${callId}`;
 
 const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined => {
@@ -4352,11 +6427,25 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
   const message = typeof payload.message === 'string' ? payload.message : '';
   const errorCode = typeof payload.errorCode === 'string' ? payload.errorCode : '';
   const digest = typeof payload.outputDigest === 'string' ? payload.outputDigest : undefined;
+  const timedOut = failed && payload.timedOut === true;
+  const timeoutMs = Number.isInteger(payload.timeoutMs) ? Number(payload.timeoutMs) : undefined;
+  const timeoutText = timedOut
+    ? toolTimeoutText(rawName, timeoutMs)
+    : '';
+  const toolPayload = payload as Record<string, unknown>;
+  const { commandLine, display: commandDisplay } = commandLineForToolEvent(rawName, toolPayload);
+  const outputTail = failed ? outputTailForToolEvent(toolPayload) : '';
+  const exitCode = failed ? exitCodeForToolEvent(toolPayload) : undefined;
+  const targetPath = pathForToolEvent(toolPayload);
+  const reasonLabel = errorCode ? reasonDisplayLabel(errorCode) : '';
+  const distinctMessage = message && message.trim() !== 'handler failed' && message.trim() !== errorCode.trim() && message.trim() !== reasonLabel.trim() ? message : '';
   const body = !isResult
-    ? `正在${toolName.replace(/^查看|^读取|^执行|^运行|^发送/, '')}`
+    ? `正在${toolName.replace(/^查看|^读取|^执行|^运行|^发送/, '')}${commandDisplay ? ` · ${commandDisplay}` : ''}`
     : failed
-      ? `无法完成：${toolName}${errorCode ? ` · ${reasonDisplayLabel(errorCode)}` : ''}${message ? ` · ${message}` : ''}`
-      : `已完成：${toolName}${outputChars !== undefined ? ` · 输出 ${outputChars.toLocaleString('zh-CN')} 字符` : ''}`;
+      ? (timedOut
+          ? `无法完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''} · ${timeoutText}`
+          : `无法完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${errorCode ? ` · ${reasonDisplayLabel(errorCode)}` : ''}${distinctMessage ? ` · ${distinctMessage}` : ''}`)
+      : `已完成：${toolName}${commandDisplay ? ` · ${commandDisplay}` : ''}${outputChars !== undefined ? ` · 输出 ${outputChars.toLocaleString('zh-CN')} 字符` : ''}`;
   return {
     itemId: toolTimelineItemId(event, callId || rawName),
     eventId: event.eventId,
@@ -4365,7 +6454,7 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
     operationId: callId || undefined,
     toolCallId: callId || undefined,
     kind: failed ? 'ERROR' : 'STATUS',
-    title: failed ? '工具执行失败' : isResult ? '工具执行完成' : '正在调用工具',
+    title: failed ? (payload.invocationAttempted === false ? '工具未执行' : '工具执行失败') : isResult ? '工具执行完成' : '正在调用工具',
     body,
     status: failed ? 'ERROR' : isResult ? 'COMPLETE' : 'STREAMING',
     createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
@@ -4376,9 +6465,34 @@ const toolEventTimelineItem = (event: RuntimeEvent): TimelineItem | undefined =>
     digest,
     evidenceKind: isResult ? 'terminal' : undefined,
     truncated: payload.truncated === true,
-    commandText: typeof payload.command === 'string' ? payload.command : undefined
+    commandText: commandLine || (typeof payload.command === 'string' ? payload.command : undefined),
+    ...(outputTail ? { outputTail } : {}),
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(targetPath ? { targetPath } : {})
   };
 };
+
+// Track inline `<think>...</think>` parser state per run/round stream key.
+const inlineThinkStates = new Map<string, ThinkingStreamState>();
+const getInlineThinkState = (key: string): ThinkingStreamState => {
+  let state = inlineThinkStates.get(key);
+  if (!state) {
+    state = createThinkingStreamState();
+    inlineThinkStates.set(key, state);
+    if (inlineThinkStates.size > 64) {
+      const oldest = inlineThinkStates.keys().next().value;
+      if (oldest !== undefined) inlineThinkStates.delete(oldest);
+    }
+  }
+  return state;
+};
+
+document.addEventListener('click', (event) => {
+  const summary = (event.target as Element | null)?.closest('.timeline-thinking-summary');
+  if (!summary) return;
+  const details = summary.closest<HTMLDetailsElement>('.timeline-thinking-details');
+  if (details) details.dataset.userToggled = '1';
+}, true);
 
 const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (!event || event.schemaVersion !== '1.0' || !Number.isInteger(event.sequence) || event.sequence < 1 || !Number.isFinite(event.emittedAtMs)) return;
@@ -4387,7 +6501,14 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   // started for the current UI run; its id is intentionally different from
   // the local display run id generated by beginRun().
   if (deletedRuntimeRunIds.has(event.runId)) return;
-  if (!model.activeRun || model.activeRun.state === 'CANCELLED') return;
+  // Local cancellation marks the run CANCELLED before the runtime can emit
+  // clarification.resolved. That frame still has to close the question; every
+  // other late frame stays ignored so a dying process cannot rewind the outcome.
+  if (
+    (!model.activeRun || model.activeRun.state === 'CANCELLED')
+    && event.kind !== 'model.usage'
+    && event.kind !== 'clarification.resolved'
+  ) return;
   if (event.kind === 'run.started') {
     if (event.emittedAtMs < runtimeEventFloorMs) return;
     if (activeRuntimeRunId && activeRuntimeRunId !== event.runId) return;
@@ -4404,9 +6525,56 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (observedRuntimeEvents.has(eventKey)) return;
   observedRuntimeEvents.add(eventKey);
   const payload = event.payload ?? {};
+  const usageOwnerId = (typeof event.clientSessionId === 'string' && event.clientSessionId)
+    || sessionController.forRunId(event.runId)?.clientSessionId
+    || sessionController.selectedId;
+  if (event.kind === 'model.usage') {
+    addSessionModelUsage(sessionUsageKeyFor(usageOwnerId), payload);
+    touchSessionUsage(usageOwnerId);
+    return;
+  }
+  // Role activity rows reflect real runtime progress, applied once per
+  // filtered event; unrelated kinds return the model unchanged.
+  const roleProjection = applyRuntimeSubAgentEvent(model, event);
+  if (roleProjection !== model) { model = roleProjection; scheduleRender(); }
   if (event.kind === 'run.started' && lastSubmitReceipt) {
     lastSubmitReceipt.status = 'accepted';
     scheduleRender();
+  }
+  if (event.kind === 'thread.created' || event.kind === 'thread.resumed') {
+    const threadId = typeof payload.threadId === 'string' && payload.threadId.trim() ? payload.threadId.trim() : '';
+    if (threadId) {
+      currentRunThreadId = threadId;
+      runThreadIds.set(event.runId, threadId);
+      rekeySessionUsage(`session:${usageOwnerId}`, `thread:${threadId}`);
+      touchSessionUsage(usageOwnerId);
+      const owner = sessionController.forRunId(event.runId) ?? sessionController.selected();
+      if (owner) {
+        owner.threadId = threadId;
+        rememberUnboundSessionThread(owner, threadId);
+      }
+      const existingThread = model.threads.find((item) => item.id === threadId);
+      const rawTitle = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : '';
+      const resolvedTitle = !isGenericTaskTitle(rawTitle)
+        ? rawTitle
+        : (!isGenericTaskTitle(model.activeRun?.title) ? model.activeRun!.title : (rawTitle || '未命名会话'));
+      const nextThreads = existingThread
+        ? model.threads.map((item) => item.id === threadId && isGenericTaskTitle(item.title) && !isGenericTaskTitle(resolvedTitle)
+          ? { ...item, title: resolvedTitle }
+          : item)
+        : [{
+            id: threadId,
+            title: resolvedTitle,
+            cwd: model.workspace.rootPath || owner?.workspacePath || '',
+            turnCount: typeof payload.turnCount === 'number' && Number.isInteger(payload.turnCount) ? payload.turnCount : 0,
+            state: 'RUNNING' as const,
+            createdAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now(),
+            updatedAtMs: Number.isFinite(event.emittedAtMs) ? event.emittedAtMs : Date.now()
+          }, ...model.threads];
+      model = setActiveThread(setThreads(model, nextThreads), threadId, model.resumeThreadId === threadId);
+      scheduleRender();
+    }
+    return;
   }
   // Heartbeats are transport supervision frames. They advance the runtime
   // sequence and Rust watchdog timestamp, but must not pollute the user-facing
@@ -4425,14 +6593,14 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     const phases: Record<string, string> = {
       INITIALIZING: '正在启动任务', STORAGE_CONFIGURATION: '正在准备本地记录',
       LEGACY_MIGRATION_CHECK: '正在检查历史数据', STORAGE_CAPACITY_CHECK: '正在检查存储空间',
-      THREAD_STORE_LOAD: '正在读取会话和恢复检查点', FEEDBACK_STORE_LOAD: '正在读取任务反馈',
-      THREAD_INITIALIZATION: '正在恢复任务', INITIAL_GIT_AUDIT: '正在核对工作区版本',
-      EXECUTION_STATE_LOAD: '正在恢复执行状态', MEMORY_STORE_LOAD: '正在读取记忆',
+      RESUME_CHECKPOINT_LOAD: '正在读取此任务的恢复检查点', THREAD_STORE_LOAD: '正在读取此任务的历史', WORKSPACE_PREPARATION: '正在准备项目工作区', FEEDBACK_STORE_LOAD: '正在读取任务反馈',
+      THREAD_INITIALIZATION: '正在准备会话', INITIAL_GIT_AUDIT: '正在核对工作区版本',
+      EXECUTION_STATE_LOAD: '正在准备执行记录', MEMORY_STORE_LOAD: '正在读取记忆',
       PROFILE_STORE_LOAD: '正在读取执行配置', CREDIT_BLAME_LOAD: '正在读取历史评估',
-      MODEL_EGRESS_LOAD: '正在读取调用记录', ROLE_CONTEXT_STORE_LOAD: '正在恢复角色上下文',
+      MODEL_EGRESS_LOAD: '正在读取调用记录', ROLE_CONTEXT_STORE_LOAD: '正在准备角色记录',
       TRAJECTORY_READ: '正在读取任务轨迹', READY_FOR_CLASSIFICATION: '正在分析任务类型',
       ROUTE_SELECTION: '正在选择执行方案', ROLE_BINDING_RESOLUTION: '正在准备模型配置',
-      ROLE_CONTEXT_ALLOCATION: '正在准备子 Agent', ROLE_CONTEXT_ALLOCATION_COMPLETE: '正在准备工作区检查',
+      ROLE_CONTEXT_ALLOCATION: '正在准备执行', ROLE_CONTEXT_ALLOCATION_COMPLETE: '正在准备执行',
       WORKSPACE_SNAPSHOT: '正在读取工作区文件'
     };
     if (running && typeof payload.phase === 'string' && phases[payload.phase]) {
@@ -4444,27 +6612,102 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   if (event.kind === 'run.state_changed' && typeof payload.to === 'string') {
     taskProgressMessage = '';
     const state = payload.to as RunState;
-    update(setRunState(model, state));
+    let next = setRunState(model, state);
+    if (state === 'SUCCEEDED' || state === 'FAILED' || state === 'CANCELLED') {
+      next = applyClarificationClear(next, event.runId, 'CLOSED');
+    }
+    update(next);
     return;
   }
-  if (event.kind === 'role.text_delta' || event.kind === 'role.turn_completed' || event.kind === 'planner.restored') {
-    update(applyRuntimeSubAgentEvent(model, event));
+  if (event.kind === 'role.reasoning_delta') {
+    const role = typeof payload.role === 'string' ? payload.role : '';
+    const delta = typeof payload.text === 'string' ? payload.text : '';
+    if (delta && (role === 'planner' || role === 'executor')) {
+      const turnKey = typeof payload.turnId === 'string' && payload.turnId ? payload.turnId : role;
+      const label = role === 'planner' ? '思考规划' : '思考过程';
+      model = upsertStreamingThinking(model, `${event.runId}-thinking-${turnKey}`, delta, {
+        runId: event.runId,
+        label
+      });
+    }
+    scheduleRender();
+    return;
+  }
+  if (event.kind === 'role.turn_started' || event.kind === 'role.text_delta' || event.kind === 'role.turn_completed' || event.kind === 'planner.restored') {
+    if (event.kind === 'role.turn_completed') {
+      const turnKey = typeof payload.turnId === 'string' && payload.turnId ? payload.turnId : '';
+      if (turnKey) {
+        model = upsertStreamingThinking(model, `${event.runId}-thinking-${turnKey}`, '', {
+          complete: true,
+          runId: event.runId
+        });
+      }
+    }
+    scheduleRender();
+    return;
+  }
+  if (event.kind === 'plan.created') {
+    const steps = Array.isArray(payload.steps) ? payload.steps as Array<{ stepId?: unknown; summary?: unknown }> : [];
+    const lines = steps
+      .map((s, idx) => `${idx + 1}. ${typeof s?.summary === 'string' && s.summary.trim() ? s.summary.trim() : String(s?.stepId ?? '')}`)
+      .filter((line) => line.length > 3);
+    if (lines.length > 0) {
+      model = completeAllStreamingThinking(model, event.runId);
+      model = upsertStreamingThinking(model, `${event.runId}-plan-summary`, lines.join('\n'), {
+        complete: true,
+        runId: event.runId,
+        label: '规划执行步骤'
+      });
+      scheduleRender();
+    }
+    return;
+  }
+  if (event.kind === 'clarification.requested') {
+    const view = clarificationFromPayload(payload);
+    if (!view) return;
+    clarificationsByRun.set(event.runId, { ...view, runId: event.runId, submitting: false });
+    const itemId = `clarification-${view.requestId}`;
+    const item = {
+      itemId,
+      runId: event.runId,
+      kind: 'AGENT' as const,
+      title: '需要你补充',
+      body: view.question,
+      status: 'PENDING' as const
+    };
+    model = model.timeline.some((entry) => entry.itemId === itemId)
+      ? replaceTimelineItem(model, itemId, item)
+      : appendTimelineItem(model, item);
+    update(model);
+    const notice = desktopNoticePolicy.clarificationRequested(event.runId, view.requestId);
+    if (notice) sendDesktopNotice(notice);
+    return;
+  }
+  if (event.kind === 'clarification.resolved') {
+    const state = typeof payload.state === 'string' ? payload.state : '';
+    const close = state === 'ANSWERED' ? 'ANSWERED'
+      : state === 'EXPIRED' ? 'EXPIRED'
+        : state === 'CANCELLED' ? 'CANCELLED'
+          : 'CLOSED';
+    const preview = typeof payload.answerPreview === 'string' ? payload.answerPreview : undefined;
+    const pending = clarificationsByRun.get(event.runId);
+    update(applyClarificationClear(model, event.runId, close, close === 'ANSWERED' ? pending?.pendingAnswer || preview : undefined));
     return;
   }
   if (event.kind === 'RoleContextAllocated' || event.kind === 'RoleContextStateChanged') {
-    update(applyRuntimeSubAgentEvent(model, event));
+    scheduleRender();
     return;
   }
   if (event.kind === 'role.contexts_reconciled') {
-    const reconciled = typeof payload.reconciled === 'number' && Number.isFinite(payload.reconciled)
-      ? payload.reconciled
-      : Array.isArray(payload.contexts) ? payload.contexts.length : 0;
-    update(appendTimelineItem(applyRuntimeSubAgentEvent(model, event), {
+    const owned = reconciledContextsForTask(event);
+    if (owned.length === 0) return;
+    update(appendTimelineItem(model, {
       itemId: `runtime-${eventKey}`,
-      kind: reconciled > 0 ? 'ERROR' : 'STATUS',
+      runId: event.runId,
+      kind: 'ERROR',
       title: '角色上下文恢复',
-      body: reconciled > 0 ? `检测到上次运行异常退出，已标记 ${reconciled} 个角色上下文失败。` : '角色上下文已完成恢复核对。',
-      status: reconciled > 0 ? 'ERROR' : 'COMPLETE'
+      body: `检测到上次运行异常退出，已标记 ${owned.length} 个角色上下文失败。`,
+      status: 'ERROR'
     }));
     return;
   }
@@ -4478,31 +6721,98 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
           ? '执行路由'
           : '角色上下文';
     const body = event.kind === 'task.classified'
-      ? `任务类型：${humanizeCode(payload.taskClass, '暂未识别')}`
+      ? `任务类型：${readableTaskClass(typeof payload.taskClass === 'string' ? payload.taskClass : '')}`
       : event.kind === 'task.prechecked'
         ? `${statusDisplayLabel(payload.status, '未读取')}${payload.reason ? ` · ${reasonDisplayLabel(payload.reason)}` : ''}`
         : event.kind === 'route.selected'
           ? `${humanizeCode(payload.taskClass, '当前任务')} · ${payload.reason ? reasonDisplayLabel(payload.reason) : '已通过安全检查'}`
           : `已分配 ${Array.isArray(payload.contexts) ? payload.contexts.length : 0} 个独立上下文`;
-    const projected = event.kind === 'role.contexts_allocated'
-      ? applyRuntimeSubAgentEvent(model, event)
-      : model;
-    update(appendTimelineItem(projected, { kind: 'STATUS', title, body, status: 'COMPLETE' }));
+    update(appendTimelineItem(model, { kind: 'STATUS', title, body, status: 'COMPLETE' }));
+    return;
+  }
+  if (event.kind === 'model.reasoning_delta') {
+    const delta = typeof payload.text === 'string' ? payload.text : '';
+    if (delta) {
+      const roundNum = typeof payload.round === 'number' && Number.isInteger(payload.round) ? payload.round : 1;
+      const thinkingId = `${event.runId}-thinking-r${roundNum}`;
+      model = upsertStreamingThinking(model, thinkingId, delta, {
+        runId: event.runId,
+        label: '思考过程'
+      });
+      scheduleRender();
+    }
     return;
   }
   if (event.kind === 'model.text_delta') {
     runtimeStreamObserved = true;
-    const streamId = `${event.runId}-response`;
-    model = upsertStreamingAgent(model, streamId, typeof payload.text === 'string' ? payload.text : '', false, event.runId);
+    const rawDelta = typeof payload.text === 'string' ? payload.text : '';
+    const roundNum = typeof payload.round === 'number' && Number.isInteger(payload.round) ? payload.round : 1;
+    const thinkState = getInlineThinkState(`${event.runId}:r${roundNum}`);
+    const { visibleDelta, thinkingDelta } = consumeInlineThinkDelta(thinkState, rawDelta);
+    const thinkingId = `${event.runId}-thinking-r${roundNum}`;
+    if (thinkingDelta) {
+      model = upsertStreamingThinking(model, thinkingId, thinkingDelta, {
+        runId: event.runId,
+        label: '思考过程'
+      });
+    }
+    if (visibleDelta) {
+      if (!thinkState.inThink) {
+        model = upsertStreamingThinking(model, thinkingId, '', { complete: true, runId: event.runId });
+      }
+      const streamId = streamingResponseItemId(event.runId, roundNum);
+      model = completeStreamingResponses(model, event.runId, streamId);
+      model = upsertStreamingAgent(model, streamId, visibleDelta, false, event.runId);
+    }
     scheduleRender();
     return;
   }
   if (event.kind === 'model.stream_retry') {
+    const roundNum = typeof payload.round === 'number' && Number.isInteger(payload.round) ? payload.round : 1;
+    inlineThinkStates.delete(`${event.runId}:r${roundNum}`);
     const chars = typeof payload.discardedTextChars === 'number' && Number.isFinite(payload.discardedTextChars)
       ? payload.discardedTextChars
       : 0;
-    model = discardStreamingTail(model, `${event.runId}-response`, chars);
+    const reasoningChars = typeof payload.discardedReasoningChars === 'number' && Number.isFinite(payload.discardedReasoningChars)
+      ? payload.discardedReasoningChars
+      : 0;
+    model = discardStreamingTail(model, streamingResponseItemId(event.runId, roundNum), chars);
+    if (reasoningChars > 0) {
+      model = discardStreamingTail(model, `${event.runId}-thinking-r${roundNum}`, reasoningChars);
+    }
     scheduleRender();
+    return;
+  }
+  if (event.kind === 'harness.context_compacted') {
+    const roundNum = typeof payload.round === 'number' && Number.isInteger(payload.round) ? payload.round : 1;
+    inlineThinkStates.delete(`${event.runId}:r${roundNum}`);
+    const discarded = typeof payload.discardedTextChars === 'number' && Number.isFinite(payload.discardedTextChars)
+      ? payload.discardedTextChars
+      : 0;
+    const discardedReasoning = typeof payload.discardedReasoningChars === 'number' && Number.isFinite(payload.discardedReasoningChars)
+      ? payload.discardedReasoningChars
+      : 0;
+    if (discarded > 0) {
+      model = discardStreamingTail(model, streamingResponseItemId(event.runId, roundNum), discarded);
+    }
+    if (discardedReasoning > 0) {
+      model = discardStreamingTail(model, `${event.runId}-thinking-r${roundNum}`, discardedReasoning);
+    }
+    const beforeKb = typeof payload.beforeChars === 'number' ? Math.round(payload.beforeChars / 1024) : 0;
+    const afterKb = typeof payload.afterChars === 'number' ? Math.round(payload.afterChars / 1024) : 0;
+    const evicted = typeof payload.evictedRounds === 'number' ? payload.evictedRounds : 0;
+    const kept = typeof payload.keptRounds === 'number' ? payload.keptRounds : 0;
+    const triggerLabel = payload.reason === 'CONTEXT_LENGTH_EXCEEDED'
+      ? '已超过模型上下文上限，压缩后重试'
+      : '接近模型上下文上限，已压缩较早的工具记录';
+    update(appendTimelineItem(model, {
+      itemId: `runtime-${eventKey}`,
+      runId: event.runId,
+      kind: 'STATUS',
+      title: '上下文压缩',
+      body: `${triggerLabel} · 已归档早期 ${evicted} 轮工具记录，保留最近 ${kept} 轮完整上下文（${beforeKb} KB → ${afterKb} KB）`,
+      status: 'COMPLETE'
+    }));
     return;
   }
   if (event.kind === 'approval.requested') {
@@ -4532,10 +6842,6 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(typeof payload.policyVersion === 'string' ? { policyVersion: payload.policyVersion } : {}),
       ...(typeof payload.approvalExpiresAt === 'number' ? { approvalExpiresAt: payload.approvalExpiresAt } : {}),
       ...(typeof payload.command === 'string' ? { command: payload.command } : {}),
-      ...(Array.isArray(payload.args) ? { args: payload.args.filter((item): item is string => typeof item === 'string').slice(0, 64).map((item) => item.slice(0, 500)) } : {}),
-      ...(typeof payload.commandLine === 'string' ? { commandLine: payload.commandLine.slice(0, 4096) } : {}),
-      ...(typeof payload.summaryZh === 'string' ? { summaryZh: payload.summaryZh.slice(0, 240) } : {}),
-      ...(Array.isArray(payload.riskReasons) ? { riskReasons: payload.riskReasons.filter((item): item is string => typeof item === 'string').slice(0, 8).map((item) => item.slice(0, 120)) } : {}),
       ...(typeof payload.path === 'string' ? { path: payload.path } : {}),
       ...(typeof payload.cwd === 'string' ? { cwd: payload.cwd } : {}),
       ...(typeof payload.host === 'string' ? { host: payload.host } : {}),
@@ -4545,6 +6851,15 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       ...(typeof payload.cellOpIndex === 'number' ? { cellOpIndex: payload.cellOpIndex } : {}),
       ...(typeof payload.fingerprint === 'string' ? { fingerprint: payload.fingerprint } : {}),
       ...(typeof payload.codePreview === 'string' ? { codePreview: payload.codePreview } : {}),
+      ...(Array.isArray(payload.reasonCodes) ? { reasonCodes: payload.reasonCodes.filter((c) => typeof c === 'string' && c.trim()).slice(0, 16) } : {}),
+      ...(payload.reviewKind === 'DANGER' || payload.reviewKind === 'REVIEW' || payload.reviewKind === 'UNKNOWN' ? { reviewKind: payload.reviewKind } : {}),
+      ...(typeof payload.filePreview === 'string' ? { filePreview: payload.filePreview.slice(0, 16384) } : {}),
+      ...(payload.filePreviewKind === 'DIFF' || payload.filePreviewKind === 'CONTENT' ? { filePreviewKind: payload.filePreviewKind } : {}),
+      ...(payload.filePreviewTruncated === true || (typeof payload.filePreview === 'string' && payload.filePreview.length > 16384) ? { filePreviewTruncated: true } : {}),
+      ...(typeof payload.contentBytes === 'number' && Number.isFinite(payload.contentBytes) && payload.contentBytes >= 0 ? { contentBytes: payload.contentBytes } : {}),
+      ...(typeof payload.commandPreview === 'string' ? { commandPreview: payload.commandPreview } : {}),
+      ...(payload.commandPreviewTruncated === true ? { commandPreviewTruncated: true } : {}),
+      ...(payload.canAlwaysAllow === true ? { canAlwaysAllow: true } : {}),
       ...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {}),
       ...(typeof payload.warning === 'string' ? { warning: payload.warning } : {}),
       ...(typeof payload.sandbox === 'string' ? { sandbox: payload.sandbox } : {}),
@@ -4560,9 +6875,18 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       itemId: `runtime-${eventKey}`,
       kind: 'STATUS',
       title: '等待审批',
-      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} 请求一次性授权`,
+      body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')} 请求授权`,
       status: 'PENDING'
     }));
+    // Only notify when the projected model actually holds this request as
+    // pending: a re-emitted or already-resolved request must not re-notify.
+    const currentApproval = model.approvals.find((item) => item.requestId === requestId);
+    if (currentApproval?.state === 'REQUESTED'
+      && (currentApproval.approvalExpiresAt === undefined || currentApproval.approvalExpiresAt > Date.now())) {
+      const notice = desktopNoticePolicy.approvalRequested(event.runId, requestId);
+      if (notice) sendDesktopNotice(notice);
+    }
+    maybePresentCommandAuthorization();
     void refreshExecutionState();
     return;
   }
@@ -4575,6 +6899,7 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       update(upsertApproval(model, {
         ...current,
         state,
+        ...(typeof payload.alwaysAllowSaved === 'boolean' ? { alwaysAllowSaved: payload.alwaysAllowSaved } : {}),
         ...(typeof payload.intentId === 'string' ? { intentId: payload.intentId } : {}),
         ...(typeof payload.approvalId === 'string' ? { approvalId: payload.approvalId } : {})
       }));
@@ -4614,28 +6939,72 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     return;
   }
   if (event.kind === 'run.completed') {
+    for (const [key, thinkState] of inlineThinkStates.entries()) {
+      if (!key.startsWith(`${event.runId}:`)) continue;
+      const tail = flushInlineThinkState(thinkState);
+      const roundSuffix = key.slice(event.runId.length + 1);
+      if (tail.thinkingDelta) {
+        model = upsertStreamingThinking(model, `${event.runId}-thinking-${roundSuffix}`, tail.thinkingDelta, { runId: event.runId });
+      }
+      if (tail.visibleDelta) {
+        const roundNum = /^r(\d+)$/.test(roundSuffix) ? Number(roundSuffix.slice(1)) : 1;
+        const streamId = streamingResponseItemId(event.runId, roundNum);
+        model = completeStreamingResponses(model, event.runId, streamId);
+        model = upsertStreamingAgent(model, streamId, tail.visibleDelta, false, event.runId);
+      }
+      inlineThinkStates.delete(key);
+    }
+    model = completeAllStreamingThinking(model, event.runId);
     // A provider may finish without emitting any text deltas (for example a
     // non-streaming gateway fallback).  Do not create an empty timeline row;
     // runCordisTask will project the returned text once the final response is
     // available.  When a stream exists, this only flips its status to complete.
-    update(setCellsSession(completeStreamingAgent(model, `${event.runId}-response`), undefined));
+    update(setCellsSession(completeStreamingResponses(model, event.runId), undefined));
+    const notice = desktopNoticePolicy.runFinished(event.runId, false);
+    if (notice) sendDesktopNotice(notice);
     return;
   }
   if (event.kind === 'run.failed') {
+    for (const key of [...inlineThinkStates.keys()]) {
+      if (key.startsWith(`${event.runId}:`)) inlineThinkStates.delete(key);
+    }
+    model = completeAllStreamingThinking(model, event.runId);
     runtimeFailureEvents.add(event.runId);
     logRuntimeFailure(event, 'run.failed');
+    const failureCode = typeof payload.errorCode === 'string'
+      ? payload.errorCode
+      : typeof payload.code === 'string' ? payload.code : '';
+    if (failureCode.startsWith('RECOVERY_WORKSPACE_CHANGED')
+      || (typeof payload.error === 'string' && payload.error.includes('RECOVERY_WORKSPACE_CHANGED'))) {
+      recoveryWorkspaceConflictThreadId = runThreadIds.get(event.runId) ?? currentRunThreadId;
+    }
     const notice = routeFailureNotice(event.runId, payload);
     routeFailure = notice ? { ...notice, threadId: routeFailureThread(runThreadIds, event.runId) } : undefined;
     pendingApprovalResolutions.clear();
     // A killed runtime may flush a buffered failure event after the user
     // cancellation has already been acknowledged. Preserve the user's
     // terminal cancellation state instead of regressing it to FAILED.
-    if ((model.activeRun?.state as string | undefined) === 'CANCELLED') return;
-    update(setCellsSession(appendErrorTimelineItem(
-      cancelPendingApprovals(setRunState(appendVerificationChecks(model, payload.checks, event.runId), 'FAILED')),
-      'Cordis runtime',
-      runtimeFailureText(event)
+    if ((model.activeRun?.state as string | undefined) === 'CANCELLED') {
+      const cleared = applyClarificationClear(model, event.runId, 'CANCELLED');
+      if (cleared !== model) update(cleared);
+      return;
+    }
+    if (isUncertainSideEffectFailure(payload)) {
+      pendingUncertainRecovery = {
+        runtimeRunId: event.runId,
+        threadId: runThreadIds.get(event.runId) ?? currentRunThreadId
+      };
+    }
+    update(setCellsSession(appendTimelineItem(
+      applyClarificationClear(
+        cancelPendingApprovals(setRunState(appendVerificationChecks(model, payload.checks, event.runId), 'FAILED')),
+        event.runId,
+        'CLOSED'
+      ),
+      { kind: 'ERROR', title: 'Cordis runtime', status: 'ERROR', runId: event.runId, ...runtimeFailureItem(event) }
     ), undefined));
+    const failureNotice = desktopNoticePolicy.runFinished(event.runId, true);
+    if (failureNotice) sendDesktopNotice(failureNotice);
     return;
   }
   if (event.kind === 'action_intent.created') {
@@ -4669,7 +7038,8 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
       kind: 'STATUS',
       title: labels[event.kind],
       body: `${toolDisplayLabel(typeof payload.capability === 'string' ? payload.capability : '受控操作')}${payload.ok === false ? ' · 失败' : ''}`,
-      status: event.kind === 'lease.failed' || payload.ok === false ? 'ERROR' : 'COMPLETE'
+      status: event.kind === 'lease.failed' || payload.ok === false ? 'ERROR' : 'COMPLETE',
+      ...(event.kind === 'lease.claimed' ? {} : { evidenceKind: 'conversation-notice' })
     }));
     return;
   }
@@ -4766,7 +7136,14 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     return;
   }
   if (event.kind === 'tool.call_requested' || event.kind === 'tool.result' || event.kind === 'workspace.snapshot') {
+    if (event.kind === 'tool.call_requested') {
+      model = completeAllStreamingThinking(model, event.runId);
+      model = completeStreamingResponses(model, event.runId);
+    }
     if (event.kind === 'tool.call_requested' || event.kind === 'tool.result') {
+      const callId = typeof payload.id === 'string' ? payload.id : '';
+      noteSessionTool(sessionUsageKeyFor(usageOwnerId), event.kind, callId, event.emittedAtMs);
+      if (event.kind === 'tool.result') touchSessionUsage(usageOwnerId);
       const item = toolEventTimelineItem(event);
       if (!item) return;
       const existing = model.timeline.find((candidate) => candidate.toolCallId === item.toolCallId
@@ -4790,8 +7167,8 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
   }
 };
 
-const applyWorkspaceGrant = (grant: WorkspaceGrant): boolean => {
-  if (grant.rootPath) rememberProject(grant.rootPath);
+const applyWorkspaceGrant = (grant: WorkspaceGrant, options: { autoRemember?: boolean } = {}): boolean => {
+  if (grant.rootPath && options.autoRemember !== false) rememberProject(grant.rootPath);
   const next = setWorkspace(model, grant.rootLabel, '', [], grant.rootPath);
   const reset = next.activeThreadId !== model.activeThreadId
     || (Boolean(model.workspace.rootPath && grant.rootPath && !sameWorkspaceRoot(model.workspace.rootPath, grant.rootPath))
@@ -4812,7 +7189,7 @@ const applyWorkspaceGrant = (grant: WorkspaceGrant): boolean => {
 const revealThreadProject = (id: string): void => {
   const thread = model.threads.find(item => item.id === id);
   if (!thread) return;
-  const projectId = projectForThread(thread)?.id ?? (thread.cwd ? projectIdForPath(thread.cwd) : PROJECTLESS_ID);
+  const projectId = sidebarProjectId(thread);
   expandedProjectIds.add(projectId);
   collapsedProjectIds.delete(projectId);
   projectsSectionCollapsed = false;
@@ -4907,7 +7284,7 @@ const changeProjectArchive = (id: string, archived: boolean): void => {
     detachArchivedProjectSelection(id);
   } else render();
 };
-const restoreArchivedThreadForRun = (id?: string): boolean => {
+const unarchiveThreadForRun = (id?: string): boolean => {
   if (!id || !isThreadArchived(id)) return true;
   if (!writeThreadArchive(id, false)) { render(); return false; }
   revealThreadProject(id);
@@ -4930,29 +7307,53 @@ window.addEventListener('storage', event => {
 });
 
 const resetToNewTask = (): void => {
-  running = false;
-  executionGroupExpanded = false;
-  historyView = undefined;
-  historyRenderSerial++;
-  historyPageCache.clear();
-  activePage = 'workbench';
-  settingsVisible = false;
-  lastSubmitReceipt = undefined;
-  model = { ...model, timeline: [], subAgents: [], approvals: [] };
-  scheduleApprovalExpiry();
-  let next: HarnessReadModel = { ...model, activeRun: undefined, composer: { ...model.composer, enabled: true } };
-  next = setActiveThread(next, undefined);
-  update(next);
+  clearHistoryCaches();
+  parkForNewDraft();
   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus());
 };
 
 const continueProjectPickerAction = async (projectId: string): Promise<void> => {
-  if (projectPickerBusy || running || workspaceChanging) return;
+  if (projectPickerBusy || workspaceChanging) return;
   const mode = projectPickerMode;
   const threadId = projectPickerThreadId;
+  // Opening another thread can wait. A new task must still ask for a project
+  // while the current one is running, and only park that invocation after the choice.
+  if (mode !== 'new-task' && (running || liveTaskRunning())) return;
+  if (mode === 'new-task' && (running || liveTaskRunning())) resetToNewTask();
   const savedProject = projectId === PROJECTLESS_ID ? undefined : projectCatalog.find((item) => item.id === projectId);
   const discoveredProject = projectId === PROJECTLESS_ID ? undefined : projectGroups().find((item) => item.id === projectId && item.path);
   const projectPath = savedProject?.path ?? discoveredProject?.path;
+  if (mode === 'new-task') {
+    // Park a non-pristine session before changing workspace state so a finished
+    // or failed session keeps its own timeline and workspace root intact.
+    const selected = sessionController.selected();
+    if (selected && !sessionIsPristineDraft(selected)) {
+      const previousComposer = app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+      selected.promptDraft = previousComposer?.value ?? selected.promptDraft;
+      Object.assign(selected, captureScopedState());
+      if (previousComposer) previousComposer.value = '';
+      const clean: HarnessReadModel = setCellsSession({
+        ...model,
+        activeRun: undefined,
+        activeThreadId: undefined,
+        resumeThreadId: undefined,
+        timeline: [],
+        subAgents: [],
+        approvals: [],
+        decisions: [],
+        continuousVerification: [],
+        processVerification: undefined,
+        composer: { ...model.composer, enabled: true }
+      }, undefined);
+      const draft = sessionController.ensureDraftSession(projectId === PROJECTLESS_ID ? '' : (projectPath ?? ''), {
+        model: clean,
+        unboundProject: projectId === PROJECTLESS_ID,
+      });
+      sessionController.pruneIdleDrafts(draft.clientSessionId);
+      installScopedState(draft);
+      syncSelectedSession();
+    }
+  }
   projectPickerBusy = true;
   render();
   workspaceChanging = true;
@@ -4976,8 +7377,14 @@ const continueProjectPickerAction = async (projectId: string): Promise<void> => 
     projectPickerBusy = false;
     projectPickerVisible = false;
   }
-  if (mode === 'new-task') resetToNewTask();
-  else if (threadId) await selectThread(threadId);
+  if (mode === 'new-task') {
+    const selectedNow = sessionController.selected();
+    if (selectedNow) {
+      selectedNow.unboundProject = projectId === PROJECTLESS_ID;
+      if (projectId === PROJECTLESS_ID) selectedNow.workspacePath = '';
+    }
+    resetToNewTask();
+  } else if (threadId) await selectThread(threadId);
   else render();
 };
 
@@ -4993,21 +7400,27 @@ const ensureThreadWorkspace = async (thread: HarnessReadModel['threads'][number]
   }
   if (currentRoot && sameWorkspaceRoot(currentRoot, threadPath)) return true;
   const known = projectForThread(thread);
-  if (!known) rememberProject(threadPath);
+  if (!known && !projectlessThreadIds.has(thread.id) && !isEphemeralWorkspaceRoot(threadPath)) rememberProject(threadPath);
   // A project can contain multiple target paths. Looking it up by a target's
   // derived ID can miss the saved project and recursively select this thread
-  // with no workspace. Bind the exact thread directory instead.
+  // with no workspace. Bind the exact thread directory instead. A removed
+  // task worktree falls back to the main checkout it was created from.
   workspaceChanging = true;
   try {
-    const grant = await desktopBridge.setWorkspace(threadPath);
+    let grant;
+    try {
+      grant = await desktopBridge.setWorkspace(threadPath);
+    } catch (error) {
+      const fallback = mainCheckoutForTaskWorktree(threadPath);
+      if (!fallback) throw error;
+      grant = await desktopBridge.setWorkspace(fallback);
+    }
     if (historyView?.threadId === thread.id && model.activeThreadId === thread.id) {
       // Reconcile the selected history's directory without treating it as a
       // manual project change, which would discard the history being loaded.
       const next = setWorkspace(model, grant.rootLabel, '', [], grant.rootPath);
       update({ ...next, activeThreadId: model.activeThreadId, resumeThreadId: model.resumeThreadId,
         timeline: model.timeline, composer: model.composer });
-    } else if (!historyView) {
-      applyWorkspaceGrant(grant);
     }
     return true;
   } catch (error) {
@@ -5020,7 +7433,7 @@ const ensureThreadWorkspace = async (thread: HarnessReadModel['threads'][number]
 };
 
 const openWorkspace = async (): Promise<boolean> => {
-  if (running || workspaceChanging) return false;
+  if (running || liveTaskRunning() || workspaceChanging) return false;
   workspaceChanging = true;
   navigationTouched = true;
   render();
@@ -5028,11 +7441,12 @@ const openWorkspace = async (): Promise<boolean> => {
   try {
     await workspaceReady;
     const grant = await desktopBridge.chooseWorkspace();
-    const reset = applyWorkspaceGrant(grant);
+    const reset = applyWorkspaceGrant(grant, { autoRemember: false });
+    if (grant.rootPath) rememberProject(grant.rootPath, undefined, { explicit: true });
     update(appendTimelineItem(model, {
       kind: 'WORKSPACE',
       title: reset ? '工作区已切换' : '工作区授权',
-      body: `已以只读方式打开 ${grant.rootPath ?? grant.rootLabel}${reset ? '。下次发送将在此目录创建新会话，原会话保留在历史列表中。' : ''}`,
+      body: `已授权工作区 ${grant.rootPath ?? grant.rootLabel}${reset ? '。下次发送将在此目录创建新会话，原会话保留在历史列表中。' : ''}`,
       status: 'COMPLETE'
     }));
     const entries = await desktopBridge.listWorkspace('');
@@ -5078,7 +7492,7 @@ const finishProjectNameDialog = (name: string): void => {
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-role="project-name"]')?.focus());
     return;
   }
-  rememberProject(flow.path, cleanName);
+  rememberProject(flow.path, cleanName, { explicit: true });
   projectNameDialog = undefined;
   projectNameError = '';
   const followUp = flow.followUp;
@@ -5094,7 +7508,7 @@ const beginProjectEdit = (projectId: string): void => {
   // the right-side button has a real target instead of silently doing nothing.
   if (!project) {
     const discovered = projectGroups().find((group) => group.id === projectId && group.discovered);
-    if (discovered?.path) project = rememberProject(discovered.path, discovered.name);
+    if (discovered?.path) project = rememberProject(discovered.path, discovered.name, { explicit: true });
   }
   if (!project) return;
   projectEditDialog = { projectId, draftName: project.name, paths: projectTargetPaths(project), busy: false };
@@ -5165,7 +7579,7 @@ const loadDefaultWorkspace = async (): Promise<void> => {
   if (!desktopBridge.isNative() || model.workspace.granted) return;
   try {
     const grant = await desktopBridge.defaultWorkspace();
-    if (!grant) return;
+    if (!grant?.rootPath || isEphemeralWorkspaceRoot(grant.rootPath)) return;
     // A refreshed window must not re-select an archived project just because
     // the backend default workspace (or the remembered last project) still
     // points at it. The project stays archived; the app falls back to the
@@ -5179,13 +7593,15 @@ const loadDefaultWorkspace = async (): Promise<void> => {
       update(clearWorkspace(model));
       return;
     }
-    applyWorkspaceGrant(grant);
+    // Only auto-bookmark the startup default workspace when the user has zero
+    // saved projects yet (and the path is not an ephemeral build/system dir).
+    applyWorkspaceGrant(grant, { autoRemember: projectCatalog.length === 0 });
     const entries = await desktopBridge.listWorkspace('');
     let next = setWorkspace(model, grant.rootLabel, '', entries, grant.rootPath);
     next = appendTimelineItem(next, {
       kind: 'WORKSPACE',
       title: '默认工作区',
-      body: `已自动使用 ${grant.rootPath ?? grant.rootLabel} 作为只读工作区。需要切换目录时可点击“打开项目”。`,
+      body: `已自动使用 ${grant.rootPath ?? grant.rootLabel} 作为工作区。需要切换目录时可点击“打开项目”。`,
       status: 'COMPLETE'
     });
     update(next);
@@ -5243,7 +7659,99 @@ const restoreSavedNavigation = async (): Promise<void> => {
   } catch { /* ignore restore errors */ }
 };
 
+/** A resumable run with no terminal event still has a saved checkpoint. */
+const interruptedHistoryNote = (
+  thread: HarnessReadModel['threads'][number] | undefined,
+  timeline: TimelineItem[]
+): TimelineItem | undefined => {
+  if (!thread || timeline.some((item) => item.itemId.startsWith('replay-interrupted-'))) return undefined;
+  const mode = threadRecoveryMode(thread);
+  if (mode !== 'PLAN' && mode !== 'PREPARATION') return undefined;
+  if (timeline.some((item) => item.title === '任务失败' || item.title === '任务完成')) return undefined;
+  return {
+    itemId: `replay-interrupted-${thread.id}`,
+    runId: thread.checkpoint?.runId,
+    kind: 'AGENT',
+    title: '任务中断',
+    body: '这次任务在执行过程中中断，进度已保存。在右侧选择「继续任务」，或在下方发送「继续」。',
+    status: 'COMPLETE',
+    createdAtMs: thread.updatedAtMs || Date.now()
+  };
+};
+
+const restoreParkedHistory = (
+  threadId: string,
+  selectedThread: HarnessReadModel['threads'][number] | undefined,
+  renderSerial: number
+): boolean => {
+  const cached = historyPageCache.get(threadId);
+  const parked = parkedHistory.get(threadId);
+  if (!cached?.timeline || !cached.page || !parked) return false;
+  const visible = cached.timeline.filter(isConversationTimelineItem);
+  if (!sameTimelineItems(parked.items, visible)) {
+    parkedHistory.delete(threadId);
+    return false;
+  }
+  const region = app?.querySelector<HTMLElement>('[data-region="conversation"]');
+  if (!region) return false;
+  parkedHistory.delete(threadId);
+  const page = cached.page;
+  const thread = page.thread ?? selectedThread;
+  if (thread) model = setThreads(model, [thread, ...model.threads.filter((item) => item.id !== threadId)]);
+  model = {
+    ...setActiveThread(model, threadId, Boolean(thread?.resumable || thread?.checkpoint?.plan)),
+    activeRun: undefined,
+    subAgents: [],
+    approvals: [],
+    continuousVerification: [],
+    processVerification: undefined,
+    decisions: [],
+    timeline: cached.timeline,
+    composer: { ...model.composer, enabled: true }
+  };
+  historyView = {
+    threadId,
+    loading: false,
+    loadingOlder: false,
+    hasMore: Boolean(page.hasMore),
+    cursor: page.nextCursor
+  };
+  activePage = 'workbench';
+  settingsVisible = false;
+  focusedRunId = null;
+  localStorage.removeItem('hmcodex.focusedRunId');
+  lastSubmitReceipt = undefined;
+  transcriptStick = true;
+  transcriptScrollTop = 0;
+  const list = ensureHistoryShell(region);
+  list.replaceChildren(...[...parked.holder.childNodes]);
+  renderHistoryView();
+  revealLatestTranscript();
+  persistNavigation();
+  if (selectedThread) void ensureThreadWorkspace(selectedThread).catch((error) => {
+    update(appendErrorTimelineItem(model, '会话工作区', compactError(error)));
+  });
+  const view = historyView;
+  if (view?.hasMore && !view.error && !running) void loadAllOlderHistory(view, renderSerial);
+  return true;
+};
+
 const selectThread = async (threadId: string): Promise<void> => {
+  dismissComposerModelMenu();
+  // A thread that owns a live in-memory session opens that session — its own
+  // timeline, sub-agents, progress and draft — instead of read-only history.
+  syncSelectedSession();
+  const owningSession = sessionController.sessionForThread(threadId);
+  const visibleOwner = owningSession?.clientSessionId === sessionController.selectedId;
+  const ownsLiveView = owningSession?.model.activeThreadId === threadId && owningSession.model.activeRun
+    && !(visibleOwner && historyView);
+  if (owningSession && (owningSession.running || ownsLiveView)) {
+    switchSession(owningSession.clientSessionId);
+    return;
+  }
+  // Reading another thread's history while a task is live parks the running
+  // session first — the invocation keeps running undisturbed.
+  if (running || liveTaskRunning()) parkForNewDraft();
   // `running` is a submission lock and can briefly outlive a task after the
   // runtime has already reached a terminal state. History navigation must be
   // gated by the authoritative active-run state, otherwise a stale lock makes
@@ -5253,8 +7761,10 @@ const selectThread = async (threadId: string): Promise<void> => {
   if (liveTaskRunning() || !threadId) return;
   const selectedThread = model.threads.find((thread) => thread.id === threadId);
   if (selectedThread && !hasPersistedTurn(selectedThread)) {
+    parkHistoryTranscript();
     historyView = undefined;
     historyRenderSerial++;
+    resetLiveTimeline();
     model = { ...setActiveThread(model, undefined), timeline: [], activeRun: undefined, composer: { ...model.composer, enabled: true } };
     persistNavigation();
     render();
@@ -5267,8 +7777,14 @@ const selectThread = async (threadId: string): Promise<void> => {
     persistNavigation();
     return;
   }
-  const view: HistoryView = { threadId, loading: true, loadingOlder: false, hasMore: false };
   const renderSerial = ++historyRenderSerial;
+  // Drop the live rows before the history shell replaces them. A running
+  // session was already parked with its own model; this only clears a
+  // transcript whose model is about to follow the history projection.
+  resetLiveTimeline();
+  parkHistoryTranscript();
+  if (restoreParkedHistory(threadId, selectedThread, renderSerial)) return;
+  const view: HistoryView = { threadId, loading: true, loadingOlder: false, hasMore: false };
   historyView = view;
   activePage = 'workbench';
   settingsVisible = false;
@@ -5277,6 +7793,39 @@ const selectThread = async (threadId: string): Promise<void> => {
   lastSubmitReceipt = undefined;
   transcriptStick = true;
   transcriptScrollTop = 0;
+  // A short transcript that is already in memory paints in this turn. Blanking
+  // it and waiting a frame made task switches feel late even when no I/O remained.
+  const warmed = historyPageCache.get(threadId);
+  const warmedVisible = warmed?.timeline?.filter(isConversationTimelineItem) ?? [];
+  if (warmed?.page && warmed.timeline && warmedVisible.length > 0 && warmedVisible.length <= 12) {
+    historyPageCache.delete(threadId);
+    historyPageCache.set(threadId, warmed);
+    const note = interruptedHistoryNote(warmed.page.thread, warmed.timeline);
+    if (note) warmed.timeline.push(note);
+    if (warmed.page.thread) model = setThreads(model, [warmed.page.thread, ...model.threads.filter((thread) => thread.id !== threadId)]);
+    model = {
+      ...setActiveThread(model, threadId, Boolean(warmed.page.thread?.resumable || warmed.page.thread?.checkpoint?.plan)),
+      activeRun: undefined,
+      subAgents: [],
+      approvals: [],
+      continuousVerification: [],
+      processVerification: undefined,
+      decisions: [],
+      timeline: warmed.timeline,
+      composer: { ...model.composer, enabled: true }
+    };
+    view.loading = false;
+    view.hasMore = Boolean(warmed.page.hasMore);
+    view.cursor = warmed.page.nextCursor;
+    renderHistoryView();
+    revealLatestTranscript();
+    persistNavigation();
+    if (selectedThread) void ensureThreadWorkspace(selectedThread).catch((error) => {
+      update(appendErrorTimelineItem(model, '会话工作区', compactError(error)));
+    });
+    if (view.hasMore && !view.error && !running) void loadAllOlderHistory(view, renderSerial);
+    return;
+  }
   model = { ...setActiveThread(model, threadId), activeRun: undefined, subAgents: [], approvals: [],
     continuousVerification: [], processVerification: undefined, decisions: [], timeline: [],
     composer: { ...model.composer, enabled: false } };
@@ -5297,13 +7846,15 @@ const selectThread = async (threadId: string): Promise<void> => {
     const pageModel = cachedEntry?.timeline
       ? { ...model, timeline: cachedEntry.timeline }
       : replayThreadEvents({ ...model, timeline: [] }, page.events);
+    const note = interruptedHistoryNote(page.thread, pageModel.timeline);
+    if (note) pageModel.timeline.push(note);
     if (cachedEntry && !cachedEntry.timeline) cachedEntry.timeline = pageModel.timeline;
     model = { ...model, timeline: [] };
     renderHistoryView();
     await syncKeyedListIncrementally(
       app.querySelector<HTMLElement>('[data-history-items]')!, pageModel.timeline.filter(isConversationTimelineItem),
       (item) => item.itemId, timelineItemHtml, historyIcons,
-      () => historyView !== view || historyRenderSerial !== renderSerial || running);
+      () => historyView !== view || historyRenderSerial !== renderSerial || running, 16, timelineRowHooks);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
     model = { ...model, timeline: pageModel.timeline };
     view.hasMore = page.hasMore;
@@ -5339,10 +7890,12 @@ const selectThread = async (threadId: string): Promise<void> => {
       view.loading = false;
       model = { ...model, composer: { ...model.composer, enabled: !view.error } };
       renderHistoryView();
-      const transcript = app.querySelector<HTMLElement>('.transcript');
-      if (transcript && transcriptStick) transcript.scrollTop = transcript.scrollHeight;
+      revealLatestTranscript();
       persistNavigation();
     }
+  }
+  if (historyView === view && view.hasMore && !view.error && !running) {
+    void loadAllOlderHistory(view, renderSerial);
   }
 };
 
@@ -5373,7 +7926,7 @@ const loadOlderHistory = async (): Promise<void> => {
     await syncKeyedListIncrementally(
       app.querySelector<HTMLElement>('[data-history-items]')!, mergedTimeline.filter(isConversationTimelineItem),
       (item) => item.itemId, timelineItemHtml, historyIcons,
-      () => historyView !== view || historyRenderSerial !== renderSerial || running);
+      () => historyView !== view || historyRenderSerial !== renderSerial || running, 16, timelineRowHooks);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
     model = { ...model, timeline: mergedTimeline };
     renderHistoryView();
@@ -5397,13 +7950,66 @@ const loadOlderHistory = async (): Promise<void> => {
   }
 };
 
+// A history page is only a transport window. Once the conversation is opened,
+// continue walking older cursors in the background so the visible transcript
+// does not silently stop at the first 100 events.
+const loadAllOlderHistory = async (view: HistoryView, renderSerial: number): Promise<void> => {
+  if (!view.cursor || view.loadingOlder) return;
+  view.loadingOlder = true;
+  renderHistoryView();
+  try {
+    let cursor: string | undefined = view.cursor;
+    const cursors = new Set<string>();
+    const olderEvents: RuntimeEvent[] = [];
+    while (cursor) {
+      if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
+      if (cursors.has(cursor)) throw new Error('历史记录分页异常，游标重复。');
+      cursors.add(cursor);
+      const page = await desktopBridge.listThreadEvents(view.threadId, { limit: 500, before: cursor });
+      olderEvents.push(...page.events);
+      cursor = page.hasMore ? page.nextCursor : undefined;
+      if (page.hasMore && !cursor) throw new Error('历史记录分页异常，缺少下一页游标。');
+    }
+    if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
+    const older = replayThreadEvents({ ...model, timeline: [] }, olderEvents);
+    const seen = new Set(model.timeline.map((item) => item.itemId));
+    const mergedTimeline = [...older.timeline.filter((item) => !seen.has(item.itemId)), ...model.timeline];
+    model = { ...model, timeline: mergedTimeline };
+    view.hasMore = false;
+    view.cursor = undefined;
+    const cachedEntry = historyPageCache.get(view.threadId);
+    if (cachedEntry?.page) {
+      cachedEntry.page = {
+        ...cachedEntry.page,
+        events: [...olderEvents, ...cachedEntry.page.events],
+        hasMore: false,
+        nextCursor: undefined
+      };
+      cachedEntry.timeline = mergedTimeline;
+      parkedHistory.delete(view.threadId);
+    }
+    renderHistoryView();
+    // Older rows are prepended and the transcript does not anchor, so a switch
+    // that was following the latest message has to be brought back to the bottom.
+    if (transcriptStick) revealLatestTranscript();
+  } catch (error) {
+    if (historyView === view) view.error = compactError(error);
+  } finally {
+    if (historyView === view && !running) {
+      view.loadingOlder = false;
+      renderHistoryView();
+      if (transcriptStick) revealLatestTranscript();
+    }
+  }
+};
+
 const enterLiveWorkbench = (): void => {
   // Continue and Retry bypass the composer submit handler. Invalidate the
   // history renderer here for every task entry point; otherwise each delta
   // misses the live render path and replaces the entire application shell.
   historyView = undefined;
   historyRenderSerial++;
-  historyPageCache.clear();
+  clearHistoryCaches();
   focusedRunId = null;
   localStorage.removeItem('hmcodex.focusedRunId');
   activePage = 'workbench';
@@ -5412,38 +8018,20 @@ const enterLiveWorkbench = (): void => {
   transcriptStick = true;
 };
 
-const runMockTask = async (prompt: string): Promise<void> => {
-  if (running || workspaceChanging) return;
-  if (!restoreArchivedThreadForRun(model.activeThreadId)) return;
+const runMockTask = async (prompt: string, images: ComposerImageAttachment[] = [], displayBody?: string): Promise<void> => {
+  if (running || workspaceChanging || taskStartLock) return;
+  taskStartLock = true;
+  if (!unarchiveThreadForRun(model.activeThreadId)) { taskStartLock = false; return; }
   running = true;
+  taskStartLock = false;
   enterLiveWorkbench();
-  const started = beginRun(model, prompt);
+  const started = beginRun(model, prompt, images, displayBody);
   const runId = started.activeRun?.runId;
   if (!runId) {
     running = false;
     return;
   }
-  const workspaceAgentId = `${runId}-workspace`;
-  const safetyAgentId = `${runId}-safety`;
-  const summaryAgentId = `${runId}-summary`;
-  let next = upsertSubAgent(started, {
-    agentId: workspaceAgentId,
-    name: '结构扫描',
-    task: '准备读取授权工作区',
-    state: 'STARTING'
-  });
-  next = upsertSubAgent(next, {
-    agentId: safetyAgentId,
-    name: '安全校验',
-    task: '准备核对只读能力边界',
-    state: 'STARTING'
-  });
-  next = upsertSubAgent(next, {
-    agentId: summaryAgentId,
-    name: '结果汇总',
-    task: '等待前置检查完成',
-    state: 'STARTING'
-  });
+  let next = started;
   update(next);
   const isCurrentRunActive = (): boolean =>
     Boolean(model.activeRun?.runId === runId && pendingCancellationRunId !== runId && model.activeRun.state !== 'CANCELLED');
@@ -5452,18 +8040,8 @@ const runMockTask = async (prompt: string): Promise<void> => {
     await new Promise((resolve) => window.setTimeout(resolve, 280));
     if (!isCurrentRunActive()) return;
     next = setRunState(model, 'EXECUTING_READ');
-    next = upsertSubAgent(next, {
-      agentId: workspaceAgentId,
-      task: model.workspace.granted ? '扫描已授权工作区的目录结构' : '检查工作区授权状态',
-      state: 'RUNNING'
-    });
-    next = upsertSubAgent(next, {
-      agentId: safetyAgentId,
-      task: '核对路径范围与只读能力边界',
-      state: 'RUNNING'
-    });
     update(next);
-    const response = `我会在只读工作区“${model.workspace.rootLabel}”内进行检查。当前 Windows MVP 已建立稳定的 ReadModel、受限工作区接口和明确的安全能力边界。需要切换目录时可点击右上角“打开项目”。`;
+    const response = `我会在授权工作区“${model.workspace.rootLabel}”内进行检查。当前 Windows MVP 已建立稳定的 ReadModel、受限工作区接口和明确的安全能力边界。需要切换目录时可点击右上角“打开项目”。`;
     const streamId = `agent-${Date.now()}`;
     for (let index = 0; index < response.length; index += 3) {
       if (!isCurrentRunActive()) return;
@@ -5472,149 +8050,257 @@ const runMockTask = async (prompt: string): Promise<void> => {
     }
     if (!isCurrentRunActive()) return;
     next = upsertStreamingAgent(model, streamId, '', true);
-    next = upsertSubAgent(next, {
-      agentId: workspaceAgentId,
-      task: '目录结构读取完成',
-      state: 'SUCCEEDED'
-    });
-    next = upsertSubAgent(next, {
-      agentId: safetyAgentId,
-      task: '只读边界核对完成',
-      state: 'SUCCEEDED'
-    });
-    next = upsertSubAgent(next, {
-      agentId: summaryAgentId,
-      task: '整理本次检查结果',
-      state: 'RUNNING'
-    });
     next = setRunState(next, 'VERIFYING');
     update(next);
     await new Promise((resolve) => window.setTimeout(resolve, 220));
     if (!isCurrentRunActive()) return;
-    next = upsertSubAgent(model, {
-      agentId: summaryAgentId,
-      task: '检查结果已汇总',
-      state: 'SUCCEEDED'
-    });
-    update(setRunState(next, 'SUCCEEDED'));
+    update(setRunState(model, 'SUCCEEDED'));
   } finally {
     running = false;
     render();
   }
 };
 
-const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOptions> = {}): Promise<void> => {
-  if (running || workspaceChanging) return;
-  // The legacy pin must be migrated into the Settings model before any task.
-  await pinMigrationReady;
-  if (running || workspaceChanging) return;
+const queueUncertainOutcomeRecovery = (
+  sessionId: string,
+  thread: HarnessReadModel['threads'][number] | undefined,
+  runtimeRunId: string | undefined
+): void => {
+  const pending = pendingUncertainRecovery;
+  if (!pending) return;
+  const sameRun = Boolean(runtimeRunId) && pending.runtimeRunId === runtimeRunId;
+  const sameThread = Boolean(thread) && (!pending.threadId || pending.threadId === thread?.id);
+  if (!sameRun && !sameThread) return;
+  pendingUncertainRecovery = undefined;
+  if (!thread || !sameThread || model.activeRun?.state === 'CANCELLED' || sessionController.selectedId !== sessionId) return;
+  const block = threadRecoveryBlock(thread);
+  if (!block) return;
+  const key = `${thread.id}:${block.stepIds.join('\u0000')}`;
+  if (uncertainRecoveryKeys.has(key)) return;
+  uncertainRecoveryKeys.add(key);
+  if ((followUpQueues.get(sessionId)?.length ?? 0) > 0) return;
+  followUpQueues.set(sessionId, [{ prompt: '继续', images: [], displayBody: '继续' }]);
+};
+
+const flushFollowUp = (sessionId: string): void => {
+  if (!sessionId || sessionController.selectedId !== sessionId) return;
+  if (running || liveTaskRunning() || workspaceChanging) return;
+  const queue = followUpQueues.get(sessionId);
+  const turn = queue?.shift();
+  if (!turn) return;
+  if (!queue?.length) followUpQueues.delete(sessionId);
+  else followUpQueues.set(sessionId, queue);
+  taskActionNotice = queue?.length ? `还有 ${queue.length} 条排队，继续发送。` : '';
+  void (desktopBridge.isNative()
+    ? runCordisTask(turn.prompt, {}, turn.images, turn.displayBody)
+    : runMockTask(turn.prompt, turn.images, turn.displayBody));
+};
+
+const runCordisTask = async (
+  prompt: string,
+  extraOptions: Partial<RuntimeTaskOptions> = {},
+  images: ComposerImageAttachment[] = [],
+  displayBody?: string
+): Promise<void> => {
+  if (running || workspaceChanging || taskStartLock) return;
+  taskStartLock = true;
   if (prompt.trim().length > 8000) {
+    taskStartLock = false;
     composerPromptError = `需求共有 ${prompt.trim().length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
     render();
     return;
   }
   composerPromptError = '';
+  const restoreBlockedDraft = (): void => {
+    if (images.length && selectedImageAttachments().length === 0) {
+      setSelectedImageAttachments(images);
+    }
+    render();
+    const draft = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+    const restoreText = displayBody !== undefined ? displayBody : prompt;
+    if (draft && restoreText && !draft.value.trim()) draft.value = restoreText;
+  };
   // An archived project must never receive a new run silently. Check the
   // target project (the workspace root, or the cwd of the thread this call
   // resumes) before any run state or archive state is modified, so viewing an
   // archived session cannot restart work in an archived project and the check
   // never un-archives anything or interrupts a task already in flight.
-  const targetThreadId = extraOptions.threadId ?? model.activeThreadId;
+  const selectedSession = sessionController.selected();
+  const fallbackSessionThreadId = selectedSession?.threadId ?? selectedSession?.currentRunThreadId;
+  const targetThreadId = extraOptions.threadId ?? model.activeThreadId ?? fallbackSessionThreadId;
   const targetThread = targetThreadId ? model.threads.find((thread) => thread.id === targetThreadId) : undefined;
-  const archivedTargetId = archivedProjectIdForRoot(targetThread?.cwd) || archivedProjectIdForRoot(model.workspace.rootPath);
+  const sameWorkspaceTarget = Boolean(targetThreadId)
+    && (!targetThread?.cwd || !model.workspace.rootPath || sameProjectWorkspace(targetThread.cwd, model.workspace.rootPath));
+  const resolvedTargetThreadId = sameWorkspaceTarget ? targetThreadId : undefined;
+  // An uncertain side effect is not replayed. Resume continues the original
+  // task; the runtime finishes it from the current files.
+  let modelPrompt = prompt;
+  let shownBody = displayBody;
+  const continuingInterrupted = (Boolean(extraOptions.threadId) || sameWorkspaceTarget) && Boolean(threadRecoveryBlock(targetThread));
+  const archivedTargetId = archivedProjectIdForRoot(sameWorkspaceTarget ? targetThread?.cwd : undefined) || archivedProjectIdForRoot(model.workspace.rootPath);
   if (archivedTargetId) {
     taskActionNotice = '此项目已归档，请先恢复项目后再开始任务。';
     // Reuse the always-visible archive notice so the block reason shows in the
     // user-visible area even when the task options panel is collapsed.
     threadArchiveNotice = { text: '此项目已归档，请先恢复项目后再开始任务。', error: true };
-    render();
+    restoreBlockedDraft();
+    taskStartLock = false;
     return;
   }
-  if (!restoreArchivedThreadForRun(extraOptions.threadId ?? model.activeThreadId)) return;
-  // Acquire the local run lock before awaiting event subscription setup. A
-  // rapid double-submit during startup must not create two overlapping
-  // runtime children or let the second display run replace the first.
+  if (!unarchiveThreadForRun(resolvedTargetThreadId)) {
+    restoreBlockedDraft();
+    taskStartLock = false;
+    return;
+  }
+  syncSelectedSession();
+  if (resolvedTargetThreadId && sessionController.runningSessions().some((session) =>
+    session.clientSessionId !== sessionController.selectedId
+    && (session.threadId === resolvedTargetThreadId || session.currentRunThreadId === resolvedTargetThreadId))) {
+    taskActionNotice = '此会话已有任务正在运行，请切回原任务查看。';
+    restoreBlockedDraft();
+    taskStartLock = false;
+    return;
+  }
+  const effectiveResume = extraOptions.resume !== undefined
+    ? extraOptions.resume
+    : Boolean(
+        sameWorkspaceTarget
+        && (
+          continuingInterrupted
+          || (targetThread && ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(targetThread)) && !threadRecoveryBlock(targetThread))
+          || (resolvedTargetThreadId && model.resumeThreadId === resolvedTargetThreadId)
+        )
+      );
+  // Read the model the user is looking at before this launch rebinds the session.
+  const launchedComposerModel = currentComposerModelId().trim();
+  if (!sameWorkspaceTarget && model.activeThreadId) {
+    model = { ...setActiveThread(model, undefined), activeRun: undefined, timeline: [] };
+  } else if (resolvedTargetThreadId) {
+    model = setActiveThread(model, resolvedTargetThreadId, effectiveResume);
+  }
+  // The same task keeps its session id. A new id would make the next run look
+  // like a different conversation when history is loaded.
+  const durableSessionId = sameWorkspaceTarget ? targetThread?.sessionId : undefined;
+  if (durableSessionId && durableSessionId !== sessionController.selectedId
+    && !sessionController.forClientSessionId(durableSessionId)
+    && !sessionController.selected()?.running) {
+    sessionController.adoptId(sessionController.selectedId, durableSessionId);
+  }
+  const ownerSessionId = sessionController.selectedId;
+  const threadTaskOptions: Partial<RuntimeTaskOptions> = resolvedTargetThreadId
+    ? {
+        threadId: resolvedTargetThreadId,
+        ...(effectiveResume ? { resume: true } : {})
+      }
+    : workspaceThreadOptions(model);
+  // Continue / retry pass a thread id explicitly. That must not put a thread
+  // from another checkout back after the workspace guard cleared it.
+  const acceptedExtras: Partial<RuntimeTaskOptions> = { ...extraOptions };
+  if (!sameWorkspaceTarget) {
+    delete acceptedExtras.threadId;
+    delete acceptedExtras.resume;
+  }
+  const taskOptions: RuntimeTaskOptions = {
+    executionMode: 'CONTROLLED',
+    ...(desktopBridge.isNative() ? {
+      leaseCapabilities: controlledCapabilities.slice(),
+      leaseCommands: controlledCommands.slice(),
+      leaseNetworkTargets: effectiveLeaseNetworkTargets(
+        controlledNetworkTargets.text,
+        controlledNetworkTargets.parsed,
+        controlledNetworkTargets.error
+      )
+    } : {}),
+    ...threadTaskOptions,
+    ...taskOptionsFromBudget(),
+    ...acceptedExtras,
+    ...(images.length ? {
+      images: images.map((item) => ({
+        name: item.name,
+        mediaType: item.mediaType,
+        dataUrl: item.dataUrl
+      }))
+    } : {}),
+    clientSessionId: ownerSessionId,
+    workspacePath: model.workspace.rootPath ?? ''
+  };
+  const ownerSession = sessionController.selected()!;
+  ownerSession.workspacePath = taskOptions.workspacePath ?? '';
+  if (!ownerSession.workspacePath.trim()) ownerSession.unboundProject = true;
+  ownerSession.threadId = taskOptions.threadId;
+  rememberUnboundSessionThread(ownerSession, taskOptions.threadId);
+  currentRunThreadId = taskOptions.threadId;
+  if (launchedComposerModel) {
+    ownerSession.composerModelId = launchedComposerModel;
+    rememberTaskComposerModel(resolvedTargetThreadId ?? ownerSession.threadId, launchedComposerModel);
+  }
+  // Lock and project the owner before the first await, including startup waits.
   running = true;
+  taskStartLock = false;
   window.clearTimeout(backgroundDetailsTimer);
   backgroundDetailsTimer = undefined;
   taskActionNotice = '';
-  taskProgressMessage = extraOptions.resume || model.resumeThreadId ? '正在准备恢复任务…' : '正在准备任务…';
-  render();
-  // Context refreshes are normally throttled, but a click needs immediate acknowledgement.
-  patchLiveRegion(app.querySelector('.context-panel'), contextPanelInputs(), renderContextContent);
-  // Ensure the native event subscription is installed before spawning the
-  // runtime child. This prevents losing the first streamed delta or approval
-  // request when a user submits immediately after application launch.
-  try {
-    // Wait for the one-time runtime snapshot/recovery/dashboard hydration. The
-    // dashboard command reads the same Harness SQLite file that the task
-    // writes, so starting both processes from the first paint is unsafe.
-    await runtimeHydrationReady;
-    await runtimeEventsReady;
-    await workspaceReady;
-  } catch (error) {
-    running = false;
-    taskProgressMessage = '';
-    update(appendErrorTimelineItem(model, 'Cordis runtime 事件流', error));
-    scheduleBackgroundDetails();
-    return;
-  }
-  taskProgressMessage = '正在启动本地任务进程…';
+  taskProgressMessage = continuingInterrupted
+    ? '正在继续任务…'
+    : extraOptions.resume || model.resumeThreadId ? '正在准备恢复任务…'
+    : '正在准备任务…';
   runtimeStreamObserved = false;
   activeRuntimeRunId = undefined;
   routeFailure = undefined;
   runtimeEventFloorMs = Date.now();
   lastRuntimeEventSequence = 0;
-  // Event keys include runId, but clearing this bounded-lifetime set avoids
-  // retaining every historical run for the lifetime of the desktop process.
   observedRuntimeEvents.clear();
+  const launchReady = Promise.all([pinMigrationReady, runtimeHydrationReady, runtimeEventsReady, workspaceReady]);
   enterLiveWorkbench();
-  let next = beginRun(model, prompt);
+  let next = beginRun(model, modelPrompt, images, shownBody);
   const runId = next.activeRun?.runId;
   if (!runId) {
     running = false;
     taskProgressMessage = '';
+    syncSelectedSession();
     return;
   }
-  const hostAgentId = `${runId}-cordis-host`;
-  const modelAgentId = `${runId}-model-plugin`;
-  const summaryAgentId = `${runId}-summary-plugin`;
-  for (const agent of [
-    { agentId: hostAgentId, name: 'Cordis 插件宿主', task: '装载已签名插件组合', state: 'STARTING' as const },
-    { agentId: modelAgentId, name: '模型提供方', task: '等待调用模型', state: 'STARTING' as const },
-    { agentId: summaryAgentId, name: '结果汇总', task: '等待插件任务完成', state: 'STARTING' as const }
-  ]) {
-    next = upsertSubAgent(next, agent);
-  }
+  next = { ...next, composer: { ...next.composer, enabled: true } };
   update(next);
   const isCurrentRunActive = (): boolean =>
     Boolean(model.activeRun?.runId === runId && pendingCancellationRunId !== runId && model.activeRun.state !== 'CANCELLED'
       && (!activeRuntimeRunId || !deletedRuntimeRunIds.has(activeRuntimeRunId)));
   try {
-    next = setRunState(model, 'EXECUTING_READ');
-    next = upsertSubAgent(next, { agentId: hostAgentId, task: 'Cordis 服务注入已完成', state: 'SUCCEEDED' });
-    next = upsertSubAgent(next, { agentId: modelAgentId, task: '等待调用模型', state: 'STARTING' });
-    update(next);
-
-    const readOnlyRelease = !desktopBridge.isNative() || model.runtime.releaseChannel === 'WINDOWS_PHASE1_READ_ONLY';
-    if (!readOnlyRelease && model.composer.mode !== 'CONTROLLED') update(setExecutionMode(model, 'CONTROLLED'));
-    const taskOptions: RuntimeTaskOptions = readOnlyRelease
-      ? { executionMode: 'READ_ONLY' as const }
-      : {
-          executionMode: 'CONTROLLED' as const,
-          leaseCapabilities: controlledCapabilities,
-          leaseCommands: controlledCommands,
-          ...(controlledNetworkTargets.parsed.length ? { leaseNetworkTargets: controlledNetworkTargets.parsed } : {})
-        };
-    Object.assign(taskOptions, workspaceThreadOptions(model));
-    Object.assign(taskOptions, taskOptionsFromBudget(), extraOptions);
-    if (model.activeThreadId && !taskOptions.threadId) update(setActiveThread(model, undefined));
-    currentRunThreadId = typeof taskOptions.threadId === 'string' ? taskOptions.threadId : model.activeThreadId;
-    const result = await desktopBridge.runModelTask(prompt, undefined, taskOptions);
+    await launchReady;
+    if (ownerSession.model.connection.state !== 'READY') {
+      const snapshot = await desktopBridge.runtimeSnapshot();
+      withSession(ownerSessionId, () => {
+        if (!snapshot) throw new Error('本地运行时尚未就绪，请稍后重试。');
+        update(setRuntimeReady(model, snapshot));
+      });
+    }
+    const canLaunch = withSession(ownerSessionId, () => {
+      if (!isCurrentRunActive()) return false;
+      taskProgressMessage = '正在启动本地任务进程…';
+      next = setRunState(model, 'EXECUTING_READ');
+      update(next);
+      return true;
+    });
+    if (!canLaunch) return;
+    const result = await desktopBridge.runModelTask(modelPrompt, launchedComposerModel || undefined, taskOptions);
+    // The owner session may no longer be selected; everything from here on
+    // settles inside its own state, never into the session the user switched to.
+    withSession(ownerSessionId, () => {
     {
       const resultThreadId = 'threadId' in result && typeof result.threadId === 'string' ? result.threadId : undefined;
       if (result.runId && resultThreadId) {
         runThreadIds.set(result.runId, resultThreadId);
+        const ownerSession = sessionController.forClientSessionId(ownerSessionId);
+        if (ownerSession && resultThreadId) {
+          const previousBound = ownerSession.threadId || ownerSession.currentRunThreadId;
+          ownerSession.threadId = resultThreadId;
+          rememberUnboundSessionThread(ownerSession, resultThreadId);
+          if (launchedComposerModel) {
+            rememberTaskComposerModel(resultThreadId, launchedComposerModel);
+            if (!previousBound || previousBound === resultThreadId) ownerSession.composerModelId = launchedComposerModel;
+          }
+        }
+        sessionController.bindRunId(ownerSessionId, result.runId);
         const pending = routeFailure as (RouteFailureNotice & { threadId?: string }) | undefined;
         if (pending?.runId === result.runId && !pending.threadId) routeFailure = { ...pending, threadId: resultThreadId };
       }
@@ -5636,12 +8322,12 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     // cannot be overwritten by the stale pre-submit snapshot.
     next = model;
     if (!result.ok) {
-      next = upsertSubAgent(next, { agentId: modelAgentId, task: result.error, state: 'FAILED' });
-      next = upsertSubAgent(next, { agentId: summaryAgentId, task: '未生成结果', state: 'CANCELLED' });
       if (lastSubmitReceipt?.status === 'pending') lastSubmitReceipt.status = 'unconfirmed';
       if (!runtimeFailureEvents.has(result.runId ?? activeRuntimeRunId ?? '')) next = appendErrorTimelineItem(setRunState(next, 'FAILED'), 'Cordis runtime', result.error);
       else next = setRunState(next, 'FAILED');
       update(next);
+      const resultNotice = desktopNoticePolicy.runFinished(result.runId ?? activeRuntimeRunId ?? runId ?? '', true);
+      if (resultNotice) sendDesktopNotice(resultNotice);
       return;
     }
 
@@ -5649,31 +8335,22 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
     next = model;
     next = setActiveThread(next, result.threadId);
     next = setThreads(next, [result.thread, ...next.threads.filter((thread) => thread.id !== result.thread.id)]);
-    const modelSummary = result.model
-      ? `${result.model.provider} 服务 · ${result.model.model}`
-      : '模型配置未返回';
-    next = upsertSubAgent(next, { agentId: modelAgentId, task: `流式响应已完成（${modelSummary}）`, state: 'SUCCEEDED' });
-    next = upsertSubAgent(next, { agentId: summaryAgentId, task: '整理模型结果', state: 'RUNNING' });
     next = setRunState(next, 'VERIFYING');
     update(next);
 
+    next = completeAllStreamingThinking(next, activeRuntimeRunId);
     if (!runtimeStreamObserved) {
+      const split = splitCompleteInlineThinking(result.text);
+      if (split.thinkingText) {
+        next = upsertStreamingThinking(next, `${runId}-thinking-final`, split.thinkingText, {
+          complete: true,
+          runId: activeRuntimeRunId,
+          label: '思考过程'
+        });
+      }
       const streamId = `${runId}-response`;
-      next = upsertStreamingAgent(next, streamId, result.text, true, activeRuntimeRunId);
+      next = upsertStreamingAgent(next, streamId, split.visibleText || result.text, true, activeRuntimeRunId);
     }
-    const evolutionSummary = result.evolution
-      ? `演化注册表${result.evolution.store === 'PERSISTED' ? '已持久化' : '仅内存'}（${result.evolution.proposalCount} 个候选）`
-      : '演化注册表状态未返回';
-    const trajectorySummary = result.trajectory
-      ? `轨迹${result.trajectory.store === 'PERSISTED' ? '已持久化' : '仅内存'}（${result.trajectory.eventCount} 个事件）`
-      : '轨迹状态未返回';
-    const contextSummary = result.context
-      ? `${result.context.provider} 上下文${result.context.status === 'COMMITTED' ? '已提交' : '已降级'}（召回 ${result.context.recalledCount ?? 0}，提交 ${result.context.committedCount ?? 0}）`
-      : '上下文状态未返回';
-    const toolSummary = result.toolCallCount
-      ? `完成 ${result.toolCallCount} 次工具调用（${result.toolRounds ?? 0} 轮）`
-      : '未请求工具';
-    next = upsertSubAgent(next, { agentId: summaryAgentId, task: `结果已汇总，${toolSummary}，${contextSummary}，${evolutionSummary}，${trajectorySummary}`, state: 'SUCCEEDED' });
     if (result.context?.status === 'DEGRADED') {
       next = appendTimelineItem(next, {
         kind: 'STATUS',
@@ -5738,43 +8415,75 @@ const runCordisTask = async (prompt: string, extraOptions: Partial<RuntimeTaskOp
       });
     }
     update(setRunState(next, verified ? 'SUCCEEDED' : 'FAILED'));
+    // Providers that omit a run.completed frame still get one terminal notice;
+    // the policy dedup keeps it exactly once when the frame did arrive.
+    const successNotice = desktopNoticePolicy.runFinished(result.runId ?? activeRuntimeRunId ?? runId ?? '', !verified);
+    if (successNotice) sendDesktopNotice(successNotice);
+    });
   } catch (error) {
+    withSession(ownerSessionId, () => {
     if (!isCurrentRunActive()) return;
     const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('SIDE_EFFECT_OUTCOME_UNCERTAIN')) {
+      pendingUncertainRecovery = {
+        runtimeRunId: activeRuntimeRunId ?? runId,
+        threadId: currentRunThreadId ?? resolvedTargetThreadId
+      };
+    }
     const compactMessage = compactError(message);
     next = model;
-    next = upsertSubAgent(next, { agentId: modelAgentId, task: compactMessage, state: 'FAILED' });
     if (lastSubmitReceipt?.status === 'pending') lastSubmitReceipt.status = 'unconfirmed';
     update(appendErrorTimelineItem(setRunState(next, 'FAILED'), 'Cordis runtime', compactMessage));
+    const errorNotice = desktopNoticePolicy.runFinished(activeRuntimeRunId ?? runId ?? '', true);
+    if (errorNotice) sendDesktopNotice(errorNotice);
+    });
   } finally {
-    running = false;
-    taskProgressMessage = '';
-    // The runtime commits the thread turn immediately before its child exits.
-    // Refresh the durable thread summaries once the process is gone so the
-    // sidebar cannot lag behind a completed run when the result projection and
-    // thread-store write arrive in different event-loop turns.
-    if (desktopBridge.isNative()) {
-      try {
-        const persistedThreads = await desktopBridge.listThreads();
-        if (persistedThreads.length) update(setThreads(model, persistedThreads));
-      } catch (error) {
-        update(appendErrorTimelineItem(model, '线程列表刷新', error));
+    // The thread-list refresh is an async read — collect it outside the
+    // session scope, then fold it into the owner state synchronously.
+    const persistedThreads = desktopBridge.isNative()
+      ? await desktopBridge.listThreads().catch((error) => ({ error }))
+      : undefined;
+    withSession(ownerSessionId, () => {
+      running = false;
+      taskProgressMessage = '';
+      const owner = sessionController.forClientSessionId(ownerSessionId);
+      const settledThreadId = owner?.threadId || currentRunThreadId || model.activeThreadId;
+      if (persistedThreads && 'error' in persistedThreads) {
+        update(appendErrorTimelineItem(model, '线程列表刷新', persistedThreads.error));
+      } else if (persistedThreads?.length) {
+        const settledThread = settledThreadId
+          ? persistedThreads.find((item) => item.id === settledThreadId)
+          : undefined;
+        const resumable = Boolean(
+          settledThread
+          && ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(settledThread))
+          && !threadRecoveryBlock(settledThread)
+        );
+        let refreshed = setThreads(model, persistedThreads);
+        if (settledThreadId && (!settledThread?.cwd || !refreshed.workspace.rootPath || sameWorkspaceRoot(settledThread.cwd, refreshed.workspace.rootPath))) {
+          refreshed = setActiveThread(refreshed, settledThreadId, resumable);
+        }
+        update(refreshed);
       }
-    }
+      // A native cancellation acknowledges taskkill before the blocking
+      // runtime reader has necessarily drained and cleared its process state.
+      // Keep the composer disabled until this invocation has actually returned,
+      // then release it for the next task.
+      if (model.activeRun?.runId === runId && !model.composer.enabled) {
+        update({ ...model, composer: { ...model.composer, enabled: true }, projectionVersion: model.projectionVersion + 1 });
+      }
+      if (pendingCancellationRunId !== runId) {
+        const settledThread = settledThreadId ? model.threads.find((item) => item.id === settledThreadId) : undefined;
+        queueUncertainOutcomeRecovery(ownerSessionId, settledThread, activeRuntimeRunId ?? runId);
+      }
+    });
     scheduleRender();
+    flushFollowUp(ownerSessionId);
     // Reads requested by approval events or manual refreshes are deferred
     // while the runtime owns the Harness database. Flush them only after the
     // child has exited, when the SQLite connection is no longer contested.
     scheduleBackgroundDetails();
-    // A native cancellation acknowledges taskkill before the blocking
-    // runtime reader has necessarily drained and cleared its process state.
-    // Keep the composer disabled until this invocation has actually returned,
-    // then release it for the next task.
-    if (model.activeRun?.runId === runId && !model.composer.enabled) {
-      update({ ...model, composer: { ...model.composer, enabled: true }, projectionVersion: model.projectionVersion + 1 });
-    } else {
-      renderWithFallback(true);
-    }
+    renderWithFallback(true);
   }
 };
 
@@ -5789,6 +8498,69 @@ function closeSettings(): void {
   render();
   app?.querySelector<HTMLElement>('[data-action="open-settings"]')?.focus({ preventScroll: true });
 }
+
+let pendingNavPage: string | undefined;
+const navButtonFromEvent = (event: Event): HTMLElement | undefined => {
+  const target = event.target instanceof Element ? event.target : undefined;
+  const button = target?.closest<HTMLElement>('.context-page-nav [data-action="navigate"]');
+  return button && app.contains(button) ? button : undefined;
+};
+const openNavigationPage = (page: string): void => {
+  pendingNavPage = undefined;
+  activePage = page || 'workbench';
+  try { localStorage.setItem('hmcodex.activePage', activePage); } catch { /* storage may be unavailable */ }
+  transcriptStick = false;
+  transcriptScrollTop = 0;
+  navigationTouched = true;
+  renderWithFallback();
+  requestAnimationFrame(() => {
+    const transcript = app.querySelector<HTMLElement>('.transcript');
+    if (transcript) transcript.scrollTop = 0;
+  });
+  void loadPageDetails();
+};
+app.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  const target = event.target instanceof Element ? event.target : undefined;
+  const navButton = navButtonFromEvent(event);
+  if (navButton) pendingNavPage = navButton.dataset.page ?? 'workbench';
+  if (!target?.closest('.context-panel')) return;
+  contextPanelPointerDown = true;
+  if (contextPanelPatchTimer !== undefined) {
+    window.clearTimeout(contextPanelPatchTimer);
+    contextPanelPatchTimer = undefined;
+  }
+});
+const resumeContextPanelPatch = (): void => {
+  if (!contextPanelPointerDown) return;
+  contextPanelPointerDown = false;
+  if (!pendingContextPanelPatch || contextPanelPatchTimer !== undefined) return;
+  // Run after the click that this pointerup belongs to, so the button is still
+  // connected when the click handler reads it.
+  contextPanelPatchTimer = window.setTimeout(flushPendingContextPanel, 0);
+};
+const completePendingNavigation = (): void => {
+  const page = pendingNavPage;
+  if (!page) return;
+  // The click handler clears this when it receives the press. If the panel
+  // was rebuilt under the cursor, the click never arrives and this opens the page.
+  window.setTimeout(() => {
+    if (pendingNavPage !== page) return;
+    openNavigationPage(page);
+  }, 0);
+};
+document.addEventListener('pointerup', () => {
+  resumeContextPanelPatch();
+  completePendingNavigation();
+});
+document.addEventListener('pointercancel', () => {
+  pendingNavPage = undefined;
+  resumeContextPanelPatch();
+});
+window.addEventListener('blur', () => {
+  pendingNavPage = undefined;
+  resumeContextPanelPatch();
+});
 
 app.addEventListener('pointerover', (event) => {
   const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action="select-thread"]');
@@ -5815,6 +8587,40 @@ app.addEventListener('click', (event) => {
   }
   const actionElement = target?.closest<HTMLElement>('[data-action]');
   const action = actionElement?.dataset.action;
+  if (sessionStatsPanel && !target?.closest('[data-model-cache="composer"]')) {
+    sessionStatsPanel = '';
+    refreshComposerCache();
+  }
+  if (composerModelOpen && action !== 'toggle-composer-model' && action !== 'pick-composer-model' && !target?.closest('[data-composer-model]')) {
+    composerModelOpen = false;
+    syncComposerModelPicker();
+  }
+  if (action === 'toggle-session-stats') {
+    event.preventDefault();
+    const panel = actionElement?.dataset.statsPanel;
+    const next: SessionStatsPanel = panel === 'session' || panel === 'tokens' || panel === 'context' ? panel : '';
+    sessionStatsPanel = sessionStatsPanel === next ? '' : next;
+    refreshComposerCache();
+    return;
+  }
+  if (action === 'toggle-composer-model') {
+    event.preventDefault();
+    composerModelOpen = !composerModelOpen;
+    syncComposerModelPicker();
+    if (composerModelOpen && !catalogLoaded && !catalogLoading) void loadProviderCatalog();
+    return;
+  }
+  if (action === 'pick-composer-model') {
+    event.preventDefault();
+    const modelId = actionElement?.dataset.modelId ?? '';
+    if (modelId) selectComposerModel(modelId);
+    else { composerModelOpen = false; syncComposerModelPicker(); }
+    return;
+  }
+  if (action === 'access-mode' && actionElement instanceof HTMLElement) {
+    accessControls.open(actionElement);
+    return;
+  }
   if (action === 'toggle-experimental-cells') {
     const input = actionElement?.querySelector<HTMLInputElement>('input[type="checkbox"]')
       ?? (actionElement instanceof HTMLInputElement ? actionElement : undefined);
@@ -5958,6 +8764,7 @@ app.addEventListener('click', (event) => {
   if (action === 'toggle-subagents') {
     subAgentsCollapsed = !subAgentsCollapsed;
     const panel = actionElement?.closest('.subagent-panel');
+    panel?.classList.toggle('subagent-panel-collapsed', subAgentsCollapsed);
     const list = panel?.querySelector<HTMLElement>('.subagent-list');
     if (list) list.hidden = subAgentsCollapsed;
     actionElement?.setAttribute('aria-expanded', String(!subAgentsCollapsed));
@@ -5966,10 +8773,7 @@ app.addEventListener('click', (event) => {
   }
   if (action) console.info('[ui-action]', action, { running, activeRun: model.activeRun?.runId, state: model.activeRun?.state });
   if (action === 'navigate') {
-    activePage = actionElement?.dataset.page ?? 'workbench';
-    localStorage.setItem('hmcodex.activePage', activePage);
-    render();
-    void loadPageDetails();
+    openNavigationPage(actionElement?.dataset.page ?? 'workbench');
     return;
   }
   if (action === 'focus-evidence') {
@@ -5979,8 +8783,6 @@ app.addEventListener('click', (event) => {
     historyView = undefined;
     focusedRunId = target.runId ?? null;
     activePage = 'workbench';
-    // Evidence may point at a tool/workspace row mounted only when the execution group is open.
-    executionGroupExpanded = true;
     render();
     requestAnimationFrame(() => { const node = app.querySelector<HTMLElement>('[data-item-id="' + CSS.escape(target.itemId) + '"]'); node?.querySelectorAll<HTMLDetailsElement>('details').forEach(d => d.open = true); node?.scrollIntoView({ block: 'center' }); });
     return;
@@ -6051,13 +8853,30 @@ app.addEventListener('click', (event) => {
     closeSettings();
   }
   if (action === 'toggle-mode') return;
+  if (action === 'answer-clarification') {
+    const waiting = activeClarification();
+    const requestId = actionElement?.dataset.requestId ?? '';
+    const optionId = actionElement?.dataset.optionId ?? '';
+    if (!waiting || waiting.requestId !== requestId || waiting.submitting) return;
+    const reply = clarificationReply(waiting, { optionId });
+    if (!reply.ok) {
+      composerPromptError = reply.error;
+      render();
+      return;
+    }
+    composerPromptError = '';
+    void sendClarification(waiting, reply);
+    return;
+  }
   if (action === 'resolve-approval') {
     update(expireRequestedApprovals(model));
     const requestId = actionElement?.dataset.approvalId ?? '';
     const approval = model.approvals.find((item) => item.requestId === requestId);
     const approved = actionElement?.dataset.approved === 'true';
+    const alwaysAllow = actionElement?.dataset.alwaysAllow === 'true';
     if (approval?.state === 'REQUESTED' && requestId && !pendingApprovalResolutions.has(requestId)) {
-      if (approved && approval.risk === 'HIGH' && actionElement instanceof HTMLElement) confirmHighRiskApproval(approval, actionElement);
+      if (alwaysAllow && !approval.canAlwaysAllow) return;
+      if (approved && (approval.risk === 'HIGH' || alwaysAllow) && actionElement instanceof HTMLElement) confirmApproval(approval, actionElement, alwaysAllow);
       else dispatchApproval(requestId, approved, approval.requestDigest);
     }
   }
@@ -6087,74 +8906,164 @@ app.addEventListener('click', (event) => {
     const thread = model.threads.find((item) => item.id === threadId);
     if (!threadId || !['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread))) return;
     if (running || workspaceChanging) return;
+    const blocked = Boolean(threadRecoveryBlock(thread));
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
-    update(setActiveThread(model, threadId, true));
+    update(setActiveThread(model, threadId, !blocked));
+    void (desktopBridge.isNative() ? runCordisTask(prompt, { threadId, resume: !blocked }) : runMockTask(prompt));
+    return;
+  }
+  if (action === 'recover-uncertain-task') {
+    const threadId = model.activeThreadId;
+    const thread = model.threads.find((item) => item.id === threadId);
+    if (!threadId || !threadRecoveryBlock(thread) || running || workspaceChanging) return;
+    const prompt = taskContinuationPrompt() ?? '继续';
+    update(setActiveThread(model, threadId, false));
     void (desktopBridge.isNative() ? runCordisTask(prompt, { threadId, resume: true }) : runMockTask(prompt));
     return;
   }
   if (action === 'retry-task') {
     if (running || workspaceChanging) return;
+    const thread = model.threads.find((item) => item.id === model.activeThreadId);
+    if (threadRecoveryBlock(thread)) {
+      const prompt = taskContinuationPrompt();
+      if (!prompt || !thread?.id) return;
+      update(setActiveThread(model, thread.id, false));
+      void (desktopBridge.isNative() ? runCordisTask(prompt, { threadId: thread.id, resume: true }) : runMockTask(prompt));
+      return;
+    }
     const prompt = taskContinuationPrompt();
     if (!prompt) return;
-    taskActionNotice = '将使用设置中的模型重试任务。';
+    taskActionNotice = '将使用这个任务当前选择的模型重试。';
     render();
+    const workspaceConflict = Boolean(thread?.id && recoveryWorkspaceConflictThreadId === thread.id);
+    const resume = !workspaceConflict && ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread));
+    const replanPrompt = workspaceConflict && thread?.title?.trim() ? thread.title.trim() : prompt;
+    if (workspaceConflict) {
+      taskActionNotice = '工作区文件已变化，将保留旧历史并从当前文件重新规划。';
+      recoveryWorkspaceConflictThreadId = undefined;
+      render();
+    }
+    void (desktopBridge.isNative() ? runCordisTask(replanPrompt, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(replanPrompt));
+    return;
+  }
+  if (action === 'new-task-from-blocked') {
+    if (running || workspaceChanging) return;
     const thread = model.threads.find((item) => item.id === model.activeThreadId);
-    const resume = ['PLAN', 'PREPARATION'].includes(threadRecoveryMode(thread));
-    void (desktopBridge.isNative() ? runCordisTask(prompt, { ...(thread ? { threadId: thread.id } : {}), resume }) : runMockTask(prompt));
+    if (!threadRecoveryBlock(thread)) return;
+    const typed = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value.trim() ?? '';
+    const substantive = typed && !/^(?:继续|重试|continue|retry)$/iu.test(typed) ? typed : '';
+    const title = thread?.title?.trim() ?? '';
+    const generic = !title || /^(?:dda task|new thread)$/iu.test(title) || /^Thread\s+[a-f\d]{8,}$/iu.test(title);
+    const seed = substantive || (generic ? '' : title);
+    // The old checkpoint/history is left in place; only the working surface
+    // resets so a new task starts from the current files with fresh approvals.
+    resetToNewTask();
+    taskActionNotice = '旧任务记录已保留。新任务从当前文件开始，不继承这次中断的检查点、审批或租约。';
+    render();
+    const textarea = app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+    if (textarea) {
+      if (seed) textarea.value = seed;
+      textarea.focus();
+    }
     return;
   }
   if (action === 'cancel-run') {
     void (async () => {
       const cancelRunId = model.activeRun?.runId;
-      if (!cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
+      if (!cancelRunId || clarificationRunEnded(model.activeRun?.state)) return;
+      const ownerSessionId = sessionController.selectedId;
+      const runtimeRunId = activeRuntimeRunId;
+      const closeOpenClarification = (current: HarnessReadModel): HarnessReadModel =>
+        runtimeRunId ? applyClarificationClear(current, runtimeRunId, 'CANCELLED') : current;
       try {
         pendingCancellationRunId = cancelRunId;
         const cancellation = desktopBridge.isNative()
-          ? await desktopBridge.cancelModelTask()
+          ? await desktopBridge.cancelModelTask({
+              sessionId: ownerSessionId,
+              // The runtime slot's runId is the real bound invocation id; the
+              // display runId only feeds the local guards below.
+              ...(runtimeRunId ? { runId: runtimeRunId } : {})
+            })
           : { cancelled: true };
-        if (!cancellation.cancelled) {
-          if (model.activeRun?.runId !== cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
-          update(appendErrorTimelineItem(model, '运行时取消', '当前没有可取消的 Cordis runtime 任务'));
-          return;
-        }
-        // A terminal event can be delivered while the native cancel command
-        // is waiting for taskkill. Never regress that authoritative outcome
-        // to CANCELLED, and never mutate a newer run.
-        if (model.activeRun?.runId !== cancelRunId || ['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUARANTINED'].includes(model.activeRun?.state ?? '')) return;
-        pendingApprovalResolutions.clear();
-        const stopped = { ...model, timeline: model.timeline.map((item) => item.status === 'STREAMING'
-          ? { ...item, status: 'COMPLETE' as const } : item) };
-        const cancelled = cancelPendingApprovals(setRunState(stopped, 'CANCELLED'));
-        update(appendTimelineItem({
-          ...cancelled,
-          // The reader may already have settled before cancellation returns.
-          // Block only while that invocation still owns the submission lock.
-          composer: { ...cancelled.composer, enabled: !desktopBridge.isNative() || !running }
-        }, {
-          kind: 'STATUS',
-          title: '运行控制',
-          body: cancelled.composer.mode === 'CONTROLLED'
-            ? '任务已由用户取消。已经执行的操作不会自动撤销，请核对执行记录和工作区。'
-            : '任务已由用户取消。只读运行没有产生外部副作用。',
-          status: 'COMPLETE'
-        }));
+        withSession(ownerSessionId, () => {
+          // Before the host reserves a slot, cancellation is local: the launch
+          // guard observes CANCELLED and never starts the delayed invocation.
+          if (!cancellation.cancelled && activeRuntimeRunId) {
+            if (model.activeRun?.runId !== cancelRunId || clarificationRunEnded(model.activeRun?.state)) return;
+            update(appendErrorTimelineItem(model, '运行时取消', '当前没有可取消的 Cordis runtime 任务'));
+            return;
+          }
+          // A terminal event can be delivered while the native cancel command
+          // is waiting for taskkill. Never regress that authoritative outcome
+          // to CANCELLED, and never mutate a newer run. The question card is
+          // stored separately and must still close with this run.
+          if (model.activeRun?.runId !== cancelRunId || clarificationRunEnded(model.activeRun?.state)) {
+            if (model.activeRun?.runId === cancelRunId) {
+              taskProgressMessage = '';
+              const cleared = closeOpenClarification(model);
+              if (cleared !== model) update(cleared);
+              else scheduleRender();
+            }
+            return;
+          }
+          pendingApprovalResolutions.clear();
+          taskProgressMessage = '';
+          const stopped = { ...model, timeline: model.timeline.map((item) => item.status === 'STREAMING'
+            ? { ...item, status: 'COMPLETE' as const } : item) };
+          const cancelled = closeOpenClarification(cancelPendingApprovals(setRunState(stopped, 'CANCELLED')));
+          update(appendTimelineItem({
+            ...cancelled,
+            // The reader may already have settled before cancellation returns.
+            // Block only while that invocation still owns the submission lock.
+            composer: { ...cancelled.composer, enabled: !desktopBridge.isNative() || !running }
+          }, {
+            kind: 'STATUS',
+            title: '运行控制',
+            evidenceKind: 'conversation-notice',
+            body: '任务已由用户取消。已经执行的操作不会自动撤销，请核对执行记录和工作区。',
+            status: 'COMPLETE'
+          }));
+        });
       } catch (error) {
-        update(appendErrorTimelineItem(model, '运行时取消', error));
+        withSession(ownerSessionId, () => update(appendErrorTimelineItem(model, '运行时取消', error)));
       } finally {
-        if (pendingCancellationRunId === cancelRunId) pendingCancellationRunId = undefined;
+        withSession(ownerSessionId, () => {
+          if (pendingCancellationRunId === cancelRunId) pendingCancellationRunId = undefined;
+        });
       }
+      scheduleRender();
     })();
   }
+  if (action === 'attach-image') {
+    if (composerInputLocked()) return;
+    app.querySelector<HTMLInputElement>('[data-role="composer-image-input"]')?.click();
+    return;
+  }
+  if (action === 'remove-attachment') {
+    const attachmentId = actionElement?.dataset.attachmentId ?? '';
+    if (attachmentId && !composerInputLocked()) {
+      setSelectedImageAttachments(selectedImageAttachments().filter((item) => item.id !== attachmentId));
+      composerPromptError = '';
+      syncComposerAttachments();
+      app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus({ preventScroll: true });
+    }
+    return;
+  }
+  if (action === 'select-session') {
+    const sessionId = actionElement?.dataset?.sessionId ?? '';
+    if (sessionId) switchSession(sessionId);
+    return;
+  }
   if (action === 'new-task') {
-    if (workspaceChanging) return;
-    // A stale submission lock must not make the primary action inert. The
-    // active run state is authoritative for whether a task is actually live.
-    if (running && model.activeRun) return;
+    if (workspaceChanging && !sessionWorkspaceSyncInFlight) return;
+    // Every new task asks for a project, including while another task is
+    // running. Closing this picker must not reuse the last project.
     projectPickerMode = 'new-task';
     projectPickerThreadId = '';
     projectPickerVisible = true;
     render();
+    return;
   }
   if (action === 'workspace-up') void workspaceUp();
   if (action === 'archive-project' || action === 'restore-project') {
@@ -6195,6 +9104,21 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     target.click();
     return;
+  }
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'v' && desktopBridge.isNative()) {
+    if (!settingsVisible && !projectPickerVisible && !projectNameDialog && !projectEditDialog && activePage === 'workbench') {
+      const isOtherField = target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && target.name !== 'prompt') || target?.isContentEditable;
+      if (!isOtherField) {
+        const keydownAt = Date.now();
+        window.setTimeout(() => {
+          // Only fall back when WebView2 did not deliver a DOM paste event (for
+          // example CF_HDROP image files copied in Windows File Explorer).
+          if (lastClipboardDomPasteAtMs < keydownAt) {
+            void tryPasteNativeClipboardImages();
+          }
+        }, 45);
+      }
+    }
   }
   if (!(target instanceof HTMLTextAreaElement) || target.name !== 'prompt') return;
   const ctrlSubmit = localStorage.getItem('hmcodex.composerSubmit') === 'ctrl-enter';
@@ -6301,8 +9225,131 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+let lastClipboardDomPasteAtMs = 0;
+let nativeClipboardReadInFlight = false;
+
+const tryPasteNativeClipboardImages = async (): Promise<void> => {
+  if (!desktopBridge.isNative() || nativeClipboardReadInFlight) return;
+  if (composerInputLocked()) return;
+  nativeClipboardReadInFlight = true;
+  try {
+    const items = await desktopBridge.readClipboardImages();
+    if (!items.length) return;
+    const next = selectedImageAttachments().slice();
+    let totalBytes = next.reduce((sum, item) => sum + item.sizeBytes, 0);
+    let addedCount = 0;
+    let limitError = '';
+    for (const raw of items) {
+      const mediaType = resolveImageMediaType(raw.mediaType, raw.name);
+      if (!mediaType || !raw.dataUrl?.startsWith(`data:${mediaType};base64,`)) continue;
+      if (next.length >= MAX_COMPOSER_IMAGES) {
+        limitError = `单次最多添加 ${MAX_COMPOSER_IMAGES} 张图片。`;
+        break;
+      }
+      if (raw.sizeBytes > MAX_COMPOSER_IMAGE_BYTES) {
+        limitError = `图片“${raw.name || '粘贴图片'}”超过 10 MB 上限。`;
+        break;
+      }
+      if (totalBytes + raw.sizeBytes > MAX_COMPOSER_TOTAL_IMAGE_BYTES) {
+        limitError = '单次发送的图片总大小不能超过 20 MB。';
+        break;
+      }
+      totalBytes += raw.sizeBytes;
+      next.push({
+        id: nextImageAttachmentId(),
+        name: raw.name || `粘贴图片-${next.length + 1}.png`,
+        mediaType,
+        dataUrl: raw.dataUrl,
+        sizeBytes: raw.sizeBytes
+      });
+      addedCount += 1;
+    }
+    setSelectedImageAttachments(next);
+    composerPromptError = limitError;
+    syncComposerAttachments();
+    if (addedCount > 0) {
+      app?.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus({ preventScroll: true });
+    }
+  } catch (error) {
+    composerPromptError = compactError(error);
+    syncComposerAttachments();
+  } finally {
+    nativeClipboardReadInFlight = false;
+  }
+};
+
+document.addEventListener('paste', (event) => {
+  if (settingsVisible || projectPickerVisible || Boolean(projectNameDialog) || Boolean(projectEditDialog)) return;
+  if (activePage !== 'workbench') return;
+  const target = event.target as HTMLElement | null;
+  if (target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && target.name !== 'prompt') || target?.isContentEditable) {
+    return;
+  }
+  const files = extractClipboardFiles(event.clipboardData);
+  const imageFiles = files.filter((file) => Boolean(resolveImageMediaType(file.type, file.name)));
+  const plainText = event.clipboardData?.getData('text/plain') ?? '';
+  if (imageFiles.length > 0) {
+    lastClipboardDomPasteAtMs = Date.now();
+    if (!plainText || imageFiles.some((file) => file.name && file.name === plainText.trim())) {
+      event.preventDefault();
+    }
+    void addComposerImageFiles(imageFiles);
+    return;
+  }
+  if (plainText) {
+    lastClipboardDomPasteAtMs = Date.now();
+    return;
+  }
+  if (files.length > 0 && target instanceof HTMLTextAreaElement && target.name === 'prompt') {
+    lastClipboardDomPasteAtMs = Date.now();
+    event.preventDefault();
+    composerPromptError = '仅支持粘贴 PNG、JPG、WebP、GIF 格式的图片。';
+    syncComposerAttachments();
+    return;
+  }
+  if (desktopBridge.isNative()) {
+    lastClipboardDomPasteAtMs = Date.now();
+    void tryPasteNativeClipboardImages();
+  }
+});
+
+app.addEventListener('dragover', (event) => {
+  const composer = (event.target as Element | null)?.closest<HTMLElement>('.composer');
+  if (!composer || !event.dataTransfer?.types.includes('Files')) return;
+  event.preventDefault();
+  composer.classList.add('composer-dragover');
+});
+
+app.addEventListener('dragleave', (event) => {
+  const composer = (event.target as Element | null)?.closest<HTMLElement>('.composer');
+  if (!composer) return;
+  const related = event.relatedTarget as Node | null;
+  if (!related || !composer.contains(related)) composer.classList.remove('composer-dragover');
+});
+
+app.addEventListener('drop', (event) => {
+  const composer = (event.target as Element | null)?.closest<HTMLElement>('.composer');
+  if (!composer) return;
+  composer.classList.remove('composer-dragover');
+  const files = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : [];
+  if (!files.length) return;
+  event.preventDefault();
+  void addComposerImageFiles(files);
+});
+
 app.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  if (target instanceof HTMLInputElement && target.dataset.role === 'composer-image-input') {
+    const files = target.files ? Array.from(target.files) : [];
+    target.value = '';
+    void addComposerImageFiles(files);
+    return;
+  }
+  if (target?.dataset?.role === 'catalog-model-input') {
+    syncActiveContextLimit(target.value);
+    captureSettingsDraft();
+    return;
+  }
   if (target?.dataset?.role === 'model-provider') {
     const protocol = document.querySelector<HTMLSelectElement>('[data-role="model-protocol"]');
     if (protocol) {
@@ -6326,6 +9373,11 @@ app.addEventListener('submit', (event) => {
   if (form.matches('[data-form="memory-edit"]')) {
     event.preventDefault();
     if (!desktopBridge.isNative() || pendingMemoryActions.size > 0) return;
+    if (anyTaskRunning() || liveTaskRunning()) {
+      memoryEditError = '当前有任务正在运行，请等任务完成或取消后再保存新版本。';
+      render();
+      return;
+    }
     if (!form.reportValidity()) return;
     const memoryId = form.dataset.memoryId;
     if (!memoryId) return;
@@ -6407,6 +9459,34 @@ app.addEventListener('submit', (event) => {
       return;
     }
     if (parsedVerifier.verifier) config.verifier = parsedVerifier.verifier;
+    const contextLimits: Record<string, number> = {};
+    for (const [key, value] of Object.entries(settingsConfig?.modelContextLimits ?? {})) {
+      const parsed = parseContextLimitTokens(value);
+      if (parsed !== undefined && CONTEXT_MODEL_ID.test(key)) contextLimits[key] = parsed;
+    }
+    const activeLimit = parseContextLimitTokens(String(data.get('contextLimitTokens') ?? ''));
+    if (activeLimit === undefined) {
+      settingsError = '上下文上限需要是 8192 到 2000000 的整数 token。';
+      settingsSection = 'model';
+      settingsSearch = '';
+      render();
+      return;
+    }
+    for (const input of form.querySelectorAll<HTMLInputElement>('[data-context-limit]')) {
+      const modelId = input.dataset.modelId ?? '';
+      if (!modelId || modelId === config.model) continue;
+      const parsed = parseContextLimitTokens(input.value);
+      if (parsed === undefined || !CONTEXT_MODEL_ID.test(modelId)) {
+        settingsError = '每个模型的上下文上限都需要是 8192 到 2000000 的整数 token。';
+        settingsSection = 'model';
+        settingsSearch = '';
+        render();
+        return;
+      }
+      contextLimits[modelId] = parsed;
+    }
+    if (CONTEXT_MODEL_ID.test(config.model)) contextLimits[config.model] = activeLimit;
+    if (Object.keys(contextLimits).length > 0) config.modelContextLimits = contextLimits;
     settingsConfig = config;
     settingsSaving = true;
     settingsError = '';
@@ -6434,39 +9514,189 @@ app.addEventListener('submit', (event) => {
   if (!form.matches('[data-form="composer"]')) return;
   event.preventDefault();
   const data = new FormData(form);
-  const prompt = String(data.get('prompt') ?? '').trim();
-  if (!prompt || !model.composer.enabled || running || workspaceChanging) return;
-  if (prompt.length > 8000) {
-    composerPromptError = `需求共有 ${prompt.length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
+  const rawPrompt = String(data.get('prompt') ?? '').trim();
+  const attachments = selectedImageAttachments().slice();
+  const waiting = activeClarification();
+  if (waiting) {
+    if (composerInputLocked() || waiting.submitting) return;
+    if (attachments.length) {
+      composerPromptError = '这次只需要文字说明，请先移除图片。';
+      render();
+      return;
+    }
+    const reply = clarificationReply(waiting, { text: rawPrompt });
+    if (!reply.ok) {
+      composerPromptError = reply.error;
+      render();
+      return;
+    }
+    composerPromptError = '';
+    form.reset();
+    void sendClarification(waiting, reply);
+    return;
+  }
+  if ((!rawPrompt && attachments.length === 0) || composerInputLocked()) return;
+  if (taskStartLock) {
+    composerPromptError = '上一条请求正在准备，请稍后发送。';
+    syncComposerAttachments();
+    return;
+  }
+  if (rawPrompt.length > 8000) {
+    composerPromptError = `需求共有 ${rawPrompt.length} 字符，超过 8000 字符。请拆分任务后提交；原文未被截断。`;
+    render();
+    return;
+  }
+  const effectivePrompt = rawPrompt || DEFAULT_IMAGE_ONLY_PROMPT;
+  const receiptPrompt = rawPrompt || `图片输入（${attachments.length} 张）`;
+  if (running || liveTaskRunning()) {
+    const sessionId = sessionController.selectedId;
+    const queue = followUpQueues.get(sessionId) ?? [];
+    queue.push({ prompt: effectivePrompt, images: attachments, displayBody: rawPrompt });
+    followUpQueues.set(sessionId, queue);
+    composerPromptError = '';
+    setSelectedImageAttachments([]);
+    form.reset();
+    syncComposerAttachments();
+    update(appendTimelineItem(model, {
+      kind: 'USER',
+      title: '你',
+      body: `${receiptPrompt}\n（已排队，当前任务结束后继续）`,
+      status: 'COMPLETE'
+    }));
+    taskActionNotice = `已排队 ${queue.length} 条，当前任务结束后继续。`;
     render();
     return;
   }
   composerPromptError = '';
   taskActionNotice = '';
   historyView = undefined;
-  lastSubmitReceipt = { id: `cmd-${Date.now().toString(36)}`, prompt, status: 'pending', atMs: Date.now() };
+  lastSubmitReceipt = { id: `cmd-${Date.now().toString(36)}`, prompt: receiptPrompt, status: 'pending', atMs: Date.now() };
+  setSelectedImageAttachments([]);
   form.reset();
+  syncComposerAttachments();
   // A new run may append events to the currently selected thread. Do not
   // reuse a pre-run first page after the task completes.
-  historyPageCache.clear();
-  void (async () => {
-    if (desktopBridge.isNative() && model.connection.state !== 'READY') {
-      try {
-        const snapshot = await desktopBridge.runtimeSnapshot();
-        if (snapshot) update(setRuntimeReady(model, snapshot));
-      } catch (error) {
-        update(appendErrorTimelineItem(model, 'Cordis runtime', error));
-        return;
-      }
-      if ((model.connection.state as string) !== 'READY') return;
-    }
-    await (desktopBridge.isNative() ? runCordisTask(prompt) : runMockTask(prompt));
-  })();
+  clearHistoryCaches();
+  void (desktopBridge.isNative()
+    ? runCordisTask(effectivePrompt, {}, attachments, rawPrompt)
+    : runMockTask(effectivePrompt, attachments, rawPrompt));
 });
 
 render();
+if (desktopBridge.isNative()) void accessController.load();
+window.addEventListener('focus', () => {
+  if (desktopBridge.isNative() && !accessController.state.saving && !accessControls.modalOpen()) void accessController.load();
+});
 
-const runtimeEventsReady = desktopBridge.listenRuntimeEvents(applyRuntimeEvent);
+// Events are attributed to exactly one session. A host-tagged clientSessionId
+// is authoritative; untagged frames only reach a session through a runId it
+// already owns — a run.started must never be bound by timestamp while more
+// than one session exists.
+const routeRuntimeEvent = (event: RuntimeEvent): void => {
+  if (!event || event.schemaVersion !== '1.0' || typeof event.kind !== 'string'
+    || typeof event.runId !== 'string' || !event.runId
+    || !Number.isInteger(event.sequence) || event.sequence < 1
+    || !Number.isFinite(event.emittedAtMs)) return;
+  const tagged = typeof event.clientSessionId === 'string' && event.clientSessionId
+    ? event.clientSessionId : undefined;
+  let session: TaskSession | undefined;
+  if (tagged) {
+    session = sessionController.forClientSessionId(tagged);
+    if (!session) return;
+    if (event.runId) {
+      // One invocation per session: frames for a different runId after the
+      // session's run is known are stale — drop before any binding side effect.
+      if (session.activeRuntimeRunId && session.activeRuntimeRunId !== event.runId) return;
+      const boundOwner = sessionController.forRunId(event.runId);
+      // A run can only ever belong to one session — foreign or re-bound
+      // frames are dropped instead of corrupting another invocation.
+      if (boundOwner && boundOwner.clientSessionId !== tagged) return;
+      if (!boundOwner) sessionController.bindRunId(tagged, event.runId);
+    }
+  } else {
+    // Untagged frames only reach the session that already owns this runId.
+    session = sessionController.forRunId(event.runId);
+    if (!session) return;
+  }
+  withSession(session.clientSessionId, () => {
+    // Reflect the session's bound run into the reducer's identity check so
+    // pre-run.started frames (runtime.phase, early text) are not discarded.
+    if (event.runId && session.running && !activeRuntimeRunId) activeRuntimeRunId = event.runId;
+    applyRuntimeEvent(event);
+  });
+};
+
+const runtimeEventsReady = desktopBridge.listenRuntimeEvents(routeRuntimeEvent);
+void desktopBridge.listenTaskWorktree((notice) => {
+  try {
+    withSession(notice.clientSessionId, () => {
+      taskProgressMessage = `正在独立工作树中运行：${notice.path}`;
+      const runId = model.activeRun?.runId;
+      if (!runId) {
+        scheduleRender();
+        return;
+      }
+      update(appendTimelineItem(model, {
+        itemId: `worktree-${notice.clientSessionId}`,
+        runId,
+        kind: 'STATUS',
+        title: '独立工作树',
+        body: `这个任务在独立 git worktree 中运行，避免和正在占用工作区的任务互相挡住。\n目录：${notice.path}\n分支：${notice.branch}\n没有改动时，任务结束后会删掉这个目录；有改动或新提交会保留。`,
+        status: 'COMPLETE',
+        createdAtMs: Date.now()
+      }));
+    });
+  } catch {
+    // The session can already have been discarded.
+  }
+});
+void desktopBridge.listenDesktopNotificationActivated((payload) => {
+  const noticeRunId = typeof payload?.runId === 'string' ? payload.runId : '';
+  // The notification belongs to whichever session owns the run — activate it
+  // first so the approval/thread it points at is the one the user sees.
+  if (noticeRunId) {
+    const owner = sessionController.forRunId(noticeRunId);
+    if (owner && owner.clientSessionId !== sessionController.selectedId) {
+      switchSession(owner.clientSessionId);
+    }
+  }
+  const action = desktopNoticeActivation(payload, {
+    activeRunId: activeRuntimeRunId ?? undefined,
+    running,
+    approvals: model.approvals,
+    clarificationRequestIds: activeRuntimeRunId && clarificationsByRun.get(activeRuntimeRunId)
+      ? [clarificationsByRun.get(activeRuntimeRunId)!.requestId]
+      : [],
+    threadId: noticeRunId ? runThreadIds.get(noticeRunId) : undefined,
+    nowMs: Date.now()
+  });
+  activePage = 'workbench';
+  contextVisible = true;
+  if (action.type === 'clarification') {
+    render();
+    requestAnimationFrame(() => {
+      app.querySelector<HTMLElement>('[data-clarification-host]')?.scrollIntoView({ block: 'nearest' });
+      app.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.focus();
+    });
+    return;
+  }
+  if (action.type === 'approval') {
+    render();
+    requestAnimationFrame(() => {
+      app.querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(action.requestId)}"]`)?.scrollIntoView({ block: 'center' });
+    });
+    return;
+  }
+  if (action.type === 'changed') {
+    taskActionNotice = '通知对应的任务已变化，请在历史任务中查看。';
+    render();
+    return;
+  }
+  // 'none' (stale, resolved, expired, or unknown run): the click only raises
+  // the app; it must never resurrect, approve, or submit anything.
+  render();
+  if (action.type === 'thread') void selectThread(action.threadId);
+});
 void desktopBridge.listenContextSidecarStatus((status) => {
   update(setContextSidecarStatus(model, status));
 });
@@ -6485,6 +9715,25 @@ historyStartupReady = (async () => {
     : Promise.resolve(undefined);
   try {
     await Promise.all([refreshDashboard({ startup: true }), savedPageRequest]);
+    const threadPaths = model.threads.filter(hasPersistedTurn).map((t) => t.cwd).filter(Boolean);
+    const pruned = pruneAutoPollutedBookmarks(projectCatalog, threadPaths);
+    if (pruned.removedIds.length > 0) {
+      const removedSet = new Set(pruned.removedIds);
+      projectCatalog = pruned.bookmarks;
+      for (let i = projectOrderIds.length - 1; i >= 0; i -= 1) {
+        if (removedSet.has(projectOrderIds[i])) projectOrderIds.splice(i, 1);
+      }
+      for (const removedId of removedSet) expandedProjectIds.delete(removedId);
+      if (lastProjectId && removedSet.has(lastProjectId)) {
+        lastProjectId = projectCatalog[0]?.id ?? '';
+        try {
+          if (lastProjectId) localStorage.setItem(LAST_PROJECT_STORAGE_KEY, lastProjectId);
+          else localStorage.removeItem(LAST_PROJECT_STORAGE_KEY);
+        } catch { /* storage may be unavailable */ }
+      }
+      persistProjectCatalog();
+      try { localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(projectOrderIds)); } catch { /* storage may be unavailable */ }
+    }
   } finally {
     // Finalize the project sidebar once (catalog + discovered together).
     // Do this even when the dashboard read fails so the list is not stuck on skeleton.
@@ -6557,7 +9806,10 @@ runtimeHydrationReady = (async () => {
 
 // Hydrate the persistent composer metric after startup without delaying history
 // or requiring the user to open the diagnostics/context panel.
-void Promise.all([historyStartupReady, runtimeHydrationReady]).then(async () => {
+void Promise.all([historyStartupReady, runtimeHydrationReady, workspaceReady]).then(async () => {
   app.dataset.startupHydration = 'complete';
-  if (desktopBridge.isNative() && model.runtime.runtimeReady) scheduleBackgroundDetails();
+  if (desktopBridge.isNative() && model.runtime.runtimeReady) {
+    ensureDreamMaintenanceStarted();
+    scheduleBackgroundDetails();
+  }
 });

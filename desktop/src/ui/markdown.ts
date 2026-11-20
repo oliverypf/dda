@@ -19,7 +19,11 @@ const cache = new Map<string, string>();
 
 export const renderMarkdown = (source: string): string => {
   const cached = cache.get(source);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    cache.delete(source);
+    cache.set(source, cached);
+    return cached;
+  }
   const parsed = markdown.parse(source, { async: false });
   const fragment = DOMPurify.sanitize(parsed, {
     RETURN_DOM_FRAGMENT: true,
@@ -57,7 +61,7 @@ export const renderMarkdown = (source: string): string => {
   const html = wrapper.innerHTML;
   if (source.length <= 128_000) {
     cache.set(source, html);
-    if (cache.size > 16) cache.delete(cache.keys().next().value!);
+    if (cache.size > 32) cache.delete(cache.keys().next().value!);
   }
   return html;
 };

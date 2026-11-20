@@ -37,6 +37,36 @@ describe('HarnessReadModel v1 contract', () => {
     expect(validate(fixture), JSON.stringify(validate.errors, null, 2)).toBe(true);
   });
 
+  it('accepts the optional plugin governance status only in its discriminated forms', () => {
+    const validate = new Ajv2020({ allErrors: true }).compile(schema);
+    expect(validate(fixture)).toBe(true);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'AVAILABLE' } }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({
+      ...fixture,
+      pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_INVALID' }
+    }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({
+      ...fixture,
+      pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'PLUGIN_GOVERNANCE_READ_FAILED' }
+    }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'BLOCKED' } })).toBe(false);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'AVAILABLE', errorCode: 'PLUGIN_GOVERNANCE_INVALID' } })).toBe(false);
+    expect(validate({ ...fixture, pluginGovernanceStatus: { state: 'BLOCKED', errorCode: 'UNKNOWN_CODE' } })).toBe(false);
+  });
+
+  it('accepts an optional thread recovery block only in its strict shape', () => {
+    const validate = new Ajv2020({ allErrors: true }).compile(schema);
+    const thread = { id: 'thread-1', title: 't', cwd: 'c', turnCount: 0, createdAtMs: 1, updatedAtMs: 1 };
+    const block = { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['inspect'] };
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: block }] }), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'OTHER_CODE', stepIds: ['inspect'] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN' } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: [] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['a', 'a'] } }] })).toBe(false);
+    expect(validate({ ...fixture, threads: [{ ...thread, recoveryBlock: { reasonCode: 'SIDE_EFFECT_OUTCOME_UNCERTAIN', stepIds: ['a'], extra: true } }] })).toBe(false);
+  });
+
   it('accepts controlled execution but rejects external network side effects', () => {
     const validate = new Ajv2020({ allErrors: true }).compile(schema);
     const controlledFixture = {
@@ -227,6 +257,7 @@ describe('HarnessReadModel v1 contract', () => {
     expect(ajv.compile(dreamSchema)({ runId: 'dream-1', projectId: 'project-1', state: 'WAITING_GATE', startedAtMs: 1, recordDigest: digest })).toBe(true);
     expect(ajv.compile(pluginSchema)({ pluginId: 'plugin.example', version: '1.0.0', manifest: {}, source: 'CORE', packageDigest: digest, state: 'ACTIVE', createdAtMs: 1, updatedAtMs: 1, recordDigest: digest })).toBe(true);
     expect(ajv.compile(roleContextSchema)({ contextId: 'context-1', runId: 'run-1', role: 'planner', isolation: 'DEDICATED', state: 'READY', ownerPid: 1, runtimeInstanceId: 'runtime-1', metadata: {}, createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
+    expect(ajv.compile(roleContextSchema)({ contextId: 'context-1', runId: 'run-1', sessionId: 'ui-task-1', role: 'planner', isolation: 'DEDICATED', state: 'READY', ownerPid: 1, runtimeInstanceId: 'runtime-1', metadata: {}, createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
     expect(ajv.compile(threadSchema)({ id: 'thread-1', title: 'Task', cwd: 'C:/workspace', turns: [], state: 'IDLE', createdAtMs: 1, updatedAtMs: 1 })).toBe(true);
     expect(ajv.compile(routeSchema)({ taskClass: 'inspect', status: 'SELECTED', reason: 'STATIC_RULE', roles: { planner: 'default', executor: 'default', verifier: 'rule' } })).toBe(true);
   });

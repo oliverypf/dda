@@ -369,12 +369,15 @@ export class AgentDecisionTrace {
   #idFactory;
   #maxDecisionsPerRun;
   #loaded = false;
+  #loadPromise;
   #writeQueue = Promise.resolve();
   #eventStore;
+  #runId;
 
-  constructor({ storagePath, eventStore, now = () => Date.now(), idFactory = randomUUID, maxDecisionsPerRun = MAX_DECISIONS } = {}) {
+  constructor({ storagePath, eventStore, runId, now = () => Date.now(), idFactory = randomUUID, maxDecisionsPerRun = MAX_DECISIONS } = {}) {
     this.#storagePath = storagePath;
     this.#eventStore = eventStore;
+    this.#runId = typeof runId === 'string' && runId.trim() ? runId.trim() : undefined;
     this.#now = now;
     this.#idFactory = idFactory;
     this.#maxDecisionsPerRun = maxDecisionsPerRun;
@@ -382,8 +385,22 @@ export class AgentDecisionTrace {
 
   async load() {
     if (this.#loaded) return;
+    if (this.#loadPromise) return this.#loadPromise;
+    this.#loadPromise = this.#loadOnce();
+    try {
+      await this.#loadPromise;
+    } finally {
+      this.#loadPromise = undefined;
+    }
+  }
+
+  async #loadOnce() {
     if (this.#eventStore?.list) {
-      const durableEvents = await this.#eventStore.list({ aggregateType: 'TaskRun' });
+      const durableEvents = await this.#eventStore.list({
+        aggregateType: 'TaskRun',
+        ...(this.#runId ? { runId: this.#runId } : {}),
+        kinds: ['DecisionTraceEvent']
+      });
       const traceEvents = durableEvents.filter((event) => event.kind === 'DecisionTraceEvent');
       // The configured event store is authoritative even when empty (including
       // after purge). A legacy cache must never resurrect removed decisions.
@@ -443,7 +460,11 @@ export class AgentDecisionTrace {
   async #loadDurableEvents(events) {
     if (!Array.isArray(events) || events.length > MAX_STORED_EVENTS) fail('DECISION_STORE_REPLAY_INVALID');
     const ordered = events.slice().sort((left, right) => left.sequence - right.sequence || left.eventId.localeCompare(right.eventId));
+    let processed = 0;
     for (const durable of ordered) {
+      if (++processed % 200 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       const payload = durable?.payload;
       if (!isRecord(payload) || !isRecord(payload.traceEvent) || !isRecord(payload.decisionSnapshot)) {
         // Pre-1.0 writers persisted only the digest projection.  Such records
@@ -594,7 +615,10 @@ export class AgentDecisionTrace {
   }
 
   #validateGraph(extra) {
-    const records = new Map(this.#decisions);
+    const targetRunId = extra?.runId;
+    const records = targetRunId === undefined
+      ? new Map(this.#decisions)
+      : new Map([...this.#decisions.entries()].filter(([, item]) => item.runId === targetRunId));
     if (extra) records.set(extra.decisionId, extra);
     const visiting = new Set();
     const visited = new Set();

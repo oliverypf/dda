@@ -1,8 +1,7 @@
 // Decide whether an interrupted plan step may be retried.
 //
-// Read-only runs keep the historical rule: a killed observation is retried
-// only when both the source run and the current run are READ_ONLY, and a step
-// already persisted as SIDE_EFFECT_OUTCOME_UNCERTAIN stays blocked.
+// Observation-only evidence can justify a retry without a mode-level bypass.
+// A persisted uncertain step cannot be cleared merely by observing a read.
 //
 // Controlled runs retry when every side-effect intent for that step was
 // rejected before a lease, or failed before the effect actually started.
@@ -18,6 +17,8 @@
 // too, except for the journal-proven pre-start path above: that path also
 // records the EXECUTING transition from onLeaseIssued, and a readable journal
 // with no start row is what shows the effect never ran.
+
+import { hasOnlyObservationEvidence } from './decision/readonly-resume-observations.mjs';
 
 const EXECUTION_INTENT_STATES = new Set(['APPROVED', 'EXECUTING', 'COMPLETED', 'FAILED']);
 const SAFE_APPROVAL_STATES = new Set(['EXPIRED', 'DECLINED', 'CANCELLED']);
@@ -286,7 +287,7 @@ const intentVerdict = (intent, records, attributed, journal, journalFacts) => {
   return 'unknown';
 };
 
-const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalStatus, journalEffects }) => {
+const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalStatus, journalEffects, persistedUncertain }) => {
   const journal = resolveJournal(journalStatus, journalEffects);
   if (journal.status === 'invalid') return uncertain('EVIDENCE_INVALID');
   if (journal.status === 'unreadable') return uncertain('JOURNAL_UNREADABLE');
@@ -304,7 +305,15 @@ const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalS
   const stepIntentIds = [...intentOwner.entries()]
     .filter(([, owner]) => owner === stepId)
     .map(([intentId]) => intentId);
-  if (stepIntentIds.length === 0) return uncertain('NO_STEP_INTENTS');
+  if (stepIntentIds.length === 0) {
+    const lineageEvents = events.filter(event => runIds.includes(event?.runId));
+    if (!persistedUncertain && lineageIntents.length === 0
+      && !records.some(record => runIds.includes(record?.runId))
+      && journalEffects.length === 0 && hasOnlyObservationEvidence(lineageEvents)) {
+      return { status: 'RETRY', reason: 'OBSERVATION_ONLY' };
+    }
+    return uncertain('NO_STEP_INTENTS');
+  }
   if (stepHard.has(stepId) || stepIntentIds.some((intentId) => intentHard.has(intentId))) {
     return uncertain('STEP_EXECUTION_RECORDED');
   }
@@ -341,8 +350,7 @@ const classifyControlledStep = ({ stepId, events, records, sourceRunId, journalS
  * treats an array of effects as a successful read.
  */
 export const reconcileInterruptedPlanStep = ({
-  mode,
-  readOnlyObservationRetry = false,
+  mode = 'CONTROLLED',
   step,
   events = [],
   records = [],
@@ -351,10 +359,7 @@ export const reconcileInterruptedPlanStep = ({
   journalStatus
 } = {}) => {
   const persistedUncertain = step?.status === 'BLOCKED' && step?.errorCode === 'SIDE_EFFECT_OUTCOME_UNCERTAIN';
-  if (mode !== 'CONTROLLED') {
-    if (readOnlyObservationRetry === true && !persistedUncertain) return { status: 'RETRY', reason: 'READ_ONLY_OBSERVATION' };
-    return uncertain('READ_ONLY_UNCHANGED');
-  }
+  if (mode !== 'CONTROLLED') return uncertain('EXECUTION_MODE_INVALID');
   if (!step || typeof step.stepId !== 'string' || !step.stepId) return uncertain('STEP_INVALID');
   if (!Array.isArray(events) || !Array.isArray(records)) return uncertain('EVIDENCE_INVALID');
   try {
@@ -364,7 +369,8 @@ export const reconcileInterruptedPlanStep = ({
       records,
       sourceRunId,
       journalStatus,
-      journalEffects
+      journalEffects,
+      persistedUncertain
     });
   } catch {
     return uncertain('CLASSIFY_FAILED');

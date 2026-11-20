@@ -1,24 +1,17 @@
 Option Explicit
 
-Dim fileSystem, shell, desktopDirectory, projectDirectory, releaseExe, debugExe, executable, processEnvironment
+Dim fileSystem, shell, desktopDirectory, launcher, exitCode
 Set fileSystem = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 desktopDirectory = fileSystem.GetParentFolderName(WScript.ScriptFullName)
-projectDirectory = fileSystem.GetParentFolderName(desktopDirectory)
-releaseExe = fileSystem.BuildPath(desktopDirectory, "src-tauri\target\x86_64-pc-windows-msvc\release\dda-desktop.exe")
-debugExe = fileSystem.BuildPath(desktopDirectory, "src-tauri\target\x86_64-pc-windows-msvc\debug\dda-desktop.exe")
+launcher = fileSystem.BuildPath(desktopDirectory, "scripts\launch-desktop.mjs")
 
-If fileSystem.FileExists(releaseExe) Then
-  executable = releaseExe
-ElseIf fileSystem.FileExists(debugExe) Then
-  executable = debugExe
-Else
-  MsgBox "The dda desktop application has not been built yet.", vbExclamation, "dda"
-  WScript.Quit 1
+shell.CurrentDirectory = desktopDirectory
+exitCode = shell.Run("node """ & launcher & """", 0, True)
+If exitCode = 2 Then
+  MsgBox "已有旧版 dda 窗口正在执行任务，未强制中断。请等当前任务结束后关闭窗口，再双击此入口启用最新构建。", vbInformation, "dda"
+  WScript.Quit 0
+ElseIf exitCode <> 0 Then
+  MsgBox "dda could not start a staged desktop build. Run desktop\launch.cmd for details, or build with: node desktop\scripts\build-controlled.mjs --fast", vbExclamation, "dda"
+  WScript.Quit exitCode
 End If
-
-shell.CurrentDirectory = projectDirectory
-Set processEnvironment = shell.Environment("PROCESS")
-processEnvironment("DDA_RUNTIME_ENTRY") = fileSystem.BuildPath(projectDirectory, "runtime\src\index.mjs")
-processEnvironment("DDA_WORKSPACE_ROOT") = projectDirectory
-shell.Run Chr(34) & executable & Chr(34), 1, False

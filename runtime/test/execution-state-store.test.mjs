@@ -1,10 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createExecutionStateStore } from '../src/execution-state-store.mjs';
 import { createHarnessEventStore } from '../src/harness-event-store.mjs';
+
+test('keeps a safe action preview and leaves inline arguments out of the record', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-preview-'));
+  const storagePath = join(directory, 'execution.json');
+  const store = createExecutionStateStore({ storagePath });
+  const intent = await store.createIntent({
+    runId: 'run-preview',
+    capability: 'shell.execute',
+    request: {
+      command: 'git',
+      args: ['reset', '--hard', 'HEAD', '-e', 'ok', 'secret-token', 'build:exe', 'desktop/src/main.ts', '--manifest-path=desktop/Cargo.toml'],
+      cwd: 'desktop'
+    }
+  });
+  assert.deepEqual(intent.requestSummary.argsPreview, ['reset', '--hard', 'HEAD', 'build:exe', 'desktop/src/main.ts', '--manifest-path=desktop/Cargo.toml']);
+  assert.equal(intent.requestSummary.argCount, 9);
+  const persisted = await readFile(storagePath, 'utf8');
+  assert.match(persisted, /desktop\/src\/main\.ts/);
+  assert.doesNotMatch(persisted, /"-e"|"ok"|secret-token/);
+});
 
 test('persists intent approval and one-shot lease lifecycle summaries', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-state-'));
@@ -198,7 +218,7 @@ test('binds approvals and leases to the persisted channel and capability snapsho
     requestDigest: intent.requestDigest,
     displayedDigest: intent.requestDigest,
     capabilitySnapshot,
-    releaseChannel: 'WINDOWS_PHASE1_READ_ONLY'
+    releaseChannel: 'WINDOWS_FULL_LOCAL'
   }), /EXECUTION_RELEASE_CHANNEL_MISMATCH/);
 
   const approval = await store.createApproval({
@@ -421,4 +441,122 @@ test('revokes a lease only when the recovery action still targets the observed r
   const revoked = await store.revokeLeaseWithDigest(lease.recordId, { expectedDigest: observed.recordDigest, reason: 'USER_RECOVERY_REVOKED' });
   assert.equal(revoked.state, 'REVOKED');
   assert.equal(store.get(lease.recordId).transition.metadata.reason, 'USER_RECOVERY_REVOKED');
+});
+
+const rejectIntent = async (store, runId) => {
+  const intent = await store.createIntent({
+    runId,
+    capability: 'shell.execute',
+    request: { command: 'node', args: ['-e', 'secret-token'] }
+  });
+  await store.transition(intent.recordId, 'SAFETY_EVALUATING');
+  await store.transition(intent.recordId, 'REJECTED');
+  return intent;
+};
+
+const readArchives = async (storagePath) => {
+  const directory = `${storagePath}.archives`;
+  const names = await readdir(directory);
+  const archives = [];
+  for (const name of names) {
+    archives.push(JSON.parse(await readFile(join(directory, name), 'utf8')));
+  }
+  return archives;
+};
+
+test('backs finished execution records out to an archive when the live file runs out of room', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-age-'));
+  const probePath = join(directory, 'probe.json');
+  const probe = createExecutionStateStore({ storagePath: probePath });
+  await rejectIntent(probe, 'probe');
+  const oneRecord = JSON.stringify(JSON.parse(await readFile(probePath, 'utf8'))).length;
+  const storagePath = join(directory, 'execution.json');
+  const store = createExecutionStateStore({ storagePath, maxJsonChars: oneRecord * 2, maxRecords: 30 });
+  const open = await store.createIntent({ runId: 'open', capability: 'file.write', request: { path: 'notes/open.txt' } });
+  const closed = [];
+  for (let index = 0; index < 6; index += 1) closed.push(await rejectIntent(store, `closed-${index}`));
+
+  const archives = await readArchives(storagePath);
+  const archivedIds = new Set(archives.flatMap((archive) => archive.records.map((record) => record.recordId)));
+  const live = JSON.parse(await readFile(storagePath, 'utf8'));
+  const liveIds = new Set(live.records.map((record) => record.recordId));
+  assert.equal(JSON.stringify(live).length <= oneRecord * 2, true);
+  assert.equal(liveIds.has(open.recordId), true);
+  assert.equal(archivedIds.has(open.recordId), false);
+  assert.equal(archivedIds.has(closed[0].recordId), true);
+  assert.equal([...liveIds].some((id) => archivedIds.has(id)), false);
+  assert.equal(archives.every((archive) => archive.kind === 'execution-state-archive' && archive.reason === 'EXECUTION_STATE_CAPACITY'), true);
+  const archivedText = JSON.stringify(archives);
+  assert.doesNotMatch(archivedText, /secret-token/);
+  assert.doesNotMatch(JSON.stringify(live), /secret-token/);
+  const reopened = createExecutionStateStore({ storagePath, maxJsonChars: oneRecord * 2, maxRecords: 30 });
+  await reopened.load();
+  assert.equal(reopened.get(open.recordId).state, 'PROPOSED');
+  assert.equal(reopened.get(closed[0].recordId), undefined);
+  assert.equal(reopened.list().length, live.records.length);
+});
+
+test('archives a finished intent, approval, and lease together', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-age-cluster-'));
+  const storagePath = join(directory, 'execution.json');
+  const store = createExecutionStateStore({ storagePath, maxRecords: 4 });
+  const { intent, approval, lease } = await createApprovalLeaseFlow({ store, runId: 'run-aged-cluster' });
+  await store.transition(lease.recordId, 'CONSUMING');
+  await store.completeLease(lease.recordId, { ok: true, reason: 'EXECUTION_SUCCEEDED' });
+  await store.transition(intent.recordId, 'COMPLETED');
+  const kept = await rejectIntent(store, 'kept');
+  const newest = await rejectIntent(store, 'newest');
+
+  const archivedIds = new Set((await readArchives(storagePath)).flatMap((archive) => archive.records.map((record) => record.recordId)));
+  assert.equal(archivedIds.has(intent.recordId), true);
+  assert.equal(archivedIds.has(approval.recordId), true);
+  assert.equal(archivedIds.has(lease.recordId), true);
+  assert.equal(store.get(intent.recordId), undefined);
+  assert.equal(store.get(approval.recordId), undefined);
+  assert.equal(store.get(lease.recordId), undefined);
+  assert.equal(store.get(kept.recordId).state, 'REJECTED');
+  assert.equal(store.get(newest.recordId).state, 'REJECTED');
+  const reopened = createExecutionStateStore({ storagePath, maxRecords: 4 });
+  await reopened.load();
+  assert.equal(reopened.list().length, 2);
+});
+
+test('keeps an in-flight lease when nothing finished can be archived', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-age-live-'));
+  const storagePath = join(directory, 'execution.json');
+  const store = createExecutionStateStore({ storagePath, maxRecords: 3 });
+  const { lease } = await createApprovalLeaseFlow({ store, runId: 'run-live-cluster' });
+  await assert.rejects(() => store.createIntent({ runId: 'blocked', capability: 'shell.execute', request: { command: 'node' } }), /EXECUTION_STATE_FULL/);
+  assert.equal(store.get(lease.recordId).state, 'ACTIVE');
+  assert.equal(store.list().length, 3);
+  await assert.rejects(readdir(`${storagePath}.archives`), { code: 'ENOENT' });
+});
+
+test('ages an already full execution file when the store loads', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'hmcodex-execution-age-load-'));
+  const storagePath = join(directory, 'execution.json');
+  const wide = createExecutionStateStore({ storagePath, maxRecords: 8 });
+  const ids = [];
+  for (let index = 0; index < 6; index += 1) ids.push((await rejectIntent(wide, `loaded-${index}`)).recordId);
+  const narrow = createExecutionStateStore({ storagePath, maxRecords: 4 });
+  await narrow.load();
+  assert.equal(narrow.list().length <= 3, true);
+  assert.equal(narrow.get(ids[0]), undefined);
+  assert.equal(narrow.get(ids[5]).state, 'REJECTED');
+  const archivedNames = await readdir(`${storagePath}.archives`);
+  const again = createExecutionStateStore({ storagePath, maxRecords: 4 });
+  await again.load();
+  assert.deepEqual(await readdir(`${storagePath}.archives`), archivedNames);
+  assert.equal(again.list().length, narrow.list().length);
+});
+
+test('refuses another memory-only record when the count cap is already full', async () => {
+  const store = createExecutionStateStore({ maxRecords: 2 });
+  await store.createIntent({ runId: 'memory-a', capability: 'shell.execute', request: { command: 'node' } });
+  await store.createIntent({ runId: 'memory-b', capability: 'shell.execute', request: { command: 'node' } });
+  await assert.rejects(
+    () => store.createIntent({ runId: 'memory-c', capability: 'shell.execute', request: { command: 'node' } }),
+    /EXECUTION_STATE_FULL/
+  );
+  assert.equal(store.list().length, 2);
 });

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ACTIONS, CAPABILITIES } from './runtime-safety-monitor.mjs';
+import { describeBrowserFailure } from './browser-failure.mjs';
+import { ACTIONS, CAPABILITIES, isPrivateNetworkAddress } from './runtime-safety-monitor.mjs';
 
 const WORKER_PATH = fileURLToPath(new URL('./playwright-worker.mjs', import.meta.url));
 const MAX_HOSTS = 32;
@@ -12,16 +13,27 @@ const normalizedHosts = (targets) => [...new Set(
     .map((host) => host.trim().toLowerCase())
 )].slice(0, MAX_HOSTS);
 
+const isPublicNetworkTarget = (target) => target?.host === '*';
+
+const localBrowserHost = (hostname) => {
+  const host = String(hostname ?? '').trim().toLowerCase();
+  return !host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')
+    || isPrivateNetworkAddress(host);
+};
+
 export class PlaywrightWorkerHost {
   #allowedHosts;
+  #publicNetwork;
   #child;
   #buffer = '';
   #pending = new Map();
   #nextId = 1;
 
   constructor({ targets = [] } = {}) {
-    this.#allowedHosts = normalizedHosts(targets);
-    if (!this.#allowedHosts.length) throw new Error('BROWSER_ALLOWLIST_INVALID');
+    const list = Array.isArray(targets) ? targets : [];
+    this.#publicNetwork = list.some(isPublicNetworkTarget);
+    this.#allowedHosts = this.#publicNetwork ? [] : normalizedHosts(list);
+    if (!this.#publicNetwork && !this.#allowedHosts.length) throw new Error('BROWSER_ALLOWLIST_INVALID');
   }
 
   async #ensure() {
@@ -39,7 +51,7 @@ export class PlaywrightWorkerHost {
       }
     });
     this.#child.once('error', (error) => { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear(); });
-    await this.#request('init', { allowedHosts: this.#allowedHosts });
+    await this.#request('init', this.#publicNetwork ? { publicNetwork: true } : { allowedHosts: this.#allowedHosts });
   }
 
   #request(op, payload = {}) {
@@ -69,7 +81,7 @@ export const registerPlaywrightTools = (registry, worker, { leaseProvider, monit
   const targetList = Array.isArray(targets) ? targets : [];
   registry.register({
     name: 'browser.open',
-    description: 'Open one explicitly approved URL in an isolated Playwright context and return bounded page text.',
+    description: 'Open one public http(s) page and return bounded text. You choose the URL and decide whether it is appropriate and safe for this task. Private, local, and metadata addresses are rejected.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -83,25 +95,35 @@ export const registerPlaywrightTools = (registry, worker, { leaseProvider, monit
     readOnly: false,
     metadata: { actionClass: 'SIDE_EFFECT', capability: CAPABILITIES.NETWORK, isolation: 'child-process-browser-context' },
     handler: async ({ url, maxChars = 32768, timeoutMs = 15000 }) => {
-      const parsed = new URL(url);
-      const target = targetList.find((candidate) => String(candidate?.host ?? '').toLowerCase() === parsed.hostname.toLowerCase());
-      if (!target) throw new Error('BROWSER_TARGET_FORBIDDEN');
-      const capability = CAPABILITIES.NETWORK;
-      const request = { host: parsed.hostname, scheme: parsed.protocol.slice(0, -1), port: parsed.port ? Number(parsed.port) : undefined, method: 'GET', path: parsed.pathname || '/' };
       let lease;
+      let request = { method: 'GET', path: '/' };
       try {
-        lease = await leaseProvider?.({ capability, request });
-        if (typeof leaseProvider === 'function' && !lease) throw new Error('SAFETY_LEASE_REQUIRED');
-        if (monitor && typeof monitor.authorize === 'function') await monitor.authorize(ACTIONS.NETWORK, request, lease);
-        await onLeaseStarted?.({ capability, request, lease });
-        const result = await worker.open({ runId, url, maxChars, timeoutMs });
-        await onLeaseConsumed?.({ capability, request, lease, result: { ok: true } });
-        return result;
+        let parsed;
+        try { parsed = new URL(url); } catch { throw new Error('BROWSER_URL_INVALID'); }
+        if (localBrowserHost(parsed.hostname)) throw new Error('BROWSER_TARGET_FORBIDDEN');
+        const target = targetList.find((candidate) => isPublicNetworkTarget(candidate)
+          || String(candidate?.host ?? '').toLowerCase() === parsed.hostname.toLowerCase());
+        if (!target) throw new Error('BROWSER_TARGET_FORBIDDEN');
+        if (target.scheme && `${target.scheme}:` !== parsed.protocol) throw new Error('BROWSER_TARGET_FORBIDDEN');
+        if (Array.isArray(target.methods) && !target.methods.map((method) => String(method).toUpperCase()).includes('GET')) {
+          throw new Error('BROWSER_TARGET_FORBIDDEN');
+        }
+        const capability = CAPABILITIES.NETWORK;
+        request = { host: parsed.hostname, scheme: parsed.protocol.slice(0, -1), port: parsed.port ? Number(parsed.port) : undefined, method: 'GET', path: parsed.pathname || '/' };
+        try {
+          lease = await leaseProvider?.({ capability, request });
+          if (typeof leaseProvider === 'function' && !lease) throw new Error('SAFETY_LEASE_REQUIRED');
+          if (monitor && typeof monitor.authorize === 'function') await monitor.authorize(ACTIONS.NETWORK, request, lease);
+          await onLeaseStarted?.({ capability, request, lease });
+          const result = await worker.open({ runId, url, maxChars, timeoutMs });
+          await onLeaseConsumed?.({ capability, request, lease, result: { ok: true } });
+          return result;
+        } catch (error) {
+          await Promise.resolve(onLeaseFailed?.({ capability, request, lease, error })).catch(() => {});
+          throw error;
+        }
       } catch (error) {
-        await Promise.resolve(onLeaseFailed?.({ capability, request, lease, error })).catch(() => {});
-        throw error;
-      } finally {
-        lease?.releaseWorkspace?.();
+        throw describeBrowserFailure(error);
       }
     }
   });

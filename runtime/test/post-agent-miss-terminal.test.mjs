@@ -3,9 +3,7 @@ import assert from 'node:assert/strict';
 import {
   JEV_EVIDENCE_REQUIRED,
   agentMissReplanHostNote,
-  isPostAgentMissTerminalReplanEligible,
   isPostMissTerminalReplanEligible,
-  postAgentMissTerminalReplanHostNote,
   postMissTerminalReplanHostNote,
   postMissUncertainReplanHostNote,
   recoveryContinuationText,
@@ -56,24 +54,10 @@ const sequencedVerify = (statuses) => {
   };
 };
 
-// T-amt-1: #68 + FAIL/STALLED + no #69 → exactly 1×; second stays stopped
-test('T-amt-1: after #68 without #69, FAIL+writes yields exactly one post-agent-miss terminal replan', async () => {
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    successfulWrites: 2,
-    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), true);
-
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: true
-  }), false);
+// T-amt-1: #68 + FAIL/STALLED with no #69 → stop after the second attempt.
+// User decision 2026-11-05: the retry budget is two executions; a second terminal
+// verification ends the run instead of granting a terminal replan.
+test('T-amt-1: after #68 without #69, second FAIL stops — no terminal replan', async () => {
 
   const bag = {
     agentEvents: [], postEvents: [], terminalEvents: [], amtEvents: [],
@@ -88,29 +72,26 @@ test('T-amt-1: after #68 without #69, FAIL+writes yields exactly one post-agent-
       return {
         text: `a${attempt}`,
         actions: [{ name: 'file.write', state: 'SUCCEEDED', argumentsDigest: `sha256:${String(attempt).padStart(64, '0')}` }],
-        sawAmt: recovery?.postAgentMissTerminalReplan === true,
         sawAgentMiss: recovery?.agentMissReplan === true
       };
     },
-    // UNCERTAIN → #68; FAIL → amt terminal; FAIL → stop
+    // UNCERTAIN → #68; FAIL → stop (no terminal replan, no third attempt)
     verify: sequencedVerify(['UNCERTAIN', 'FAIL', 'FAIL'])
   });
 
   assert.equal(bag.agentEvents.length, 1);
   assert.equal(bag.postEvents.length, 0);
   assert.equal(bag.terminalEvents.length, 0);
-  assert.equal(bag.amtEvents.length, 1);
-  assert.equal(bag.amtEvents[0].status, 'FAIL');
-  assert.equal(bag.amtEvents[0].priorAgentMissReplan, true);
-  assert.ok(bag.amtEvents[0].failureCodes.includes('JEV_BEHAVIOR_REJECTED'));
-  assert.equal(executions, 3);
+  assert.equal(bag.amtEvents.length, 0, 'no third attempt: two executions then stop');
+  assert.equal(executions, 2);
   assert.equal(result.ok, false);
-  assert.equal(result.attempts, 3);
+  assert.equal(result.attempts, 2);
   assert.equal(result.agentMissReplanned, true);
   assert.equal(result.postMissUncertainReplanned, undefined);
   assert.equal(result.postMissTerminalReplanned, undefined);
-  assert.equal(result.postAgentMissTerminalReplanned, true);
+  assert.equal(result.postAgentMissTerminalReplanned, undefined);
   assert.equal(result.report.status, 'FAIL');
+  assert.deepEqual(result.history.map((item) => item.status), ['UNCERTAIN', 'FAIL']);
 
   // STALLED variant
   {
@@ -126,24 +107,16 @@ test('T-amt-1: after #68 without #69, FAIL+writes yields exactly one post-agent-
       }),
       verify: sequencedVerify(['UNCERTAIN', 'STALLED', 'STALLED'])
     });
-    assert.equal(bag2.amtEvents.length, 1);
-    assert.equal(bag2.amtEvents[0].status, 'STALLED');
+    assert.equal(bag2.amtEvents.length, 0, 'no third attempt on STALLED either');
     assert.equal(bag2.terminalEvents.length, 0);
-    assert.equal(r2.postAgentMissTerminalReplanned, true);
+    assert.equal(r2.attempts, 2);
+    assert.equal(r2.postAgentMissTerminalReplanned, undefined);
     assert.equal(r2.report.status, 'STALLED');
   }
 });
 
 // T-amt-2: #69 already + FAIL → no double-fire with this path (still #70 ≤1)
-test('T-amt-2: after #69, FAIL fires #70 only — not post-agent-miss terminal', async () => {
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: true,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
+test('T-amt-2: after #69, FAIL fires #70 only — no terminal replan path remains', async () => {
   assert.equal(isPostMissTerminalReplanEligible({
     writesApplied: 2,
     failureCodes: ['JEV_BEHAVIOR_REJECTED'],
@@ -199,16 +172,9 @@ test('T-amt-3: UNCERTAIN after #68 does not fire post-agent-miss terminal', asyn
   assert.equal(result.report.status, 'UNCERTAIN');
 });
 
-// T-amt-4: no #68 → no fire
-test('T-amt-4: without #68, post-agent-miss terminal never fires', async () => {
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
-    agentMissAlreadyReplanned: false,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
+// T-amt-4: no #68 → no fire (the terminal latch no longer exists; kept as a
+// never-fires guard for the two-executions budget).
+test('T-amt-4: without #68, no terminal replan ever fires', async () => {
   // Force zero writes so #68 itself cannot fire; FAIL stays FAIL.
   const bag = {
     agentEvents: [], postEvents: [], terminalEvents: [], amtEvents: []
@@ -236,56 +202,9 @@ test('T-amt-4: without #68, post-agent-miss terminal never fires', async () => {
   assert.equal(result.report.status, 'FAIL');
 });
 
-// T-amt-5: telemetry shape + no lease/hardDecision widen
-test('T-amt-5: host note + sole SAFETY/lease DENY never eligible; no hardDecision widen', async () => {
-  const note = postAgentMissTerminalReplanHostNote();
-  assert.match(note, /HOST_POST_AGENT_MISS_TERMINAL_REPLAN/);
-  assert.match(note, /FAIL or STALLED/);
-  assert.match(note, /post_amt.*post_agent_miss_terminal_replan/);
-  assert.match(note, /carry.*terminal-miss evidence.*next plan/i);
-  assert.match(note, /status and failureCodes.*remain true.*given/);
-  assert.match(note, /Stop repeating.*recovery probes/);
-  assert.match(note, /read\/list\/focus/);
-  assert.match(note, /fingerprint digests/);
-  assert.match(note, /Next:.*bounded.*file\.write\/file\.patch.*shell\.execute\/test\.execute\/verify/);
-  assert.match(note, /Do not claim PASS/);
-  assert.match(note, /SAFETY \/ lease/);
-  assert.match(note, /No second recovery of this kind/);
-
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['SAFETY_POLICY_DENY'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['LEASE_DENIED'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 2,
-    failureCodes: ['HARD_DECISION_DENY'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
-  assert.equal(isPostAgentMissTerminalReplanEligible({
-    writesApplied: 0,
-    successfulWrites: 0,
-    failureCodes: ['JEV_BEHAVIOR_REJECTED'],
-    agentMissAlreadyReplanned: true,
-    postMissUncertainAlreadyReplanned: false,
-    postAgentMissTerminalAlreadyReplanned: false
-  }), false);
-
-  // Live path: sole SAFETY after #68 does not fire amt
+// T-amt-5: sole SAFETY/lease DENY after #68 stops without any replan.
+test('T-amt-5: sole SAFETY/lease DENY after #68 stops — no terminal replan, no hardDecision widen', async () => {
+  // Live path: sole SAFETY after #68 stops; nothing fires
   const bag = {
     agentEvents: [], postEvents: [], terminalEvents: [], amtEvents: []
   };
@@ -323,7 +242,7 @@ test('T-amt-5: host note + sole SAFETY/lease DENY never eligible; no hardDecisio
   assert.deepEqual(result.report.failureCodes, ['SAFETY_POLICY_DENY']);
 });
 
-test('T-steal-amt-1: post_amt continuation carries terminal-miss guidance without erasing FAIL/STALLED evidence', async () => {
+test('T-steal-amt-1: after #68 without #69, continuation carries agent-miss guidance and the run stops at two', async () => {
   for (const status of ['FAIL', 'STALLED']) {
     const failureCodes = status === 'FAIL'
       ? ['JEV_BEHAVIOR_REJECTED', 'ACTION_FAILED', 'REPEATED_ACTION']
@@ -343,20 +262,19 @@ test('T-steal-amt-1: post_amt continuation carries terminal-miss guidance withou
       verify: sequencedVerify(['UNCERTAIN', status, status])
     });
 
-    assert.equal(bag.amtEvents.length, 1);
-    assert.equal(bag.amtEvents[0].status, status);
-    assert.deepEqual(bag.amtEvents[0].failureCodes, failureCodes);
-    const amtRecoveries = recoveries.filter((recovery) => recovery.postAgentMissTerminalReplan === true);
-    assert.equal(amtRecoveries.length, 1);
-    const recovery = amtRecoveries[0];
-    assert.deepEqual(recovery.failureCodes, failureCodes);
+    assert.equal(bag.amtEvents.length, 0, 'no terminal replan: two executions then stop');
+    const missRecoveries = recoveries.filter((recovery) => recovery.agentMissReplan === true);
+    assert.equal(missRecoveries.length, 1);
+    const recovery = missRecoveries[0];
+    // The attempt-2 recovery is built from the UNCERTAIN report that fired #68,
+    // not from the later terminal FAIL.
+    assert.deepEqual(recovery.failureCodes, [JEV_EVIDENCE_REQUIRED]);
     const beforeNote = structuredClone(recovery);
     const continuation = recoveryContinuationText(recovery);
-    assert.ok(continuation.includes(postAgentMissTerminalReplanHostNote()));
-    assert.match(continuation, /carry.*terminal-miss evidence.*next plan/i);
-    assert.match(continuation, /Next:.*file\.write\/file\.patch.*shell\.execute\/test\.execute\/verify/);
+    assert.ok(continuation.includes(agentMissReplanHostNote()));
+    assert.doesNotMatch(continuation, /HOST_POST_AGENT_MISS_TERMINAL_REPLAN/);
     assert.deepEqual(recovery, beforeNote, 'host guidance must not mutate recovery evidence');
-    assert.deepEqual(result.history[1], { attempt: 2, status, failureCodes });
+    assert.deepEqual(result.history.map((item) => item.status), ['UNCERTAIN', status]);
     assert.equal(result.ok, false);
     assert.equal(result.report.status, status);
     assert.deepEqual(result.report.failureCodes, failureCodes);

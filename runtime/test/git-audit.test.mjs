@@ -75,6 +75,30 @@ test('Git metadata fingerprints detect config changes outside an execution scope
   assert.equal(result.metadataChanged, true);
 });
 
+test('Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes', async () => {
+  const root = await initRepository();
+  const observer = createGitObserver({ workspaceRoot: root });
+  const before = await observer.snapshot({ reason: 'ACTION_STARTED' });
+  // Simulate npm install modifying a tracked file while an IDE runs `git status`
+  // (refreshing `.git/index` stat cache) and background `git fetch` (`FETCH_HEAD`).
+  await writeFile(join(root, 'README.md'), '# updated by build/install\n', 'utf8');
+  await runGit(root, ['status']);
+  await writeFile(join(root, '.git', 'FETCH_HEAD'), '0'.repeat(40) + '\tnot-for-merge\tbranch main\n', 'utf8');
+  const afterRefresh = await observer.snapshot({ reason: 'ACTION_COMPLETED' });
+  assert.equal(before.metadataDigest, afterRefresh.metadataDigest);
+  assert.equal(before.indexDigest, afterRefresh.indexDigest);
+  const allowed = compareGitObservations(before, afterRefresh, createExecutionScopeSnapshot({ allowedPathScope: 'WORKSPACE' }));
+  assert.equal(allowed.ok, true);
+  assert.equal(allowed.metadataChanged, false);
+
+  // Actual staged index changes (`git add`) must still fail closed.
+  await runGit(root, ['add', 'README.md']);
+  const afterStage = await observer.snapshot({ reason: 'ACTION_COMPLETED' });
+  const stagedResult = compareGitObservations(before, afterStage, createExecutionScopeSnapshot({ allowedPathScope: 'WORKSPACE' }));
+  assert.equal(stagedResult.ok, false);
+  assert.equal(stagedResult.metadataChanged, true);
+});
+
 test('GitObserver bounds untracked enumeration by default and can opt into all', async () => {
   const root = await initRepository();
   await mkdir(join(root, 'untracked-dir'));

@@ -1,15 +1,27 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { publicCommandFields } from './approval-command.mjs';
+import { join } from 'node:path';
 import { DEFAULT_RELEASE_CHANNEL, resolveReleaseChannel } from './release-channel.mjs';
 import { mergeRecordsById, persistJsonFile, readPersistentJsonFile } from './persistent-json-store.mjs';
 
 const SCHEMA_VERSION = '1.0';
-const MAX_RECORDS = 4096;
-const MAX_JSON_CHARS = 2 * 1024 * 1024;
+const MAX_RECORDS = 8192;
+// 8MB holds about 5,000 records at the current record size. A full scan and
+// an id lookup stay under a millisecond there. Every save rewrites the whole
+// file, and past 8MB that rewrite is the cost that shows up.
+const MAX_JSON_CHARS = 8 * 1024 * 1024;
+// Once a write would pass the cap, move the oldest finished clusters out until
+// the live file is back to three quarters of the cap. The cap itself stays.
+const AGE_TARGET_NUMERATOR = 3;
+const AGE_TARGET_DENOMINATOR = 4;
 const STATES = Object.freeze({
   intent: ['PROPOSED', 'SAFETY_EVALUATING', 'WAITING_APPROVAL', 'APPROVED', 'EXECUTING', 'COMPLETED', 'FAILED', 'REJECTED'],
   approval: ['REQUESTED', 'PRESENTED', 'APPROVED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'],
   lease: ['PROPOSED', 'ACTIVE', 'CONSUMING', 'CONSUMED', 'REVOKED', 'EXPIRED']
+});
+const TERMINAL_STATES = Object.freeze({
+  intent: new Set(['COMPLETED', 'FAILED', 'REJECTED']),
+  approval: new Set(['APPROVED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED']),
+  lease: new Set(['CONSUMED', 'REVOKED', 'EXPIRED'])
 });
 const TRANSITIONS = Object.freeze({
   intent: { PROPOSED: ['SAFETY_EVALUATING', 'REJECTED'], SAFETY_EVALUATING: ['WAITING_APPROVAL', 'APPROVED', 'REJECTED'], WAITING_APPROVAL: ['APPROVED', 'REJECTED'], APPROVED: ['EXECUTING', 'REJECTED'], EXECUTING: ['COMPLETED', 'FAILED'] },
@@ -35,19 +47,57 @@ const reference = (recordId, recordType) => {
   if (typeof recordId !== 'string' || !recordId.trim()) throw new Error(`EXECUTION_${recordType.toUpperCase()}_REQUIRED`);
   return recordId.trim();
 };
+// Argument text can be a script body or a secret. Keep a digest of every
+// arg, and a short preview only for tokens that identify the action: a
+// subcommand, a long flag, or a path. Inline code and free text stay out.
+const SAFE_ARG_WORDS = new Set([
+  'status', 'diff', 'log', 'show', 'add', 'commit', 'push', 'pull', 'fetch', 'branch', 'checkout', 'switch',
+  'restore', 'stash', 'rev-parse', 'merge', 'rebase', 'reset', 'clean', 'tag', 'remote', 'config', 'init',
+  'clone', 'ls-files', 'describe', 'shortlog', 'install', 'ci', 'test', 'run', 'start', 'build', 'exec',
+  'audit', 'outdated', 'ls', 'uninstall', 'update', 'publish', 'check', 'clippy', 'fmt', 'metadata', 'tree',
+  'HEAD', 'ORIG_HEAD', 'FETCH_HEAD'
+]);
+const SAFE_SHORT_FLAGS = new Set(['-rf', '-fr', '-f', '-r', '-q', '-n', '-v', '-a', '-m', '-u', '-b', '-s', '-t', '-h', '--']);
+const SECRET_ARG = /secret|token|password|passwd|credential|authorization|bearer|api[_-]?key/i;
+const PATH_ARG = /^[A-Za-z0-9_.:@~\\/-]+$/;
+const safeArgPreview = (value) => {
+  if (typeof value !== 'string' || !value || value.length > 160 || value !== value.replace(/[\u0000-\u001f\u007f]/g, '')) return undefined;
+  if (SECRET_ARG.test(value) || /[\s"'`$]/.test(value)) return undefined;
+  const eq = value.indexOf('=');
+  if (eq > 0) {
+    const name = value.slice(0, eq);
+    const rest = value.slice(eq + 1);
+    if (!/^--[a-z0-9][a-z0-9-]{0,40}$/.test(name) || !safeArgPreview(rest)) return undefined;
+    return value;
+  }
+  if (value.startsWith('-')) {
+    if (SAFE_SHORT_FLAGS.has(value)) return value;
+    return /^--[a-z0-9][a-z0-9-]{0,40}$/.test(value) ? value : undefined;
+  }
+  if (SAFE_ARG_WORDS.has(value) || /^[a-z][a-z0-9]*:[a-z0-9:_-]{1,40}$/.test(value)) return value;
+  if (PATH_ARG.test(value) && (value.includes('/') || value.includes('\\') || /\.[A-Za-z0-9]{1,8}$/.test(value))) return value;
+  return undefined;
+};
+const previewArgs = (args) => {
+  if (!Array.isArray(args)) return [];
+  const kept = [];
+  for (const arg of args) {
+    if (kept.length >= 8) break;
+    const preview = safeArgPreview(arg);
+    if (preview) kept.push(preview);
+  }
+  return kept;
+};
 const requestSummary = (request = {}) => {
-  const commandView = publicCommandFields(request);
+  const argsPreview = previewArgs(request.args);
   return {
   ...(safeText(request.reason, 240) ? { reason: safeText(request.reason, 240) } : {}),
   ...(safeText(request.command, 4096) ? { command: safeText(request.command, 4096) } : {}),
   ...(Array.isArray(request.args) ? {
-    args: commandView.args ?? [],
     argsDigest: digest(request.args),
-    argCount: request.args.length
+    argCount: request.args.length,
+    ...(argsPreview.length ? { argsPreview } : {})
   } : {}),
-  ...(commandView.commandLine ? { commandLine: commandView.commandLine } : {}),
-  ...(commandView.summaryZh ? { summaryZh: commandView.summaryZh } : {}),
-  ...(commandView.riskReasons ? { riskReasons: commandView.riskReasons } : {}),
   ...(safeText(request.path) ? { path: safeText(request.path) } : {}),
   ...(safeText(request.cwd) ? { cwd: safeText(request.cwd) } : {}),
   ...(safeText(request.host, 253) ? { host: safeText(request.host, 253) } : {}),
@@ -127,6 +177,37 @@ const validateRecordGraph = (records) => {
   }
 };
 
+const payloadOf = (records) => ({ schemaVersion: SCHEMA_VERSION, records });
+const compactSize = (records) => JSON.stringify(payloadOf(records)).length;
+
+// An intent and every approval or lease that points at it move together.
+// A live approval or lease keeps the whole cluster in the hot file.
+const closedClusters = (records) => {
+  const groups = new Map();
+  for (const record of records) {
+    const intentId = record.recordType === 'intent' ? record.recordId : record.intentId;
+    if (typeof intentId !== 'string' || !intentId) continue;
+    const group = groups.get(intentId);
+    if (group) group.push(record);
+    else groups.set(intentId, [record]);
+  }
+  const order = new Map(records.map((record, index) => [record.recordId, index]));
+  const clusters = [];
+  for (const group of groups.values()) {
+    const intent = group.find((record) => record.recordType === 'intent');
+    if (!intent || !group.every((record) => TERMINAL_STATES[record.recordType]?.has(record.state))) continue;
+    clusters.push(group);
+  }
+  clusters.sort((left, right) => {
+    const older = left.find((record) => record.recordType === 'intent');
+    const newer = right.find((record) => record.recordType === 'intent');
+    return older.updatedAtMs - newer.updatedAtMs
+      || older.createdAtMs - newer.createdAtMs
+      || (order.get(older.recordId) ?? 0) - (order.get(newer.recordId) ?? 0);
+  });
+  return clusters;
+};
+
 export class ExecutionStateStore {
   #storagePath;
   #records = new Map();
@@ -135,12 +216,18 @@ export class ExecutionStateStore {
   #ownerPid;
   #runtimeInstanceId;
   #eventStore;
+  #maxJsonChars;
+  #maxRecords;
 
-  constructor({ storagePath, ownerPid = process.pid, runtimeInstanceId = `runtime-${randomUUID()}`, eventStore } = {}) {
+  constructor({ storagePath, ownerPid = process.pid, runtimeInstanceId = `runtime-${randomUUID()}`, eventStore, maxJsonChars = MAX_JSON_CHARS, maxRecords = MAX_RECORDS } = {}) {
+    if (!Number.isSafeInteger(maxJsonChars) || maxJsonChars < 256 || maxJsonChars > MAX_JSON_CHARS) throw new Error('EXECUTION_STATE_LIMIT_INVALID');
+    if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > MAX_RECORDS) throw new Error('EXECUTION_STATE_LIMIT_INVALID');
     this.#storagePath = storagePath;
     this.#ownerPid = ownerPid;
     this.#runtimeInstanceId = runtimeInstanceId;
     this.#eventStore = eventStore;
+    this.#maxJsonChars = maxJsonChars;
+    this.#maxRecords = maxRecords;
   }
 
   async load() {
@@ -164,6 +251,9 @@ export class ExecutionStateStore {
     validateRecordGraph(restored);
     for (const record of restored) this.#records.set(record.recordId, record);
     this.#loaded = true;
+    if (restored.length > this.#maxRecords || compactSize(restored) > this.#maxJsonChars) {
+      await this.#flushClosedRecords();
+    }
   }
 
   async reload() {
@@ -316,12 +406,14 @@ export class ExecutionStateStore {
     return this.transition(recordId, 'CONSUMING', { operationId: lease.operationId });
   }
 
-  async completeLease(recordId, { ok = true, outcomeDigest, errorCode } = {}) {
+  async completeLease(recordId, { ok = true, outcomeDigest, errorCode, reason } = {}) {
     await this.load();
     const lease = this.#records.get(recordId);
     if (!lease || lease.recordType !== 'lease') throw new Error('EXECUTION_LEASE_NOT_FOUND');
     if (lease.state !== 'CONSUMING') throw new Error(`EXECUTION_LEASE_NOT_CONSUMING:${lease.state}`);
+    const explicitReason = typeof reason === 'string' && /^[A-Z0-9_]{3,80}$/.test(reason) ? reason : undefined;
     const metadata = {
+      reason: explicitReason ?? (ok ? 'EXECUTION_SUCCEEDED' : 'EXECUTOR_RESULT_FAILED'),
       ok: Boolean(ok),
       ...(typeof outcomeDigest === 'string' ? { outcomeDigest } : {}),
       ...(typeof errorCode === 'string' ? { errorCode } : {})
@@ -414,7 +506,8 @@ export class ExecutionStateStore {
 
   async #create(recordType, fields) {
     await this.load();
-    if (this.#records.size >= MAX_RECORDS) throw new Error('EXECUTION_STATE_FULL');
+    if (this.#storagePath && this.#records.size >= this.#maxRecords) await this.#flushClosedRecords({ reserveSlot: true });
+    if (this.#records.size >= this.#maxRecords) throw new Error('EXECUTION_STATE_FULL');
     const recordId = `${recordType}-${randomUUID()}`;
     const unsigned = {
       schemaVersion: SCHEMA_VERSION,
@@ -461,30 +554,131 @@ export class ExecutionStateStore {
     }
     this.#records.set(record.recordId, frozen);
     if (!this.#storagePath) return clone(frozen);
+    let aged = [];
     const write = async () => {
-      const payload = { schemaVersion: SCHEMA_VERSION, records: this.list() };
-      if (JSON.stringify(payload).length > MAX_JSON_CHARS) throw new Error('EXECUTION_STATE_TOO_LARGE');
-      await persistJsonFile(this.#storagePath, payload, {
-        merge: (existing, incoming) => {
-          const prior = Array.isArray(existing?.records)
-            ? existing.records.find((candidate) => candidate?.recordId === record.recordId)
-            : undefined;
-          if (expectedDigest && prior && prior.recordDigest !== expectedDigest) {
-            throw new Error('EXECUTION_STATE_CONFLICT');
-          }
-          return mergeRecordsById(existing, incoming, { collection: 'records', id: 'recordId' });
+      let payload = payloadOf(this.list());
+      if (compactSize(payload.records) > this.#maxJsonChars || payload.records.length > this.#maxRecords) {
+        const selected = this.#selectForArchive({ protectIds: new Set([frozen.recordId]) });
+        if (selected.length === 0) {
+          throw new Error(payload.records.length > this.#maxRecords ? 'EXECUTION_STATE_FULL' : 'EXECUTION_STATE_TOO_LARGE');
         }
-      });
+        await this.#writeArchive(selected);
+        for (const item of selected) this.#records.delete(item.recordId);
+        aged = selected;
+        payload = payloadOf(this.list());
+        if (payload.records.length > this.#maxRecords) throw new Error('EXECUTION_STATE_FULL');
+        if (compactSize(payload.records) > this.#maxJsonChars) throw new Error('EXECUTION_STATE_TOO_LARGE');
+      }
+      await this.#writeRecords({ payload, expectedRecordId: frozen.recordId, expectedDigest, drop: aged });
     };
     this.#queue = this.#queue.then(write, write);
     try {
       await this.#queue;
     } catch (error) {
+      for (const item of aged) this.#records.set(item.recordId, item);
       if (previous) this.#records.set(record.recordId, previous);
       else this.#records.delete(record.recordId);
       throw error;
     }
     return clone(frozen);
+  }
+
+  // Drop oldest finished clusters until a new record fits and the live file
+  // is back under the aging target. In-flight intents, approvals, and leases stay.
+  #selectForArchive({ reserveSlot = false, protectIds = new Set() } = {}) {
+    if (!this.#storagePath) return [];
+    const records = [...this.#records.values()];
+    const size = compactSize(records);
+    const countPressure = records.length + (reserveSlot ? 1 : 0) > this.#maxRecords;
+    const sizePressure = size > this.#maxJsonChars;
+    if (!countPressure && !sizePressure) return [];
+    const targetCount = Math.max(1, Math.floor(this.#maxRecords * AGE_TARGET_NUMERATOR / AGE_TARGET_DENOMINATOR));
+    const targetSize = Math.max(1, Math.floor(this.#maxJsonChars * AGE_TARGET_NUMERATOR / AGE_TARGET_DENOMINATOR));
+    const encoded = new Map(records.map((record) => [record.recordId, JSON.stringify(record).length]));
+    const emptySize = compactSize([]);
+    const estimatedSize = (items) => {
+      if (items.length === 0) return emptySize;
+      let total = emptySize + items.length - 1;
+      for (const item of items) total += encoded.get(item.recordId) ?? 0;
+      return total;
+    };
+    const clusters = closedClusters(records).filter((group) => group.every((record) => !protectIds.has(record.recordId)));
+    const dropIds = new Set();
+    let remaining = records;
+    let cursor = 0;
+    const settled = (exact) => remaining.length + (reserveSlot ? 1 : 0) <= targetCount
+      && (exact ?? estimatedSize(remaining)) <= targetSize;
+    while (cursor < clusters.length && !settled()) {
+      for (const member of clusters[cursor]) dropIds.add(member.recordId);
+      cursor += 1;
+      remaining = records.filter((record) => !dropIds.has(record.recordId));
+    }
+    let exactSize = compactSize(remaining);
+    while (cursor < clusters.length && !settled(exactSize)) {
+      for (const member of clusters[cursor]) dropIds.add(member.recordId);
+      cursor += 1;
+      remaining = records.filter((record) => !dropIds.has(record.recordId));
+      exactSize = compactSize(remaining);
+    }
+    if (dropIds.size === 0 || exactSize > this.#maxJsonChars || remaining.length + (reserveSlot ? 1 : 0) > this.#maxRecords) return [];
+    validateRecordGraph(remaining);
+    return records.filter((record) => dropIds.has(record.recordId));
+  }
+
+  async #flushClosedRecords({ reserveSlot = false } = {}) {
+    let aged = [];
+    const write = async () => {
+      const selected = this.#selectForArchive({ reserveSlot });
+      if (selected.length === 0) return;
+      await this.#writeArchive(selected);
+      for (const item of selected) this.#records.delete(item.recordId);
+      aged = selected;
+      await this.#writeRecords({ drop: aged });
+    };
+    this.#queue = this.#queue.then(write, write);
+    try {
+      await this.#queue;
+    } catch (error) {
+      for (const item of aged) this.#records.set(item.recordId, item);
+      throw error;
+    }
+  }
+
+  async #writeArchive(records) {
+    const archivedAtMs = Date.now();
+    const stamp = new Date(archivedAtMs).toISOString().replace(/[:.]/g, '-');
+    const filePath = join(`${this.#storagePath}.archives`, `aged-${stamp}-${randomUUID()}.json`);
+    await persistJsonFile(filePath, {
+      schemaVersion: SCHEMA_VERSION,
+      kind: 'execution-state-archive',
+      archivedAtMs,
+      reason: 'EXECUTION_STATE_CAPACITY',
+      records: records.map((record) => clone(record))
+    });
+  }
+
+  async #writeRecords({ payload, expectedRecordId, expectedDigest, drop = [] } = {}) {
+    const body = payload ?? payloadOf(this.list());
+    const dropUpdated = new Map(drop.map((record) => [record.recordId, record.updatedAtMs ?? 0]));
+    await persistJsonFile(this.#storagePath, body, {
+      merge: (existing, incoming) => {
+        const prior = expectedRecordId && Array.isArray(existing?.records)
+          ? existing.records.find((candidate) => candidate?.recordId === expectedRecordId)
+          : undefined;
+        if (expectedDigest && prior && prior.recordDigest !== expectedDigest) throw new Error('EXECUTION_STATE_CONFLICT');
+        const merged = mergeRecordsById(existing, incoming, { collection: 'records', id: 'recordId' });
+        // The live snapshot is a union, so a record backed up here has to be
+        // removed again or the next load pulls it straight back in.
+        const records = merged.records.filter((record) => {
+          const archivedUpdated = dropUpdated.get(record?.recordId);
+          if (archivedUpdated === undefined) return true;
+          return (record?.updatedAtMs ?? 0) > archivedUpdated;
+        });
+        if (records.length > this.#maxRecords) throw new Error('EXECUTION_STATE_FULL');
+        if (compactSize(records) > this.#maxJsonChars) throw new Error('EXECUTION_STATE_TOO_LARGE');
+        return payloadOf(records);
+      }
+    });
   }
 }
 

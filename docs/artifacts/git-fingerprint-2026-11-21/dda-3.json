@@ -1,0 +1,349 @@
+{
+  "session": "dda-3",
+  "calls": 5,
+  "reported_prompt_tokens": 265312,
+  "completion_tokens": 1585,
+  "request_bytes": 996452,
+  "model_elapsed_s": 121.8,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "budget_rejections": 0,
+  "native_tools": {
+    "hmc_shell_x2e_execute": 2,
+    "hmc_workspace_x2e_read": 3,
+    "hmc_test_x2e_execute": 1,
+    "hmc_workspace_x2e_focus": 1
+  },
+  "worktree_changes": [],
+  "grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795230869.186796,
+      "model": "deepseek-v4-flash",
+      "msgs": 3,
+      "input_bytes": 178672
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795230870.65535,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 46835,
+        "completion_tokens": 169,
+        "total_tokens": 47004,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 46835
+      },
+      "calls": [
+        "hmc_shell_x2e_execute",
+        "hmc_workspace_x2e_read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795230897.5970929,
+      "model": "deepseek-v4-flash",
+      "msgs": 7,
+      "input_bytes": 186352
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795230898.8761134,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 49139,
+        "completion_tokens": 97,
+        "total_tokens": 49236,
+        "prompt_tokens_details": {
+          "cached_tokens": 46720
+        },
+        "prompt_cache_hit_tokens": 46720,
+        "prompt_cache_miss_tokens": 2419
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_workspace_x2e_read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795230903.3620987,
+      "model": "deepseek-v4-flash",
+      "msgs": 10,
+      "input_bytes": 207065
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795230905.5680466,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 55370,
+        "completion_tokens": 109,
+        "total_tokens": 55479,
+        "prompt_tokens_details": {
+          "cached_tokens": 48768
+        },
+        "prompt_cache_hit_tokens": 48768,
+        "prompt_cache_miss_tokens": 6602
+      },
+      "calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795230959.4268758,
+      "model": "deepseek-v4-flash",
+      "msgs": 12,
+      "input_bytes": 210023
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795230961.9187968,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 56315,
+        "completion_tokens": 292,
+        "total_tokens": 56607,
+        "prompt_tokens_details": {
+          "cached_tokens": 54912
+        },
+        "prompt_cache_hit_tokens": 54912,
+        "prompt_cache_miss_tokens": 1403
+      },
+      "calls": [
+        "hmc_workspace_x2e_focus",
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795230984.3477964,
+      "model": "deepseek-v4-flash",
+      "msgs": 15,
+      "input_bytes": 214340
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795230990.976535,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 57653,
+        "completion_tokens": 918,
+        "total_tokens": 58571,
+        "prompt_tokens_details": {
+          "cached_tokens": 55680
+        },
+        "prompt_cache_hit_tokens": 55680,
+        "prompt_cache_miss_tokens": 1973
+      },
+      "calls": []
+    }
+  ],
+  "dda_events": [
+    {
+      "kind": "task.classified",
+      "ms": 1795230849500,
+      "seq": 21,
+      "taskClass": "test"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230868277,
+      "seq": 52,
+      "reason": "PLAN_INITIALIZED"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230868513,
+      "seq": 54,
+      "reason": "execute:0:READY"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230868720,
+      "seq": 55,
+      "reason": "execute:1:RUNNING"
+    },
+    {
+      "kind": "step.execution_profile",
+      "ms": 1795230868871,
+      "seq": 56,
+      "executionProfileId": "full-executor"
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230877319,
+      "seq": 88,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230896876,
+      "seq": 101,
+      "round": 1,
+      "name": "shell.execute",
+      "ok": false,
+      "errorCode": "EXECUTOR_RESULT_FAILED",
+      "exitCode": 1,
+      "command": "rg",
+      "args": [
+        "-n",
+        "fingerprint|out-of-scope|outOfScope|越界|gitFingerprint",
+        "--glob",
+        "*.mjs",
+        "-l"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230897550,
+      "seq": 106,
+      "round": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/test/git-audit.test.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230901419,
+      "seq": 117,
+      "round": 2,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230903157,
+      "seq": 123,
+      "round": 2,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230912840,
+      "seq": 140,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230959378,
+      "seq": 167,
+      "round": 3,
+      "name": "test.execute",
+      "ok": false,
+      "errorCode": "TEST_CHECK_FAILED",
+      "exitCode": 1,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230965382,
+      "seq": 276,
+      "round": 4,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230971464,
+      "seq": 288,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230984295,
+      "seq": 298,
+      "round": 4,
+      "name": "shell.execute",
+      "ok": false,
+      "errorCode": "EXECUTOR_RESULT_FAILED",
+      "exitCode": 1,
+      "command": "rg",
+      "args": [
+        "-n",
+        "metadataDigest|indexDigest|VOLATILE_METADATA|git-observer|execution-scope-snapshot"
+      ]
+    },
+    {
+      "kind": "verification.completed",
+      "ms": 1795230992120,
+      "seq": 1227,
+      "status": "UNCERTAIN",
+      "failureCodes": [
+        "BUILD_TEST_VERIFIER_UNAVAILABLE"
+      ],
+      "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230992354,
+      "seq": 1229,
+      "reason": "execute:1:FAILED"
+    },
+    {
+      "kind": "run.failed",
+      "ms": 1795231001069,
+      "seq": 1234,
+      "code": "PLAN_STEP_FAILED",
+      "failureCodes": [
+        "BUILD_TEST_VERIFIER_UNAVAILABLE"
+      ],
+      "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+    }
+  ]
+}

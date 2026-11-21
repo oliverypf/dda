@@ -1,0 +1,27 @@
+{
+  "versions": {
+    "dda": "8aa4acd",
+    "dsh": "0.1.1-rc.2",
+    "pi": "1.1.0"
+  },
+  "prompt": "修复这个仓库中的 Git 指纹误报：后台刷新 Git 后，普通工作区文件修改偶尔被报告为越界。请定位原因、修改实现并实际运行相关测试。真正的暂存区改动和仓库配置改动仍应被检测。保持现有测试有效。",
+  "input": "193 runtime/src files from 8aa4acd, first three git-audit tests, minimal npm test entry, copied single git seed",
+  "seed": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+  "model": "deepseek-v4-flash",
+  "thinking": "disabled",
+  "limits": {
+    "requests": 24,
+    "cumulative_raw_request_bytes": 2500000,
+    "completion_tokens": 24576,
+    "per_request_completion_tokens": 4096,
+    "wall_seconds": 480
+  },
+  "checksums": {
+    "setup.py": "afd3252d834d06f1f50a4a6204b5b0b5954a9ec39403611c7b9560880b9dd696",
+    "proxy.py": "2c72a0f7c7cc5ba1a1779f2b6eec652a219165211795da96259e4b712f94dc72",
+    "grade.py": "75bdeb54373fde2dc08b84c04e3c1674bd26ca3370b2fc236c9fa25676fbcf10",
+    "probe.mjs": "d4c34a1009354b49167caea7a15550104b1559aad9bd1beeeadddb55a572dfbc",
+    "prompt.txt": "0a0f6e6400e48b6698fcff7c65fafc2af5d37504d65c8423e8909c502bcd6b36"
+  },
+  "grader_fields": "external and original list behavioral verdicts separately; immutable_test is separately tracked; green additionally requires intact original fixture. Hidden staged-case checks scope verdict, independent of field used for signal."
+}

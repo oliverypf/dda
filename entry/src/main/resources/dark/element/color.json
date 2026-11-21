@@ -3,6 +3,22 @@
     {
       "name": "start_window_background",
       "value": "#000000"
-    }
+    },
+    { "name": "wb_surface", "value": "#1D2025" },
+    { "name": "wb_canvas", "value": "#17191D" },
+    { "name": "wb_hover", "value": "#272B31" },
+    { "name": "wb_selected", "value": "#17365D" },
+    { "name": "wb_border", "value": "#343941" },
+    { "name": "wb_soft_border", "value": "#2B3037" },
+    { "name": "wb_text", "value": "#E8EAED" },
+    { "name": "wb_secondary", "value": "#B2B8C2" },
+    { "name": "wb_muted", "value": "#9CA4B0" },
+    { "name": "wb_blue", "value": "#1769E0" },
+    { "name": "wb_accent_text", "value": "#96BDFF" },
+    { "name": "wb_green", "value": "#77CFA2" },
+    { "name": "wb_amber", "value": "#E7B968" },
+    { "name": "wb_red", "value": "#F4A3A3" },
+    { "name": "wb_warning_bg", "value": "#342D20" },
+    { "name": "wb_user_bg", "value": "#20334D" }
   ]
 }

@@ -1,0 +1,131 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..c8ea675 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -202,19 +202,22 @@ const readHead = async (root, timeoutMs) => {
+ 
+ const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow']);
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+-// ordinary `git status` in IDEs/shells even when zero staged entries change;
+-// actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// ordinary `git status`/background refreshes in IDEs/shells even when zero
++// staged entries change; actual staged content is already captured by
++// `indexDigest` via `git diff --cached`), and `FETCH_HEAD` is rewritten by
++// background IDE `git fetch`. Check their existence and symlink status without
++// hashing volatile cache bytes/timestamps.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
++const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+   if (!metadata) return { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+   if (volatileContent) {
+-    return { exists: true, type };
++    // Link/type changes are structural and must stay visible.
++    return type === 'file' ? { exists: true, type } : { exists: true, type, mode: metadata.mode };
+   }
+   const entry = {
+     exists: true,
+@@ -257,9 +260,46 @@ const readGitMetadata = async (root, timeoutMs) => {
+     linkDetected ||= entry.type === 'link';
+   }
+   entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;
+-  return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };
++  return { entries, metadataLinkDetected: linkDetected };
+ };
+ 
++// Sanitizes raw `git ls-files --stage` output.  It carries blob ids and file
++// modes only (throwaway blob ids for not-yet-added files), never paths, so the
++// result can be folded into the metadata fingerprint without leaking names.
++const sanitizeStagedIndex = (raw) => {
++  const entries = [];
++  for (const token of raw.toString('utf8').split('\0')) {
++    if (!token) continue;
++    const match = /^(\d{6}) ([0-9a-f]{7,64}) (\d)\t/u.exec(token);
++    if (!match) continue;
++    entries.push(`${match[1]} ${match[2].toLowerCase()} ${match[3]}`);
++  }
++  return { entryCount: entries.length, digest: digestText(entries.join('\n')) };
++};
++
++// `git diff --cached` (HEAD vs index) cannot see index edits that are already
++// part of HEAD, e.g. `git add -f --chmod=-x` on a tracked file or staging a
++// deletion of a file that HEAD does not contain.  Fold the staged tree itself
++// into the metadata fingerprint so those real index writes stay detectable,
++// while Git's implicit stat-cache refresh (`git status`, background fetch
++// hooks) leaves the entries untouched.  `--debug` disables pathspec/ignore
++// optimizations that would otherwise omit unchanged entries.
++const readStagedIndex = async (root, head, timeoutMs) => {
++  const base = head ?? EMPTY_TREE;
++  const result = await runReadOnlyGit(root, ['ls-files', '--cached', '--stage', '--debug', '-z'], { timeoutMs, maxBytes: MAX_DIFF_BYTES });
++  if (!result.ok) {
++    // Fail closed: an unreadable index must never look unchanged.
++    return { entryCount: -1, digest: digestText(`unavailable:${base}:${result.exitCode}`) };
++  }
++  return { ...sanitizeStagedIndex(result.stdout), base };
++};
++
++const createMetadataDigest = ({ entries, staged, metadataLinkDetected }) => digestText(stableStringify({
++  ...entries,
++  stagedIndex: { base: staged.base, entryCount: staged.entryCount, digest: staged.digest },
++  metadataLinkDetected
++}));
++
+ const createObservation = ({ root, repositoryRoot, head, status, index, workingTree, untracked, metadata, now, reason }) => {
+   const unsigned = {
+     schemaVersion: GIT_OBSERVER_SCHEMA_VERSION,
+@@ -303,7 +343,12 @@ export class GitObserver {
+     }
+     const repositoryRoot = await realpath(repository.stdout.toString('utf8').trim()).catch(() => root);
+     const head = await readHead(root, this.#timeoutMs).catch(() => undefined);
+-    const metadata = await readGitMetadata(root, this.#timeoutMs);
++    const metadataEntries = await readGitMetadata(root, this.#timeoutMs);
++    const stagedIndex = await readStagedIndex(root, head, this.#timeoutMs);
++    const metadata = {
++      metadataDigest: createMetadataDigest({ ...metadataEntries, staged: stagedIndex }),
++      metadataLinkDetected: metadataEntries.metadataLinkDetected
++    };
+     const statusResult = await runReadOnlyGit(root, ['status', '--porcelain=v2', '-z', `--untracked-files=${this.#untrackedFiles}`], { timeoutMs: this.#timeoutMs, maxBytes: MAX_STATUS_BYTES });
+     if (!statusResult.ok) throw new Error('GIT_STATUS_FAILED');
+     const status = parseStatus(root, statusResult.stdout);
+diff --git a/runtime/test/git-audit.test.mjs b/runtime/test/git-audit.test.mjs
+index 3844a1a..b947428 100644
+--- a/runtime/test/git-audit.test.mjs
++++ b/runtime/test/git-audit.test.mjs
+@@ -2,31 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+-import { spawn } from 'node:child_process';
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { createGitObserver } from '../src/git-observer.mjs';
+ import { createGitAuditStore } from '../src/git-audit-store.mjs';
+ import { compareGitObservations, createExecutionScopeSnapshot } from '../src/execution-scope-snapshot.mjs';
+-
+-const runGit = (cwd, args) => new Promise((resolve, reject) => {
+-  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
+-    cwd,
+-    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
+-    shell: false,
+-    windowsHide: true,
+-    stdio: ['ignore', 'pipe', 'pipe']
+-  });
+-  let stdout = '';
+-  let stderr = '';
+-  child.stdout.on('data', (chunk) => { stdout += chunk; });
+-  child.stderr.on('data', (chunk) => { stderr += chunk; });
+-  child.once('error', reject);
+-  child.once('close', (code) => {
+-    if (code !== 0) reject(new Error(`git failed: ${args.join(' ')}: ${stderr}`));
+-    else resolve(stdout);
+-  });
+-});
++import { runGit } from './helpers/git-runner.mjs';
+ 
+ const initRepository = async () => {
+   const root = await mkdtemp(join(tmpdir(), 'hmcodex-git-audit-'));

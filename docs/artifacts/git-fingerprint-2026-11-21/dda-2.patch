@@ -1,0 +1,20 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..4ad75bc 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -311,8 +311,13 @@ export class GitObserver {
+       runReadOnlyGit(root, ['diff', '--no-ext-diff', '--no-textconv', '--raw', '-z', '--no-color', '--cached'], { timeoutMs: this.#timeoutMs, maxBytes: MAX_DIFF_BYTES }),
+       runReadOnlyGit(root, ['diff', '--no-ext-diff', '--no-textconv', '--raw', '-z', '--no-color'], { timeoutMs: this.#timeoutMs, maxBytes: MAX_DIFF_BYTES })
+     ]);
+-    const untracked = statusResult;
+-    if (!index.ok || !workingTree.ok || !untracked.ok) throw new Error('GIT_DIFF_OBSERVATION_FAILED');
++    // `untrackedDigest` must describe the untracked path set only. Hashing the
++    // raw `git status` bytes made it depend on stat-cache churn and entry order,
++    // so an ordinary working-tree edit (plus a background `git status`) looked
++    // like an out-of-scope change. Staged content stays covered by `indexDigest`
++    // (built from `git diff --cached`) and repository config by `metadataDigest`.
++    const untracked = { ok: statusResult.ok, outputDigest: digestText(stableStringify(status.pathDigests)) };
++    if (!index.ok || !workingTree.ok || !statusResult.ok) throw new Error('GIT_DIFF_OBSERVATION_FAILED');
+     return {
+       ...createObservation({ root, repositoryRoot, head, status, index, workingTree, untracked, metadata, now, reason }),
+       available: true,

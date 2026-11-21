@@ -1,0 +1,527 @@
+{
+  "session": "dda-2",
+  "calls": 10,
+  "reported_prompt_tokens": 589946,
+  "completion_tokens": 3060,
+  "request_bytes": 2196446,
+  "model_elapsed_s": 174.5,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "budget_rejections": 0,
+  "native_tools": {
+    "hmc_workspace_x2e_read": 5,
+    "hmc_shell_x2e_execute": 3,
+    "hmc_file_x2e_patch": 1,
+    "hmc_test_x2e_execute": 1,
+    "hmc_workspace_x2e_focus": 2
+  },
+  "worktree_changes": [
+    " M runtime/src/git-observer.mjs"
+  ],
+  "grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795230868.3135538,
+      "model": "deepseek-v4-flash",
+      "msgs": 3,
+      "input_bytes": 178672
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795230870.2737277,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 46838,
+        "completion_tokens": 107,
+        "total_tokens": 46945,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 46838
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_workspace_x2e_read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795230871.8025987,
+      "model": "deepseek-v4-flash",
+      "msgs": 7,
+      "input_bytes": 200755
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795230872.8152735,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 53535,
+        "completion_tokens": 55,
+        "total_tokens": 53590,
+        "prompt_tokens_details": {
+          "cached_tokens": 46848
+        },
+        "prompt_cache_hit_tokens": 46848,
+        "prompt_cache_miss_tokens": 6687
+      },
+      "calls": [
+        "hmc_workspace_x2e_read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795230874.1643932,
+      "model": "deepseek-v4-flash",
+      "msgs": 9,
+      "input_bytes": 206359
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795230875.3091807,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 55128,
+        "completion_tokens": 53,
+        "total_tokens": 55181,
+        "prompt_tokens_details": {
+          "cached_tokens": 53120
+        },
+        "prompt_cache_hit_tokens": 53120,
+        "prompt_cache_miss_tokens": 2008
+      },
+      "calls": [
+        "hmc_workspace_x2e_read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795230876.9644418,
+      "model": "deepseek-v4-flash",
+      "msgs": 11,
+      "input_bytes": 218208
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795230878.6739202,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 58548,
+        "completion_tokens": 186,
+        "total_tokens": 58734,
+        "prompt_tokens_details": {
+          "cached_tokens": 54656
+        },
+        "prompt_cache_hit_tokens": 54656,
+        "prompt_cache_miss_tokens": 3892
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795230902.3528,
+      "model": "deepseek-v4-flash",
+      "msgs": 14,
+      "input_bytes": 225891
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795230903.6226494,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 60692,
+        "completion_tokens": 129,
+        "total_tokens": 60821,
+        "prompt_tokens_details": {
+          "cached_tokens": 57984
+        },
+        "prompt_cache_hit_tokens": 57984,
+        "prompt_cache_miss_tokens": 2708
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 6,
+      "t": 1795230960.3420043,
+      "model": "deepseek-v4-flash",
+      "msgs": 16,
+      "input_bytes": 228876
+    },
+    {
+      "kind": "response",
+      "n": 6,
+      "t": 1795230964.0427353,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 61661,
+        "completion_tokens": 758,
+        "total_tokens": 62419,
+        "prompt_tokens_details": {
+          "cached_tokens": 60032
+        },
+        "prompt_cache_hit_tokens": 60032,
+        "prompt_cache_miss_tokens": 1629
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 7,
+      "t": 1795230966.1205194,
+      "model": "deepseek-v4-flash",
+      "msgs": 16,
+      "input_bytes": 228876
+    },
+    {
+      "kind": "response",
+      "n": 7,
+      "t": 1795230970.9863489,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 61661,
+        "completion_tokens": 755,
+        "total_tokens": 62416,
+        "prompt_tokens_details": {
+          "cached_tokens": 61440
+        },
+        "prompt_cache_hit_tokens": 61440,
+        "prompt_cache_miss_tokens": 221
+      },
+      "calls": [
+        "hmc_file_x2e_patch"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 8,
+      "t": 1795230992.2006528,
+      "model": "deepseek-v4-flash",
+      "msgs": 18,
+      "input_bytes": 232924
+    },
+    {
+      "kind": "response",
+      "n": 8,
+      "t": 1795230993.5546262,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 62889,
+        "completion_tokens": 128,
+        "total_tokens": 63017,
+        "prompt_tokens_details": {
+          "cached_tokens": 60928
+        },
+        "prompt_cache_hit_tokens": 60928,
+        "prompt_cache_miss_tokens": 1961
+      },
+      "calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 9,
+      "t": 1795231034.3984048,
+      "model": "deepseek-v4-flash",
+      "msgs": 20,
+      "input_bytes": 235319
+    },
+    {
+      "kind": "response",
+      "n": 9,
+      "t": 1795231036.490482,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 63725,
+        "completion_tokens": 270,
+        "total_tokens": 63995,
+        "prompt_tokens_details": {
+          "cached_tokens": 62080
+        },
+        "prompt_cache_hit_tokens": 62080,
+        "prompt_cache_miss_tokens": 1645
+      },
+      "calls": [
+        "hmc_workspace_x2e_focus",
+        "hmc_workspace_x2e_focus"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 10,
+      "t": 1795231038.7158473,
+      "model": "deepseek-v4-flash",
+      "msgs": 23,
+      "input_bytes": 240566
+    },
+    {
+      "kind": "response",
+      "n": 10,
+      "t": 1795231042.8178816,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 65269,
+        "completion_tokens": 619,
+        "total_tokens": 65888,
+        "prompt_tokens_details": {
+          "cached_tokens": 62976
+        },
+        "prompt_cache_hit_tokens": 62976,
+        "prompt_cache_miss_tokens": 2293
+      },
+      "calls": []
+    }
+  ],
+  "dda_events": [
+    {
+      "kind": "task.classified",
+      "ms": 1795230850456,
+      "seq": 22,
+      "taskClass": "test"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230867438,
+      "seq": 53,
+      "reason": "PLAN_INITIALIZED"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230867857,
+      "seq": 55,
+      "reason": "execute:0:READY"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795230867933,
+      "seq": 56,
+      "reason": "execute:1:RUNNING"
+    },
+    {
+      "kind": "step.execution_profile",
+      "ms": 1795230867966,
+      "seq": 57,
+      "executionProfileId": "full-executor"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230871215,
+      "seq": 79,
+      "round": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230871724,
+      "seq": 85,
+      "round": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/test/git-audit.test.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230874149,
+      "seq": 94,
+      "round": 2,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230876936,
+      "seq": 103,
+      "round": 3,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-audit-store.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230880421,
+      "seq": 114,
+      "round": 4,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/index.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230884667,
+      "seq": 125,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230902319,
+      "seq": 138,
+      "round": 4,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "git",
+      "args": [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--branch"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230912025,
+      "seq": 154,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230960264,
+      "seq": 182,
+      "round": 5,
+      "name": "shell.execute",
+      "ok": false,
+      "errorCode": "EXECUTOR_RESULT_FAILED",
+      "exitCode": 1,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795230978876,
+      "seq": 818,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795230992085,
+      "seq": 829,
+      "round": 6,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "ms": 1795231000553,
+      "seq": 845,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795231034307,
+      "seq": 866,
+      "round": 7,
+      "name": "test.execute",
+      "ok": false,
+      "errorCode": "TEST_CHECK_FAILED",
+      "exitCode": 1,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795231037896,
+      "seq": 972,
+      "round": 8,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "ms": 1795231038658,
+      "seq": 978,
+      "round": 8,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "verification.completed",
+      "ms": 1795231044474,
+      "seq": 1607,
+      "status": "UNCERTAIN",
+      "failureCodes": [
+        "BUILD_TEST_VERIFIER_UNAVAILABLE"
+      ],
+      "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+    },
+    {
+      "kind": "plan.step_changed",
+      "ms": 1795231044730,
+      "seq": 1609,
+      "reason": "execute:1:FAILED"
+    },
+    {
+      "kind": "run.failed",
+      "ms": 1795231048429,
+      "seq": 1612,
+      "code": "PLAN_STEP_FAILED",
+      "failureCodes": [
+        "BUILD_TEST_VERIFIER_UNAVAILABLE"
+      ],
+      "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+    }
+  ]
+}

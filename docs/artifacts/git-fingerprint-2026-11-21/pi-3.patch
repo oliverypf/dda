@@ -1,0 +1,21 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..e943f26 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -244,7 +244,7 @@ const readGitMetadata = async (root, timeoutMs) => {
+     const entry = await readMetadataEntry(resolve(gitDir, name), {
+       volatileContent: VOLATILE_METADATA_FILES.has(name)
+     });
+-    entries[name] = entry;
++    entries[name] = entry; if (name === "FETCH_HEAD" || name === "config") console.error("DBG", name, JSON.stringify(entry), JSON.stringify(entries[name]));
+     linkDetected ||= entry.type === 'link';
+   }
+   const hooksDirectory = resolve(gitDir, 'hooks');
+@@ -257,6 +257,7 @@ const readGitMetadata = async (root, timeoutMs) => {
+     linkDetected ||= entry.type === 'link';
+   }
+   entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;
++  console.error("DBG entries", stableStringify(entries));
+   return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };
+ };
+ 

@@ -1,0 +1,81 @@
+{
+  "pi-1": {
+    "evidence": "Changed which Git metadata contributes to the fingerprint. Original test went red→green in the agent trace; independent negative controls are needed.",
+    "editedToolOrdinals": [
+      23,
+      25
+    ],
+    "recordedTests": [
+      {
+        "toolOrdinal": 8,
+        "verdict": "target failure"
+      },
+      {
+        "toolOrdinal": 26,
+        "verdict": "3 passed"
+      }
+    ],
+    "changedTracked": [
+      "22\t15\truntime/src/git-observer.mjs"
+    ],
+    "untrackedInCheckout": [],
+    "originalTestMatchesSeed": true,
+    "requestCount": 24,
+    "budgetStopSeen": true,
+    "completionTokens": 10418,
+    "wallSeconds": 210.04
+  },
+  "pi-2": {
+    "evidence": "Changed volatile metadata handling while retaining a link check. Original test went red→green in the agent trace.",
+    "editedToolOrdinals": [
+      24,
+      27
+    ],
+    "recordedTests": [
+      {
+        "toolOrdinal": 12,
+        "verdict": "target failure"
+      },
+      {
+        "toolOrdinal": 28,
+        "verdict": "3 passed"
+      }
+    ],
+    "changedTracked": [
+      "20\t9\truntime/src/git-observer.mjs"
+    ],
+    "untrackedInCheckout": [],
+    "originalTestMatchesSeed": true,
+    "requestCount": 24,
+    "budgetStopSeen": true,
+    "completionTokens": 6588,
+    "wallSeconds": 178.38
+  },
+  "pi-3": {
+    "evidence": "Final tracked diff only adds DBG console.error instrumentation; last tool output still dumps metadata, and no green target test is recorded.",
+    "editedToolOrdinals": [],
+    "recordedTests": [
+      {
+        "toolOrdinal": 10,
+        "verdict": "target failure"
+      },
+      {
+        "toolOrdinal": 25,
+        "verdict": "target failure"
+      },
+      {
+        "toolOrdinal": 29,
+        "verdict": "target failure"
+      }
+    ],
+    "changedTracked": [
+      "2\t1\truntime/src/git-observer.mjs"
+    ],
+    "untrackedInCheckout": [],
+    "originalTestMatchesSeed": true,
+    "requestCount": 24,
+    "budgetStopSeen": true,
+    "completionTokens": 7181,
+    "wallSeconds": 245.77
+  }
+}

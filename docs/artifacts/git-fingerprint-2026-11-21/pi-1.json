@@ -1,0 +1,721 @@
+{
+  "session": "pi-1",
+  "calls": 24,
+  "reported_prompt_tokens": 336465,
+  "completion_tokens": 10418,
+  "request_bytes": 1168501,
+  "model_elapsed_s": 208.8,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "budget_rejections": 4,
+  "native_tools": {
+    "bash": 22,
+    "read": 2,
+    "edit": 2
+  },
+  "worktree_changes": [
+    " M runtime/src/git-observer.mjs"
+  ],
+  "grade": {
+    "external": [
+      {
+        "passed": true,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": true
+  },
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795230745.4487095,
+      "model": "deepseek-v4-flash",
+      "msgs": 2,
+      "input_bytes": 6220
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795230746.9285426,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 1639,
+        "completion_tokens": 153,
+        "total_tokens": 1792,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1639
+      },
+      "calls": [
+        "bash",
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795230748.1523948,
+      "model": "deepseek-v4-flash",
+      "msgs": 5,
+      "input_bytes": 7217
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795230749.2488737,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 1941,
+        "completion_tokens": 79,
+        "total_tokens": 2020,
+        "prompt_tokens_details": {
+          "cached_tokens": 1792
+        },
+        "prompt_cache_hit_tokens": 1792,
+        "prompt_cache_miss_tokens": 149
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795230750.2480118,
+      "model": "deepseek-v4-flash",
+      "msgs": 7,
+      "input_bytes": 9634
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795230751.2178063,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 2583,
+        "completion_tokens": 90,
+        "total_tokens": 2673,
+        "prompt_tokens_details": {
+          "cached_tokens": 1920
+        },
+        "prompt_cache_hit_tokens": 1920,
+        "prompt_cache_miss_tokens": 663
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795230755.7625153,
+      "model": "deepseek-v4-flash",
+      "msgs": 9,
+      "input_bytes": 10261
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795230756.6156082,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 2750,
+        "completion_tokens": 98,
+        "total_tokens": 2848,
+        "prompt_tokens_details": {
+          "cached_tokens": 2560
+        },
+        "prompt_cache_hit_tokens": 2560,
+        "prompt_cache_miss_tokens": 190
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795230757.715082,
+      "model": "deepseek-v4-flash",
+      "msgs": 11,
+      "input_bytes": 16291
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795230759.147141,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 4546,
+        "completion_tokens": 142,
+        "total_tokens": 4688,
+        "prompt_tokens_details": {
+          "cached_tokens": 2816
+        },
+        "prompt_cache_hit_tokens": 2816,
+        "prompt_cache_miss_tokens": 1730
+      },
+      "calls": [
+        "read",
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 6,
+      "t": 1795230759.9851027,
+      "model": "deepseek-v4-flash",
+      "msgs": 14,
+      "input_bytes": 36017
+    },
+    {
+      "kind": "response",
+      "n": 6,
+      "t": 1795230761.0357475,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 9940,
+        "completion_tokens": 88,
+        "total_tokens": 10028,
+        "prompt_tokens_details": {
+          "cached_tokens": 4608
+        },
+        "prompt_cache_hit_tokens": 4608,
+        "prompt_cache_miss_tokens": 5332
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 7,
+      "t": 1795230776.9269805,
+      "model": "deepseek-v4-flash",
+      "msgs": 16,
+      "input_bytes": 38100
+    },
+    {
+      "kind": "response",
+      "n": 7,
+      "t": 1795230779.6853774,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 10600,
+        "completion_tokens": 559,
+        "total_tokens": 11159,
+        "prompt_tokens_details": {
+          "cached_tokens": 9984
+        },
+        "prompt_cache_hit_tokens": 9984,
+        "prompt_cache_miss_tokens": 616
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 8,
+      "t": 1795230782.9315572,
+      "model": "deepseek-v4-flash",
+      "msgs": 18,
+      "input_bytes": 40526
+    },
+    {
+      "kind": "response",
+      "n": 8,
+      "t": 1795230786.4147685,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 11320,
+        "completion_tokens": 646,
+        "total_tokens": 11966,
+        "prompt_tokens_details": {
+          "cached_tokens": 11136
+        },
+        "prompt_cache_hit_tokens": 11136,
+        "prompt_cache_miss_tokens": 184
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 9,
+      "t": 1795230788.4345527,
+      "model": "deepseek-v4-flash",
+      "msgs": 20,
+      "input_bytes": 42804
+    },
+    {
+      "kind": "response",
+      "n": 9,
+      "t": 1795230791.6251378,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 12006,
+        "completion_tokens": 655,
+        "total_tokens": 12661,
+        "prompt_tokens_details": {
+          "cached_tokens": 11776
+        },
+        "prompt_cache_hit_tokens": 11776,
+        "prompt_cache_miss_tokens": 230
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 10,
+      "t": 1795230792.9365351,
+      "model": "deepseek-v4-flash",
+      "msgs": 22,
+      "input_bytes": 46331
+    },
+    {
+      "kind": "response",
+      "n": 10,
+      "t": 1795230794.1421404,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 13185,
+        "completion_tokens": 197,
+        "total_tokens": 13382,
+        "prompt_tokens_details": {
+          "cached_tokens": 12544
+        },
+        "prompt_cache_hit_tokens": 12544,
+        "prompt_cache_miss_tokens": 641
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 11,
+      "t": 1795230795.4826374,
+      "model": "deepseek-v4-flash",
+      "msgs": 24,
+      "input_bytes": 47852
+    },
+    {
+      "kind": "response",
+      "n": 11,
+      "t": 1795230798.794404,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 13723,
+        "completion_tokens": 628,
+        "total_tokens": 14351,
+        "prompt_tokens_details": {
+          "cached_tokens": 13312
+        },
+        "prompt_cache_hit_tokens": 13312,
+        "prompt_cache_miss_tokens": 411
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 12,
+      "t": 1795230802.843531,
+      "model": "deepseek-v4-flash",
+      "msgs": 26,
+      "input_bytes": 50455
+    },
+    {
+      "kind": "response",
+      "n": 12,
+      "t": 1795230806.5725524,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 14543,
+        "completion_tokens": 933,
+        "total_tokens": 15476,
+        "prompt_tokens_details": {
+          "cached_tokens": 14336
+        },
+        "prompt_cache_hit_tokens": 14336,
+        "prompt_cache_miss_tokens": 207
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 13,
+      "t": 1795230809.3319583,
+      "model": "deepseek-v4-flash",
+      "msgs": 28,
+      "input_bytes": 53815
+    },
+    {
+      "kind": "response",
+      "n": 13,
+      "t": 1795230811.8130245,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 15599,
+        "completion_tokens": 623,
+        "total_tokens": 16222,
+        "prompt_tokens_details": {
+          "cached_tokens": 15360
+        },
+        "prompt_cache_hit_tokens": 15360,
+        "prompt_cache_miss_tokens": 239
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 14,
+      "t": 1795230814.9995766,
+      "model": "deepseek-v4-flash",
+      "msgs": 30,
+      "input_bytes": 56340
+    },
+    {
+      "kind": "response",
+      "n": 14,
+      "t": 1795230817.6580913,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 16386,
+        "completion_tokens": 600,
+        "total_tokens": 16986,
+        "prompt_tokens_details": {
+          "cached_tokens": 16128
+        },
+        "prompt_cache_hit_tokens": 16128,
+        "prompt_cache_miss_tokens": 258
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 15,
+      "t": 1795230819.574506,
+      "model": "deepseek-v4-flash",
+      "msgs": 32,
+      "input_bytes": 58904
+    },
+    {
+      "kind": "response",
+      "n": 15,
+      "t": 1795230821.9511447,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 17168,
+        "completion_tokens": 536,
+        "total_tokens": 17704,
+        "prompt_tokens_details": {
+          "cached_tokens": 16896
+        },
+        "prompt_cache_hit_tokens": 16896,
+        "prompt_cache_miss_tokens": 272
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 16,
+      "t": 1795230833.4860275,
+      "model": "deepseek-v4-flash",
+      "msgs": 34,
+      "input_bytes": 61056
+    },
+    {
+      "kind": "response",
+      "n": 16,
+      "t": 1795230836.6636667,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 17803,
+        "completion_tokens": 634,
+        "total_tokens": 18437,
+        "prompt_tokens_details": {
+          "cached_tokens": 17664
+        },
+        "prompt_cache_hit_tokens": 17664,
+        "prompt_cache_miss_tokens": 139
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 17,
+      "t": 1795230847.578154,
+      "model": "deepseek-v4-flash",
+      "msgs": 36,
+      "input_bytes": 63441
+    },
+    {
+      "kind": "response",
+      "n": 17,
+      "t": 1795230849.4128556,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 18466,
+        "completion_tokens": 162,
+        "total_tokens": 18628,
+        "prompt_tokens_details": {
+          "cached_tokens": 18304
+        },
+        "prompt_cache_hit_tokens": 18304,
+        "prompt_cache_miss_tokens": 162
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 18,
+      "t": 1795230852.7388868,
+      "model": "deepseek-v4-flash",
+      "msgs": 38,
+      "input_bytes": 64405
+    },
+    {
+      "kind": "response",
+      "n": 18,
+      "t": 1795230856.3215673,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 18723,
+        "completion_tokens": 912,
+        "total_tokens": 19635,
+        "prompt_tokens_details": {
+          "cached_tokens": 18560
+        },
+        "prompt_cache_hit_tokens": 18560,
+        "prompt_cache_miss_tokens": 163
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 19,
+      "t": 1795230864.9620419,
+      "model": "deepseek-v4-flash",
+      "msgs": 40,
+      "input_bytes": 67690
+    },
+    {
+      "kind": "response",
+      "n": 19,
+      "t": 1795230868.42377,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 19754,
+        "completion_tokens": 688,
+        "total_tokens": 20442,
+        "prompt_tokens_details": {
+          "cached_tokens": 19584
+        },
+        "prompt_cache_hit_tokens": 19584,
+        "prompt_cache_miss_tokens": 170
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 20,
+      "t": 1795230873.378045,
+      "model": "deepseek-v4-flash",
+      "msgs": 42,
+      "input_bytes": 70399
+    },
+    {
+      "kind": "response",
+      "n": 20,
+      "t": 1795230875.7958753,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 20565,
+        "completion_tokens": 301,
+        "total_tokens": 20866,
+        "prompt_tokens_details": {
+          "cached_tokens": 20352
+        },
+        "prompt_cache_hit_tokens": 20352,
+        "prompt_cache_miss_tokens": 213
+      },
+      "calls": [
+        "read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 21,
+      "t": 1795230875.8303926,
+      "model": "deepseek-v4-flash",
+      "msgs": 44,
+      "input_bytes": 74565
+    },
+    {
+      "kind": "response",
+      "n": 21,
+      "t": 1795230881.2520895,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 21729,
+        "completion_tokens": 1145,
+        "total_tokens": 22874,
+        "prompt_tokens_details": {
+          "cached_tokens": 20864
+        },
+        "prompt_cache_hit_tokens": 20864,
+        "prompt_cache_miss_tokens": 865
+      },
+      "calls": [
+        "edit"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 22,
+      "t": 1795230881.368247,
+      "model": "deepseek-v4-flash",
+      "msgs": 46,
+      "input_bytes": 78769
+    },
+    {
+      "kind": "response",
+      "n": 22,
+      "t": 1795230882.8350072,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 22932,
+        "completion_tokens": 120,
+        "total_tokens": 23052,
+        "prompt_tokens_details": {
+          "cached_tokens": 22784
+        },
+        "prompt_cache_hit_tokens": 22784,
+        "prompt_cache_miss_tokens": 148
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 23,
+      "t": 1795230883.9504783,
+      "model": "deepseek-v4-flash",
+      "msgs": 48,
+      "input_bytes": 83103
+    },
+    {
+      "kind": "response",
+      "n": 23,
+      "t": 1795230886.021448,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 24081,
+        "completion_tokens": 344,
+        "total_tokens": 24425,
+        "prompt_tokens_details": {
+          "cached_tokens": 23040
+        },
+        "prompt_cache_hit_tokens": 23040,
+        "prompt_cache_miss_tokens": 1041
+      },
+      "calls": [
+        "edit"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 24,
+      "t": 1795230886.0833664,
+      "model": "deepseek-v4-flash",
+      "msgs": 50,
+      "input_bytes": 84306
+    },
+    {
+      "kind": "response",
+      "n": 24,
+      "t": 1795230887.8819456,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 24483,
+        "completion_tokens": 85,
+        "total_tokens": 24568,
+        "prompt_tokens_details": {
+          "cached_tokens": 24320
+        },
+        "prompt_cache_hit_tokens": 24320,
+        "prompt_cache_miss_tokens": 163
+      },
+      "calls": [
+        "bash"
+      ]
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795230939.9069693
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795230942.0452046
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795230946.169056
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795230954.2509246
+    }
+  ],
+  "dda_events": []
+}

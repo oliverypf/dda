@@ -24,6 +24,8 @@
 
 ## 3. 文档地图
 
+按代码基线 `8aa4acd` 核查出的 8 项实施差距、失败用例及验收场景，见[特性实现差距与验收清单（2026-11-21）](FEATURE_IMPLEMENTATION_GAPS_2026-11-21.md)。
+
 当前 Windows 剩余功能与验收执行入口：[阶段四实施计划](WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)及[验收矩阵](WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。Linux 当前采用无界面 CLI 路线，实施入口为[Linux CLI 实施计划](LINUX_CLI_IMPLEMENTATION_PLAN.md)及配套契约文档。本轮 Linux 只规划和实现 CLI 应用层、平台适配层与本地 runtime 接入，不引入 Tauri GUI。App Server 接入已按用户要求取消。本索引中相关历史适配设想不构成当前 Windows 或 Linux CLI 的实现前置条件。
 
 | 文档 | 负责内容 | 首次阻断阶段 |

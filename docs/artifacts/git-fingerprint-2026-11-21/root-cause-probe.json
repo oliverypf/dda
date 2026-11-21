@@ -1,0 +1,44 @@
+[
+  {
+    "step": "edit worktree",
+    "metadataChanged": false,
+    "indexChanged": false,
+    "unstaged": 1,
+    "staged": 0
+  },
+  {
+    "step": "git status",
+    "metadataChanged": false,
+    "indexChanged": false,
+    "unstaged": 1,
+    "staged": 0
+  },
+  {
+    "step": "create FETCH_HEAD",
+    "metadataChanged": true,
+    "indexChanged": false,
+    "unstaged": 1,
+    "staged": 0
+  },
+  {
+    "step": "update existing FETCH_HEAD",
+    "metadataChanged": false,
+    "indexChanged": false,
+    "unstaged": 1,
+    "staged": 0
+  },
+  {
+    "step": "stage real change",
+    "metadataChanged": false,
+    "indexChanged": true,
+    "unstaged": 0,
+    "staged": 1
+  },
+  {
+    "step": "change repo config",
+    "metadataChanged": true,
+    "indexChanged": false,
+    "unstaged": 0,
+    "staged": 1
+  }
+]

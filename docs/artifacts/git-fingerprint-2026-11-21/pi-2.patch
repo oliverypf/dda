@@ -1,0 +1,52 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..75d259b 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -204,17 +204,22 @@ const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs',
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+ // actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// and `FETCH_HEAD` is rewritten (or created) by background IDE `git fetch`.
++// Their bytes, timestamps AND existence are background-refresh noise, so they are
++// excluded from the metadata fingerprint entirely. Index symlink tampering is
++// still surfaced via `metadataLinkDetected`, and real staged/config changes are
++// caught by `indexDigest` and the remaining digest-bound metadata entries.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+-const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
++const readMetadataEntry = async (filePath, { volatile = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+-  if (!metadata) return { exists: false };
++  if (!metadata) return volatile ? null : { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+-  if (volatileContent) {
+-    return { exists: true, type };
++  if (volatile) {
++    // Report only the symlink bit; existence/type of these files flaps on
++    // background fetch/status refreshes and must not change the fingerprint.
++    return { type, link: type === 'link' };
+   }
+   const entry = {
+     exists: true,
+@@ -241,9 +246,15 @@ const readGitMetadata = async (root, timeoutMs) => {
+   const entries = {};
+   let linkDetected = false;
+   for (const name of METADATA_FILES) {
+-    const entry = await readMetadataEntry(resolve(gitDir, name), {
+-      volatileContent: VOLATILE_METADATA_FILES.has(name)
+-    });
++    const volatile = VOLATILE_METADATA_FILES.has(name);
++    const entry = await readMetadataEntry(resolve(gitDir, name), { volatile });
++    if (entry === null) continue;
++    if (volatile) {
++      // Symlink tampering is still reported via `metadataLinkDetected`, but the
++      // entry (existence/type/bytes) never enters the stable metadata digest.
++      linkDetected ||= entry.link;
++      continue;
++    }
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }

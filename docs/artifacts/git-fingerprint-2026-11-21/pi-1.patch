@@ -1,0 +1,60 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..6fad928 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -200,22 +200,31 @@ const readHead = async (root, timeoutMs) => {
+   return HEX_COMMIT.test(head) ? head : undefined;
+ };
+ 
+-const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow']);
+-// `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+-// ordinary `git status` in IDEs/shells even when zero staged entries change;
+-// actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
+-const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
++const METADATA_FILES = Object.freeze(['HEAD', 'config', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'shallow']);
++// `HEAD`/`config`/`packed-refs`/in-progress marker files carry security-relevant
++// repository configuration, so their bytes are fingerprinted.
++//
++// Everything that a purely local, non-mutating background refresh can rewrite is
++// deliberately excluded from the fingerprint instead of being partially recorded:
++//   * `.git/index` embeds Git's working-tree lstat/fsmonitor cache and is
++//     rewritten by ordinary `git status` in IDEs/shells even when zero staged
++//     entries change. Actual staged content is already captured byte-exactly by
++//     `indexDigest` (`git diff --cached`), so dropping the file here loses no
++//     coverage while removing stat-cache churn.
++//   * `FETCH_HEAD` (and `ORIG_HEAD`/`COMMIT_EDITMSG`) are created or rewritten by
++//     background `git fetch`/IDE integrations. Recording even their existence
++//     previously made "absent before refresh -> present after refresh" look like a
++//     metadata change, so a plain working-tree edit got reported as out of scope.
++//     Their content was never security-relevant (it duplicates refs that HEAD/
++//     packed-refs already track).
++const EXCLUDED_METADATA_FILES = new Set(['index', 'FETCH_HEAD', 'ORIG_HEAD', 'COMMIT_EDITMSG']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
++const FINGERPRINTED_METADATA_FILES = Object.freeze(METADATA_FILES.filter((name) => !EXCLUDED_METADATA_FILES.has(name)));
+ 
+-const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
++const readMetadataEntry = async (filePath) => {
+   const metadata = await lstat(filePath).catch(() => null);
+   if (!metadata) return { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+-  if (volatileContent) {
+-    return { exists: true, type };
+-  }
+   const entry = {
+     exists: true,
+     type,
+@@ -240,10 +249,8 @@ const readGitMetadata = async (root, timeoutMs) => {
+   const gitDir = await realpath(resolve(root, gitDirText)).catch(() => resolve(root, gitDirText));
+   const entries = {};
+   let linkDetected = false;
+-  for (const name of METADATA_FILES) {
+-    const entry = await readMetadataEntry(resolve(gitDir, name), {
+-      volatileContent: VOLATILE_METADATA_FILES.has(name)
+-    });
++  for (const name of FINGERPRINTED_METADATA_FILES) {
++    const entry = await readMetadataEntry(resolve(gitDir, name));
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }

@@ -1,0 +1,85 @@
+{
+  "baseline_conditions": "../git-fingerprint-2026-11-21/protocol.json",
+  "model": "deepseek-v4-flash",
+  "thinking": "disabled",
+  "live_limits": {
+    "requests": 24,
+    "cumulative_raw_request_bytes": 2500000,
+    "completion_tokens": 24576,
+    "per_request_completion_tokens": 4096,
+    "wall_seconds": 480
+  },
+  "host": {
+    "source_sha256": "aa5bf9f326c75c516aea98b1e7913c62c998cd6a23ae216c44132bad7f5aa1bd",
+    "host_head": "3bdac149c83432edd49e70a7a341ade8e7983daa"
+  },
+  "ending_host": {
+    "source_sha256": "aa5bf9f326c75c516aea98b1e7913c62c998cd6a23ae216c44132bad7f5aa1bd",
+    "all_clients_terminal": true
+  },
+  "input_sha256": {
+    "seed": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+    "wrong_workspace_sha256": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "wrong_file_sha256": "6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+    "wrong_patch_sha256": "be640e7fdf53230982397e7841a0b6e1a3161aa97d3a511e9b49a5aa7962dfc2",
+    "prompt_sha256": "0a0f6e6400e48b6698fcff7c65fafc2af5d37504d65c8423e8909c502bcd6b36",
+    "grade_sha256": "75bdeb54373fde2dc08b84c04e3c1674bd26ca3370b2fc236c9fa25676fbcf10",
+    "budget_proxy_sha256": "2c72a0f7c7cc5ba1a1779f2b6eec652a219165211795da96259e4b712f94dc72",
+    "launcher_sha256": "d3dd4469ee51c5a58743cd3a2df6aac580f9354f6828e604843e61aba135bebd"
+  },
+  "baseline": {
+    "historical_commit": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+    "historical_failed_run": "../git-fingerprint-retest-2026-11-21/dda-2.json",
+    "wrong_patch": "../git-fingerprint-retest-2026-11-21/dda-2.patch",
+    "prior_remaining_bytes_at_red": 711126,
+    "remaining_request_count_at_red": 16,
+    "old_post_red_model_request_bytes": [
+      259117,
+      261451
+    ],
+    "original_bytes_through_first_eight_requests": 1788874
+  },
+  "starting_grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "replay": {
+    "local_rounds": 8,
+    "first_model_round": 9,
+    "cutpoint": "after historical test.execute exited 1 on original target",
+    "historical_calls": "Replay all prior native tool calls with historical public assistant text. Only the truncated fifth-round patch arguments were reconstructed from the unique differing contiguous line interval of the two real file versions. The receipt, resulting bytes, and test exit were generated again.",
+    "traffic": "No upstream for replay. The same budget proxy and prompt as baseline are used after the cutpoint. Per-client 480s timeout includes the local replay; the budget proxy starts its 480s clock on the first live request.",
+    "meaning_of_bytes": "Original request body bytes before proxy normalization, including tool schemas and tool history. Replayed calls do not count towards live byte/request/token allowances.",
+    "external_ledger": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-resume-20261121",
+    "live_count": 3,
+    "preflight_only": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-resume-check-20261121"
+  }
+}

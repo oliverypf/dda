@@ -17,6 +17,156 @@ const workspace = {
   sections: []
 };
 
+const repairSource = 'src/normalizer.mjs';
+const repairCheck = 'node --test test/normalizer.test.mjs';
+const unrelatedCheck = 'node --test test/format.test.mjs';
+const fixPrompt = 'Fix the normalizer so it reports the correct record count, then run its tests.';
+const initialCount = 'return 1;';
+const partialFix = 'return records.length - 1;';
+const completeFix = 'return records.length;';
+const failedAssertion = 'normalization must retain both records';
+
+function editCount(oldText, newText) {
+  return ['file.patch', { path: repairSource, replacements: [{ oldText, newText }] }];
+}
+
+function checkCount(command = repairCheck) {
+  return ['shell.execute', { command }];
+}
+
+async function runRepairFixture(t, { prompt = fixPrompt, originalGoal, requiresWorkspaceMutation, turns }) {
+  const registry = new ToolRegistry({ allowSideEffects: true });
+  let implementation = initialCount;
+  const checks = [];
+  registry.register({
+    name: 'file.patch', description: 'Edit the normalizer fixture.', readOnly: false,
+    inputSchema: { type: 'object', properties: { path: { type: 'string' }, replacements: { type: 'array' } } },
+    handler: ({ path, replacements: [{ oldText, newText }] }) => {
+      assert.equal(path, repairSource);
+      assert.equal(oldText, implementation);
+      implementation = newText;
+      return { ok: true, action: 'patch_file', path, diff: `-${oldText}\n+${newText}\n` };
+    }
+  });
+  registry.register({
+    name: 'shell.execute', description: 'Run a fixture test.', readOnly: false,
+    inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+    handler: ({ command }) => {
+      assert.ok([repairCheck, unrelatedCheck].includes(command));
+      const ok = command === unrelatedCheck || implementation === completeFix;
+      checks.push({ command, ok });
+      return { ok, cwd: '.', exitCode: ok ? 0 : 1, stderr: '', stdout: ok ? 'ok 1\n1..1\n# pass 1\n# fail 0' : [
+        'TAP version 13', 'not ok 1 - normalizer counts records', '  ---',
+        `  error: '${failedAssertion}'`, '  code: ERR_ASSERTION', '  expected: 2', '  actual: 1', '  ...',
+        '1..1', '# pass 0', '# fail 1'
+      ].join('\n') };
+    }
+  });
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(registry));
+  let requests = 0;
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', model: 'fixture',
+    async *stream({ messages }) {
+      const turn = turns[requests++];
+      assert.ok(turn, 'unexpected additional model turn');
+      const response = typeof turn === 'function' ? turn(messages) : turn;
+      if (typeof response === 'string') {
+        yield { type: 'text-delta', text: response };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      } else {
+        const [name, args] = response;
+        yield { type: 'tool-call', id: `call-${requests}`, name, arguments: JSON.stringify(args) };
+        yield { type: 'finish', reason: { kind: 'tool-calls' } };
+      }
+    }
+  }), 'repair-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  const result = await root.taskRunner.run({
+    prompt, originalGoal, workspace, requiresWorkspaceMutation, taskClass: 'test', maxToolRounds: 10
+  });
+  assert.equal(requests, turns.length);
+  return { result, checks };
+}
+
+for (const otherPasses of [false, true]) {
+  const scenario = otherPasses ? ' after an unrelated test passed' : '';
+  test(`failed retest resumes repair using the assertion and previous patch${scenario}`, async t => {
+    const turns = [editCount(initialCount, partialFix), checkCount()];
+    if (otherPasses) turns.push(checkCount(unrelatedCheck));
+    turns.push('The normalization test still fails.', messages => {
+      const context = messages.at(-1).content.map(part => part.text).join('\n');
+      assert.ok(context.includes(failedAssertion), 'continue with the specific failed assertion');
+      assert.ok(context.includes(repairSource) || context.includes(partialFix), 'identify the prior patch');
+      assert.match(context, /hypothes|different.{0,40}(cause|approach)|revise.{0,40}(cause|approach)|假设/i);
+      assert.match(context, /re-?(run|test)|run.{0,45}(again|same)|复测|重跑/i);
+      return editCount(partialFix, completeFix);
+    }, checkCount(), 'The normalization test now passes.');
+    const options = otherPasses
+      ? { originalGoal: fixPrompt, prompt: 'Run the normalizer tests and report their results.' }
+      : { requiresWorkspaceMutation: true };
+    const { result, checks } = await runRepairFixture(t, { turns, ...options });
+    assert.equal(result.text, 'The normalization test now passes.');
+    assert.deepEqual(checks, [
+      { command: repairCheck, ok: false },
+      ...(otherPasses ? [{ command: unrelatedCheck, ok: true }] : []),
+      { command: repairCheck, ok: true }
+    ]);
+  });
+}
+
+test('a second early conclusion after an edit prompts a retest of that edit', async t => {
+  const resume = /previous answer stopped.*unresolved/i;
+  const promptText = messages => messages.at(-1).content.map(part => part.text).join('\n');
+  const { result, checks } = await runRepairFixture(t, { turns: [
+    editCount(initialCount, partialFix), checkCount(),
+    messages => {
+      assert.doesNotMatch(promptText(messages), resume);
+      return 'The first fix failed.';
+    },
+    messages => {
+      assert.match(promptText(messages), resume);
+      return editCount(partialFix, completeFix);
+    },
+    messages => {
+      assert.doesNotMatch(promptText(messages), resume);
+      return 'I have now updated the implementation.';
+    },
+    messages => {
+      const text = promptText(messages);
+      assert.match(text, resume);
+      assert.match(text, /rerun the recorded target/i);
+      assert.ok(text.includes('test/normalizer.test.mjs'));
+      return checkCount();
+    },
+    'Verified the new implementation.'
+  ] });
+  assert.equal(result.text, 'Verified the new implementation.');
+  assert.deepEqual(checks, [{ command: repairCheck, ok: false }, { command: repairCheck, ok: true }]);
+});
+
+for (const prompt of ['Run the normalizer test and report the observed failure. Do not modify any files.',
+  'Run tests for the previous fix and report failures.']) {
+  test(`a diagnostic-only test failure can finish with the observed failure: ${prompt}`, async t => {
+    const report = 'The normalizer expected two records and observed one.';
+    const { result, checks } = await runRepairFixture(t, {
+      prompt, requiresWorkspaceMutation: false, turns: [checkCount(), report]
+    });
+    assert.equal(result.text, report);
+    assert.deepEqual(checks, [{ command: repairCheck, ok: false }]);
+  });
+}
+
+test('consecutive failure reports without new evidence stop after one repair continuation', async t => {
+  const finalReport = 'Normalization remains unresolved: the expected count was two and the actual count was one.';
+  const { result, checks } = await runRepairFixture(t, { turns: [
+    editCount(initialCount, partialFix), checkCount(), 'The test is still failing.', finalReport
+  ] });
+  assert.equal(result.text, finalReport);
+  assert.deepEqual(checks, [{ command: repairCheck, ok: false }]);
+});
+
 test('executor receives observed artifact facts separately from native process output', async t => {
   const registry = new ToolRegistry({ allowSideEffects: true });
   const output = { ok: true, cwd: '.', exitCode: 0, stdout: 'builder printed an unverified path: draft.pptx' };
@@ -900,6 +1050,38 @@ test('a bound executor hides undeclared tools and rejects provider requests for 
   await root.taskRunner.run({ workspace, prompt: 'Inspect the source', executorTools: ['workspace.read'], onEvent: event => events.push(event) });
   assert.equal(calls, 0);
   assert.equal(events.find(event => event.kind === 'tool.result').errorCode, 'TOOL_OUTSIDE_EXECUTION_SCOPE');
+});
+
+test('a repair loads source through tools while retaining the file index and prior findings', async t => {
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  const registry = new ToolRegistry();
+  registry.register({ name: 'workspace.read', description: 'Read a file', readOnly: true,
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    handler: ({ path }) => ({ path, content: 'requested source marker' }) });
+  await root.plugin(toolRegistryPlugin(registry));
+  const requests = [];
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', model: 'fixture', async *stream({ messages }) {
+      requests.push(JSON.stringify(messages));
+      if (requests.length === 1) yield { type: 'tool-call', id: 'read-source', name: 'workspace.read', arguments: '{"path":"src/target.mjs"}' };
+      else yield { type: 'text-delta', text: 'Inspected source.' };
+      yield { type: 'finish', reason: { kind: requests.length === 1 ? 'tool-calls' : 'stop' } };
+    }
+  }), 'repair-source-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  for (const intent of [{ originalGoal: 'Fix the failing test.' }, { requiresWorkspaceMutation: true }]) {
+    requests.length = 0;
+    await root.taskRunner.run({ prompt: 'Locate the failure', ...intent,
+      workspace: { ...workspace, entries: [{ path: 'src/target.mjs', kind: 'FILE' }],
+        sections: [{ path: 'unrelated.mjs', digest: 'sha256:fixture', content: 'unsolicited source marker' }] },
+      historyContext: 'prior test result marker' });
+    assert.equal(requests.length, 2);
+    assert.match(requests[0], /src\/target\.mjs/u);
+    assert.match(requests[0], /prior test result marker/u);
+    assert.doesNotMatch(requests[0], /unsolicited source marker|requested source marker/u);
+    assert.match(requests[1], /requested source marker/u);
+  }
 });
 
 test('long bound workflows preserve authenticated prerequisite findings in the executor request', async t => {

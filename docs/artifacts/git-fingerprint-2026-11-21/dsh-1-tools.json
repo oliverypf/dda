@@ -1,0 +1,387 @@
+[
+  {
+    "seq": 86,
+    "time": 1795230909186,
+    "step": 1,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 87,
+    "time": 1795230917510,
+    "step": 1,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 232,
+    "time": 1795230920161,
+    "step": 2,
+    "event": "call",
+    "name": "read"
+  },
+  {
+    "seq": 233,
+    "time": 1795230920162,
+    "step": 2,
+    "event": "call",
+    "name": "read"
+  },
+  {
+    "seq": 234,
+    "time": 1795230920163,
+    "step": 2,
+    "event": "call",
+    "name": "read"
+  },
+  {
+    "seq": 235,
+    "time": 1795230920380,
+    "step": 2,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 236,
+    "time": 1795230920398,
+    "step": 2,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 237,
+    "time": 1795230920400,
+    "step": 2,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 330,
+    "time": 1795230921602,
+    "step": 3,
+    "event": "call",
+    "name": "read"
+  },
+  {
+    "seq": 331,
+    "time": 1795230921621,
+    "step": 3,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 332,
+    "time": 1795230921623,
+    "step": 3,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 333,
+    "time": 1795230933264,
+    "step": 3,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 388,
+    "time": 1795230934564,
+    "step": 4,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 389,
+    "time": 1795230943523,
+    "step": 4,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 455,
+    "time": 1795230945219,
+    "step": 5,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 456,
+    "time": 1795230949915,
+    "step": 5,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 572,
+    "time": 1795230951757,
+    "step": 6,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 573,
+    "time": 1795230957295,
+    "step": 6,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 666,
+    "time": 1795230958911,
+    "step": 7,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 667,
+    "time": 1795230966201,
+    "step": 7,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 776,
+    "time": 1795230968182,
+    "step": 8,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 777,
+    "time": 1795230971890,
+    "step": 8,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 859,
+    "time": 1795230973307,
+    "step": 9,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 860,
+    "time": 1795230978523,
+    "step": 9,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 915,
+    "time": 1795230980738,
+    "step": 10,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 916,
+    "time": 1795230985623,
+    "step": 10,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 1227,
+    "time": 1795230987454,
+    "step": 11,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 1228,
+    "time": 1795230991347,
+    "step": 11,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 1431,
+    "time": 1795230993067,
+    "step": 12,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 1432,
+    "time": 1795230996971,
+    "step": 12,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 1727,
+    "time": 1795230999119,
+    "step": 13,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 1728,
+    "time": 1795231003491,
+    "step": 13,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2010,
+    "time": 1795231005753,
+    "step": 14,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 2011,
+    "time": 1795231008840,
+    "step": 14,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2322,
+    "time": 1795231011437,
+    "step": 15,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 2323,
+    "time": 1795231013870,
+    "step": 15,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2414,
+    "time": 1795231015166,
+    "step": 16,
+    "event": "call",
+    "name": "read"
+  },
+  {
+    "seq": 2415,
+    "time": 1795231015187,
+    "step": 16,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2416,
+    "time": 1795231015189,
+    "step": 16,
+    "event": "call",
+    "name": "grep"
+  },
+  {
+    "seq": 2417,
+    "time": 1795231023260,
+    "step": 16,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2624,
+    "time": 1795231026076,
+    "step": 17,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 2625,
+    "time": 1795231030443,
+    "step": 17,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2735,
+    "time": 1795231033323,
+    "step": 18,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 2736,
+    "time": 1795231038669,
+    "step": 18,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2805,
+    "time": 1795231039924,
+    "step": 19,
+    "event": "call",
+    "name": "grep"
+  },
+  {
+    "seq": 2806,
+    "time": 1795231040284,
+    "step": 19,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 2849,
+    "time": 1795231042034,
+    "step": 20,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 2850,
+    "time": 1795231045376,
+    "step": 20,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 3011,
+    "time": 1795231047449,
+    "step": 21,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 3012,
+    "time": 1795231050834,
+    "step": 21,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 3056,
+    "time": 1795231051738,
+    "step": 22,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 3057,
+    "time": 1795231054633,
+    "step": 22,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 3313,
+    "time": 1795231057073,
+    "step": 23,
+    "event": "call",
+    "name": "pwsh"
+  },
+  {
+    "seq": 3314,
+    "time": 1795231059168,
+    "step": 23,
+    "event": "result",
+    "name": null
+  },
+  {
+    "seq": 3340,
+    "time": 1795231074645,
+    "step": null,
+    "event": "turn/end",
+    "name": null
+  }
+]

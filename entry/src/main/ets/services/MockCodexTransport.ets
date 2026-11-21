@@ -140,7 +140,7 @@ export class MockCodexTransport implements CodexTransport {
         '命令执行完成。我可以继续读取文件、解释结果，或按你的要求修改项目。');
     } else {
       await this.streamAssistant(threadId, turnId, itemId,
-        '我已收到你的请求。当前鸿蒙端已经具备 Thread/Turn 生命周期、流式消息和审批卡片；你可以在设置中切换到真实 Codex App Server 连接。');
+        '这是演示回复。要运行真实任务，请在设置中打开本机工作台并配置模型服务。');
     }
     this.listener?.({
       kind: SessionEventKind.TurnCompleted,

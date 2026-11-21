@@ -1,0 +1,967 @@
+{
+  "run": "dda-3",
+  "native": {
+    "rc": 1,
+    "wall": 191.94986772537231
+  },
+  "live_calls": 17,
+  "live_responses": 17,
+  "upstream_errors": 0,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "live_request_bytes": 2436531,
+  "completion_tokens": 7252,
+  "budget_denials": 3,
+  "initial_local_request_bytes": 29453,
+  "first_live_request_bytes": 119030,
+  "preparation_wall_s": 39.215,
+  "first_product_write": {
+    "seq": 730,
+    "round": 13,
+    "path": "runtime/src/git-observer.mjs",
+    "live_request": 5,
+    "live_bytes_through_request": 635904,
+    "live_wall_s": 37.007
+  },
+  "first_exact_target_green": {
+    "seq": 1598,
+    "round": 25,
+    "live_request": 17,
+    "live_bytes_through_request": 2436531,
+    "live_wall_s": 145.999
+  },
+  "grade": {
+    "external": [
+      {
+        "passed": true,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": true
+  },
+  "changed_files_from_checkpoint": [
+    "runtime/src/git-observer.mjs",
+    "runtime/test/tmp-hooks-probe.mjs",
+    "runtime/test/tmp-meta-entry-probe.mjs",
+    "runtime/test/tmp-metadata-probe.mjs",
+    "runtime/test/tmp-observer-probe.mjs"
+  ],
+  "checkpoint_relative_diff_sha256": "b88e0b2094dacf9346c2853171a74368a904340d0e42ca80dbd43915cfd7018f",
+  "native_terminal": [
+    {
+      "kind": "run.failed",
+      "seq": 1605,
+      "ms": 1795238079582,
+      "code": "MODEL_TRANSPORT"
+    }
+  ],
+  "entry_proof": {
+    "workspace_sha256": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "workspace_matches_wrong": true,
+    "tracked_change": "M runtime/src/execution-scope-snapshot.mjs",
+    "repair_message_count": 1,
+    "assertion_line_in_repair_message": true,
+    "assertion_line": "assert.equal(before.metadataDigest, afterRefresh.metadataDigest);",
+    "assertion_source_digest": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+    "assertion_source_path": "runtime/test/git-audit.test.mjs",
+    "assertion_source_line": 88,
+    "previous_edit_path_in_repair_message": "runtime/src/execution-scope-snapshot.mjs",
+    "previous_diff_in_repair_message": true,
+    "previous_diff_chars": 7043,
+    "previous_diff_sha256": "976c236adbd53b0d5c554ffcdc9dca16af66897cf606929e8b78a06cebba2fe6",
+    "stack_line_88": true,
+    "repair_message_sha256": "a78fd8f51ad94b582e2ef47a752b39b343d3a1b22751384c111d4975519a482a",
+    "failed_after_edit_event": true,
+    "red_target_ran": true
+  },
+  "warm_local_requests": [
+    {
+      "t": 1795237894.2232063,
+      "kind": "local_native_tool_replay",
+      "historical_round": 1,
+      "request": {
+        "bytes": 29453,
+        "messages_bytes": 16403,
+        "tools_bytes": 12946,
+        "messages": 3,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237894.7405412,
+      "kind": "local_native_tool_replay",
+      "historical_round": 2,
+      "request": {
+        "bytes": 51530,
+        "messages_bytes": 38480,
+        "tools_bytes": 12946,
+        "messages": 7,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237895.0921123,
+      "kind": "local_native_tool_replay",
+      "historical_round": 3,
+      "request": {
+        "bytes": 57265,
+        "messages_bytes": 44215,
+        "tools_bytes": 12946,
+        "messages": 9,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237902.7934978,
+      "kind": "local_native_tool_replay",
+      "historical_round": 4,
+      "request": {
+        "bytes": 71027,
+        "messages_bytes": 57977,
+        "tools_bytes": 12946,
+        "messages": 12,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237903.246056,
+      "kind": "local_native_tool_replay",
+      "historical_round": 5,
+      "request": {
+        "bytes": 82636,
+        "messages_bytes": 69586,
+        "tools_bytes": 12946,
+        "messages": 15,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237907.8189623,
+      "kind": "local_native_tool_replay",
+      "historical_round": 6,
+      "request": {
+        "bytes": 97812,
+        "messages_bytes": 84762,
+        "tools_bytes": 12946,
+        "messages": 17,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237908.111291,
+      "kind": "local_native_tool_replay",
+      "historical_round": 7,
+      "request": {
+        "bytes": 104231,
+        "messages_bytes": 91181,
+        "tools_bytes": 12946,
+        "messages": 19,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    },
+    {
+      "t": 1795237916.4722147,
+      "kind": "local_native_tool_replay",
+      "historical_round": 8,
+      "request": {
+        "bytes": 106676,
+        "messages_bytes": 93626,
+        "tools_bytes": 12946,
+        "messages": 22,
+        "tools": 10,
+        "system_bytes": 3550,
+        "workspace_text_bytes": 12123
+      }
+    }
+  ],
+  "live_entry_stats": {
+    "bytes": 119030,
+    "messages_bytes": 105980,
+    "tools_bytes": 12946,
+    "messages": 25,
+    "tools": 10,
+    "system_bytes": 3550,
+    "workspace_text_bytes": 12123
+  },
+  "timeline": [
+    {
+      "request": 1,
+      "round": 9,
+      "request_bytes": 119030,
+      "request_s": 0.0,
+      "response_s": 1.199,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 32906,
+      "completion_tokens": 172,
+      "tool_calls": [
+        "hmc_workspace_x2e_focus"
+      ]
+    },
+    {
+      "request": 2,
+      "round": 10,
+      "request_bytes": 124289,
+      "request_s": 1.551,
+      "response_s": 3.364,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 34475,
+      "completion_tokens": 212,
+      "tool_calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "request": 3,
+      "round": 11,
+      "request_bytes": 127604,
+      "request_s": 14.783,
+      "response_s": 18.293,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 35570,
+      "completion_tokens": 929,
+      "tool_calls": [
+        "hmc_file_x2e_write"
+      ]
+    },
+    {
+      "request": 4,
+      "round": 12,
+      "request_bytes": 131176,
+      "request_s": 22.149,
+      "response_s": 23.322,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 36691,
+      "completion_tokens": 125,
+      "tool_calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "request": 5,
+      "round": 13,
+      "request_bytes": 133805,
+      "request_s": 28.641,
+      "response_s": 33.355,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 37618,
+      "completion_tokens": 952,
+      "tool_calls": [
+        "hmc_file_x2e_patch"
+      ]
+    },
+    {
+      "request": 6,
+      "round": 14,
+      "request_bytes": 141682,
+      "request_s": 37.064,
+      "response_s": 38.316,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 39884,
+      "completion_tokens": 152,
+      "tool_calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "request": 7,
+      "round": 15,
+      "request_bytes": 136919,
+      "request_s": 49.45,
+      "response_s": 50.995,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 38726,
+      "completion_tokens": 164,
+      "tool_calls": [
+        "hmc_workspace_x2e_focus"
+      ]
+    },
+    {
+      "request": 8,
+      "round": 16,
+      "request_bytes": 140918,
+      "request_s": 51.496,
+      "response_s": 55.438,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 39894,
+      "completion_tokens": 973,
+      "tool_calls": [
+        "hmc_file_x2e_write"
+      ]
+    },
+    {
+      "request": 9,
+      "round": 17,
+      "request_bytes": 144654,
+      "request_s": 59.693,
+      "response_s": 61.136,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 41050,
+      "completion_tokens": 125,
+      "tool_calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "request": 10,
+      "round": 18,
+      "request_bytes": 145821,
+      "request_s": 66.085,
+      "response_s": 67.037,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 41450,
+      "completion_tokens": 137,
+      "tool_calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "request": 11,
+      "round": 19,
+      "request_bytes": 146402,
+      "request_s": 78.154,
+      "response_s": 81.372,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 41706,
+      "completion_tokens": 796,
+      "tool_calls": [
+        "hmc_file_x2e_write"
+      ]
+    },
+    {
+      "request": 12,
+      "round": 20,
+      "request_bytes": 149585,
+      "request_s": 86.495,
+      "response_s": 87.495,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 42692,
+      "completion_tokens": 125,
+      "tool_calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "request": 13,
+      "round": 21,
+      "request_bytes": 152082,
+      "request_s": 93.279,
+      "response_s": 94.499,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 43609,
+      "completion_tokens": 149,
+      "tool_calls": [
+        "hmc_test_x2e_execute"
+      ]
+    },
+    {
+      "request": 14,
+      "round": 22,
+      "request_bytes": 154633,
+      "request_s": 106.586,
+      "response_s": 112.456,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 44443,
+      "completion_tokens": 1395,
+      "tool_calls": [
+        "hmc_file_x2e_write"
+      ]
+    },
+    {
+      "request": 15,
+      "round": 23,
+      "request_bytes": 159965,
+      "request_s": 116.976,
+      "response_s": 118.183,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 46027,
+      "completion_tokens": 126,
+      "tool_calls": [
+        "hmc_shell_x2e_execute"
+      ]
+    },
+    {
+      "request": 16,
+      "round": 24,
+      "request_bytes": 161521,
+      "request_s": 123.557,
+      "response_s": 126.539,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 46552,
+      "completion_tokens": 555,
+      "tool_calls": [
+        "hmc_file_x2e_patch"
+      ]
+    },
+    {
+      "request": 17,
+      "round": 25,
+      "request_bytes": 166445,
+      "request_s": 132.266,
+      "response_s": 133.588,
+      "returned_model": "deepseek-flash",
+      "error": false,
+      "prompt_tokens": 47979,
+      "completion_tokens": 165,
+      "tool_calls": [
+        "hmc_test_x2e_execute"
+      ]
+    }
+  ],
+  "native_events": [
+    {
+      "kind": "tool.result",
+      "seq": 56,
+      "ms": 1795237894469,
+      "round": 1,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 61,
+      "ms": 1795237894657,
+      "round": 1,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/test/git-audit.test.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 70,
+      "ms": 1795237895075,
+      "round": 2,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 92,
+      "ms": 1795237902540,
+      "round": 3,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "rg",
+      "args": [
+        "-n",
+        "outOfScopePathDigests|metadataChanged|compareGitObservations",
+        "runtime/src",
+        "--glob",
+        "*.mjs"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "seq": 97,
+      "ms": 1795237902773,
+      "round": 3,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-audit-store.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 106,
+      "ms": 1795237903011,
+      "round": 4,
+      "attempt": 1,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/index.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 111,
+      "ms": 1795237903228,
+      "round": 4,
+      "attempt": 1,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/index.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 129,
+      "ms": 1795237907764,
+      "round": 5,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 137,
+      "ms": 1795237908088,
+      "round": 6,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 157,
+      "ms": 1795237912081,
+      "round": 7,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "rg",
+      "args": [
+        "-n",
+        "export function compareGitObservations|export const createScopeSnapshot|stagedPathDigests|outOfScopePathDigests",
+        "runtime/src/execution-scope-snapshot.mjs"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "seq": 172,
+      "ms": 1795237916456,
+      "round": 7,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--check",
+        "runtime/src/execution-scope-snapshot.mjs"
+      ]
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 194,
+      "ms": 1795237928392,
+      "round": 8,
+      "attempt": 1,
+      "state": "failed_after_edit",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 195,
+      "ms": 1795237928392,
+      "round": 8,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": false,
+      "exitCode": 1,
+      "command": "node",
+      "errorCode": "TEST_CHECK_FAILED",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "seq": 282,
+      "ms": 1795237931145,
+      "round": 9,
+      "attempt": 1,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 1,
+      "live_bytes_through_request": 119030,
+      "live_wall_s": 1.517
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 382,
+      "ms": 1795237944319,
+      "round": 10,
+      "attempt": 1,
+      "state": "failed_after_edit",
+      "invocationKey": "4f887aaa07a95db600a444ae95f76fbe4cd600915d7e603fc5c82fb64d161114",
+      "live_request": 2,
+      "live_bytes_through_request": 243319,
+      "live_wall_s": 14.691
+    },
+    {
+      "kind": "tool.result",
+      "seq": 383,
+      "ms": 1795237944319,
+      "round": 10,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": false,
+      "exitCode": 1,
+      "command": "node",
+      "errorCode": "TEST_CHECK_FAILED",
+      "args": [
+        "--test-reporter=tap",
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ],
+      "live_request": 2,
+      "live_bytes_through_request": 243319,
+      "live_wall_s": 14.691
+    },
+    {
+      "kind": "tool.result",
+      "seq": 453,
+      "ms": 1795237951715,
+      "round": 11,
+      "attempt": 1,
+      "name": "file.write",
+      "ok": true,
+      "path": "runtime/test/tmp-metadata-probe.mjs",
+      "live_request": 3,
+      "live_bytes_through_request": 370923,
+      "live_wall_s": 22.087
+    },
+    {
+      "kind": "tool.result",
+      "seq": 472,
+      "ms": 1795237958228,
+      "round": 12,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "runtime/test/tmp-metadata-probe.mjs"
+      ],
+      "live_request": 4,
+      "live_bytes_through_request": 502099,
+      "live_wall_s": 28.6
+    },
+    {
+      "kind": "tool.result",
+      "seq": 730,
+      "ms": 1795237966635,
+      "round": 13,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 5,
+      "live_bytes_through_request": 635904,
+      "live_wall_s": 37.007
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 778,
+      "ms": 1795237979011,
+      "round": 14,
+      "attempt": 1,
+      "state": "failed_after_edit",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07",
+      "live_request": 6,
+      "live_bytes_through_request": 777586,
+      "live_wall_s": 49.383
+    },
+    {
+      "kind": "tool.result",
+      "seq": 779,
+      "ms": 1795237979011,
+      "round": 14,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": false,
+      "exitCode": 1,
+      "command": "node",
+      "errorCode": "TEST_CHECK_FAILED",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ],
+      "live_request": 6,
+      "live_bytes_through_request": 777586,
+      "live_wall_s": 49.383
+    },
+    {
+      "kind": "tool.result",
+      "seq": 861,
+      "ms": 1795237981085,
+      "round": 15,
+      "attempt": 1,
+      "name": "workspace.focus",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 7,
+      "live_bytes_through_request": 914505,
+      "live_wall_s": 51.457
+    },
+    {
+      "kind": "tool.result",
+      "seq": 993,
+      "ms": 1795237989261,
+      "round": 16,
+      "attempt": 1,
+      "name": "file.write",
+      "ok": true,
+      "path": "runtime/test/tmp-hooks-probe.mjs",
+      "live_request": 8,
+      "live_bytes_through_request": 1055423,
+      "live_wall_s": 59.633
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1012,
+      "ms": 1795237995674,
+      "round": 17,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "runtime/test/tmp-hooks-probe.mjs"
+      ],
+      "live_request": 9,
+      "live_bytes_through_request": 1200077,
+      "live_wall_s": 66.046
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 1044,
+      "ms": 1795238007701,
+      "round": 18,
+      "attempt": 1,
+      "state": "failed_after_edit",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07",
+      "live_request": 10,
+      "live_bytes_through_request": 1345898,
+      "live_wall_s": 78.073
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1045,
+      "ms": 1795238007701,
+      "round": 18,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": false,
+      "exitCode": 1,
+      "command": "node",
+      "errorCode": "TEST_CHECK_FAILED",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ],
+      "live_request": 10,
+      "live_bytes_through_request": 1345898,
+      "live_wall_s": 78.073
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1156,
+      "ms": 1795238016007,
+      "round": 19,
+      "attempt": 1,
+      "name": "file.write",
+      "ok": true,
+      "path": "runtime/test/tmp-observer-probe.mjs",
+      "live_request": 11,
+      "live_bytes_through_request": 1492300,
+      "live_wall_s": 86.379
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1175,
+      "ms": 1795238022829,
+      "round": 20,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "runtime/test/tmp-observer-probe.mjs"
+      ],
+      "live_request": 12,
+      "live_bytes_through_request": 1641885,
+      "live_wall_s": 93.201
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 1220,
+      "ms": 1795238036125,
+      "round": 21,
+      "attempt": 1,
+      "state": "failed_after_edit",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07",
+      "live_request": 13,
+      "live_bytes_through_request": 1793967,
+      "live_wall_s": 106.497
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1221,
+      "ms": 1795238036125,
+      "round": 21,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": false,
+      "exitCode": 1,
+      "command": "node",
+      "errorCode": "TEST_CHECK_FAILED",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ],
+      "live_request": 13,
+      "live_bytes_through_request": 1793967,
+      "live_wall_s": 106.497
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1424,
+      "ms": 1795238046531,
+      "round": 22,
+      "attempt": 1,
+      "name": "file.write",
+      "ok": true,
+      "path": "runtime/test/tmp-meta-entry-probe.mjs",
+      "live_request": 14,
+      "live_bytes_through_request": 1948600,
+      "live_wall_s": 116.903
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1444,
+      "ms": 1795238053103,
+      "round": 23,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "runtime/test/tmp-meta-entry-probe.mjs"
+      ],
+      "live_request": 15,
+      "live_bytes_through_request": 2108565,
+      "live_wall_s": 123.475
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1536,
+      "ms": 1795238061797,
+      "round": 24,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 16,
+      "live_bytes_through_request": 2270086,
+      "live_wall_s": 132.169
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 1597,
+      "ms": 1795238075627,
+      "round": 25,
+      "attempt": 1,
+      "state": "target_passed",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07",
+      "live_request": 17,
+      "live_bytes_through_request": 2436531,
+      "live_wall_s": 145.999
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1598,
+      "ms": 1795238075627,
+      "round": 25,
+      "attempt": 1,
+      "name": "test.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ],
+      "live_request": 17,
+      "live_bytes_through_request": 2436531,
+      "live_wall_s": 145.999
+    },
+    {
+      "kind": "run.failed",
+      "seq": 1605,
+      "ms": 1795238079582,
+      "code": "MODEL_TRANSPORT"
+    }
+  ],
+  "local_preflight": {
+    "workspace_sha256": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "workspace_matches_wrong": true,
+    "tracked_change": "M runtime/src/execution-scope-snapshot.mjs",
+    "repair_message_count": 1,
+    "assertion_line_in_repair_message": true,
+    "assertion_line": "assert.equal(before.metadataDigest, afterRefresh.metadataDigest);",
+    "previous_edit_path_in_repair_message": "runtime/src/execution-scope-snapshot.mjs",
+    "previous_diff_in_repair_message": true,
+    "stack_line_88": true,
+    "repair_message_sha256": "4a1b2504a7401ec228a278835eee15f3e45c516f4c2e227a9ce4dcc638005ee0",
+    "failed_after_edit_event": true,
+    "red_target_ran": true
+  }
+}

@@ -1,0 +1,627 @@
+{
+  "session": "bitfun-3",
+  "calls": 20,
+  "reported_prompt_tokens": 565294,
+  "completion_tokens": 2686,
+  "request_bytes": 2455094,
+  "model_elapsed_s": 404.2,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "budget_rejections": 10,
+  "native_tools": {
+    "ExecCommand": 11,
+    "Grep": 3,
+    "Read": 11
+  },
+  "worktree_changes": [],
+  "grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795231950.7340753,
+      "model": "deepseek-v4-flash",
+      "msgs": 2,
+      "input_bytes": 872
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795231950.8805244,
+      "model": "deepseek-v4-flash",
+      "msgs": 6,
+      "input_bytes": 56892
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795231951.6595583,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 146,
+        "completion_tokens": 5,
+        "total_tokens": 151,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 146
+      },
+      "calls": []
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795231951.7605004,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 12821,
+        "completion_tokens": 127,
+        "total_tokens": 12948,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 12821
+      },
+      "calls": [
+        "ExecCommand",
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795231956.3524644,
+      "model": "deepseek-v4-flash",
+      "msgs": 9,
+      "input_bytes": 57983
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795231958.1713464,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 13102,
+        "completion_tokens": 122,
+        "total_tokens": 13224,
+        "prompt_tokens_details": {
+          "cached_tokens": 12928
+        },
+        "prompt_cache_hit_tokens": 12928,
+        "prompt_cache_miss_tokens": 174
+      },
+      "calls": [
+        "ExecCommand",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795231960.4372294,
+      "model": "deepseek-v4-flash",
+      "msgs": 12,
+      "input_bytes": 72021
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795231961.3573096,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 16320,
+        "completion_tokens": 81,
+        "total_tokens": 16401,
+        "prompt_tokens_details": {
+          "cached_tokens": 13184
+        },
+        "prompt_cache_hit_tokens": 13184,
+        "prompt_cache_miss_tokens": 3136
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795231961.635466,
+      "model": "deepseek-v4-flash",
+      "msgs": 15,
+      "input_bytes": 94262
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795231962.291683,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 22432,
+        "completion_tokens": 48,
+        "total_tokens": 22480,
+        "prompt_tokens_details": {
+          "cached_tokens": 16384
+        },
+        "prompt_cache_hit_tokens": 16384,
+        "prompt_cache_miss_tokens": 6048
+      },
+      "calls": [
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 6,
+      "t": 1795231962.4714508,
+      "model": "deepseek-v4-flash",
+      "msgs": 17,
+      "input_bytes": 99971
+    },
+    {
+      "kind": "response",
+      "n": 6,
+      "t": 1795231963.6193972,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 23925,
+        "completion_tokens": 141,
+        "total_tokens": 24066,
+        "prompt_tokens_details": {
+          "cached_tokens": 22400
+        },
+        "prompt_cache_hit_tokens": 22400,
+        "prompt_cache_miss_tokens": 1525
+      },
+      "calls": [
+        "Read",
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 7,
+      "t": 1795231964.0411913,
+      "model": "deepseek-v4-flash",
+      "msgs": 20,
+      "input_bytes": 112926
+    },
+    {
+      "kind": "response",
+      "n": 7,
+      "t": 1795231965.2837806,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 27329,
+        "completion_tokens": 96,
+        "total_tokens": 27425,
+        "prompt_tokens_details": {
+          "cached_tokens": 24064
+        },
+        "prompt_cache_hit_tokens": 24064,
+        "prompt_cache_miss_tokens": 3265
+      },
+      "calls": [
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 8,
+      "t": 1795231965.6538267,
+      "model": "deepseek-v4-flash",
+      "msgs": 22,
+      "input_bytes": 119250
+    },
+    {
+      "kind": "response",
+      "n": 8,
+      "t": 1795231966.9084556,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 29098,
+        "completion_tokens": 138,
+        "total_tokens": 29236,
+        "prompt_tokens_details": {
+          "cached_tokens": 27392
+        },
+        "prompt_cache_hit_tokens": 27392,
+        "prompt_cache_miss_tokens": 1706
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 9,
+      "t": 1795231967.0649943,
+      "model": "deepseek-v4-flash",
+      "msgs": 25,
+      "input_bytes": 136578
+    },
+    {
+      "kind": "response",
+      "n": 9,
+      "t": 1795231967.9306538,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 33385,
+        "completion_tokens": 139,
+        "total_tokens": 33524,
+        "prompt_tokens_details": {
+          "cached_tokens": 29184
+        },
+        "prompt_cache_hit_tokens": 29184,
+        "prompt_cache_miss_tokens": 4201
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 10,
+      "t": 1795231968.09359,
+      "model": "deepseek-v4-flash",
+      "msgs": 28,
+      "input_bytes": 147723
+    },
+    {
+      "kind": "response",
+      "n": 10,
+      "t": 1795231969.5702794,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 36365,
+        "completion_tokens": 89,
+        "total_tokens": 36454,
+        "prompt_tokens_details": {
+          "cached_tokens": 33408
+        },
+        "prompt_cache_hit_tokens": 33408,
+        "prompt_cache_miss_tokens": 2957
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 11,
+      "t": 1795231972.0800533,
+      "model": "deepseek-v4-flash",
+      "msgs": 30,
+      "input_bytes": 151125
+    },
+    {
+      "kind": "response",
+      "n": 11,
+      "t": 1795231973.350577,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 37487,
+        "completion_tokens": 94,
+        "total_tokens": 37581,
+        "prompt_tokens_details": {
+          "cached_tokens": 36352
+        },
+        "prompt_cache_hit_tokens": 36352,
+        "prompt_cache_miss_tokens": 1135
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 12,
+      "t": 1795231975.0655873,
+      "model": "deepseek-v4-flash",
+      "msgs": 32,
+      "input_bytes": 151821
+    },
+    {
+      "kind": "response",
+      "n": 12,
+      "t": 1795231976.3100553,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 37678,
+        "completion_tokens": 117,
+        "total_tokens": 37795,
+        "prompt_tokens_details": {
+          "cached_tokens": 37504
+        },
+        "prompt_cache_hit_tokens": 37504,
+        "prompt_cache_miss_tokens": 174
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 13,
+      "t": 1795231978.6230319,
+      "model": "deepseek-v4-flash",
+      "msgs": 34,
+      "input_bytes": 152517
+    },
+    {
+      "kind": "response",
+      "n": 13,
+      "t": 1795231979.9622662,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 37871,
+        "completion_tokens": 99,
+        "total_tokens": 37970,
+        "prompt_tokens_details": {
+          "cached_tokens": 37632
+        },
+        "prompt_cache_hit_tokens": 37632,
+        "prompt_cache_miss_tokens": 239
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 14,
+      "t": 1795231982.0137663,
+      "model": "deepseek-v4-flash",
+      "msgs": 36,
+      "input_bytes": 153177
+    },
+    {
+      "kind": "response",
+      "n": 14,
+      "t": 1795232027.2864347,
+      "returned_model": "deepseek-flash",
+      "usage": null,
+      "calls": []
+    },
+    {
+      "kind": "request",
+      "n": 15,
+      "t": 1795232027.9331024,
+      "model": "deepseek-v4-flash",
+      "msgs": 36,
+      "input_bytes": 153177
+    },
+    {
+      "kind": "response",
+      "n": 15,
+      "t": 1795232029.0429454,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 38042,
+        "completion_tokens": 134,
+        "total_tokens": 38176,
+        "prompt_tokens_details": {
+          "cached_tokens": 37888
+        },
+        "prompt_cache_hit_tokens": 37888,
+        "prompt_cache_miss_tokens": 154
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 16,
+      "t": 1795232030.0688205,
+      "model": "deepseek-v4-flash",
+      "msgs": 38,
+      "input_bytes": 154309
+    },
+    {
+      "kind": "response",
+      "n": 16,
+      "t": 1795232030.8889573,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 38375,
+        "completion_tokens": 131,
+        "total_tokens": 38506,
+        "prompt_tokens_details": {
+          "cached_tokens": 38144
+        },
+        "prompt_cache_hit_tokens": 38144,
+        "prompt_cache_miss_tokens": 231
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 17,
+      "t": 1795232037.9858477,
+      "model": "deepseek-v4-flash",
+      "msgs": 40,
+      "input_bytes": 156244
+    },
+    {
+      "kind": "response",
+      "n": 17,
+      "t": 1795232040.8485377,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 39066,
+        "completion_tokens": 722,
+        "total_tokens": 39788,
+        "prompt_tokens_details": {
+          "cached_tokens": 38400
+        },
+        "prompt_cache_hit_tokens": 38400,
+        "prompt_cache_miss_tokens": 666
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 18,
+      "t": 1795232042.4599917,
+      "model": "deepseek-v4-flash",
+      "msgs": 42,
+      "input_bytes": 160220
+    },
+    {
+      "kind": "response",
+      "n": 18,
+      "t": 1795232043.8498454,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 40269,
+        "completion_tokens": 194,
+        "total_tokens": 40463,
+        "prompt_tokens_details": {
+          "cached_tokens": 39680
+        },
+        "prompt_cache_hit_tokens": 39680,
+        "prompt_cache_miss_tokens": 589
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 19,
+      "t": 1795232048.3098636,
+      "model": "deepseek-v4-flash",
+      "msgs": 44,
+      "input_bytes": 161489
+    },
+    {
+      "kind": "response",
+      "n": 19,
+      "t": 1795232049.8210185,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 40659,
+        "completion_tokens": 132,
+        "total_tokens": 40791,
+        "prompt_tokens_details": {
+          "cached_tokens": 40448
+        },
+        "prompt_cache_hit_tokens": 40448,
+        "prompt_cache_miss_tokens": 211
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 20,
+      "t": 1795232049.8999681,
+      "model": "deepseek-v4-flash",
+      "msgs": 47,
+      "input_bytes": 162537
+    },
+    {
+      "kind": "response",
+      "n": 20,
+      "t": 1795232050.935672,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 40924,
+        "completion_tokens": 77,
+        "total_tokens": 41001,
+        "prompt_tokens_details": {
+          "cached_tokens": 40704
+        },
+        "prompt_cache_hit_tokens": 40704,
+        "prompt_cache_miss_tokens": 220
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232052.4368668
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232054.4841452
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232058.5256927
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232066.5778296
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232082.767973
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232114.7962565
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232174.844423
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232234.8700786
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232294.918353
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232354.9548404
+    }
+  ],
+  "dda_events": []
+}

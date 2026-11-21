@@ -1,0 +1,120 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -204,9 +204,14 @@
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+ // actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// and `FETCH_HEAD` is rewritten (and created) by background IDE `git fetch`. Check
++// their existence and symlink status without hashing volatile cache bytes/timestamps.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
++// `FETCH_HEAD` does not even keep its existence stable: a background `git fetch`
++// creates it in a fresh clone and it disappears again after pruning, so hashing
++// its presence would make an ordinary working-tree edit look like repository
++// config tampering. Its refresh events are recorded separately instead.
++const APPEARANCE_VOLATILE_METADATA_FILES = new Set(['FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+@@ -239,11 +244,17 @@
+   if (!gitDirText) throw new Error('GIT_METADATA_PATH_FAILED');
+   const gitDir = await realpath(resolve(root, gitDirText)).catch(() => resolve(root, gitDirText));
+   const entries = {};
++  const volatileEntries = {};
+   let linkDetected = false;
+   for (const name of METADATA_FILES) {
+     const entry = await readMetadataEntry(resolve(gitDir, name), {
+       volatileContent: VOLATILE_METADATA_FILES.has(name)
+     });
++    if (APPEARANCE_VOLATILE_METADATA_FILES.has(name)) {
++      volatileEntries[name] = { exists: entry.exists };
++      linkDetected ||= entry.type === 'link';
++      continue;
++    }
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }
+@@ -257,7 +268,11 @@
+     linkDetected ||= entry.type === 'link';
+   }
+   entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;
+-  return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };
++  return {
++    metadataDigest: digestText(stableStringify(entries)),
++    metadataLinkDetected: linkDetected,
++    volatileMetadataDigest: digestText(stableStringify(volatileEntries))
++  };
+ };
+ 
+ const createObservation = ({ root, repositoryRoot, head, status, index, workingTree, untracked, metadata, now, reason }) => {
+@@ -271,6 +286,7 @@
+     untrackedDigest: untracked.outputDigest,
+     metadataDigest: metadata.metadataDigest,
+     metadataLinkDetected: metadata.metadataLinkDetected,
++    volatileMetadataDigest: metadata.volatileMetadataDigest,
+     status,
+     observedAtMs: now,
+     ...(normalizeReason(reason) ? { reason: normalizeReason(reason) } : {})
+diff --git a/runtime/test/tmp-git-metadata-probe.mjs b/runtime/test/tmp-git-metadata-probe.mjs
+new file mode 100644
+--- /dev/null
++++ b/runtime/test/tmp-git-metadata-probe.mjs
+@@ -0,0 +1,56 @@
++
++import { tmpdir } from 'node:os';
++import { join, resolve } from 'node:path';
++import { spawn } from 'node:child_process';
++import { createHash } from 'node:crypto';
++
++const runGit = (cwd, args) => new Promise((res, rej) => {
++  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
++    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
++    shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']
++  });
++  let out = ''; let err = '';
++  child.stdout.on('data', (c) => { out += c; });
++  child.stderr.on('data', (c) => { err += c; });
++  child.once('error', rej);
++  child.once('close', (code) => code === 0 ? res(out) : rej(new Error(`${args.join(' ')}: ${err}`)));
++});
++
++const digest = (v) => `sha256:${createHash('sha256').update(v).digest('hex')}`;
++const NAMES = ['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow'];
++
++const snapshotEntries = async (root, gitDir) => {
++  const out = {};
++  for (const name of NAMES) {
++    const p = resolve(gitDir, name);
++    const md = await lstat(p).catch(() => null);
++    if (!md) { out[name] = 'absent'; continue; }
++    if (!md.isFile()) { out[name] = `type:${md.mode}`; continue; }
++    const content = await readFile(p).catch(() => null);
++    out[name] = content ? `${digest(content)} size=${md.size}` : `mtime=${Math.trunc(md.mtimeMs)} size=${md.size}`;
++  }
++  const hooks = await import('node:fs/promises').then((m) => m.readdir(resolve(gitDir, 'hooks')).catch(() => []));
++  out.hooks = hooks.sort().join(',');
++  return out;
++};
++
++const root = await mkdtemp(join(tmpdir(), 'probe-'));
++await runGit(root, ['init', '-q']);
++await runGit(root, ['config', 'user.email', 'a@b.invalid']);
++await runGit(root, ['config', 'user.name', 'x']);
++await writeFile(join(root, 'README.md'), '# f\n', 'utf8');
++await runGit(root, ['add', 'README.md']);
++await runGit(root, ['commit', '-qm', 'f']);
++const gitDirRaw = (await runGit(root, ['rev-parse', '--git-dir'])).trim();
++const gitDir = await realpath(resolve(root, gitDirRaw));
++
++const before = await snapshotEntries(root, gitDir);
++await writeFile(join(root, 'README.md'), '# changed\n', 'utf8');
++await runGit(root, ['status']);
++await writeFile(join(root, '.git', 'FETCH_HEAD'), `${'0'.repeat(40)}\tnot-for-merge\tbranch main\n`, 'utf8');
++const after = await snapshotEntries(root, gitDir);
++
++for (const name of Object.keys(before)) {
++  if (before[name] !== after[name]) console.log(`DIFF ${name}\n  before=${before[name]}\n  after =${after[name]}`);
++}
++console.log('done; gitDir=', gitDir);

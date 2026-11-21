@@ -95,6 +95,19 @@ const hasUnnegatedChineseCue = (text, word) => {
   return false;
 };
 
+// Mixed repair-and-test goals are normally routed as tests. Keep the repair
+// request independent of that routing priority and of incidental edit nouns.
+export const requestsRepair = (prompt) => {
+  const clauses = normalizePrompt(prompt).split(/[，,。.;；!！?？:\n]+/u);
+  return clauses.some(clause => {
+    const text = clause.trim();
+    if (/\bhow\s+to\b|如何|怎么修|上次的修复/u.test(text)) return false;
+    const action = /(?<=^|\b(?:please|and|then|to|you|must|should|can|kindly)\s+)(?:fix|repair|correct)\b/u;
+    return hasUnnegatedMatch(text, action)
+      || ['修复', '修正', '修好', '修改实现'].some(word => hasUnnegatedChineseCue(text, word));
+  });
+};
+
 export const isDirectQuery = (prompt) => {
   const text = normalizePrompt(prompt);
   if (WORKSPACE_SUBJECT.test(text)) return false;

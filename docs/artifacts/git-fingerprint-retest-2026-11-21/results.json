@@ -1,0 +1,463 @@
+[
+  {
+    "run": "dda-1",
+    "upstream_model_ids": [
+      "deepseek-flash"
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "native": {
+      "rc": 1,
+      "wall": 128.5716531276703
+    },
+    "final_source_sha256": "12245bda0f91beaa19fe4f5b1a31710b31da99745377039817de4ea338337b43",
+    "diff_sha256": "6499d9e5e79edccff40603d55d61bfceb26a33f53d74e5285c9e915b70dffc7e",
+    "worktree_changes": [
+      " M runtime/src/git-observer.mjs"
+    ],
+    "calls": 11,
+    "request_bytes": 2498242,
+    "first_input_bytes": 178672,
+    "reported_prompt_tokens": 675349,
+    "completion_tokens": 6934,
+    "budget_rejections": 3,
+    "upstream_responses": 11,
+    "upstream_model_responses": 11,
+    "proxy_response_errors": 0,
+    "changes_and_retests": {
+      "implementation_writes": [
+        {
+          "seq": 2348,
+          "path": "runtime/src/git-observer.mjs"
+        }
+      ],
+      "test_attempts": [
+        {
+          "seq": 144,
+          "exitCode": 1,
+          "ok": false,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": null
+        },
+        {
+          "seq": 2373,
+          "exitCode": 0,
+          "ok": true,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": 2348
+        }
+      ],
+      "failed_test_after_impl_seqs": [],
+      "continued_after_failed_retest": []
+    },
+    "baseline": {
+      "grade": {
+        "external": [
+          {
+            "passed": false,
+            "name": "worktree_refresh"
+          },
+          {
+            "passed": true,
+            "name": "staged_change"
+          },
+          {
+            "passed": true,
+            "name": "config_change"
+          }
+        ],
+        "original": [
+          {
+            "passed": true,
+            "name": "GitObserver returns redacted stable repository state and detects changes"
+          },
+          {
+            "passed": true,
+            "name": "Git metadata fingerprints detect config changes outside an execution scope"
+          },
+          {
+            "passed": false,
+            "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+          }
+        ],
+        "immutable_test": true,
+        "green": false
+      },
+      "calls": 11,
+      "request_bytes": 2329438,
+      "changes_and_retests": {
+        "implementation_writes": [],
+        "test_attempts": [
+          {
+            "seq": 194,
+            "exitCode": 1,
+            "ok": false,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/git-audit.test.mjs"
+            ],
+            "preceding_impl_seq": null
+          }
+        ],
+        "failed_test_after_impl_seqs": [],
+        "continued_after_failed_retest": []
+      }
+    }
+  },
+  {
+    "run": "dda-2",
+    "upstream_model_ids": [
+      "deepseek-flash"
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "native": {
+      "rc": 1,
+      "wall": 79.06746006011963
+    },
+    "final_source_sha256": "9244e03181b45ada2259dc5dd9e7c09a63cd938fefc8723559ab25330a57a43c",
+    "diff_sha256": "be640e7fdf53230982397e7841a0b6e1a3161aa97d3a511e9b49a5aa7962dfc2",
+    "worktree_changes": [
+      " M runtime/src/execution-scope-snapshot.mjs"
+    ],
+    "calls": 10,
+    "request_bytes": 2309442,
+    "first_input_bytes": 178672,
+    "reported_prompt_tokens": 618579,
+    "completion_tokens": 2736,
+    "budget_rejections": 3,
+    "upstream_responses": 10,
+    "upstream_model_responses": 10,
+    "proxy_response_errors": 0,
+    "changes_and_retests": {
+      "implementation_writes": [
+        {
+          "seq": 199,
+          "path": "runtime/src/execution-scope-snapshot.mjs"
+        }
+      ],
+      "test_attempts": [
+        {
+          "seq": 305,
+          "exitCode": 1,
+          "ok": false,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": 199
+        }
+      ],
+      "failed_test_after_impl_seqs": [
+        305
+      ],
+      "continued_after_failed_retest": [
+        {
+          "retest_seq": 305,
+          "next_tool": {
+            "seq": 395,
+            "name": "workspace.read"
+          },
+          "next_impl_seq": null,
+          "next_test_seq": null
+        }
+      ]
+    },
+    "baseline": {
+      "grade": {
+        "external": [
+          {
+            "passed": false,
+            "name": "worktree_refresh"
+          },
+          {
+            "passed": true,
+            "name": "staged_change"
+          },
+          {
+            "passed": true,
+            "name": "config_change"
+          }
+        ],
+        "original": [
+          {
+            "passed": true,
+            "name": "GitObserver returns redacted stable repository state and detects changes"
+          },
+          {
+            "passed": true,
+            "name": "Git metadata fingerprints detect config changes outside an execution scope"
+          },
+          {
+            "passed": false,
+            "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+          }
+        ],
+        "immutable_test": true,
+        "green": false
+      },
+      "calls": 10,
+      "request_bytes": 2196446,
+      "changes_and_retests": {
+        "implementation_writes": [
+          {
+            "seq": 829,
+            "path": "runtime/src/git-observer.mjs"
+          }
+        ],
+        "test_attempts": [
+          {
+            "seq": 182,
+            "exitCode": 1,
+            "ok": false,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/git-audit.test.mjs"
+            ],
+            "preceding_impl_seq": null
+          },
+          {
+            "seq": 866,
+            "exitCode": 1,
+            "ok": false,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/git-audit.test.mjs"
+            ],
+            "preceding_impl_seq": 829
+          }
+        ],
+        "failed_test_after_impl_seqs": [
+          866
+        ],
+        "continued_after_failed_retest": [
+          {
+            "retest_seq": 866,
+            "next_tool": {
+              "seq": 972,
+              "name": "workspace.focus"
+            },
+            "next_impl_seq": null,
+            "next_test_seq": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "run": "dda-3",
+    "upstream_model_ids": [
+      "deepseek-flash"
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "native": {
+      "rc": 1,
+      "wall": 91.97752261161804
+    },
+    "final_source_sha256": "87b8c72dbe53307af093da03b82cb3868bb4c263f3a33d45b02ca3761a3fd3e7",
+    "diff_sha256": "f3178628938418f6f837000c6f33ea826f6fb7a37486809c64d64ff3d59c69d7",
+    "worktree_changes": [
+      " M runtime/src/git-observer.mjs"
+    ],
+    "calls": 9,
+    "request_bytes": 1892562,
+    "first_input_bytes": 178672,
+    "reported_prompt_tokens": 507724,
+    "completion_tokens": 3660,
+    "budget_rejections": 0,
+    "upstream_responses": 9,
+    "upstream_model_responses": 9,
+    "proxy_response_errors": 0,
+    "changes_and_retests": {
+      "implementation_writes": [
+        {
+          "seq": 963,
+          "path": "runtime/src/git-observer.mjs"
+        }
+      ],
+      "test_attempts": [
+        {
+          "seq": 171,
+          "exitCode": 1,
+          "ok": false,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": null
+        },
+        {
+          "seq": 1027,
+          "exitCode": 0,
+          "ok": true,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": 963
+        }
+      ],
+      "failed_test_after_impl_seqs": [],
+      "continued_after_failed_retest": []
+    },
+    "baseline": {
+      "grade": {
+        "external": [
+          {
+            "passed": false,
+            "name": "worktree_refresh"
+          },
+          {
+            "passed": true,
+            "name": "staged_change"
+          },
+          {
+            "passed": true,
+            "name": "config_change"
+          }
+        ],
+        "original": [
+          {
+            "passed": true,
+            "name": "GitObserver returns redacted stable repository state and detects changes"
+          },
+          {
+            "passed": true,
+            "name": "Git metadata fingerprints detect config changes outside an execution scope"
+          },
+          {
+            "passed": false,
+            "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+          }
+        ],
+        "immutable_test": true,
+        "green": false
+      },
+      "calls": 5,
+      "request_bytes": 996452,
+      "changes_and_retests": {
+        "implementation_writes": [],
+        "test_attempts": [
+          {
+            "seq": 167,
+            "exitCode": 1,
+            "ok": false,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/git-audit.test.mjs"
+            ],
+            "preceding_impl_seq": null
+          }
+        ],
+        "failed_test_after_impl_seqs": [],
+        "continued_after_failed_retest": []
+      }
+    }
+  }
+]

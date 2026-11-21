@@ -2,18 +2,20 @@ import {
   CodexTransport,
   ConnectionState,
   SessionEvent,
+  SessionEventKind,
   SessionEventListener,
   WorkspaceEntry
 } from '../models/CodexTypes';
-import { MockCodexTransport } from './MockCodexTransport';
 
 export class CodexSession {
   private transport: CodexTransport;
   private listener?: SessionEventListener;
   private threadId: string = '';
   private connected: boolean = false;
+  private generation: number = 0;
+  private opening?: Promise<void>;
 
-  constructor(transport: CodexTransport = new MockCodexTransport()) {
+  constructor(transport: CodexTransport) {
     this.transport = transport;
   }
 
@@ -22,19 +24,71 @@ export class CodexSession {
   }
 
   async connect(): Promise<void> {
+    if (this.opening) {
+      return this.opening;
+    }
     if (this.connected) {
       return;
     }
-    await this.transport.connect((event: SessionEvent) => {
-      if (event.state === ConnectionState.Connected) {
-        this.connected = true;
-      } else if (event.state === ConnectionState.Disconnected ||
-        event.state === ConnectionState.Error) {
-        this.connected = false;
+    const generation = ++this.generation;
+    const opening = this.openConnection(this.transport, generation);
+    this.opening = opening;
+    try {
+      await opening;
+    } finally {
+      if (this.opening === opening) {
+        this.opening = undefined;
       }
-      this.listener?.(event);
-    });
-    this.threadId = await this.transport.startThread();
+    }
+  }
+
+  private checkGeneration(generation: number): void {
+    if (this.generation !== generation) {
+      throw new Error('连接已切换，请重试');
+    }
+  }
+
+  private async openConnection(transport: CodexTransport, generation: number): Promise<void> {
+    let ready: SessionEvent = {
+      kind: SessionEventKind.ConnectionChanged, state: ConnectionState.Connected, id: 'connection'
+    };
+    let disconnected = false;
+    try {
+      await transport.connect((event: SessionEvent) => {
+        if (this.generation !== generation) { return; }
+        if (event.state === ConnectionState.Connected) {
+          ready = event;
+          return;
+        }
+        if (event.state === ConnectionState.Disconnected || event.state === ConnectionState.Error) {
+          disconnected = true;
+          this.connected = false;
+        }
+        if (event.threadId && this.threadId && event.threadId !== this.threadId &&
+          event.kind !== SessionEventKind.ThreadStarted) { return; }
+        this.listener?.(event);
+      });
+      this.checkGeneration(generation);
+      if (!disconnected && this.threadId.length === 0) {
+        const id = await transport.startThread();
+        this.checkGeneration(generation);
+        if (!this.threadId) { this.threadId = id; }
+      }
+      if (disconnected) {
+        throw new Error('会话准备期间连接已断开');
+      }
+      this.connected = true;
+      this.listener?.(ready);
+    } catch (error) {
+      if (this.generation === generation) {
+        this.connected = false;
+        this.generation++;
+        // startThread may fail after a successful handshake. Release the socket
+        // so the next connect can establish one fresh connection.
+        await transport.disconnect();
+      }
+      throw error as Error;
+    }
   }
 
   currentThread(): string {
@@ -42,7 +96,17 @@ export class CodexSession {
   }
 
   async newThread(): Promise<void> {
-    this.threadId = await this.transport.startThread();
+    if (!this.threadId && !this.connected) {
+      await this.connect();
+      return;
+    }
+    const transport = this.transport;
+    await this.connect();
+    if (transport !== this.transport) { throw new Error('连接已切换，请重试'); }
+    const generation = this.generation;
+    const id = await transport.startThread();
+    this.checkGeneration(generation);
+    this.threadId = id;
   }
 
   selectThread(id: string): void {
@@ -50,42 +114,52 @@ export class CodexSession {
   }
 
   async disconnect(): Promise<void> {
+    this.generation++;
     this.connected = false;
+    this.opening = undefined;
     await this.transport.disconnect();
   }
 
   async replaceTransport(transport: CodexTransport): Promise<void> {
-    await this.disconnect();
+    const closing = this.disconnect();
     this.transport = transport;
     this.threadId = '';
-    this.connected = false;
+    await closing;
   }
 
   async sendPrompt(input: string): Promise<void> {
-    if (!this.connected) {
-      await this.connect();
+    const transport = this.transport;
+    const id = this.threadId;
+    await this.connect();
+    if (transport !== this.transport || (id && id !== this.threadId) || !this.connected) {
+      throw new Error('会话已切换，请重新发送');
     }
-    if (this.threadId.length === 0) {
-      this.threadId = await this.transport.startThread();
-    }
-    await this.transport.sendTurn(this.threadId, input);
+    await transport.sendTurn(this.threadId, input);
   }
 
   async readDirectory(path: string): Promise<Array<WorkspaceEntry>> {
-    if (!this.connected) {
-      await this.connect();
-    }
-    return this.transport.readDirectory(path);
+    const transport = this.transport;
+    await this.connect();
+    const generation = this.generation;
+    if (transport !== this.transport) { throw new Error('连接已切换，请重试'); }
+    const entries = await transport.readDirectory(path);
+    this.checkGeneration(generation);
+    return entries;
   }
 
   async readFile(path: string): Promise<string> {
-    if (!this.connected) {
-      await this.connect();
-    }
-    return this.transport.readFile(path);
+    const transport = this.transport;
+    await this.connect();
+    const generation = this.generation;
+    if (transport !== this.transport) { throw new Error('连接已切换，请重试'); }
+    const content = await transport.readFile(path);
+    this.checkGeneration(generation);
+    return content;
   }
 
   resolveApproval(requestId: string, approved: boolean): void {
-    this.transport.resolveApproval(requestId, approved);
+    if (this.connected) {
+      this.transport.resolveApproval(requestId, approved);
+    }
   }
 }

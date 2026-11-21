@@ -1,0 +1,81 @@
+{
+  "baseline_protocol": "../git-fingerprint-2026-11-21/protocol.json",
+  "preflight": {
+    "method": {
+      "prompt.txt": "0a0f6e6400e48b6698fcff7c65fafc2af5d37504d65c8423e8909c502bcd6b36",
+      "grade.py": "75bdeb54373fde2dc08b84c04e3c1674bd26ca3370b2fc236c9fa25676fbcf10",
+      "proxy.py": "2c72a0f7c7cc5ba1a1779f2b6eec652a219165211795da96259e4b712f94dc72",
+      "launch_dda.py": "d3dd4469ee51c5a58743cd3a2df6aac580f9354f6828e604843e61aba135bebd"
+    },
+    "seeds": {
+      "seed": {
+        "head": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+        "src_hash": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+        "test_hash": "df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+        "package_hash": "6c32c6d3b5b20de480af5a352b58e004c0f7ac5ec9f1d725ee3629322172ada2",
+        "dirty": ""
+      },
+      "dda-1": {
+        "head": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+        "src_hash": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+        "test_hash": "df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+        "package_hash": "6c32c6d3b5b20de480af5a352b58e004c0f7ac5ec9f1d725ee3629322172ada2",
+        "dirty": ""
+      },
+      "dda-2": {
+        "head": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+        "src_hash": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+        "test_hash": "df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+        "package_hash": "6c32c6d3b5b20de480af5a352b58e004c0f7ac5ec9f1d725ee3629322172ada2",
+        "dirty": ""
+      },
+      "dda-3": {
+        "head": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+        "src_hash": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+        "test_hash": "df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+        "package_hash": "6c32c6d3b5b20de480af5a352b58e004c0f7ac5ec9f1d725ee3629322172ada2",
+        "dirty": ""
+      }
+    },
+    "model": "deepseek-v4-flash",
+    "limits": {
+      "requests": 24,
+      "cumulative_raw_request_bytes": 2500000,
+      "completion_tokens": 24576,
+      "per_request_completion_tokens": 4096,
+      "wall_seconds": 480
+    },
+    "baseline_host": "8aa4acd"
+  },
+  "host_at_launch": {
+    "host_head": "3bdac149c83432edd49e70a7a341ade8e7983daa",
+    "source_sha256": "215adaf899a8e9dd1e7c1fd5f52d38926c733b88f1524f665fe88a45af5f9e70",
+    "modified_vs_baseline": [
+      "runtime/src/index.mjs",
+      "runtime/src/plugins/task-runner.mjs",
+      "runtime/src/rule-router.mjs",
+      "runtime/src/repair-retest.mjs"
+    ],
+    "changed_sha256": {
+      "runtime/src/index.mjs": "569a2d80693847a73d77cbc05fd39709105ba3f59d8432e72b88e3b199c4ffd1",
+      "runtime/src/plugins/task-runner.mjs": "e709ae00b63e180ca862f4272e98a84f2fb3eac150d054849d5824c684456672",
+      "runtime/src/rule-router.mjs": "f4cf75b16082121b215003dfc9dbe70a2cf8ddd79d9719e8fcbdea80c2d59d04",
+      "runtime/src/repair-retest.mjs": "6d2660fef3e54da64c9692106470888d8fceffd53a07b30bb70f5371240b38ae"
+    }
+  },
+  "host_at_finish": {
+    "source_sha256": "215adaf899a8e9dd1e7c1fd5f52d38926c733b88f1524f665fe88a45af5f9e70",
+    "all_clients_terminal": true
+  },
+  "model": "deepseek-v4-flash",
+  "thinking": "disabled",
+  "limits": {
+    "requests": 24,
+    "cumulative_raw_request_bytes": 2500000,
+    "completion_tokens": 24576,
+    "per_request_completion_tokens": 4096,
+    "wall_seconds": 480
+  },
+  "raw_run_parent": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-retry-20261121",
+  "three_parallel_fresh_sessions": true
+}

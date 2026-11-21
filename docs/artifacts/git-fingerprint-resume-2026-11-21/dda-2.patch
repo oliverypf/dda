@@ -1,0 +1,107 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -213,14 +213,17 @@
+   const metadata = await lstat(filePath).catch(() => null);
+   if (!metadata) return { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
++  // Entries rewritten by ordinary/background Git housekeeping (`index` stat
++  // cache, `FETCH_HEAD`) contribute only structural facts. Any racing content
++  // read would let a concurrent `git status`/`git fetch` change the fingerprint
++  // of an otherwise untouched repository, which is what reported benign
++  // workspace edits as out-of-scope metadata changes.
+   if (volatileContent) {
+     return { exists: true, type };
+   }
+   const entry = {
+     exists: true,
+-    type,
+-    size: Number.isFinite(metadata.size) ? metadata.size : 0,
+-    mode: metadata.mode
++    type
+   };
+   if (metadata.isFile() && metadata.size <= MAX_METADATA_FILE_BYTES) {
+     const content = await readFile(filePath).catch(() => null);
+diff --git a/runtime/test/tmp-git-metadata-probe.test.mjs b/runtime/test/tmp-git-metadata-probe.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/runtime/test/tmp-git-metadata-probe.test.mjs
+@@ -0,0 +1,78 @@
++import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawn } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import test from 'node:test';
++import { createGitObserver } from '../src/git-observer.mjs';
++
++const runGit = (cwd, args) => new Promise((resolve, reject) => {
++  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
++    cwd,
++    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
++    shell: false,
++    windowsHide: true,
++    stdio: ['ignore', 'pipe', 'pipe']
++  });
++  let stdout = '';
++  let stderr = '';
++  child.stdout.on('data', (chunk) => { stdout += chunk; });
++  child.stderr.on('data', (chunk) => { stderr += chunk; });
++  child.once('error', reject);
++  child.once('close', (code) => {
++    if (code !== 0) reject(new Error(`git failed: ${args.join(' ')}: ${stderr}`));
++    else resolve(stdout);
++  });
++});
++
++const NAMES = ['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow'];
++
++const describe = async (gitDir) => {
++  const result = {};
++  for (const name of NAMES) {
++    const info = await stat(join(gitDir, name)).catch(() => null);
++    if (!info) { result[name] = 'absent'; continue; }
++    const content = await readFile(join(gitDir, name));
++    result[name] = `${info.size}:${createHash('sha256').update(content).digest('hex').slice(0, 12)}`;
++  }
++  const hookNames = (await readdir(join(gitDir, 'hooks')).catch(() => [])).sort();
++  for (const name of hookNames) {
++    const info = await stat(join(gitDir, 'hooks', name)).catch(() => null);
++    if (!info) { result[`hooks/${name}`] = 'absent'; continue; }
++    const content = await readFile(join(gitDir, 'hooks', name)).catch(() => null);
++    result[`hooks/${name}`] = content
++      ? `${info.size}:${createHash('sha256').update(content).digest('hex').slice(0, 12)}`
++      : `${info.size}:unreadable`;
++  }
++  return result;
++};
++
++test('probe hook and metadata drift across observer.snapshot calls', async () => {
++  const root = await mkdtemp(join(tmpdir(), 'hmcodex-probe4-'));
++  const gitDir = join(root, '.git');
++  try {
++    await runGit(root, ['init', '-q']);
++    await runGit(root, ['config', 'user.email', 'audit@example.invalid']);
++    await runGit(root, ['config', 'user.name', 'Probe Fixture']);
++    await writeFile(join(root, 'README.md'), '# probe\n', 'utf8');
++    await runGit(root, ['add', 'README.md']);
++    await runGit(root, ['commit', '-qm', 'fixture']);
++    const observer = createGitObserver({ workspaceRoot: root });
++    const beforeSnap = await observer.snapshot({ reason: 'ACTION_STARTED' });
++    const before = await describe(gitDir);
++    await writeFile(join(root, 'README.md'), '# changed by install\n', 'utf8');
++    await runGit(root, ['status']);
++    await writeFile(join(gitDir, 'FETCH_HEAD'), '0'.repeat(40) + '\tnot-for-merge\tbranch main\n', 'utf8');
++    const afterSnap = await observer.snapshot({ reason: 'ACTION_COMPLETED' });
++    const after = await describe(gitDir);
++    const drifted = Object.keys({ ...before, ...after }).filter((name) => before[name] !== after[name]);
++    process.stdout.write(`PROBE_DRIFTED=${drifted.join(',') || 'none'}\n`);
++    for (const name of drifted) process.stdout.write(`PROBE_${name}: ${before[name]} -> ${after[name]}\n`);
++    process.stdout.write(`PROBE_METADATA_EQUAL=${beforeSnap.metadataDigest === afterSnap.metadataDigest}\n`);
++    process.stdout.write(`PROBE_LINK_BEFORE=${beforeSnap.metadataLinkDetected} AFTER=${afterSnap.metadataLinkDetected}\n`);
++    process.stdout.write(`PROBE_INDEX_EQUAL=${beforeSnap.indexDigest === afterSnap.indexDigest}\n`);
++    process.stdout.write(`PROBE_ROOT_EQUAL=${beforeSnap.repositoryRootDigest === afterSnap.repositoryRootDigest}\n`);
++  } finally {
++    await rm(root, { recursive: true, force: true });
++  }
++});

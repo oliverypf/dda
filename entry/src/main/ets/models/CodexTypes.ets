@@ -17,6 +17,7 @@ export enum SessionEventKind {
   ThreadStarted = 'threadStarted',
   TurnStarted = 'turnStarted',
   AssistantDelta = 'assistantDelta',
+  RoleActivity = 'roleActivity',
   CommandOutputDelta = 'commandOutputDelta',
   ToolStarted = 'toolStarted',
   ToolCompleted = 'toolCompleted',
@@ -25,12 +26,19 @@ export enum SessionEventKind {
   Error = 'error'
 }
 
+export interface ImageAttachment {
+  id: string;
+  name: string;
+  mime: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   text: string;
   title?: string;
   status?: string;
+  images?: ImageAttachment[];
 }
 
 export interface ApprovalRequest {
@@ -46,6 +54,12 @@ export interface WorkspaceEntry {
   isFile: boolean;
 }
 
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens?: number;
+}
+
 export interface SessionEvent {
   kind: SessionEventKind;
   id: string;
@@ -57,6 +71,7 @@ export interface SessionEvent {
   command?: string;
   reason?: string;
   requestId?: string;
+  usage?: ModelUsage;
 }
 
 export type SessionEventListener = (event: SessionEvent) => void;

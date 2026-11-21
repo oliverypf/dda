@@ -1,0 +1,38 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..5c46ae3 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -204,18 +204,20 @@ const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs',
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+ // actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// and `FETCH_HEAD` is appended/rewritten by background IDE `git fetch`. Both are
++// volatile bookkeeping: their bytes *and* their existence flip without any
++// workspace or staged change, so recording either in the fingerprint turns a
++// background refresh into a false out-of-scope violation. Skip them entirely;
++// staged content stays covered by `indexDigest` and repo config by the hashed
++// `config`/`HEAD`/`packed-refs` entries below.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
++  if (volatileContent) return undefined;
+   const metadata = await lstat(filePath).catch(() => null);
+   if (!metadata) return { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+-  if (volatileContent) {
+-    return { exists: true, type };
+-  }
+   const entry = {
+     exists: true,
+     type,
+@@ -244,6 +246,7 @@ const readGitMetadata = async (root, timeoutMs) => {
+     const entry = await readMetadataEntry(resolve(gitDir, name), {
+       volatileContent: VOLATILE_METADATA_FILES.has(name)
+     });
++    if (!entry) continue;
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }

@@ -2,7 +2,8 @@
   "versions": {
     "dda": "8aa4acd",
     "dsh": "0.1.1-rc.2",
-    "pi": "1.1.0"
+    "pi": "1.1.0",
+    "bitfun": "0.2.19 (9012552b30c7); @bitfun-ai/bitfun@0.2.19-alpha.9.win32-x64"
   },
   "prompt": "修复这个仓库中的 Git 指纹误报：后台刷新 Git 后，普通工作区文件修改偶尔被报告为越界。请定位原因、修改实现并实际运行相关测试。真正的暂存区改动和仓库配置改动仍应被检测。保持现有测试有效。",
   "input": "193 runtime/src files from 8aa4acd, first three git-audit tests, minimal npm test entry, copied single git seed",

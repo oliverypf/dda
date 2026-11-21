@@ -1,0 +1,30 @@
+{
+  "name": "@bitfun-ai/bitfun",
+  "version": "0.2.19-alpha.9.win32-x64",
+  "repository": {
+    "url": "git+https://github.com/GCWing/BitFun.git",
+    "type": "git",
+    "directory": "src/apps/cli"
+  },
+  "dist": {
+    "shasum": "8e02913972caf3c23124d73853ae28ff8db7f20b",
+    "tarball": "https://registry.npmjs.org/@bitfun-ai/bitfun/-/bitfun-0.2.19-alpha.9.win32-x64.tgz",
+    "fileCount": 3824,
+    "integrity": "sha512-/ctQklMJjrpxmHjxkkMUD6oqq9FzEFKrTcBpjP7nO67TF2CM2Ivam+rWgju9Z7tfxTx0qMB42++A1kWR4zqR7Q==",
+    "signatures": [
+      {
+        "sig": "MEQCIHPuUEG+BHbWF0Yc0Bofvc6HuGKjipIAm9E1nQnalawuAiBkidQeks02EL2jeohyIItEddxyUwtKae1YOZwcAq1xdg==",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEYCIQCBI8n31aKkUi1lf3v0rvrHRMC3XUD0CR3NQ+RajHuMAwIhAJCjkfjp/FmAAR3xDoZ+WVUU6BLrzy4QNtIR1YTa5OjH",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "unpackedSize": 306061236
+  },
+  "_npmUser": {
+    "name": "aoihoshi",
+    "email": "noahlin27@qq.com"
+  }
+}

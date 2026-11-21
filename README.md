@@ -8,7 +8,7 @@ Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmC
 
 当前 Windows 未完成工作集中到 [阶段四：功能补齐、运行时收敛与发布验收](docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)，逐项状态见 [阶段四验收矩阵](docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。阶段四仅推进 Windows 本地版本，使用自研 Node/Cordis runtime 直接调用模型 provider；按用户要求取消 App Server 接入，多平台产品实现暂不纳入。Linux 端已确定为无界面 CLI，详细实施入口见 [Linux CLI 实施计划](docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)、[CLI 契约](docs/LINUX_CLI_CONTRACT.md) 和 [Linux 平台适配设计](docs/LINUX_PLATFORM_ADAPTER_DESIGN.md)。
 
-本项目建设可独立安装、独立运行的 Agent 工作台。当前优先完善 Windows 的 Tauri 桌面客户端与自研 Node/Cordis runtime，由 runtime 管理模型调用、任务编排、受控工具、审批、验证和审计。其他平台保留既有代码与长期设计，暂不开展产品实现。Windows 的核心能力包括：
+本项目建设可独立安装、独立运行的 Agent 工作台。当前优先完善 Windows 的 Tauri 桌面客户端与自研 Node/Cordis runtime，由 runtime 管理模型调用、任务编排、受控工具、审批、验证和审计。鸿蒙端使用 ArkTS 原生工作台，Linux 端使用 CLI。Windows 的核心能力包括：
 
 - Thread：会话与历史
 - Turn：一次用户请求及其执行过程
@@ -23,7 +23,7 @@ Agent Harness 总体设计见 [docs/AGENT_HARNESS_DESIGN.md](docs/AGENT_HARNESS_
 
 - 目标架构（设计契约）：UI 经 `HarnessFacade` 提交命令并订阅聚合后的 `HarnessReadModel`，Core 只依赖模型调用、执行、工作区和审批四类领域端口，`RoleSessionManager` 管理通用角色上下文，Codex 协议与会话代码收敛到 Codex Adapter 内。
 - Windows 桌面端当前实现：已使用 `HarnessReadModel` 作为 UI 消费的聚合读模型（契约见 `contracts/v1/harness-read-model.schema.json`）；`HarnessFacade` 这一命令入口尚未作为独立符号落地。Linux CLI 不依赖桌面 UI，直接消费 runtime command result 和 `runtime-event` JSONL，契约见 [Linux CLI 命令与输出契约](docs/LINUX_CLI_CONTRACT.md)。
-- HarmonyOS 当前实现（迁移期）：`entry/src/main/ets/pages/Index.ets` 直接持有 `services/CodexSession.ets`，并通过 WebSocket JSON-RPC 直连 App Server；该端尚不存在 `HarnessFacade` / `HarnessReadModel`，Facade 与 read model 分层仍待迁移。
+- HarmonyOS 使用 `CodexSession` 调度原生 `LocalModelTransport`，由应用直接调用模型服务。会话、草稿、项目文件及审批记录保存在设备上。其他连接中可显式选择演示或远程 App Server。
 
 Phase 1 即记录每个关键 Agent 的结构化决策（候选、证据、选择、预期和结果），由 Jev Decision Plane 统一完成需要语义判断的选择，用于审计、归因与后续受约束学习，但不保存隐藏思维链。路线先完成 Phase 0.5 协议合规，再交付 Phase 1 只读闭环；只有 Phase 1.5 的运行时安全、审批、一次性 `PolicyLease`、Rule Verifier 和 Jev Action Gate 闭环通过后才开放写入、命令和网络能力。旧的 LLM-as-a-Verifier、独立 Candidate Judge 和 OpenViking 不属于当前实现。
 
@@ -51,12 +51,23 @@ Set-Location C:\Users\User\hmCodex-local
 
 - HarmonyOS、Windows 和 Linux 客户端默认只负责展示、请求编排和用户确认；本地运行时可以在同一客户端内执行受控命令，但不根据模型消息直接执行。
 - 命令执行与文件变更必须由本地或远程 Executor 按 sandbox/approval policy 执行；客户端保留拒绝权。
-- 当前设置只保存连接地址和工作目录，不在项目代码中内置 API key。
+- 鸿蒙端通过系统 Asset Store 按模型端点保存 API 密钥。会话、技能、模型目录设置和项目文件使用应用私有存储。
+
+## 鸿蒙端首次使用
+
+1. 打开「设置 → 本机模型」，按服务提供方选择 Responses 或 Chat Completions，填写服务地址和模型 ID。支持模型目录的服务可以点击「获取模型目录」选择模型。需要鉴权时填写该服务的 API 密钥并保存。
+2. 在底部输入任务并发送。设备直接请求所选模型服务。进入「项目文件」可建立本机项目，导入文本文档的副本；模型列目录、读文件、创建文件和替换文本时会显示对应审批。通过「导出此文件」取回修改后的副本。
+3. 在「历史任务」中重新打开会话或导出 Markdown。在「技能与记忆」中可保存指令、长期偏好、常用提示及导入的 SKILL.md。密钥由设备保管，技能正文由用户选用。
+
+4. 需要多角色处理时，在「设置 → Jev 编排」填写 System One 服务地址、模型和独立的密钥。Jev 根据任务选择单执行者，或依次安排规划、执行和复核。模型调用项目工具时，界面会列出操作内容供你批准。
+5. 在「项目文件 → 项目命令」可以直接运行 `pwd`、`ls`、`cat`、`wc`、`check-json`、`check-js` 和 `git hash-object`。执行者也能在审批后调用这些命令。项目可使用 `npm test` 入口运行兼容的检查脚本。例如在 `package.json` 中填写 `"scripts": {"test": "node --check src/main.js && check-json settings.json"}`，再让执行者「修复这两个文件并运行 npm test」。
+6. 任务中断后，重新打开原会话，在「任务断点」继续。应用保存计划、执行阶段、复核意见和已确认的操作。写入已获批准但结果未知时，可让应用核对目标文件。内容与获批结果一致即可继续，核对失败会保留断点供你检查。
 
 验证：
 
 - 构建 HAP：`hvigorw assembleHap --no-daemon --no-incremental`
 - 编译并运行单元测试任务：`hvigorw test -p module=entry --no-daemon`
+- 执行 `node --test entry/test/host/*.test.mjs` 可运行主机集成测试。测试使用回环 HTTP 服务和临时项目，覆盖角色选择、命令退出码、复核驳回、文件写入和跨进程恢复。可用 `DEVECO_STUDIO_HOME` 指定 DevEco 安装目录。
 - 页面清单位于 `entry/src/main/resources/base/profile/main_pages.json`，测试桥接入口位于 `entry/src/test/List.test.ets`。
 - Windows Phase 1 的 runtime、desktop、TypeScript 和 Tauri 独立套件默认并行运行：在 `desktop` 目录执行 `npm run test:all:parallel`；UI 套件因共享安装进程和本地 store 必须随后顺序执行。详见 [Windows 测试执行约定](docs/WINDOWS_TESTING_WORKFLOW.md)。
 

@@ -158,7 +158,7 @@ import { runHistoryCommand } from './history-cli.mjs';
 import { createRuleVerifier } from './rule-verifier.mjs';
 import { createTaskRunCoordinator } from './task-run-coordinator.mjs';
 import { createTaskCancelRegistry, taskCancelStorePath } from './task-cancel-registry.mjs';
-import { classifyTask, createRuleRouter, TASK_CLASSES } from './rule-router.mjs';
+import { classifyTask, createRuleRouter, requestsRepair, TASK_CLASSES } from './rule-router.mjs';
 import { claimDesktopWorkspace, needsProjectTool } from './desktop-workspace.mjs';
 import {
   ROLE_SETS,
@@ -2454,6 +2454,7 @@ async function runTask() {
     ? { granted: false, deferred: true, entries: [], sections: [], snapshotDigest: sha256Digest('workspace-unopened:' + runId) }
     : {};
   let workspacePreparation;
+  const snapshotOptions = { includeFileContents: !(requiresWorkspaceMutation || requestsRepair(prompt)) };
   const publishWorkspaceSnapshot = async () => {
     const { granted, rootLabel, snapshotDigest, entries } = snapshot;
     emitEvent('workspace.snapshot', { granted, rootLabel, snapshotDigest, entryCount: entries.length });
@@ -2473,7 +2474,7 @@ async function runTask() {
       workspaceRoot = path;
       await startGitAudit();
       setRuntimePhase('WORKSPACE_SNAPSHOT');
-      Object.assign(snapshot, await workspace.snapshot(), { deferred: false });
+      Object.assign(snapshot, await workspace.snapshot(snapshotOptions), { deferred: false });
       activeSnapshotDigest = snapshot.snapshotDigest;
       await publishWorkspaceSnapshot();
     })();
@@ -3345,7 +3346,7 @@ async function runTask() {
   }
   if (!deferredWorkspace) {
     setRuntimePhase('WORKSPACE_SNAPSHOT');
-    Object.assign(snapshot, await workspace.snapshot());
+    Object.assign(snapshot, await workspace.snapshot(snapshotOptions));
   } else if (executableBuildRequest || (resumeRequested && priorEvents.some(event => lineage.has(event.runId) && event.kind === 'TaskFileWritten'))) {
     // Manifest discovery and plan reconciliation both read project files here.
     await ensureProjectWorkspace();
@@ -4453,6 +4454,7 @@ async function runTask() {
           ...(inputImages.length ? { images: inputImages } : {}),
           workspace: snapshot,
           historyContext: recoveryText,
+          readObservedAssertion: (observation, line) => workspace.readObservedLines(observation, line),
           recovery,
           mode,
           modelProvider: recoveryModelProvider,
@@ -5494,12 +5496,13 @@ async function runTask() {
                 sensitivity: 'SECURITY_AUDIT'
               });
             }
-            if ((event.kind === 'model.stream_retry' || event.kind === 'harness.context_compacted')
+            const discardsDraft = ['model.stream_retry', 'harness.context_compacted', 'harness.repair_continued'].includes(event.kind);
+            if (discardsDraft
               && typeof event.discardedTextChars === 'number'
               && Number.isFinite(event.discardedTextChars) && event.discardedTextChars > 0) {
               stepResponseText = stepResponseText.slice(0, Math.max(0, stepResponseText.length - event.discardedTextChars));
             }
-            if ((event.kind === 'model.stream_retry' || event.kind === 'harness.context_compacted')
+            if (discardsDraft
               && typeof event.discardedReasoningChars === 'number'
               && Number.isFinite(event.discardedReasoningChars) && event.discardedReasoningChars > 0) {
               stepReasoningText = stepReasoningText.slice(0, Math.max(0, stepReasoningText.length - event.discardedReasoningChars));
@@ -5521,6 +5524,9 @@ async function runTask() {
               ...(event.outputDigest ? { outputDigest: event.outputDigest } : {}),
               ...(event.outputChars !== undefined ? { outputChars: event.outputChars } : {}),
               ...(event.inspectionCount !== undefined ? { inspectionCount: event.inspectionCount } : {}),
+              ...(event.kind === 'harness.repair_retest' ? { state: event.state, invocationKey: event.invocationKey } : {}),
+              ...(event.kind === 'harness.repair_continued' ? { repairAttempt: event.repairAttempt,
+                discardedTextChars: event.discardedTextChars, discardedReasoningChars: event.discardedReasoningChars } : {}),
               ...(event.ok !== undefined ? { ok: event.ok } : {}),
               ...(event.timedOut === true ? { timedOut: true } : {}),
               ...(event.aborted === true ? { aborted: true } : {}),

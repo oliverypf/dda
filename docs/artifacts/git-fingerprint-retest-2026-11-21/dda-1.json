@@ -1,0 +1,784 @@
+{
+  "run": "dda-1",
+  "upstream_model_ids": [
+    "deepseek-flash"
+  ],
+  "grade": {
+    "external": [
+      {
+        "passed": true,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": true
+  },
+  "native": {
+    "rc": 1,
+    "wall": 128.5716531276703
+  },
+  "final_source_sha256": "12245bda0f91beaa19fe4f5b1a31710b31da99745377039817de4ea338337b43",
+  "diff_sha256": "6499d9e5e79edccff40603d55d61bfceb26a33f53d74e5285c9e915b70dffc7e",
+  "worktree_changes": [
+    " M runtime/src/git-observer.mjs"
+  ],
+  "calls": 11,
+  "request_bytes": 2498242,
+  "first_input_bytes": 178672,
+  "reported_prompt_tokens": 675349,
+  "completion_tokens": 6934,
+  "budget_rejections": 3,
+  "upstream_responses": 11,
+  "upstream_model_responses": 11,
+  "proxy_response_errors": 0,
+  "changes_and_retests": {
+    "implementation_writes": [
+      {
+        "seq": 2348,
+        "path": "runtime/src/git-observer.mjs"
+      }
+    ],
+    "test_attempts": [
+      {
+        "seq": 144,
+        "exitCode": 1,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "preceding_impl_seq": null
+      },
+      {
+        "seq": 2373,
+        "exitCode": 0,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "preceding_impl_seq": 2348
+      }
+    ],
+    "failed_test_after_impl_seqs": [],
+    "continued_after_failed_retest": []
+  },
+  "baseline": {
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "calls": 11,
+    "request_bytes": 2329438,
+    "changes_and_retests": {
+      "implementation_writes": [],
+      "test_attempts": [
+        {
+          "seq": 194,
+          "exitCode": 1,
+          "ok": false,
+          "command": "node",
+          "args": [
+            "--test",
+            "runtime/test/git-audit.test.mjs"
+          ],
+          "preceding_impl_seq": null
+        }
+      ],
+      "failed_test_after_impl_seqs": [],
+      "continued_after_failed_retest": []
+    }
+  },
+  "runtime_events": [
+    {
+      "kind": "task.classified",
+      "seq": 18,
+      "ms": 1795233656781,
+      "taskClass": "test"
+    },
+    {
+      "kind": "plan.step_changed",
+      "seq": 42,
+      "ms": 1795233658436,
+      "reason": "PLAN_INITIALIZED"
+    },
+    {
+      "kind": "plan.step_changed",
+      "seq": 44,
+      "ms": 1795233658547,
+      "reason": "execute:0:READY"
+    },
+    {
+      "kind": "plan.step_changed",
+      "seq": 45,
+      "ms": 1795233658624,
+      "reason": "execute:1:RUNNING"
+    },
+    {
+      "kind": "step.execution_profile",
+      "seq": 46,
+      "ms": 1795233658656,
+      "executionProfileId": "full-executor"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 69,
+      "ms": 1795233660196,
+      "round": 1,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-audit-store.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 74,
+      "ms": 1795233660439,
+      "round": 1,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/test/git-audit.test.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 110,
+      "ms": 1795233662473,
+      "round": 2,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 115,
+      "ms": 1795233662733,
+      "round": 2,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/src/execution-scope-snapshot.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 130,
+      "ms": 1795233665812,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 143,
+      "ms": 1795233683934,
+      "round": 3,
+      "attempt": 1,
+      "state": "failed_before_edit",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 144,
+      "ms": 1795233683934,
+      "round": 3,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": false,
+      "errorCode": "EXECUTOR_RESULT_FAILED",
+      "exitCode": 1,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 154,
+      "ms": 1795233685918,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 162,
+      "ms": 1795233695011,
+      "round": 3,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "rg",
+      "args": [
+        "-n",
+        "compareGitObservations|VOLATILE_METADATA|metadataDigest|pathDigest",
+        "--glob",
+        "*.mjs",
+        "runtime/src"
+      ]
+    },
+    {
+      "kind": "tool.result",
+      "seq": 217,
+      "ms": 1795233696938,
+      "round": 4,
+      "attempt": 1,
+      "name": "workspace.read",
+      "ok": true,
+      "path": "runtime/test/git-audit.test.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 227,
+      "ms": 1795233698682,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 233,
+      "ms": 1795233701490,
+      "round": 4,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "rg",
+      "args": [
+        "-n",
+        "-C",
+        "<inline-code>",
+        "volatileContent|VOLATILE_METADATA_FILES",
+        "runtime/src/git-observer.mjs"
+      ]
+    },
+    {
+      "kind": "model.stream_retry",
+      "seq": 348,
+      "ms": 1795233704422,
+      "round": 5,
+      "attempt": 1
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 583,
+      "ms": 1795233712536,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 590,
+      "ms": 1795233719141,
+      "round": 5,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--input-type=module",
+        "--eval",
+        "<inline-code>"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 805,
+      "ms": 1795233726236,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 811,
+      "ms": 1795233729979,
+      "round": 6,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--input-type=module",
+        "--eval",
+        "<inline-code>"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 1097,
+      "ms": 1795233736690,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1103,
+      "ms": 1795233741202,
+      "round": 7,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--input-type=module",
+        "--eval",
+        "<inline-code>"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 1665,
+      "ms": 1795233748667,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 1671,
+      "ms": 1795233752957,
+      "round": 8,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--input-type=module",
+        "--eval",
+        "<inline-code>"
+      ]
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 2343,
+      "ms": 1795233761522,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 2348,
+      "ms": 1795233763446,
+      "round": 9,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    {
+      "kind": "approval.resolved",
+      "seq": 2362,
+      "ms": 1795233766443,
+      "state": "APPROVED"
+    },
+    {
+      "kind": "harness.repair_retest",
+      "seq": 2372,
+      "ms": 1795233777947,
+      "round": 10,
+      "attempt": 1,
+      "state": "target_passed",
+      "invocationKey": "6506fcba18fd40979fa960fd7225c2f64839ece51d425ae3944dc0cbf2946a07"
+    },
+    {
+      "kind": "tool.result",
+      "seq": 2373,
+      "ms": 1795233777948,
+      "round": 10,
+      "attempt": 1,
+      "name": "shell.execute",
+      "ok": true,
+      "exitCode": 0,
+      "command": "node",
+      "args": [
+        "--test",
+        "runtime/test/git-audit.test.mjs"
+      ]
+    },
+    {
+      "kind": "plan.step_changed",
+      "seq": 2377,
+      "ms": 1795233779576,
+      "reason": "execute:1:FAILED"
+    },
+    {
+      "kind": "run.failed",
+      "seq": 2379,
+      "ms": 1795233781054,
+      "code": "MODEL_TRANSPORT"
+    }
+  ],
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795233658.7521389,
+      "msgs": 3,
+      "input_bytes": 178672,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795233659.853953,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 46830,
+        "completion_tokens": 110,
+        "total_tokens": 46940,
+        "prompt_tokens_details": {
+          "cached_tokens": 46464
+        },
+        "prompt_cache_hit_tokens": 46464,
+        "prompt_cache_miss_tokens": 366
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_workspace_x2e_read"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795233660.4868293,
+      "msgs": 7,
+      "input_bytes": 197453,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795233662.0561275,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 52297,
+        "completion_tokens": 122,
+        "total_tokens": 52419,
+        "prompt_tokens_details": {
+          "cached_tokens": 46848
+        },
+        "prompt_cache_hit_tokens": 46848,
+        "prompt_cache_miss_tokens": 5449
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_workspace_x2e_read"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795233662.7549899,
+      "msgs": 10,
+      "input_bytes": 218286,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795233664.3384876,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 58553,
+        "completion_tokens": 233,
+        "total_tokens": 58786,
+        "prompt_tokens_details": {
+          "cached_tokens": 51840
+        },
+        "prompt_cache_hit_tokens": 51840,
+        "prompt_cache_miss_tokens": 6713
+      },
+      "calls": [
+        "hmc_shell_x2e_execute",
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795233695.0368123,
+      "msgs": 14,
+      "input_bytes": 226697,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795233696.6815877,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 61141,
+        "completion_tokens": 253,
+        "total_tokens": 61394,
+        "prompt_tokens_details": {
+          "cached_tokens": 57984
+        },
+        "prompt_cache_hit_tokens": 57984,
+        "prompt_cache_miss_tokens": 3157
+      },
+      "calls": [
+        "hmc_workspace_x2e_read",
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795233701.512704,
+      "msgs": 17,
+      "input_bytes": 230892,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795233704.394774,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 62431,
+        "completion_tokens": 596,
+        "total_tokens": 63027,
+        "prompt_tokens_details": {
+          "cached_tokens": 59904
+        },
+        "prompt_cache_hit_tokens": 59904,
+        "prompt_cache_miss_tokens": 2527
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 6,
+      "t": 1795233706.135169,
+      "msgs": 17,
+      "input_bytes": 230892,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 6,
+      "t": 1795233710.1611917,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 62431,
+        "completion_tokens": 777,
+        "total_tokens": 63208,
+        "prompt_tokens_details": {
+          "cached_tokens": 62208
+        },
+        "prompt_cache_hit_tokens": 62208,
+        "prompt_cache_miss_tokens": 223
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 7,
+      "t": 1795233719.1702452,
+      "msgs": 19,
+      "input_bytes": 234182,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 7,
+      "t": 1795233723.2243497,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 63461,
+        "completion_tokens": 824,
+        "total_tokens": 64285,
+        "prompt_tokens_details": {
+          "cached_tokens": 61184
+        },
+        "prompt_cache_hit_tokens": 61184,
+        "prompt_cache_miss_tokens": 2277
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 8,
+      "t": 1795233729.9979818,
+      "msgs": 21,
+      "input_bytes": 237371,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 8,
+      "t": 1795233734.351201,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 64533,
+        "completion_tokens": 854,
+        "total_tokens": 65387,
+        "prompt_tokens_details": {
+          "cached_tokens": 62208
+        },
+        "prompt_cache_hit_tokens": 62208,
+        "prompt_cache_miss_tokens": 2325
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 9,
+      "t": 1795233741.2213998,
+      "msgs": 23,
+      "input_bytes": 240662,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 9,
+      "t": 1795233747.432648,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 65596,
+        "completion_tokens": 1499,
+        "total_tokens": 67095,
+        "prompt_tokens_details": {
+          "cached_tokens": 63232
+        },
+        "prompt_cache_hit_tokens": 63232,
+        "prompt_cache_miss_tokens": 2364
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 10,
+      "t": 1795233752.9748404,
+      "msgs": 25,
+      "input_bytes": 246171,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 10,
+      "t": 1795233760.3211591,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 67391,
+        "completion_tokens": 1556,
+        "total_tokens": 68947,
+        "prompt_tokens_details": {
+          "cached_tokens": 64256
+        },
+        "prompt_cache_hit_tokens": 64256,
+        "prompt_cache_miss_tokens": 3135
+      },
+      "calls": [
+        "hmc_file_x2e_patch"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "request",
+      "n": 11,
+      "t": 1795233763.4870067,
+      "msgs": 27,
+      "input_bytes": 256964,
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "kind": "response",
+      "n": 11,
+      "t": 1795233764.752465,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 70685,
+        "completion_tokens": 110,
+        "total_tokens": 70795,
+        "prompt_tokens_details": {
+          "cached_tokens": 66048
+        },
+        "prompt_cache_hit_tokens": 66048,
+        "prompt_cache_miss_tokens": 4637
+      },
+      "calls": [
+        "hmc_shell_x2e_execute"
+      ],
+      "proxy_response_error": false
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795233777.9816182
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795233778.4999943
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795233779.511822
+    }
+  ]
+}

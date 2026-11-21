@@ -1,0 +1,192 @@
+{
+  "assessment": "Manual interpretation of public model messages compared with the actual fixtures, exact post-edit tests, and terminal product diffs. The probe event confirms that its command ran; an excerpt quoted here is the model’s public account, not a fabricated process stdout. Costs at a model observation run through the upstream response. Costs at an edit or test use the native tool completion event.",
+  "runs": {
+    "dda-1": {
+      "root_cause_verdict": "correct",
+      "evidence": [
+        {
+          "native_probe": {
+            "kind": "tool.result",
+            "seq": 320,
+            "ms": 1795237943982,
+            "round": 10,
+            "attempt": 1,
+            "name": "test.execute",
+            "ok": true,
+            "exitCode": 0,
+            "command": "node",
+            "args": [
+              "runtime/test/tmp-git-metadata-probe.mjs"
+            ],
+            "live_request": 2,
+            "live_bytes_through_request": 241860,
+            "live_wall_s": 14.492
+          },
+          "model_round": 11,
+          "live_request": 3,
+          "live_bytes": 365784,
+          "live_response_wall_s": 19.011,
+          "interpretation": "Existence changes from absent to present and changes the fingerprint.",
+          "public_model_message_excerpt": "探针确认了真正的指纹误报来源：`before` 中 `FETCH_HEAD` 为 `absent`，`after` 中它存在，内容已写入（未出现在差异里的条目全部稳定）。`readMetadataEntry` 对“存在/不存在”做了逐字节指纹，因此后台 fetch 新建 `FETCH_HEAD` 会改变 `metadataDigest`，导致 `compareGitObservations` 报 `metadataChanged`（越界）。修复：对该条目只记录出现/消失事件，不纳入存在性指纹。"
+        }
+      ],
+      "first_edit_with_passing_effect": {
+        "kind": "tool.result",
+        "seq": 458,
+        "ms": 1795237952298,
+        "round": 11,
+        "attempt": 1,
+        "name": "file.patch",
+        "ok": true,
+        "path": "runtime/src/git-observer.mjs",
+        "live_request": 3,
+        "live_bytes_through_request": 365784,
+        "live_wall_s": 22.808
+      },
+      "exact_test_green": {
+        "seq": 502,
+        "round": 12,
+        "live_request": 4,
+        "live_bytes_through_request": 508859,
+        "live_wall_s": 35.696
+      },
+      "kept_original_erroneous_file_unchanged": true
+    },
+    "dda-2": {
+      "root_cause_verdict": "changed_input_identified_but_causal_mechanism_incorrect",
+      "evidence": [
+        {
+          "native_probe": {
+            "kind": "tool.result",
+            "seq": 1112,
+            "ms": 1795238016062,
+            "round": 17,
+            "attempt": 1,
+            "name": "test.execute",
+            "ok": true,
+            "exitCode": 0,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/tmp-git-metadata-probe.test.mjs"
+            ],
+            "live_request": 9,
+            "live_bytes_through_request": 1222203,
+            "live_wall_s": 86.583
+          },
+          "model_round": 18,
+          "live_request": 10,
+          "live_bytes": 1369892,
+          "live_response_wall_s": 88.463,
+          "interpretation": "Observed the absent-to-present input but attributed the failing digest to content hashing.",
+          "public_model_message_excerpt": "失败断言在第 88 行比较的是 `metadataDigest`，该值由 `readGitMetadata` 生成。探针已给出决定性证据：后台 `git status` 后只有 `FETCH_HEAD` 发生漂移（`absent -> 67 bytes`），而 `index` 未变。我的编辑只是把 `size`/`mode` 从条目中去掉，`VOLATILE_METADATA_FILES` 集合仍在，但其入口参数已不再被传递，因此 `FETCH_HEAD` 仍按内容哈希进入指纹。\n\n我需要确认 `git-observer.mjs` 当前实际内容，再针对 `FETCH_HEAD` 和 `index` 的内容易变性做最小修改。"
+        },
+        {
+          "native_probe": {
+            "kind": "tool.result",
+            "seq": 1571,
+            "ms": 1795238068911,
+            "round": 22,
+            "attempt": 1,
+            "name": "test.execute",
+            "ok": true,
+            "exitCode": 0,
+            "command": "node",
+            "args": [
+              "--test",
+              "runtime/test/tmp-git-metadata-probe.test.mjs"
+            ],
+            "live_request": 14,
+            "live_bytes_through_request": 2017015,
+            "live_wall_s": 139.432
+          },
+          "model_round": 23,
+          "live_request": 15,
+          "live_bytes": 2185270,
+          "live_response_wall_s": 144.563,
+          "interpretation": "After another red target test, shifted to hooks and other metadata rather than equalizing the absent and present forms.",
+          "public_model_message_excerpt": "失败断言位于第 88 行，比较两次 `snapshot()` 产出的 `metadataDigest`，其生产者是 `git-observer.mjs` 中的 `readGitMetadata`。上一次探针显示，只有 `FETCH_HEAD` 漂移（`absent -> 67 bytes`），但这发生在 `snapshot()` 之外。`FETCH_HEAD` 现在已按结构处理，所以剩余漂移必须来自 `hooks` 目录条目或其他 `METADATA_FILES`。需要通过直接观察确认。"
+        }
+      ],
+      "first_edit_with_passing_effect": null,
+      "exact_test_green": null,
+      "kept_original_erroneous_file_unchanged": true
+    },
+    "dda-3": {
+      "root_cause_verdict": "correct",
+      "evidence": [
+        {
+          "native_probe": {
+            "kind": "tool.result",
+            "seq": 472,
+            "ms": 1795237958228,
+            "round": 12,
+            "attempt": 1,
+            "name": "shell.execute",
+            "ok": true,
+            "exitCode": 0,
+            "command": "node",
+            "args": [
+              "runtime/test/tmp-metadata-probe.mjs"
+            ],
+            "live_request": 4,
+            "live_bytes_through_request": 502099,
+            "live_wall_s": 28.6
+          },
+          "model_round": 13,
+          "live_request": 5,
+          "live_bytes": 635904,
+          "live_response_wall_s": 33.355,
+          "interpretation": "Identified creation of FETCH_HEAD and its influence on the digest; first follow-up patch normalized only the present case.",
+          "public_model_message_excerpt": "探针结果：`git status` 之后 `.git` 内没有任何文件内容或时间戳变化（包括 `index`），唯一变化是测试自己写入的 `FETCH_HEAD`（ABSENT → 67 字节）。因此失败断言 `before.metadataDigest === afterRefresh.metadataDigest` 的根因在 `readGitMetadata` 对 `FETCH_HEAD` 的处理，而不在我已改的比较函数。\n\n`readGitMetadata` 把 `FETCH_HEAD` 标为 volatile，调用 `readMetadataEntry(..., { volatileContent: true })`，该分支直接返回 `{ exists: true, type }`，从不比较“之前不存在”与“现在存在”的差"
+        },
+        {
+          "native_probe": {
+            "kind": "tool.result",
+            "seq": 1444,
+            "ms": 1795238053103,
+            "round": 23,
+            "attempt": 1,
+            "name": "shell.execute",
+            "ok": true,
+            "exitCode": 0,
+            "command": "node",
+            "args": [
+              "runtime/test/tmp-meta-entry-probe.mjs"
+            ],
+            "live_request": 15,
+            "live_bytes_through_request": 2108565,
+            "live_wall_s": 123.475
+          },
+          "model_round": 24,
+          "live_request": 16,
+          "live_bytes": 2270086,
+          "live_response_wall_s": 126.539,
+          "interpretation": "Observed the concrete remaining digest inputs: missing {exists:false}, present {}.",
+          "public_model_message_excerpt": "探针给出了具体原因：`FETCH_HEAD` 在刷新前不存在（`{\"exists\":false}`），刷新后存在（`{}`），导致 `metadataDigest` 变化。我的 volatile 分支修改只覆盖了“文件存在”的情况，仍需要让“volatile 文件出现或消失”不改变指纹。"
+        }
+      ],
+      "first_edit_with_passing_effect": {
+        "kind": "tool.result",
+        "seq": 1536,
+        "ms": 1795238061797,
+        "round": 24,
+        "attempt": 1,
+        "name": "file.patch",
+        "ok": true,
+        "path": "runtime/src/git-observer.mjs",
+        "live_request": 16,
+        "live_bytes_through_request": 2270086,
+        "live_wall_s": 132.169
+      },
+      "exact_test_green": {
+        "seq": 1598,
+        "round": 25,
+        "live_request": 17,
+        "live_bytes_through_request": 2436531,
+        "live_wall_s": 145.999
+      },
+      "kept_original_erroneous_file_unchanged": true
+    }
+  }
+}

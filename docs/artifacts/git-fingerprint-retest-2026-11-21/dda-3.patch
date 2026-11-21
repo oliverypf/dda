@@ -1,0 +1,32 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..64a4d81 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -204,17 +204,23 @@ const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs',
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+ // actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// and `FETCH_HEAD` is created/rewritten by background IDE `git fetch`. Neither
++// their bytes nor their presence may enter the fingerprint; only a symlink is
++// reported, which never happens for these paths in a healthy repository.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+-  if (!metadata) return { exists: false };
++  if (!metadata) return volatileContent ? {} : { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+   if (volatileContent) {
+-    return { exists: true, type };
++    // Existence itself is volatile for these files: a background `git fetch`
++    // creates FETCH_HEAD and `git status` recreates `.git/index`, so recording
++    // `exists` would still flip the metadata fingerprint for an ordinary
++    // working-tree edit. Only the symlink signal stays, because a link here is
++    // a real security finding and is stable once present.
++    return type === 'link' ? { type } : {};
+   }
+   const entry = {
+     exists: true,

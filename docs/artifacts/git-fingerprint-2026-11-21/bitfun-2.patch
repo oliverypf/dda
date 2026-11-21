@@ -1,0 +1,72 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+index d753a9f..c364855 100644
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -200,6 +200,40 @@ const readHead = async (root, timeoutMs) => {
+   return HEX_COMMIT.test(head) ? head : undefined;
+ };
+ 
++// Hook content is tracked by contentDigest. Newer Git also records an
++// mtime/ctime anti-tamper trailer inside each sample hook, so a fixture setup
++// or hook installer rewriting them must not change the fingerprint by
++// timestamps alone; the sampled hooksDirectoryMtimeMs below still catches a
++// hook being added or removed because a directory change always moves it.
++const hookDigest = (content) => {
++  const text = content.toString('utf8');
++  if (!text.startsWith('#!/')) return digestBytes(content);
++  const body = text.split(/\r?\n/u)
++    .filter((line) => !/^#.*[0-9a-f]{20,}[0-9a-f ]*[0-9a-f]{20,}.*$/iu.test(line))
++    .join('\n');
++  return digestBytes(Buffer.from(body, 'utf8'));
++};
++
++const readHooksDigest = async (hooksDirectory) => {
++  const sampleDigests = [];
++  const hookNames = await readdir(hooksDirectory).catch(() => []);
++  for (const name of hookNames.filter((entry) => typeof entry === 'string').sort()) {
++    const metadata = await lstat(resolve(hooksDirectory, name)).catch(() => null);
++    if (!metadata?.isFile() || !metadata.size || metadata.size > MAX_METADATA_FILE_BYTES) continue;
++    const content = await readFile(resolve(hooksDirectory, name)).catch(() => null);
++    if (content) sampleDigests.push({ name: digestText(name), digest: hookDigest(content) });
++  }
++  return sampleDigests;
++};
++
++const directoryMtimeMs = async (directory) => {
++  const metadata = await lstat(directory).catch(() => null);
++  if (!metadata) return 0;
++  // Coarse (whole second) so a re-created directory cannot flip the sample;
++  // changed entries are caught by existence/type, hidden content by hookDigest.
++  return Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs / 1000) : 0;
++};
++
+ const METADATA_FILES = Object.freeze(['HEAD', 'config', 'index', 'packed-refs', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'ORIG_HEAD', 'FETCH_HEAD', 'shallow']);
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+@@ -247,16 +281,17 @@ const readGitMetadata = async (root, timeoutMs) => {
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }
++  // Hook *totals* are deliberately absent: the digest below pairs each entry
++  // name with its content, so add/remove/edit all move the digest while a
++  // collection restart that only re-enumerates cannot.
+   const hooksDirectory = resolve(gitDir, 'hooks');
+-  const hookNames = await readdir(hooksDirectory).catch(() => []);
+-  const boundedHookNames = hookNames.filter((name) => typeof name === 'string').sort().slice(0, MAX_PATH_DIGESTS);
+-  entries.hooks = {};
+-  for (const name of boundedHookNames) {
+-    const entry = await readMetadataEntry(resolve(hooksDirectory, name));
+-    entries.hooks[digestText(name)] = entry;
+-    linkDetected ||= entry.type === 'link';
+-  }
+-  entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;
++  entries.hooksDirectoryMtimeMs = await directoryMtimeMs(hooksDirectory);
++  const hooksTruncated = (await readdir(hooksDirectory).catch(() => [])).length > MAX_PATH_DIGESTS;
++  entries.hooks = Object.fromEntries((await readHooksDigest(hooksDirectory))
++    .sort((left, right) => left.name.localeCompare(right.name))
++    .slice(0, MAX_PATH_DIGESTS)
++    .map((hook) => [hook.name, hook.digest]));
++  entries.hooksTruncated = hooksTruncated;
+   return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };
+ };
+ 

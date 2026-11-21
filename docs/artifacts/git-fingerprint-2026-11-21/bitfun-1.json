@@ -1,0 +1,563 @@
+{
+  "session": "bitfun-1",
+  "calls": 17,
+  "reported_prompt_tokens": 654737,
+  "completion_tokens": 2490,
+  "request_bytes": 2463965,
+  "model_elapsed_s": 356.0,
+  "returned_models": [
+    "deepseek-flash"
+  ],
+  "budget_rejections": 10,
+  "native_tools": {
+    "ExecCommand": 7,
+    "Grep": 6,
+    "Read": 13
+  },
+  "worktree_changes": [
+    "?? .tmp/",
+    "?? diag.mjs"
+  ],
+  "grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "proxy_timeline": [
+    {
+      "kind": "request",
+      "n": 1,
+      "t": 1795231950.6027992,
+      "model": "deepseek-v4-flash",
+      "msgs": 2,
+      "input_bytes": 872
+    },
+    {
+      "kind": "request",
+      "n": 2,
+      "t": 1795231950.8640833,
+      "model": "deepseek-v4-flash",
+      "msgs": 6,
+      "input_bytes": 56892
+    },
+    {
+      "kind": "response",
+      "n": 1,
+      "t": 1795231951.2793465,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 146,
+        "completion_tokens": 5,
+        "total_tokens": 151,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 146
+      },
+      "calls": []
+    },
+    {
+      "kind": "response",
+      "n": 2,
+      "t": 1795231951.8085191,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 12821,
+        "completion_tokens": 129,
+        "total_tokens": 12950,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 12821
+      },
+      "calls": [
+        "ExecCommand",
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 3,
+      "t": 1795231957.2057874,
+      "model": "deepseek-v4-flash",
+      "msgs": 9,
+      "input_bytes": 57893
+    },
+    {
+      "kind": "response",
+      "n": 3,
+      "t": 1795231958.5704663,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 13074,
+        "completion_tokens": 105,
+        "total_tokens": 13179,
+        "prompt_tokens_details": {
+          "cached_tokens": 12928
+        },
+        "prompt_cache_hit_tokens": 12928,
+        "prompt_cache_miss_tokens": 146
+      },
+      "calls": [
+        "Read",
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 4,
+      "t": 1795231961.5974042,
+      "model": "deepseek-v4-flash",
+      "msgs": 12,
+      "input_bytes": 72817
+    },
+    {
+      "kind": "response",
+      "n": 4,
+      "t": 1795231962.5506089,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 19683,
+        "completion_tokens": 121,
+        "total_tokens": 19804,
+        "prompt_tokens_details": {
+          "cached_tokens": 13056
+        },
+        "prompt_cache_hit_tokens": 13056,
+        "prompt_cache_miss_tokens": 6627
+      },
+      "calls": [
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 5,
+      "t": 1795231962.9301813,
+      "model": "deepseek-v4-flash",
+      "msgs": 14,
+      "input_bytes": 73284
+    },
+    {
+      "kind": "response",
+      "n": 5,
+      "t": 1795231964.015455,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 19835,
+        "completion_tokens": 90,
+        "total_tokens": 19925,
+        "prompt_tokens_details": {
+          "cached_tokens": 19584
+        },
+        "prompt_cache_hit_tokens": 19584,
+        "prompt_cache_miss_tokens": 251
+      },
+      "calls": [
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 6,
+      "t": 1795231964.3875208,
+      "model": "deepseek-v4-flash",
+      "msgs": 16,
+      "input_bytes": 73829
+    },
+    {
+      "kind": "response",
+      "n": 6,
+      "t": 1795231965.2331882,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 20003,
+        "completion_tokens": 83,
+        "total_tokens": 20086,
+        "prompt_tokens_details": {
+          "cached_tokens": 19840
+        },
+        "prompt_cache_hit_tokens": 19840,
+        "prompt_cache_miss_tokens": 163
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 7,
+      "t": 1795231965.6706789,
+      "model": "deepseek-v4-flash",
+      "msgs": 19,
+      "input_bytes": 143452
+    },
+    {
+      "kind": "response",
+      "n": 7,
+      "t": 1795231967.3917441,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 38153,
+        "completion_tokens": 83,
+        "total_tokens": 38236,
+        "prompt_tokens_details": {
+          "cached_tokens": 19968
+        },
+        "prompt_cache_hit_tokens": 19968,
+        "prompt_cache_miss_tokens": 18185
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 8,
+      "t": 1795231967.5400505,
+      "model": "deepseek-v4-flash",
+      "msgs": 22,
+      "input_bytes": 165295
+    },
+    {
+      "kind": "response",
+      "n": 8,
+      "t": 1795231969.0266376,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 44106,
+        "completion_tokens": 164,
+        "total_tokens": 44270,
+        "prompt_tokens_details": {
+          "cached_tokens": 38144
+        },
+        "prompt_cache_hit_tokens": 38144,
+        "prompt_cache_miss_tokens": 5962
+      },
+      "calls": [
+        "Read",
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 9,
+      "t": 1795231969.2040937,
+      "model": "deepseek-v4-flash",
+      "msgs": 25,
+      "input_bytes": 183921
+    },
+    {
+      "kind": "response",
+      "n": 9,
+      "t": 1795231970.154148,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 49130,
+        "completion_tokens": 103,
+        "total_tokens": 49233,
+        "prompt_tokens_details": {
+          "cached_tokens": 44160
+        },
+        "prompt_cache_hit_tokens": 44160,
+        "prompt_cache_miss_tokens": 4970
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 10,
+      "t": 1795231970.527325,
+      "model": "deepseek-v4-flash",
+      "msgs": 28,
+      "input_bytes": 191739
+    },
+    {
+      "kind": "response",
+      "n": 10,
+      "t": 1795231971.8894708,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 51025,
+        "completion_tokens": 107,
+        "total_tokens": 51132,
+        "prompt_tokens_details": {
+          "cached_tokens": 49152
+        },
+        "prompt_cache_hit_tokens": 49152,
+        "prompt_cache_miss_tokens": 1873
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 11,
+      "t": 1795231974.0571597,
+      "model": "deepseek-v4-flash",
+      "msgs": 30,
+      "input_bytes": 195705
+    },
+    {
+      "kind": "response",
+      "n": 11,
+      "t": 1795231975.8169503,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 52325,
+        "completion_tokens": 178,
+        "total_tokens": 52503,
+        "prompt_tokens_details": {
+          "cached_tokens": 51072
+        },
+        "prompt_cache_hit_tokens": 51072,
+        "prompt_cache_miss_tokens": 1253
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 12,
+      "t": 1795231978.6270895,
+      "model": "deepseek-v4-flash",
+      "msgs": 32,
+      "input_bytes": 197546
+    },
+    {
+      "kind": "response",
+      "n": 12,
+      "t": 1795231980.2584562,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 52859,
+        "completion_tokens": 163,
+        "total_tokens": 53022,
+        "prompt_tokens_details": {
+          "cached_tokens": 52480
+        },
+        "prompt_cache_hit_tokens": 52480,
+        "prompt_cache_miss_tokens": 379
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 13,
+      "t": 1795231991.2379532,
+      "model": "deepseek-v4-flash",
+      "msgs": 34,
+      "input_bytes": 199970
+    },
+    {
+      "kind": "response",
+      "n": 13,
+      "t": 1795231992.1485915,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 53657,
+        "completion_tokens": 125,
+        "total_tokens": 53782,
+        "prompt_tokens_details": {
+          "cached_tokens": 52992
+        },
+        "prompt_cache_hit_tokens": 52992,
+        "prompt_cache_miss_tokens": 665
+      },
+      "calls": [
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 14,
+      "t": 1795231992.2201638,
+      "model": "deepseek-v4-flash",
+      "msgs": 36,
+      "input_bytes": 200730
+    },
+    {
+      "kind": "response",
+      "n": 14,
+      "t": 1795231994.8167915,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 53873,
+        "completion_tokens": 138,
+        "total_tokens": 54011,
+        "prompt_tokens_details": {
+          "cached_tokens": 53632
+        },
+        "prompt_cache_hit_tokens": 53632,
+        "prompt_cache_miss_tokens": 241
+      },
+      "calls": [
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 15,
+      "t": 1795231994.9296706,
+      "model": "deepseek-v4-flash",
+      "msgs": 39,
+      "input_bytes": 208688
+    },
+    {
+      "kind": "response",
+      "n": 15,
+      "t": 1795231996.3285828,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 55937,
+        "completion_tokens": 203,
+        "total_tokens": 56140,
+        "prompt_tokens_details": {
+          "cached_tokens": 53888
+        },
+        "prompt_cache_hit_tokens": 53888,
+        "prompt_cache_miss_tokens": 2049
+      },
+      "calls": [
+        "Read",
+        "Read",
+        "Read"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 16,
+      "t": 1795231996.6100113,
+      "model": "deepseek-v4-flash",
+      "msgs": 43,
+      "input_bytes": 219952
+    },
+    {
+      "kind": "response",
+      "n": 16,
+      "t": 1795231998.4354463,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 58845,
+        "completion_tokens": 176,
+        "total_tokens": 59021,
+        "prompt_tokens_details": {
+          "cached_tokens": 56064
+        },
+        "prompt_cache_hit_tokens": 56064,
+        "prompt_cache_miss_tokens": 2781
+      },
+      "calls": [
+        "ExecCommand",
+        "Grep"
+      ]
+    },
+    {
+      "kind": "request",
+      "n": 17,
+      "t": 1795231999.718364,
+      "model": "deepseek-v4-flash",
+      "msgs": 46,
+      "input_bytes": 221380
+    },
+    {
+      "kind": "response",
+      "n": 17,
+      "t": 1795232002.4402409,
+      "returned_model": "deepseek-flash",
+      "usage": {
+        "prompt_tokens": 59265,
+        "completion_tokens": 517,
+        "total_tokens": 59782,
+        "prompt_tokens_details": {
+          "cached_tokens": 59008
+        },
+        "prompt_cache_hit_tokens": 59008,
+        "prompt_cache_miss_tokens": 257
+      },
+      "calls": [
+        "ExecCommand"
+      ]
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232004.196544
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232006.240891
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232010.2821555
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232018.3439636
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232034.391915
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232066.450388
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232126.4892397
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232186.528453
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232246.5759692
+    },
+    {
+      "kind": "budget_stop",
+      "t": 1795232306.628916
+    }
+  ],
+  "dda_events": []
+}

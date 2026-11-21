@@ -1,8 +1,11 @@
 import {
   ApprovalRequest,
   ChatMessage,
+  ImageAttachment,
+  CodexTransport,
   ConnectionState,
   MessageRole,
+  ModelUsage,
   SessionEvent,
   SessionEventKind,
   WorkspaceEntry
@@ -11,15 +14,22 @@ import { AppServerWebSocketTransport } from '../services/AppServerWebSocketTrans
 import { CodexSession } from '../services/CodexSession';
 import { MockCodexTransport } from '../services/MockCodexTransport';
 
-interface TaskView {
-  threadId: string;
-  title: string;
-  messages: ChatMessage[];
-  draft: string;
-}
+import { common } from '@kit.AbilityKit';
+import { LocalModelTransport, validateModelEndpoint } from '../services/LocalModelTransport';
+import { fetchModelCatalog } from '../services/ModelCatalog';
+import { chooseImages, readImageData, imageLocalUri } from '../services/LocalImages';
+import { LocalSkill, importSkill } from '../services/LocalSkills';
+import { LocalWorkspace } from '../services/LocalWorkspace';
+import { LOCAL_COMMAND_HELP, LocalCommandResult, parseProjectCommand, runProjectCommand } from '../services/LocalCommandExecutor';
+import { LocalRunState } from '../services/LocalRunJournal';
+import { DEFAULT_JEV_ENDPOINT, DEFAULT_JEV_MODEL, LocalJevConfig, validateJevEndpoint } from '../services/LocalRoleOrchestrator';
+import { restoreTurnInput, stageStoredTurn, StoredModelProfile, StoredProject, StoredTask, WorkbenchState,
+  WorkbenchStore } from '../services/WorkbenchStore';
+import { LocalKnowledgePanel } from './LocalKnowledgePanel';
 
 // 24-unit outlines use the same visual vocabulary as the desktop toolbar.
 const ICON_PATHS: Record<string, string> = {
+  'image': 'M3 3h18v18H3zM3 17l6-6 4 4 3-3 5 5M16 7h.1',
   'plus': 'M12 5v14M5 12h14',
   'close': 'M6 6l12 12M18 6L6 18',
   'search': 'M18 10a8 8 0 1 1-16 0a8 8 0 0 1 16 0M16 16l5 5',
@@ -49,13 +59,26 @@ const ICON_PATHS: Record<string, string> = {
 @Entry
 @Component
 struct Index {
-  private readonly session: CodexSession = new CodexSession();
+  private session?: CodexSession;
+  private store?: WorkbenchStore;
+  private workspace?: LocalWorkspace;
+  private localTransport?: LocalModelTransport;
+  private saveTimer: number = -1;
+  private hydrated: boolean = false;
+  private pageActive: boolean = false;
+  private sendSequence: number = 0;
+  private directoryRequest: number = 0;
+  private fileRequest: number = 0;
   private activeAssistantId: string = '';
   private activeToolId: string = '';
+  private activeRunId: string = '';
+  private replaceAnswerId: string = '';
+  private resumingTurn: boolean = false;
+  private checkpointRequest: number = 0;
   private focusSearchOnAppear: boolean = false;
 
   @State messages: ChatMessage[] = [];
-  @State tasks: TaskView[] = [];
+  @State tasks: StoredTask[] = [];
   @State currentTitle: string = '新任务';
   @State panel: string = '任务对话';
   @State availableWidth: number = 1000;
@@ -63,7 +86,51 @@ struct Index {
   @State settingsOpen: boolean = false;
   @State taskFilter: string = '';
   @State projectExpanded: boolean = true;
-  @State demo: boolean = true;
+  @State mode: string = 'local';
+  @State switching: boolean = true;
+  @State settingsTab: string = '模型';
+  @State baseUrl: string = 'https://api.openai.com/v1';
+  @State model: string = '';
+  @State hasSavedKey: boolean = false;
+  @State editUrl: string = '';
+  @State editModel: string = '';
+  @State editKey: string = '';
+  @State jevEnabled: boolean = false;
+  @State jevEndpoint: string = DEFAULT_JEV_ENDPOINT;
+  @State jevModel: string = DEFAULT_JEV_MODEL;
+  @State jevHasSavedKey: boolean = false;
+  @State editJevEnabled: boolean = false;
+  @State editJevEndpoint: string = '';
+  @State editJevModel: string = '';
+  @State editJevKey: string = '';
+  @State checkpointState: LocalRunState | undefined = undefined;
+  @State checkpointLoading: boolean = false;
+  @State checkpointError: string = '';
+  @State settingsNotice: string = '';
+  @State editProtocol: string = 'Chat Completions';
+  @State catalog: string[] = [];
+  @State profiles: StoredModelProfile[] = [];
+  @State draftImages: ImageAttachment[] = [];
+  @State preparingTurn: boolean = false;
+  @State queued: string[] = [];
+  @State lastUsage: ModelUsage | undefined = undefined;
+  @State maxOutputTokens: number = 0;
+  @State editMaxTokens: string = '';
+  @State inputNotice: string = '';
+  @State instructions: string = '';
+  @State memories: string[] = [];
+  @State skills: string[] = [];
+  @State localSkills: LocalSkill[] = [];
+  @State skillPreview: string = '';
+  @State skillNotice: string = '';
+  @State projects: StoredProject[] = [{ id: 'default', name: '本机工作区' }];
+  @State projectId: string = 'default';
+  @State projectNameDraft: string = '';
+  @State fileNotice: string = '';
+  @State commandPanelOpen: boolean = false;
+  @State commandInput: string = 'ls /';
+  @State commandRunning: boolean = false;
+  @State commandResult: LocalCommandResult | undefined = undefined;
   @State composer: string = '';
   @State connectionState: ConnectionState = ConnectionState.Disconnected;
   @State isBusy: boolean = false;
@@ -83,20 +150,218 @@ struct Index {
   };
 
   aboutToAppear(): void {
-    this.session.setListener((event: SessionEvent) => this.handleSessionEvent(event));
-    this.session.connect().then(() => this.loadWorkspace('/')).catch((error: Error) => {
-      this.connectionState = ConnectionState.Error;
-      this.statusText = error.message;
-      this.appendMessage({
-        id: `error-${Date.now()}`,
-        role: MessageRole.System,
-        text: `连接失败：${error.message}`
-      });
-    });
+    this.pageActive = true;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    this.store = new WorkbenchStore(context);
+    this.restoreLocalWorkbench();
   }
 
   aboutToDisappear(): void {
-    this.session.disconnect();
+    this.sendSequence++;
+    this.localTransport?.cancelTurn();
+    this.pageActive = false;
+    this.persistNow().catch((error: Error) => { this.statusText = error.message; });
+    this.preparingTurn = false;
+    this.session?.disconnect().catch((error: Error) => { this.statusText = error.message; });
+    this.editKey = '';
+    this.editJevKey = '';
+  }
+
+  onPageHide(): void {
+    this.persistNow().catch((error: Error) => { this.statusText = '本机保存失败：' + error.message; });
+  }
+
+  private attachmentUri(item: ImageAttachment): string {
+    return imageLocalUri(this.getUIContext().getHostContext() as common.UIAbilityContext, item.id);
+  }
+
+  private async attach(transport: CodexTransport): Promise<void> {
+    const previous = this.session;
+    this.session = undefined;
+    await previous?.disconnect();
+    if (!this.pageActive) { return; }
+    const session = new CodexSession(transport);
+    this.session = session;
+    session.setListener((event: SessionEvent) => {
+      if (this.pageActive && this.session === session) { this.handleSessionEvent(event); }
+    });
+    await session.connect();
+  }
+
+  private async openLocalProject(id: string): Promise<void> {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const workspace = new LocalWorkspace(context, id);
+    await workspace.initialize();
+    const transport = new LocalModelTransport(workspace);
+    this.workspace = workspace;
+    this.commandInput = 'ls /';
+    this.commandResult = undefined;
+    this.commandRunning = false;
+    this.commandPanelOpen = false;
+    this.localTransport = transport;
+    this.mode = 'local';
+    await this.attach(transport);
+    this.projectId = id;
+    this.fileNotice = '';
+    this.selectedFilePath = '';
+    this.selectedFileContent = '';
+    await this.loadWorkspace('/');
+  }
+
+  private async restoreLocalWorkbench(): Promise<void> {
+    this.switching = true;
+    this.hydrated = false;
+    try {
+      const saved = await this.store!.load();
+      if (!this.pageActive) { return; }
+      if (saved) {
+        this.baseUrl = saved.baseUrl;
+        this.model = saved.model;
+        this.maxOutputTokens = saved.maxOutputTokens ?? 0;
+        this.hasSavedKey = saved.hasSavedKey === true;
+        this.jevEnabled = saved.jevEnabled === true;
+        this.jevEndpoint = saved.jevEndpoint ?? DEFAULT_JEV_ENDPOINT;
+        this.jevModel = saved.jevModel ?? DEFAULT_JEV_MODEL;
+        this.jevHasSavedKey = saved.jevHasSavedKey === true;
+        this.instructions = saved.instructions;
+        this.memories = saved.memories;
+        this.skills = saved.skills ?? [];
+        this.localSkills = saved.localSkills ?? [];
+        this.profiles = saved.profiles ?? [];
+        this.projects = saved.projects?.length ? saved.projects : [{ id: 'default', name: '本机工作区' }];
+      }
+      await this.openLocalProject(saved?.current.projectId ?? 'default');
+      if (!this.pageActive) { return; }
+      this.resetTranscript();
+      if (saved) {
+        await this.displayTask(saved.current);
+      }
+      this.tasks = saved?.tasks ?? [];
+      this.hydrated = true;
+      this.statusText = this.model ? '本机工作台已就绪' : '先配置模型，即可发送真实任务';
+      if (saved?.current.incomplete) { await this.persistNow(); }
+    } catch (error) {
+      this.connectionState = ConnectionState.Error;
+      this.statusText = '本机工作台加载失败：' + (error as Error).message;
+    } finally {
+      this.switching = false;
+    }
+  }
+
+  private async displayTask(task: StoredTask): Promise<void> {
+    if (task.threadId) { this.session?.selectThread(task.threadId); }
+    this.currentTitle = task.title;
+    this.queued = (task.queued ?? []).slice();
+    this.lastUsage = task.usage;
+    this.messages = task.messages.slice();
+    this.composer = task.draft;
+    this.draftImages = (task.draftImages ?? []).slice();
+    this.inputNotice = '';
+    this.activeRunId = task.runId ?? '';
+    await this.refreshCheckpoint(task.incomplete === true);
+  }
+
+  private async refreshCheckpoint(interrupted: boolean = false): Promise<void> {
+    const transport = this.localTransport;
+    const thread = this.session?.currentThread();
+    const request = ++this.checkpointRequest;
+    this.checkpointState = undefined;
+    this.checkpointError = '';
+    if (!transport || !thread || this.mode !== 'local') { this.checkpointLoading = false; return; }
+    this.checkpointLoading = true;
+    try {
+      const state = await transport.latestCheckpoint(thread);
+      if (request !== this.checkpointRequest || transport !== this.localTransport || thread !== this.session?.currentThread()) { return; }
+      if (state && state.phase !== 'done') {
+        this.checkpointState = state;
+        this.activeRunId = state.runId;
+      } else {
+        if (interrupted && state && this.activeRunId === state.runId && state.draft) {
+          const answerId = state.runId + '-answer-' + state.round;
+          const answer: ChatMessage = { id: answerId, role: MessageRole.Assistant, text: state.draft };
+          const index = this.messages.findIndex((message: ChatMessage) => message.id === answerId);
+          if (index < 0) { this.appendMessage(answer); }
+          else if (this.messages[index].text !== state.draft) {
+            const restored = this.messages.slice();
+            restored[index] = answer;
+            this.messages = restored;
+          }
+        } else if (interrupted) {
+          this.inputNotice = '已恢复任务记录。上次发送没有可继续的执行断点。';
+        }
+        this.activeRunId = '';
+      }
+    } catch (error) {
+      if (request === this.checkpointRequest) { this.checkpointError = '断点读取失败：' + (error as Error).message; }
+    } finally {
+      if (request === this.checkpointRequest) { this.checkpointLoading = false; }
+    }
+  }
+
+  private async updateCheckpoint(state: LocalRunState, verify: boolean): Promise<void> {
+    const transport = this.localTransport;
+    const thread = this.session?.currentThread();
+    if (!transport || !thread || this.isBusy || this.switching || this.checkpointLoading ||
+      this.checkpointState?.runId !== state.runId || this.checkpointState?.revision !== state.revision) { return; }
+    this.switching = true;
+    let verified: LocalRunState | undefined = undefined;
+    try {
+      if (verify) {
+        verified = await transport.verifyCheckpoint(thread, state.runId, state.revision);
+        this.inputNotice = '文件内容已核对。';
+      } else {
+        await transport.discardCheckpoint(thread, state.runId, state.revision);
+        this.inputNotice = '已放弃断点，项目文件和对话记录已保留。';
+      }
+    } catch (error) {
+      this.inputNotice = (verify ? '请查看项目文件。核对失败：' : '放弃断点失败：') + (error as Error).message;
+    } finally {
+      await this.refreshCheckpoint();
+      this.switching = false;
+      this.queueSave();
+    }
+    if (verified && this.pageActive && transport === this.localTransport && thread === this.session?.currentThread()) {
+      await this.sendPrompt(false, verified);
+    }
+  }
+
+  private queueSave(): void {
+    if (!this.hydrated || this.mode !== 'local' || this.switching || this.saveTimer >= 0) { return; }
+    this.saveTimer = setTimeout(() => {
+      this.persistNow().catch((error: Error) => { this.statusText = '本机保存失败：' + error.message; });
+    }, 350);
+  }
+
+  private async persistNow(current?: StoredTask): Promise<void> {
+    if (this.saveTimer >= 0) { clearTimeout(this.saveTimer); this.saveTimer = -1; }
+    if (!this.store || !this.session || !this.hydrated || this.mode !== 'local') { return; }
+    const state: WorkbenchState = { current: current ?? this.snapshot(), tasks: this.tasks.slice(),
+      instructions: this.instructions, memories: this.memories.slice(), skills: this.skills.slice(), localSkills: this.localSkills.slice(),
+      projects: this.projects.slice(), profiles: this.profiles.slice(), maxOutputTokens: this.maxOutputTokens,
+      baseUrl: this.baseUrl, model: this.model, hasSavedKey: this.hasSavedKey, jevEnabled: this.jevEnabled,
+      jevEndpoint: this.jevEndpoint, jevModel: this.jevModel, jevHasSavedKey: this.jevHasSavedKey };
+    await this.store.save(state);
+  }
+
+  private showSettings(): void {
+    if (this.switching) { return; }
+    this.settingsTab = this.mode === 'local' ? '模型' : '其他连接';
+    this.editUrl = this.baseUrl.replace(/\/(?:chat\/completions|responses)$/, '');
+    this.editProtocol = this.baseUrl.endsWith('/responses') ? 'Responses' : 'Chat Completions';
+    this.catalog = [];
+    this.editModel = this.model;
+    this.editMaxTokens = this.maxOutputTokens ? String(this.maxOutputTokens) : '';
+    this.editKey = '';
+    this.editJevEnabled = this.jevEnabled;
+    this.editJevEndpoint = this.jevEndpoint;
+    this.editJevModel = this.jevModel;
+    this.editJevKey = '';
+    this.settingsNotice = '';
+    this.settingsOpen = true;
+  }
+
+  private modeLabel(): string {
+    return this.mode === 'local' ? '鸿蒙本机工作台' : this.mode === 'demo' ? '鸿蒙演示模式' : '鸿蒙 App Server';
   }
 
   @Builder
@@ -147,7 +412,7 @@ struct Index {
     }.width('100%').height('100%')
       .bindSheet($$this.settingsOpen, this.settingsDialog(), {
         preferType: SheetType.CENTER, height: SheetSize.FIT_CONTENT, width: Math.min(600, this.availableWidth - 24),
-        dragBar: false, showClose: false, backgroundColor: $r('app.color.wb_surface')
+        onDisappear: () => { this.editKey = ''; }, dragBar: false, showClose: false, backgroundColor: $r('app.color.wb_surface')
       })
       .onAreaChange((_old: Area, area: Area) => {
         const width = Number(area.width);
@@ -183,7 +448,7 @@ struct Index {
         if (this.availableWidth > 760) {
           Column({ space: 2 }) {
             Text('dda').fontSize(14).fontWeight(FontWeight.Bold).fontColor($r('app.color.wb_text'));
-            Text(this.demo ? '鸿蒙演示模式' : '鸿蒙 App Server').fontSize(11).fontColor($r('app.color.wb_muted'));
+            Text(this.modeLabel()).fontSize(11).fontColor($r('app.color.wb_muted'));
           }.alignItems(HorizontalAlign.Start);
         }
       }.width('100%').height(44).padding({ left: this.availableWidth <= 760 ? 0 : 6 })
@@ -198,7 +463,7 @@ struct Index {
       }.width(this.availableWidth <= 760 ? 40 : '100%').height(this.availableWidth <= 760 ? 40 : 38)
         .padding(0).borderRadius(6).backgroundColor($r('app.color.wb_blue'))
         .margin({ top: 18, bottom: 14 }).accessibilityText('新建任务')
-        .enabled(!this.isBusy && this.connectionState === ConnectionState.Connected).onClick(() => this.newTask());
+        .enabled(!this.switching && !this.isBusy && this.connectionState === ConnectionState.Connected).onClick(() => this.newTask());
       if (this.availableWidth > 760) {
         Row({ space: 6 }) {
           Text('项目').fontSize(11).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_muted'));
@@ -212,14 +477,14 @@ struct Index {
                 Text(this.workspaceRoot).fontSize(13).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'))
                   .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
               }.width('100%').height(36).padding({ left: 6 }).onClick(() => this.openPanel('项目文件'));
-              if (this.messages.length || this.composer.length) {
+              if (this.messages.length || this.composer.length || this.draftImages.length) {
                 this.taskRow(this.currentTitle, true, () => this.openPanel('任务对话'));
               } else if (!this.tasks.length) {
                 Text('暂无会话').width('100%').padding({ left: 26, top: 8 }).fontSize(12).fontColor($r('app.color.wb_muted'));
               }
-              ForEach(this.tasks, (task: TaskView) => {
+              ForEach(this.tasks.filter((item: StoredTask) => this.mode !== 'local' || (item.projectId ?? 'default') === this.projectId), (task: StoredTask) => {
                 this.taskRow(task.title, false, () => this.restoreTask(task));
-              }, (task: TaskView) => task.threadId);
+              }, (task: StoredTask) => task.threadId);
             }
           }.width('100%');
         }.layoutWeight(1).width('100%').align(Alignment.TopStart);
@@ -237,7 +502,7 @@ struct Index {
         }.width('100%').justifyContent(this.availableWidth <= 760 ? FlexAlign.Center : FlexAlign.Start);
       }.width('100%').height(38).padding({ left: this.availableWidth <= 760 ? 0 : 10 })
         .margin({ top: 10 }).backgroundColor(Color.Transparent)
-        .accessibilityText('设置').onClick(() => { this.settingsOpen = true; });
+        .accessibilityText('设置').onClick(() => this.showSettings());
     }.height('100%').width(this.availableWidth <= 760 ? 64 : this.availableWidth <= 1120 ? 214 : 248)
       .padding({ left: this.availableWidth <= 760 ? 8 : 12, right: this.availableWidth <= 760 ? 8 : 12,
         top: this.availableWidth <= 760 ? 12 : 16, bottom: 12 })
@@ -282,7 +547,7 @@ struct Index {
 
   private connectionLabel(): string {
     switch (this.connectionState) {
-      case ConnectionState.Connected: return this.demo ? '演示模式已连接' : 'App Server 已连接';
+      case ConnectionState.Connected: return this.mode === 'local' ? '本机就绪' : this.mode === 'demo' ? '演示模式已连接' : 'App Server 已连接';
       case ConnectionState.Connecting: return '正在连接';
       case ConnectionState.Error: return '连接失败';
       default: return '未连接';
@@ -433,6 +698,7 @@ struct Index {
       this.buildWorkspacePanel();
     } else if (this.panel === '历史任务') {
       this.pageHeading('运行记录', '历史任务');
+      if (this.mode === 'local' && this.messages.length) { this.smallAction('导出当前会话', () => { this.exportContent(true); }); }
       TextInput({ text: this.taskFilter, placeholder: '搜索任务标题' }).id('task-search').fontSize(13)
         .fontColor($r('app.color.wb_text')).placeholderColor($r('app.color.wb_muted'))
         .height(38).borderRadius(6).backgroundColor($r('app.color.wb_surface'))
@@ -444,30 +710,94 @@ struct Index {
           }
         })
         .onChange((value: string) => { this.taskFilter = value; });
-      if ((this.messages.length || this.composer.length) && this.matchesTask(this.currentTitle)) {
+      if ((this.messages.length || this.composer.length || this.draftImages.length) && this.matchesTask(this.currentTitle)) {
         this.actionRow(this.currentTitle, '当前会话', () => this.openPanel('任务对话'));
       }
-      ForEach(this.tasks.filter((item: TaskView) => this.matchesTask(item.title)), (task: TaskView) => {
+      ForEach(this.tasks.filter((item: StoredTask) => this.matchesTask(item.title)), (task: StoredTask) => {
         Column() {
-          this.actionRow(task.title, task.messages.length + ' 条消息', () => this.restoreTask(task));
+          this.actionRow(task.title, (this.mode === 'local' ? this.projectTitle(task.projectId ?? 'default') + ' · ' : '') + task.messages.length + ' 条消息', () => this.restoreTask(task));
         }.width('100%').enabled(!this.isBusy);
-      }, (task: TaskView) => task.threadId);
-      if ((!this.messages.length && !this.composer.length || !this.matchesTask(this.currentTitle)) &&
-        !this.tasks.some((item: TaskView) => this.matchesTask(item.title))) {
+      }, (task: StoredTask) => task.threadId);
+      if ((!this.messages.length && !this.composer.length && !this.draftImages.length || !this.matchesTask(this.currentTitle)) &&
+        !this.tasks.some((item: StoredTask) => this.matchesTask(item.title))) {
         this.pageNotice(this.taskFilter.trim() ? '没有匹配的任务' : '暂无运行记录');
       }
     } else if (this.panel === '操作权限') {
       this.pageHeading('授权与审批', '操作权限');
       if (this.hasApproval) { this.buildApprovalCard(); }
       else { this.pageNotice('当前没有待审批操作'); }
+      ForEach(this.messages.filter((item: ChatMessage) => item.role === MessageRole.Tool && item.title === '操作审批'),
+        (item: ChatMessage) => { this.pageNotice(item.text); }, (item: ChatMessage) => item.id);
     } else if (this.panel === '设置与排查') {
       this.pageHeading('设置与排查', '设置与诊断');
       this.pageNotice('运行时状态  ·  ' + this.connectionLabel() + '  ·  ' + this.statusText);
-      this.actionRow('连接设置', this.demo ? '演示模式' : 'App Server', () => { this.settingsOpen = true; });
+      this.actionRow('连接设置', this.mode === 'local' ? (this.model || '配置模型') : this.mode === 'demo' ? '演示模式' : 'App Server', () => this.showSettings());
     } else {
       this.pageHeading('供后续任务参考', '技能与记忆');
-      this.pageNotice('当前鸿蒙连接未提供技能与记忆数据');
+      if (this.mode === 'local') {
+        this.importedSkillList();
+        LocalKnowledgePanel({
+          instructions: this.instructions, skills: this.skills, memories: this.memories,
+          onInstructions: (value: string) => { this.instructions = value; this.queueSave(); },
+          onChangeList: (isSkill: boolean, items: string[]) => {
+            if (isSkill) { this.skills = items; } else { this.memories = items; }
+            this.queueSave();
+          },
+          onUseSkill: (value: string) => {
+            this.composer = this.composer ? this.composer + '\n' + value : value;
+            this.openPanel('任务对话');
+            this.queueSave();
+          }
+        });
+      } else { this.pageNotice('切换到本机工作台可管理常用任务提示与长期记忆。'); }
     }
+  }
+
+  @Builder
+  private importedSkillList() {
+    Text('本机技能').fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'));
+    this.smallAction('导入 SKILL.md', () => { this.addLocalSkill(); });
+    if (this.skillNotice) { this.pageNotice(this.skillNotice); }
+    ForEach(this.localSkills, (skill: LocalSkill) => {
+      Column({ space: 6 }) {
+        Text(skill.name).fontSize(14).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'));
+        Text(skill.description).fontSize(12).fontColor($r('app.color.wb_secondary'));
+        Flex({ wrap: FlexWrap.Wrap }) {
+          this.smallAction(this.skillPreview === skill.name ? '收起' : '预览', () => {
+            this.skillPreview = this.skillPreview === skill.name ? '' : skill.name;
+          });
+          this.smallAction('加入任务', () => {
+            this.composer = (this.composer ? this.composer + '\n\n' : '') + skill.body;
+            this.openPanel('任务对话');
+            this.queueSave();
+          });
+          this.smallAction('移除', () => {
+            this.localSkills = this.localSkills.filter((item: LocalSkill) => item.name !== skill.name);
+            this.queueSave();
+          });
+        }
+        if (this.skillPreview === skill.name) {
+          Text(skill.body).fontSize(13).fontColor($r('app.color.wb_secondary')).copyOption(CopyOptions.InApp);
+        }
+      }.width('100%').padding(12).alignItems(HorizontalAlign.Start).borderRadius(6).backgroundColor($r('app.color.wb_surface'));
+    }, (skill: LocalSkill) => skill.name);
+  }
+
+  private async addLocalSkill(): Promise<void> {
+    if (this.switching || this.mode !== 'local' || !this.hydrated) { return; }
+    this.switching = true;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const skill = await importSkill(context);
+      if (!skill) { return; }
+      if (this.localSkills.some((item: LocalSkill) => item.name === skill.name)) {
+        this.skillNotice = '已有同名技能，请先移除旧版本'; return;
+      }
+      this.localSkills = this.localSkills.concat([skill]);
+      await this.persistNow();
+      this.skillNotice = '已导入 ' + skill.name;
+    } catch (error) { this.skillNotice = (error as Error).message; }
+    finally { this.switching = false; }
   }
 
   @Builder
@@ -475,7 +805,7 @@ struct Index {
     Scroll() {
       Column({ space: 16 }) {
         Row() {
-          Text('连接设置').fontSize(24).fontWeight(FontWeight.Bold).fontColor($r('app.color.wb_text')).layoutWeight(1);
+          Text('工作台设置').fontSize(24).fontWeight(FontWeight.Bold).fontColor($r('app.color.wb_text')).layoutWeight(1);
           this.iconButton('close', '关闭设置', () => { this.settingsOpen = false; });
         }.width('100%');
         this.buildConnectionSettings();
@@ -489,14 +819,17 @@ struct Index {
     if (this.availableWidth <= 1120) { this.contextOpen = false; }
   }
 
-  private snapshot(): TaskView {
-    return { threadId: this.session.currentThread(), title: this.currentTitle, messages: this.messages.slice(), draft: this.composer };
+  private snapshot(): StoredTask {
+    return { threadId: this.session?.currentThread() ?? '', projectId: this.projectId, title: this.currentTitle,
+      messages: this.messages.slice(), draft: this.composer, draftImages: this.draftImages.slice(),
+      queued: this.queued.slice(), usage: this.lastUsage, runId: this.activeRunId || undefined,
+      incomplete: this.mode === 'local' && (!!this.activeRunId || (this.isBusy && !this.preparingTurn)) };
   }
 
   private async newTask(): Promise<void> {
-    if (this.isBusy) { return; }
+    if (this.isBusy || this.switching || !this.session) { return; }
     this.openPanel('任务对话');
-    if (!this.messages.length && !this.composer.trim()) { return; }
+    if (!this.messages.length && !this.composer.trim() && !this.draftImages.length) { return; }
     const previous = this.snapshot();
     this.isBusy = true;
     try {
@@ -504,7 +837,17 @@ struct Index {
       this.tasks = [previous].concat(this.tasks);
       this.messages = [];
       this.composer = '';
+      this.draftImages = [];
+      this.queued = [];
+      this.checkpointRequest++;
+      this.checkpointState = undefined;
+      this.checkpointError = '';
+      this.checkpointLoading = false;
+      this.activeRunId = '';
+      this.lastUsage = undefined;
+      this.inputNotice = '';
       this.currentTitle = '新任务';
+      this.queueSave();
     } catch (error) {
       this.statusText = (error as Error).message;
       this.appendMessage({
@@ -517,41 +860,262 @@ struct Index {
     }
   }
 
-  private restoreTask(task: TaskView): void {
-    if (this.isBusy) { return; }
+  private async restoreTask(task: StoredTask): Promise<void> {
+    if (this.isBusy || this.switching) { return; }
+    const id = task.projectId ?? 'default';
+    if (this.mode === 'local' && id !== this.projectId) {
+      await this.switchProject(id, task);
+      return;
+    }
     const previous = this.snapshot();
-    this.tasks = this.tasks.filter((item: TaskView) => item.threadId !== task.threadId);
-    if (previous.messages.length || previous.draft) { this.tasks = [previous].concat(this.tasks); }
-    this.session.selectThread(task.threadId);
-    this.messages = task.messages.slice();
-    this.currentTitle = task.title;
-    this.composer = task.draft;
-    this.openPanel('任务对话');
+    this.tasks = this.tasks.filter((item: StoredTask) => item.threadId !== task.threadId);
+    if (previous.messages.length || previous.draft || previous.draftImages?.length) { this.tasks = [previous].concat(this.tasks); }
+    this.switching = true;
+    try {
+      await this.displayTask(task);
+      this.openPanel('任务对话');
+    } finally { this.switching = false; this.queueSave(); }
+  }
+
+  private projectTitle(id: string): string {
+    return this.projects.find((item: StoredProject) => item.id === id)?.name ?? '本机工作区';
+  }
+
+  private async switchProject(id: string, task?: StoredTask): Promise<void> {
+    if (this.mode !== 'local' || this.switching || this.isBusy || !this.hydrated) { return; }
+    const previous = this.snapshot();
+    this.switching = true;
+    try {
+      await this.persistNow();
+      const target = task ?? this.tasks.find((item: StoredTask) => (item.projectId ?? 'default') === id);
+      await this.openLocalProject(id);
+      this.tasks = this.tasks.filter((item: StoredTask) => item.threadId !== target?.threadId);
+      if (previous.messages.length || previous.draft || previous.draftImages?.length) { this.tasks = [previous].concat(this.tasks); }
+      this.resetTranscript();
+      if (target) { await this.displayTask(target); }
+      this.openPanel(task ? '任务对话' : '项目文件');
+      await this.persistNow();
+    } catch (error) {
+      this.statusText = '切换项目失败：' + (error as Error).message;
+      this.fileNotice = this.statusText;
+    } finally { this.switching = false; }
+  }
+
+  private async createProject(): Promise<void> {
+    const name = this.projectNameDraft.trim();
+    if (!name || this.switching || this.isBusy || !this.hydrated) { return; }
+    if (this.projects.some((item: StoredProject) => item.name === name)) {
+      this.fileNotice = '已有同名项目';
+      return;
+    }
+    const project: StoredProject = { id: 'p-' + Date.now(), name: name };
+    this.projects = this.projects.concat([project]);
+    this.projectNameDraft = '';
+    await this.switchProject(project.id);
+  }
+
+  private editedEndpoint(): string {
+    const entered = this.editUrl.trim().replace(/\/+$/, '');
+    if (!entered) { throw new Error('请输入模型服务地址'); }
+    const base = entered.replace(/\/(?:chat\/completions|responses)$/, '');
+    return validateModelEndpoint(base + (this.editProtocol === 'Responses' ? '/responses' : '/chat/completions'));
+  }
+
+  private savedCredential(endpoint: string): boolean {
+    return (this.baseUrl === endpoint && this.hasSavedKey) ||
+      this.profiles.some((item: StoredModelProfile) => item.baseUrl === endpoint && item.hasSavedKey);
+  }
+
+  private async refreshModels(): Promise<void> {
+    if (this.isBusy || this.switching) { return; }
+    this.switching = true;
+    try {
+      const endpoint = this.editedEndpoint();
+      const key = this.editKey.trim() || (this.savedCredential(endpoint) ? await this.store!.loadKey(endpoint) : '');
+      this.catalog = await fetchModelCatalog(endpoint, key);
+      this.settingsNotice = this.catalog.length ? '已读取 ' + this.catalog.length + ' 个模型' : '目录为空，请填写模型 ID';
+    } catch (error) {
+      this.catalog = [];
+      this.settingsNotice = (error as Error).message;
+    } finally { this.switching = false; }
+  }
+
+  private async saveModelSettings(): Promise<void> {
+    if (this.mode !== 'local' || !this.hydrated || this.isBusy || this.switching) { return; }
+    this.switching = true;
+    try {
+      const endpoint = this.editedEndpoint();
+      const name = this.editModel.trim();
+      const limit = this.editMaxTokens.trim();
+      if (limit && (!/^[1-9]\d*$/.test(limit) || !Number.isSafeInteger(Number(limit)))) {
+        throw new Error('输出上限须为正整数，留空使用服务默认值');
+      }
+      if (!name) { throw new Error('请输入服务提供的模型 ID'); }
+      const key = this.editKey.trim();
+      const keep = this.savedCredential(endpoint);
+      if (key) { await this.store!.saveKey(endpoint, key); }
+      this.hasSavedKey = key.length > 0 || Boolean(keep);
+      this.model = name;
+      this.maxOutputTokens = Number(limit);
+      this.baseUrl = endpoint;
+      const profile: StoredModelProfile = { baseUrl: endpoint, model: name, hasSavedKey: this.hasSavedKey };
+      this.profiles = [profile].concat(this.profiles.filter((item: StoredModelProfile) =>
+        item.baseUrl !== endpoint || item.model !== name));
+      this.editKey = '';
+      await this.persistNow();
+      this.settingsOpen = false;
+      this.statusText = '已选择模型 ' + name;
+    } catch (error) {
+      this.settingsNotice = '模型设置未保存：' + (error as Error).message;
+    } finally { this.switching = false; }
+  }
+
+  private async forgetKey(): Promise<void> {
+    if (!this.hasSavedKey || this.switching || this.isBusy) { return; }
+    this.switching = true;
+    try {
+      await this.store!.saveKey(this.baseUrl, '');
+      this.hasSavedKey = false;
+      this.profiles = this.profiles.map((item: StoredModelProfile): StoredModelProfile => {
+        return { baseUrl: item.baseUrl, model: item.model, hasSavedKey: item.baseUrl !== this.baseUrl && item.hasSavedKey };
+      });
+        this.editKey = '';
+      await this.persistNow();
+      this.settingsNotice = '已移除当前服务的密钥';
+    } catch (error) { this.settingsNotice = (error as Error).message; }
+    finally { this.switching = false; }
+  }
+
+  private async saveJevSettings(): Promise<void> {
+    if (!this.store || this.mode !== 'local' || !this.hydrated || this.switching || this.isBusy) { return; }
+    this.switching = true;
+    try {
+      const endpoint = validateJevEndpoint(this.editJevEndpoint.trim());
+      const model = this.editJevModel.trim();
+      if (!model) { throw new Error('请输入 Jev 模型 ID'); }
+      const key = this.editJevKey.trim();
+      const saved = key ? true : !!(await this.store.loadKey(endpoint, true));
+      if (this.editJevEnabled && !saved) { throw new Error('启用编排需要此 Jev 服务的独立密钥'); }
+      if (key) { await this.store.saveKey(endpoint, key, true); }
+      this.jevHasSavedKey = saved;
+      this.jevEndpoint = endpoint;
+      this.jevModel = model;
+      this.jevEnabled = this.editJevEnabled;
+      this.editJevKey = '';
+      await this.persistNow();
+      this.settingsNotice = this.jevEnabled ? '已启用 Jev 多角色编排' : '已关闭 Jev 多角色编排';
+    } catch (error) { this.settingsNotice = 'Jev 设置未保存：' + (error as Error).message; }
+    finally { this.switching = false; }
+  }
+
+  private async forgetJevKey(): Promise<void> {
+    if (!this.store || !this.jevHasSavedKey || this.switching || this.isBusy) { return; }
+    this.switching = true;
+    try {
+      await this.store.saveKey(this.jevEndpoint, '', true);
+      this.jevHasSavedKey = false;
+      this.jevEnabled = false;
+      this.editJevEnabled = false;
+      this.editJevKey = '';
+      await this.persistNow();
+      this.settingsNotice = '已移除 Jev 密钥并关闭编排';
+    } catch (error) { this.settingsNotice = (error as Error).message; }
+    finally { this.switching = false; }
+  }
+
+  @Builder
+  private smallAction(label: string, action: () => void, enabled: boolean = true) {
+    Button(label, { type: ButtonType.Normal }).fontSize(12).height(36).borderRadius(6)
+      .padding({ left: 12, right: 12 }).fontColor($r('app.color.wb_text')).backgroundColor($r('app.color.wb_surface'))
+      .border({ width: 1, color: $r('app.color.wb_border') }).enabled(enabled && !this.switching).onClick(action);
   }
 
   @Builder
   private buildConnectionSettings() {
-    Column({ space: 16 }) {
-      Column() {
-        this.connectionField('服务器地址', 'wss://your-codex-host/app-server', this.endpoint, (value: string) => {
-          this.endpoint = value;
+    Column({ space: 12 }) {
+      Row({ space: 6 }) {
+        this.smallAction('本机模型', () => { this.settingsTab = '模型'; this.settingsNotice = ''; });
+        if (this.mode === 'local' && this.hydrated) {
+          this.smallAction('Jev 编排', () => { this.settingsTab = 'Jev'; this.settingsNotice = ''; });
+        }
+        this.smallAction('其他连接', () => { this.settingsTab = '其他连接'; this.settingsNotice = ''; });
+      }
+      if (this.settingsTab === '模型' && this.mode === 'local' && this.hydrated) {
+        if (this.profiles.length) {
+          Select(this.profiles.map((item: StoredModelProfile): SelectOption => {
+            return { value: item.model + ' · ' + item.baseUrl };
+          })).value('已保存的模型').width('100%').onSelect((index: number) => {
+            const profile = this.profiles[index];
+            this.editUrl = profile.baseUrl.replace(/\/(?:chat\/completions|responses)$/, '');
+            this.editProtocol = profile.baseUrl.endsWith('/responses') ? 'Responses' : 'Chat Completions';
+            this.editModel = profile.model;
+            this.editKey = '';
+            this.catalog = [];
+          });
+        }
+        Select([{ value: 'Chat Completions' }, { value: 'Responses' }]).value(this.editProtocol)
+          .onSelect((index: number) => {
+            this.editProtocol = index === 1 ? 'Responses' : 'Chat Completions';
+            this.editKey = '';
+          });
+        Text('模型服务').fontSize(14).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'));
+        this.connectionField('服务地址', 'https://api.openai.com/v1', this.editUrl, (value: string) => {
+          if (this.editUrl !== value) { this.editKey = ''; this.catalog = []; }
+          this.editUrl = value;
         });
-        Divider().color($r('app.color.wb_soft_border'));
-        this.connectionField('项目目录', '/workspace', this.projectRoot, (value: string) => {
-          this.projectRoot = value;
+        this.connectionField('模型 ID', '填写服务提供的模型 ID', this.editModel, (value: string) => { this.editModel = value; });
+        this.connectionField('每次模型响应的输出上限', '默认（token）', this.editMaxTokens, (value: string) => { this.editMaxTokens = value; });
+        if (this.catalog.length) {
+          Select(this.catalog.map((id: string): SelectOption => { return { value: id }; })).value('选择目录中的模型')
+            .onSelect((index: number) => { this.editModel = this.catalog[index]; });
+        }
+        Text('API 密钥').fontSize(13).fontColor($r('app.color.wb_text'));
+        TextInput({ text: this.editKey, placeholder: this.hasSavedKey && this.editUrl === this.baseUrl.replace(/\/(?:chat\/completions|responses)$/, '') &&
+          this.baseUrl.endsWith(this.editProtocol === 'Responses' ? '/responses' : '/chat/completions') ?
+          '此服务已保存密钥，留空继续使用' : '无密钥的服务可留空' })
+          .type(InputType.Password).height(38).fontSize(13).maxLength(4096)
+          .onChange((value: string) => { this.editKey = value; });
+        Flex({ wrap: FlexWrap.Wrap }) {
+          this.smallAction('获取模型目录', () => { this.refreshModels(); }, !this.isBusy);
+          this.smallAction('保存模型设置', () => { this.saveModelSettings(); }, !this.isBusy);
+          if (this.hasSavedKey) { this.smallAction('移除已存密钥', () => { this.forgetKey(); }, !this.isBusy); }
+        }
+      } else if (this.settingsTab === 'Jev') {
+        Row({ space: 8 }) {
+          Text('启用 Jev 多角色编排').fontSize(14).fontColor($r('app.color.wb_text')).layoutWeight(1);
+          Toggle({ type: ToggleType.Switch, isOn: this.editJevEnabled })
+            .onChange((enabled: boolean) => { this.editJevEnabled = enabled; });
+        }.width('100%');
+        Text('启用后，Jev 会接收任务目标并选择角色。规划、执行和复核使用本机工作台配置的任务模型。')
+          .fontSize(12).fontColor($r('app.color.wb_secondary'));
+        this.connectionField('Jev 服务地址', DEFAULT_JEV_ENDPOINT, this.editJevEndpoint, (value: string) => {
+          if (this.editJevEndpoint !== value) { this.editJevKey = ''; }
+          this.editJevEndpoint = value;
         });
-      }.width('100%').padding({ left: 16, right: 16 })
-        .border({ width: 1, color: $r('app.color.wb_soft_border') }).borderRadius(16);
-      Row({ space: 8 }) {
-        Button('使用演示模式', { type: ButtonType.Normal }).fontSize(12).height(38).borderRadius(6)
-          .padding({ left: 12, right: 12 }).fontColor($r('app.color.wb_text')).backgroundColor($r('app.color.wb_surface'))
-          .border({ width: 1, color: $r('app.color.wb_border') }).enabled(!this.isBusy)
-          .onClick(() => this.useDemoTransport());
-        Button('连接 App Server', { type: ButtonType.Normal }).fontSize(12).height(38).borderRadius(6)
-          .padding({ left: 12, right: 12 }).fontColor(Color.White).backgroundColor($r('app.color.wb_blue'))
-          .enabled(!this.isBusy).onClick(() => this.connectAppServer());
-      }.width('100%').justifyContent(FlexAlign.End);
-      Text(this.statusText).fontSize(12).fontColor($r('app.color.wb_secondary'));
+        this.connectionField('Jev 模型 ID', DEFAULT_JEV_MODEL, this.editJevModel, (value: string) => { this.editJevModel = value; });
+        Text('Jev API 密钥').fontSize(13).fontColor($r('app.color.wb_text'));
+        TextInput({ text: this.editJevKey, placeholder: this.jevHasSavedKey && this.editJevEndpoint === this.jevEndpoint ?
+          '已保存在此设备，留空继续使用' : '填写此 Jev 服务的密钥' })
+          .type(InputType.Password).height(38).fontSize(13).maxLength(4096)
+          .onChange((value: string) => { this.editJevKey = value; });
+        Flex({ wrap: FlexWrap.Wrap }) {
+          this.smallAction('保存 Jev 设置', () => { this.saveJevSettings(); }, !this.isBusy);
+          if (this.jevHasSavedKey && this.editJevEndpoint === this.jevEndpoint) {
+            this.smallAction('移除 Jev 密钥', () => { this.forgetJevKey(); }, !this.isBusy);
+          }
+        }
+      } else if (this.settingsTab === '模型') {
+        this.smallAction('打开本机工作台', () => { this.switchMode('local'); }, !this.isBusy);
+      } else {
+        this.connectionField('App Server', 'wss://host/app-server', this.endpoint, (value: string) => { this.endpoint = value; });
+        this.connectionField('远程项目目录', '/workspace', this.projectRoot, (value: string) => { this.projectRoot = value; });
+        Flex({ wrap: FlexWrap.Wrap }) {
+          this.smallAction('连接 App Server', () => { this.switchMode('remote'); }, !this.isBusy);
+          this.smallAction('打开演示', () => { this.switchMode('demo'); }, !this.isBusy);
+          if (this.mode !== 'local') { this.smallAction('返回本机工作台', () => { this.switchMode('local'); }, !this.isBusy); }
+        }
+      }
+      Text(this.settingsNotice || this.statusText).fontSize(12).fontColor($r('app.color.wb_secondary'));
     }.width('100%').alignItems(HorizontalAlign.Start);
   }
 
@@ -570,7 +1134,7 @@ struct Index {
   }
 
   private parentDirectory(): string {
-    const root: string = this.demo ? '/' : this.workspaceRoot;
+    const root: string = this.mode === 'remote' ? this.workspaceRoot : '/';
     const path: string = this.workspacePath;
     if (path === root || !path.startsWith(root.endsWith('/') ? root : root + '/')) {
       return path;
@@ -580,8 +1144,77 @@ struct Index {
   }
 
   @Builder
+  private projectControls() {
+    Column({ space: 8 }) {
+      Text('本机项目').fontSize(17).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'));
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.projects, (project: StoredProject) => {
+          this.smallAction(project.name, () => { this.switchProject(project.id); }, project.id !== this.projectId && !this.isBusy);
+        }, (project: StoredProject) => project.id);
+      }
+      Row({ space: 6 }) {
+        TextInput({ text: this.projectNameDraft, placeholder: '新项目名称' }).height(36).layoutWeight(1).maxLength(80)
+          .fontSize(13).onChange((value: string) => { this.projectNameDraft = value; });
+        this.smallAction('新建项目', () => { this.createProject(); }, !this.isBusy && !!this.projectNameDraft.trim());
+      }.width('100%');
+      this.smallAction('导入文件副本', () => { this.importDocuments(); }, !this.isBusy);
+    }.width('100%').alignItems(HorizontalAlign.Start);
+  }
+
+  @Builder
+  private projectCommandPanel() {
+    Column({ space: 7 }) {
+      this.smallAction(this.commandPanelOpen ? '收起项目命令' : '项目命令', () => { this.commandPanelOpen = !this.commandPanelOpen; });
+      if (this.commandPanelOpen) {
+        Text(LOCAL_COMMAND_HELP).fontFamily('monospace').fontSize(12).fontColor($r('app.color.wb_secondary'));
+        Row({ space: 6 }) {
+          TextInput({ text: this.commandInput, placeholder: '例如 wc -l "/项目说明.txt"' })
+            .accessibilityText('本机项目命令').height(36).layoutWeight(1).fontSize(13).fontFamily('monospace')
+            .maxLength(8192).enabled(!this.commandRunning).onChange((value: string) => { this.commandInput = value; })
+            .onSubmit(() => { this.executeManualCommand(); });
+          this.smallAction(this.commandRunning ? '运行中' : '运行', () => { this.executeManualCommand(); },
+            !this.commandRunning && !!this.commandInput.trim());
+        }.width('100%');
+        if (this.commandResult) {
+          Text('退出码 ' + this.commandResult.exitCode + (this.commandResult.truncated ? ' · 输出已截断' : ''))
+            .fontSize(12).fontColor($r('app.color.wb_secondary'));
+          if (this.commandResult.stdout || this.commandResult.stderr) {
+            Scroll() {
+              Text((this.commandResult.stdout ? 'stdout\n' + this.commandResult.stdout : '') +
+                (this.commandResult.stderr ? 'stderr\n' + this.commandResult.stderr : '')).width('100%')
+                .fontFamily('monospace').fontSize(12).copyOption(CopyOptions.LocalDevice)
+                .fontColor(this.commandResult.stderr ? $r('app.color.wb_red') : $r('app.color.wb_text'));
+            }.width('100%').constraintSize({ maxHeight: 200 }).padding(8).backgroundColor($r('app.color.wb_surface'));
+          }
+        }
+      }
+    }.width('100%').alignItems(HorizontalAlign.Start);
+  }
+
+  private async executeManualCommand(): Promise<void> {
+    const workspace = this.workspace;
+    if (!workspace || this.mode !== 'local' || this.commandRunning || this.switching) { return; }
+    this.commandRunning = true;
+    this.commandResult = undefined;
+    try {
+      const request = parseProjectCommand(this.commandInput);
+      const result = await runProjectCommand(workspace, request.command, request.args);
+      if (this.pageActive && this.mode === 'local' && this.workspace === workspace) { this.commandResult = result; }
+    } catch (error) {
+      if (this.workspace === workspace) {
+        this.commandResult = { exitCode: 2, stdout: '', stderr: (error as Error).message, truncated: false };
+      }
+    } finally { if (this.workspace === workspace) { this.commandRunning = false; } }
+  }
+
+  @Builder
   private buildWorkspacePanel() {
     Column({ space: 12 }) {
+      if (this.mode === 'local') {
+        this.projectControls();
+        this.projectCommandPanel();
+      }
+      if (this.fileNotice) { this.pageNotice(this.fileNotice); }
       Text('工作区').fontSize(10).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_muted'));
       Row({ space: 8 }) {
         Column({ space: 5 }) {
@@ -627,6 +1260,7 @@ struct Index {
             .accessibilityText(entry.fileName).onClick(() => this.openWorkspaceEntry(entry));
         }, (entry: WorkspaceEntry) => entry.path);
       }.width('100%').alignItems(HorizontalAlign.Start);
+      if (this.mode === 'local' && this.selectedFilePath) { this.smallAction('导出此文件', () => { this.exportContent(false); }); }
       if (this.selectedFilePath.length > 0) {
         Divider().color($r('app.color.wb_soft_border'));
         Column({ space: 8 }) {
@@ -642,13 +1276,50 @@ struct Index {
   }
 
   @Builder
+  private recoveryActions(state: LocalRunState) {
+    Column({ space: 8 }) {
+      Text('任务断点').fontSize(15).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_text'));
+      Text('当前阶段 · ' + (state.phase === 'route' ? '角色分配' : state.phase === 'plan' ? '规划' :
+        state.phase === 'review' ? '复核' : '执行') + '　已记录 ' + state.receipts.length + ' 项操作')
+        .fontSize(13).fontColor($r('app.color.wb_secondary'));
+      if (state.pending) {
+        Text('上次写入的结果待核对。\n' + state.pending.tool + '　' + state.pending.path)
+          .fontSize(13).fontColor($r('app.color.wb_text')).copyOption(CopyOptions.LocalDevice);
+      }
+      Flex({ wrap: FlexWrap.Wrap }) {
+        if (state.pending) {
+          if (state.pending.expectedHash) {
+            this.smallAction('核对写入并继续', () => { this.updateCheckpoint(state, true); },
+              !this.switching && !this.checkpointLoading);
+          }
+          this.smallAction('查看项目文件', () => this.openPanel('项目文件'));
+        } else {
+          this.smallAction('从断点继续', () => { this.sendPrompt(false, state); }, !this.switching && !this.checkpointLoading);
+        }
+        this.smallAction('放弃断点', () => { this.updateCheckpoint(state, false); }, !this.switching && !this.checkpointLoading);
+      }
+    }.width('100%').padding(12).alignItems(HorizontalAlign.Start).backgroundColor($r('app.color.wb_warning_bg'))
+      .border({ width: 1, color: $r('app.color.wb_amber'), radius: 6 });
+  }
+
+  @Builder
   private buildTranscript() {
     Scroll() {
       Column({ space: 12 }) {
+        if (this.mode === 'local' && !this.isBusy && this.checkpointState) {
+          this.recoveryActions(this.checkpointState);
+        } else if (this.mode === 'local' && this.checkpointError) {
+          this.actionRow('重新读取任务断点', this.checkpointError, () => { this.refreshCheckpoint(!!this.activeRunId); });
+        }
         if (this.hasApproval) {
           Text('审批与授权状态').fontSize(16).fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.wb_text'));
           this.buildApprovalCard();
+        }
+        if (this.mode === 'local' && !this.model && !this.switching && this.hydrated) {
+          this.actionRow('配置模型', '连接自己的模型服务，开始本机任务', () => this.showSettings());
+        } else if (this.mode === 'local' && !this.hydrated && !this.switching) {
+          this.actionRow('重新加载本机工作台', this.statusText, () => { this.restoreLocalWorkbench(); });
         }
         if (this.messages.length > 0) {
           Column() {
@@ -681,6 +1352,14 @@ struct Index {
         Text(message.role === MessageRole.User ? '你' :
           (message.title ?? (message.role === MessageRole.System ? '系统' : 'dda')))
           .fontSize(11).fontWeight(FontWeight.Medium).fontColor($r('app.color.wb_secondary'));
+        if (message.images?.length) {
+          ForEach(message.images, (attachment: ImageAttachment) => {
+            Row({ space: 6 }) {
+              Image(this.attachmentUri(attachment)).width(58).height(58).borderRadius(5).objectFit(ImageFit.Cover);
+              Text(attachment.name).fontSize(12).fontColor($r('app.color.wb_accent_text')).layoutWeight(1);
+            }.width('100%');
+          }, (attachment: ImageAttachment) => attachment.id);
+        }
         if (message.role === MessageRole.Tool) {
           Text(message.text).width('100%').padding(9).fontFamily('monospace')
             .fontSize(12).lineHeight(18).fontColor($r('app.color.wb_text')).copyOption(CopyOptions.LocalDevice)
@@ -704,9 +1383,11 @@ struct Index {
       }
       Text(this.approval.reason).fontSize(13).lineHeight(20).fontColor($r('app.color.wb_secondary'));
       if (this.approval.command.length > 0) {
-        Text(this.approval.command).fontSize(12).fontFamily('monospace').fontColor($r('app.color.wb_text'))
+        Scroll() {
+          Text(this.approval.command).fontSize(12).fontFamily('monospace').fontColor($r('app.color.wb_text'))
           .copyOption(CopyOptions.LocalDevice).width('100%').padding(9)
           .backgroundColor($r('app.color.wb_surface')).borderRadius(6);
+        }.width('100%').constraintSize({ maxHeight: 240 }).scrollBar(BarState.Auto);
       }
       Row({ space: 6 }) {
         Button('拒绝操作', { type: ButtonType.Normal }).height(40).layoutWeight(1)
@@ -726,12 +1407,41 @@ struct Index {
   private buildComposer() {
     Column({ space: 6 }) {
       Column() {
+        if (this.mode === 'local' && this.queued.length) {
+          Row({ space: 6 }) {
+            Text('等待发送 ' + this.queued.length + ' 条 · ' + this.queued[0]).fontSize(12).layoutWeight(1)
+              .fontColor($r('app.color.wb_secondary')).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            if (!this.isBusy) {
+              this.smallAction('发送下一条', () => { this.sendPrompt(true); },
+                !this.checkpointState && !this.checkpointError && !this.checkpointLoading);
+            }
+            this.smallAction('取回', () => {
+              this.composer = [this.queued[0], this.composer].filter((value: string) => !!value).join('\n');
+              this.queued = this.queued.slice(1);
+              this.queueSave();
+            }, !this.preparingTurn);
+          }.width('100%').padding(5);
+        }
+        if (this.draftImages.length) {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.draftImages, (attachment: ImageAttachment) => {
+              Row({ space: 3 }) {
+                Image(this.attachmentUri(attachment)).width(32).height(32).objectFit(ImageFit.Cover);
+                this.smallAction(attachment.name.slice(0, 16) + ' ×', () => {
+                this.draftImages = this.draftImages.filter((item: ImageAttachment) => item.id !== attachment.id);
+                this.queueSave();
+                }, !this.isBusy);
+              }
+            }, (attachment: ImageAttachment) => attachment.id);
+          }.padding(6);
+        }
+        if (this.inputNotice) { Text(this.inputNotice).fontSize(12).fontColor($r('app.color.wb_red')); }
         TextArea({ placeholder: '描述你要完成的任务', text: this.composer })
-          .id('task-input').width('100%').height(62)
+          .id('task-input').enabled(!this.preparingTurn && !this.switching).width('100%').height(62)
           .padding({ left: 14, right: 14, top: 12, bottom: 4 })
           .fontSize(13).fontColor($r('app.color.wb_text')).placeholderColor($r('app.color.wb_muted'))
           .backgroundColor(Color.Transparent).borderRadius(8)
-          .onChange((value: string) => { this.composer = value; });
+          .onChange((value: string) => { this.composer = value; this.queueSave(); });
         Row({ space: 8 }) {
           if (this.availableWidth > 760) {
             Text(this.workspaceRoot).layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -740,28 +1450,41 @@ struct Index {
           Button({ type: ButtonType.Normal }) {
             Row({ space: 4 }) {
               this.icon('cpu', 14, $r('app.color.wb_secondary'));
-              Text(this.demo ? '演示模式' : 'App Server').fontSize(12).fontColor($r('app.color.wb_text'));
+              Text(this.mode === 'local' ? (this.model || '配置模型') : this.mode === 'demo' ? '演示模式' : 'App Server').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).fontSize(12).fontColor($r('app.color.wb_text'));
             }
-          }.height(28).padding({ left: 8, right: 8 })
+          }.constraintSize({ maxWidth: this.availableWidth <= 760 ? 114 : 180 }).height(28).padding({ left: 8, right: 8 })
             .backgroundColor($r('app.color.wb_surface'))
             .border({ width: 1, color: $r('app.color.wb_border'), radius: 14 })
-            .accessibilityText('打开连接设置').onClick(() => { this.settingsOpen = true; });
+            .accessibilityText('打开连接设置').onClick(() => this.showSettings());
           if (this.availableWidth <= 760) {
             Blank();
           }
-          Button({ type: ButtonType.Normal }) {
+          if (this.mode === 'local' && !this.isBusy) {
+            this.iconButton('image', '添加图片', () => { this.addImages(); });
+          }
+          if (this.mode === 'local' && this.isBusy) {
+            if (this.composer.trim() && !this.preparingTurn) { this.smallAction('排队', () => this.queueFollowUp()); }
+            this.smallAction('取消', () => this.cancelLocalTurn());
+          } else {
+            Button({ type: ButtonType.Normal }) {
             Row({ space: 6 }) {
               this.icon('send', 15, Color.White);
               Text(this.isBusy ? '处理中' : '发送').fontSize(12).fontWeight(FontWeight.Medium).fontColor(Color.White);
             }
           }.width(86).height(34).borderRadius(6).backgroundColor($r('app.color.wb_blue'))
             .accessibilityText('发送任务')
-            .enabled(!this.isBusy && this.composer.trim().length > 0)
+            .enabled(!this.switching && !this.isBusy && !this.checkpointState && !this.checkpointLoading &&
+              !this.checkpointError && (this.composer.trim().length > 0 || this.draftImages.length > 0))
             .onClick(() => this.sendPrompt());
+          }
         }.width('100%').padding({ left: 13, right: 7, top: 5, bottom: 7 });
       }.width('100%').constraintSize({ maxWidth: 800 }).backgroundColor($r('app.color.wb_surface'))
         .border({ width: 1, color: $r('app.color.wb_border'), radius: 8 });
-      if (this.availableWidth > 760) {
+      if (this.mode === 'local' && this.lastUsage) {
+        Text('上一轮用量 · 输入 ' + this.lastUsage.inputTokens + ' / 输出 ' + this.lastUsage.outputTokens + ' token' +
+          (this.lastUsage.cachedTokens !== undefined ? ' · 缓存 ' + this.lastUsage.cachedTokens : ''))
+          .fontSize(11).fontColor($r('app.color.wb_secondary'));
+      } else if (this.availableWidth > 760) {
         Text('需要授权时，可在对话中批准或拒绝操作。')
           .width('100%').constraintSize({ maxWidth: 800 }).textAlign(TextAlign.End)
           .fontSize(10).fontColor($r('app.color.wb_muted'));
@@ -772,29 +1495,127 @@ struct Index {
       .backgroundColor($r('app.color.wb_canvas')).border({ width: { top: 1 }, color: $r('app.color.wb_border') });
   }
 
-  private async sendPrompt(): Promise<void> {
-    const prompt: string = this.composer.trim();
-    if (prompt.length === 0 || this.isBusy) {
+  private async addImages(): Promise<void> {
+    if (this.mode !== 'local' || this.switching || this.isBusy || this.draftImages.length >= 4) { return; }
+    this.switching = true;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const added = await chooseImages(context, 4 - this.draftImages.length);
+      this.draftImages = this.draftImages.concat(added);
+      this.inputNotice = '';
+    } catch (error) { this.inputNotice = (error as Error).message; }
+    finally { this.switching = false; this.queueSave(); }
+  }
+
+  private cancelLocalTurn(): void {
+    if (this.preparingTurn) {
+      this.sendSequence++;
+      this.preparingTurn = false;
+      this.isBusy = false;
+      this.statusText = '任务已取消';
+      this.queueSave();
+    } else { this.localTransport?.cancelTurn(); }
+  }
+
+  private queueFollowUp(): void {
+    const value = this.composer.trim();
+    if (!value || !this.isBusy || this.mode !== 'local') { return; }
+    this.queued = this.queued.concat([value]);
+    this.composer = '';
+    this.queueSave();
+  }
+
+  private async sendPrompt(fromQueue: boolean = false, resume?: LocalRunState): Promise<void> {
+    if (this.isBusy || this.switching || !this.session || this.checkpointLoading || this.checkpointError) { return; }
+    if (resume) {
+      if (resume.pending || !this.checkpointState || resume.runId !== this.checkpointState.runId ||
+        resume.revision !== this.checkpointState.revision) { return; }
+    } else if (this.checkpointState) { return; }
+    let history = this.messages.slice();
+    let prompt = fromQueue ? (this.queued[0] ?? '') : this.composer.trim();
+    let attachments: ImageAttachment[] = fromQueue ? [] : this.draftImages.slice();
+    if (resume) {
+      const input = restoreTurnInput(history);
+      if (!input) { this.inputNotice = '未找到断点对应的原始任务消息。'; return; }
+      prompt = input.prompt;
+      attachments = input.images;
+      history = input.history;
+    }
+    if (!prompt && !attachments.length) { return; }
+    if (this.mode === 'local' && !this.model) {
+      this.showSettings();
+      this.settingsNotice = '保存服务地址和模型 ID 后即可发送，草稿已保留。';
       return;
     }
     this.openPanel('任务对话');
-    if (!this.messages.length) { this.currentTitle = prompt.slice(0, 60); }
-    this.appendMessage({
-      id: `user-${Date.now()}`,
-      role: MessageRole.User,
-      text: prompt
-    });
-    this.composer = '';
+    const sendId = ++this.sendSequence;
+    const session = this.session;
+    const threadId = session.currentThread();
+    const transport = this.localTransport;
+    const endpoint = this.baseUrl;
+    const model = this.model;
     this.isBusy = true;
+    this.preparingTurn = true;
+    let preparedRunId = '';
     try {
-      await this.session.sendPrompt(prompt);
+      if (this.mode === 'local') {
+        if (!this.hydrated) { throw new Error('本机工作台尚未就绪'); }
+        const key = this.hasSavedKey ? await this.store!.loadKey(endpoint) : '';
+        let jev: LocalJevConfig | undefined = undefined;
+        if (this.jevEnabled) {
+          const jevKey = this.jevHasSavedKey ? await this.store!.loadKey(this.jevEndpoint, true) : '';
+          if (!jevKey) { throw new Error('未找到 Jev 密钥，请在设置中重新填写'); }
+          jev = { endpoint: this.jevEndpoint, model: this.jevModel, apiKey: jevKey };
+        }
+        if (sendId !== this.sendSequence || !this.pageActive || this.session !== session) { return; }
+        if (this.hasSavedKey && !key) { throw new Error('未找到此服务的设备密钥，请在设置中重新填写'); }
+        const instructions = [this.instructions].concat(this.memories).filter((item: string) => item.length > 0).join('\n');
+        const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+        const images = await Promise.all(attachments.map((item: ImageAttachment) => readImageData(context, item.id)));
+        if (sendId !== this.sendSequence || !this.pageActive || this.session !== session ||
+          transport !== this.localTransport || endpoint !== this.baseUrl || threadId !== session.currentThread()) { return; }
+        transport!.configure({ baseUrl: endpoint, model: model, apiKey: key, maxOutputTokens: this.maxOutputTokens || undefined,
+          jev: jev });
+        preparedRunId = transport!.prepareTurn(history, instructions, images);
+      }
+      this.inputNotice = '';
+      this.resumingTurn = resume !== undefined;
+      if (resume) {
+        this.replaceAnswerId = resume.runId + '-answer-' + (resume.phase === 'review' ? resume.round : resume.round + 1);
+        this.preparingTurn = false;
+        await transport!.resumeTurn(threadId, prompt);
+      } else {
+        const title = this.messages.length ? this.currentTitle : prompt ? prompt.slice(0, 60) : '图片任务';
+        const message: ChatMessage = { id: 'user-' + Date.now(), role: MessageRole.User, text: prompt, images: attachments };
+        if (this.mode === 'local') {
+          const task = this.snapshot();
+          stageStoredTurn(task, message, title, preparedRunId, fromQueue);
+          await this.persistNow(task);
+        }
+        if (sendId !== this.sendSequence || !this.pageActive || this.session !== session) { return; }
+        this.activeRunId = preparedRunId;
+        this.currentTitle = title;
+        this.appendMessage(message);
+        if (fromQueue) {
+          this.queued = this.queued.slice(1);
+        } else {
+          this.draftImages = [];
+          this.composer = '';
+        }
+        this.replaceAnswerId = '';
+        this.preparingTurn = false;
+        await session.sendPrompt(prompt);
+      }
     } catch (error) {
+      if (sendId !== this.sendSequence || !this.pageActive) { return; }
+      this.preparingTurn = false;
       this.isBusy = false;
-      this.appendMessage({
-        id: `error-${Date.now()}`,
-        role: MessageRole.System,
-        text: `请求失败：${(error as Error).message}`
-      });
+      this.hasApproval = false;
+      this.statusText = '任务未完成';
+      this.appendMessage({ id: 'request-error-' + Date.now(), role: MessageRole.System,
+        text: '请求失败：' + (error as Error).message });
+      if (this.mode === 'local') { await this.refreshCheckpoint(); }
+      this.queueSave();
     }
   }
 
@@ -803,99 +1624,143 @@ struct Index {
       this.selectedFilePath = '';
       this.selectedFileContent = '';
       this.loadWorkspace(entry.path);
-    } else {
-      this.loadFile(entry);
-    }
+    } else { this.loadFile(entry); }
   }
 
   private async loadWorkspace(path: string): Promise<void> {
+    const session = this.session;
+    if (!session) { return; }
+    const request = ++this.directoryRequest;
+    ++this.fileRequest;
     try {
-      const entries: Array<WorkspaceEntry> = await this.session.readDirectory(path);
+      const entries = await session.readDirectory(path);
+      if (request !== this.directoryRequest || session !== this.session) { return; }
       this.workspacePath = path;
       this.workspaceEntries = entries;
-      this.workspaceRoot = this.demo ? '演示工作区' : this.projectRoot;
+      this.workspaceRoot = this.mode === 'local' ? this.projectTitle(this.projectId) :
+        this.mode === 'demo' ? '演示工作区' : this.projectRoot;
     } catch (error) {
-      this.appendMessage({
-        id: `workspace-error-${Date.now()}`,
-        role: MessageRole.System,
-        text: `读取工作区失败：${(error as Error).message}`
-      });
+      if (request === this.directoryRequest && session === this.session) {
+        this.fileNotice = '读取目录失败：' + (error as Error).message;
+      }
     }
   }
 
   private async loadFile(entry: WorkspaceEntry): Promise<void> {
+    const session = this.session;
+    if (!session) { return; }
+    const request = ++this.fileRequest;
     try {
-      const content: string = await this.session.readFile(entry.path);
+      const content = await session.readFile(entry.path);
+      if (request !== this.fileRequest || session !== this.session) { return; }
       this.selectedFilePath = entry.path;
       this.selectedFileContent = content;
-      this.statusText = `已打开 ${entry.fileName}`;
+      this.statusText = '已打开 ' + entry.fileName;
     } catch (error) {
-      this.appendMessage({
-        id: `file-error-${Date.now()}`,
-        role: MessageRole.System,
-        text: `读取文件失败：${(error as Error).message}`
-      });
+      if (request === this.fileRequest && session === this.session) { this.fileNotice = '读取文件失败：' + (error as Error).message; }
     }
   }
 
-  private resolveApproval(approved: boolean): void {
-    const requestId: string = this.approval.id;
-    this.hasApproval = false;
-    this.session.resolveApproval(requestId, approved);
+  private async importDocuments(): Promise<void> {
+    if (!this.workspace || this.switching || this.isBusy) { return; }
+    this.switching = true;
+    try {
+      const count = await this.workspace.importFiles();
+      if (count) {
+        this.selectedFilePath = '';
+        this.selectedFileContent = '';
+        await this.loadWorkspace('/');
+        this.fileNotice = '已导入 ' + count + ' 个文件副本';
+      }
+    } catch (error) {
+      await this.loadWorkspace('/');
+      this.fileNotice = (error as Error).message;
+    } finally { this.switching = false; }
   }
 
-  private resetWorkspace(): void {
-    this.tasks = [];
+  private async exportContent(chat: boolean): Promise<void> {
+    if (!this.workspace || this.switching) { return; }
+    this.switching = true;
+    try {
+      if (chat) {
+        const body = '# ' + this.currentTitle + '\n\n' + this.messages.map((item: ChatMessage) => {
+          const files = item.images?.map((image: ImageAttachment) => image.name).join('、');
+          return '## ' + (item.title || item.role) + '\n\n' + (files ? '附图：' + files + '\n\n' : '') + item.text;
+        }).join('\n\n');
+        if (await this.workspace.exportText('dda-' + Date.now() + '.md', body)) { this.statusText = '会话已导出'; }
+      } else if (await this.workspace.exportFile(this.selectedFilePath)) { this.fileNotice = '已导出选中文件'; }
+    } catch (error) {
+      this.statusText = '导出失败：' + (error as Error).message;
+      this.fileNotice = this.statusText;
+    } finally { this.switching = false; }
+  }
+
+  private resolveApproval(approved: boolean): void {
+    if (!this.hasApproval) { return; }
+    const request = this.approval;
+    this.hasApproval = false;
+    this.appendMessage({ id: 'decision-' + request.id, role: MessageRole.Tool,
+      title: '操作审批', text: (approved ? '已批准一次' : '已拒绝') + ' · ' + request.command.split('\n')[0] + '\n' + request.reason });
+    this.session?.resolveApproval(request.id, approved);
+    this.queueSave();
+  }
+
+  private resetTranscript(): void {
+    this.checkpointRequest++;
+    this.checkpointState = undefined;
+    this.checkpointError = '';
+    this.checkpointLoading = false;
+    this.activeRunId = '';
+    this.replaceAnswerId = '';
     this.messages = [];
     this.composer = '';
+    this.draftImages = [];
+    this.queued = [];
+    this.lastUsage = undefined;
+    this.inputNotice = '';
     this.currentTitle = '新任务';
     this.taskFilter = '';
-    this.workspaceEntries = [];
-    this.selectedFilePath = '';
-    this.selectedFileContent = '';
+    this.activeAssistantId = '';
+    this.activeToolId = '';
     this.hasApproval = false;
     this.isBusy = false;
   }
 
-  private async useDemoTransport(): Promise<void> {
-    await this.session.replaceTransport(new MockCodexTransport());
-    this.openPanel('任务对话');
-    this.demo = true;
-    this.resetWorkspace();
-    this.statusText = '正在切换演示模式';
-    await this.session.connect();
-    await this.loadWorkspace('/');
-  }
-
-  private async connectAppServer(): Promise<void> {
-    const address: string = this.endpoint.trim();
-    const root: string = this.projectRoot.trim().length > 0 ? this.projectRoot.trim() : '/workspace';
-    if (address.length === 0) {
-      this.statusText = '请先填写 App Server 地址';
+  private async switchMode(next: string): Promise<void> {
+    if (this.switching || this.isBusy) { return; }
+    if (next === 'remote' && !/^wss?:\/\/[^\s]+$/.test(this.endpoint.trim())) {
+      this.settingsNotice = '请填写 ws:// 或 wss:// 开头的 App Server 地址';
       return;
     }
-    if (!address.startsWith('ws://') && !address.startsWith('wss://')) {
-      this.statusText = '地址必须使用 ws:// 或 wss://';
-      return;
-    }
-    this.projectRoot = root;
-    this.openPanel('任务对话');
-    this.statusText = '正在连接 App Server';
+    this.switching = true;
     try {
-      await this.session.replaceTransport(new AppServerWebSocketTransport(address, root));
-      this.demo = false;
-      this.resetWorkspace();
-      await this.session.connect();
-      await this.loadWorkspace(root);
+      await this.persistNow();
+      if (next === 'local') {
+        await this.restoreLocalWorkbench();
+        if (!this.hydrated) { this.settingsNotice = this.statusText; return; }
+      } else {
+        this.hydrated = false;
+        this.mode = next;
+            this.localTransport = undefined;
+        this.tasks = [];
+        this.resetTranscript();
+        this.selectedFilePath = '';
+        this.selectedFileContent = '';
+        this.workspaceEntries = [];
+        this.fileNotice = '';
+        this.workspaceRoot = '未选择项目';
+        this.projectRoot = this.projectRoot.trim() || '/workspace';
+        const transport: CodexTransport = next === 'demo' ? new MockCodexTransport() :
+          new AppServerWebSocketTransport(this.endpoint.trim(), this.projectRoot);
+        await this.attach(transport);
+        await this.loadWorkspace(next === 'demo' ? '/' : this.projectRoot);
+      }
+      this.openPanel('任务对话');
     } catch (error) {
       this.connectionState = ConnectionState.Error;
-      this.statusText = `连接失败：${(error as Error).message}`;
-      this.appendMessage({
-        id: `error-${Date.now()}`,
-        role: MessageRole.System,
-        text: `App Server 连接失败：${(error as Error).message}`
-      });
-    }
+      this.settingsNotice = (error as Error).message;
+      this.statusText = this.settingsNotice;
+    } finally { this.switching = false; }
   }
 
   private handleSessionEvent(event: SessionEvent): void {
@@ -903,15 +1768,28 @@ struct Index {
       case SessionEventKind.ConnectionChanged:
         this.connectionState = event.state ?? ConnectionState.Disconnected;
         this.statusText = event.text ?? this.connectionState;
+        if (this.connectionState === ConnectionState.Error || this.connectionState === ConnectionState.Disconnected) {
+          this.isBusy = false; this.hasApproval = false;
+        }
         break;
       case SessionEventKind.ThreadStarted:
         this.statusText = '会话已就绪';
         break;
       case SessionEventKind.TurnStarted:
         this.isBusy = true;
-        this.statusText = 'dda 工作中';
+        this.statusText = event.text ?? 'dda 工作中';
+        if (this.mode === 'local') {
+          this.activeRunId = event.turnId ?? '';
+          this.checkpointState = undefined;
+          this.persistNow().catch((error: Error) => { this.inputNotice = '本机记录保存失败：' + error.message; });
+        }
         this.activeAssistantId = '';
         this.activeToolId = '';
+        break;
+      case SessionEventKind.RoleActivity:
+        this.statusText = event.text ?? '角色编排中';
+        this.appendMessage({ id: 'role-' + Date.now() + '-' + this.messages.length, role: MessageRole.Tool,
+          title: '角色编排', text: this.statusText });
         break;
       case SessionEventKind.AssistantDelta:
         this.appendAssistantDelta(event);
@@ -938,28 +1816,50 @@ struct Index {
         this.statusText = '等待确认';
         break;
       case SessionEventKind.ToolCompleted:
-        this.statusText = '工具执行完成';
+        this.statusText = event.text || '工具执行完成';
+        if (this.mode === 'local') { this.loadWorkspace(this.workspacePath); }
         break;
       case SessionEventKind.TurnCompleted:
         this.isBusy = false;
-        this.statusText = '准备就绪';
+        this.hasApproval = false;
+        this.statusText = event.text || '准备就绪';
+        this.lastUsage = event.usage;
+        if (event.text === '任务已取消') {
+          this.appendMessage({ id: 'cancel-' + event.id, role: MessageRole.System, text: event.text });
+        }
+        if (this.mode === 'local') { this.settleLocalTurn(event.text !== '任务已取消'); }
         break;
       case SessionEventKind.Error:
         this.isBusy = false;
+        this.hasApproval = false;
         this.appendMessage({
           id: `error-${Date.now()}`,
           role: MessageRole.System,
           text: event.text ?? '发生未知错误'
         });
+        if (this.mode === 'local') { this.refreshCheckpoint(); }
         break;
       default:
         break;
     }
+    this.queueSave();
+  }
+
+  private async settleLocalTurn(completed: boolean): Promise<void> {
+    const session = this.session;
+    const thread = session?.currentThread();
+    const sequence = this.sendSequence;
+    const sendQueued = completed && !this.resumingTurn;
+    await this.refreshCheckpoint(completed);
+    if (!this.pageActive || session !== this.session || thread !== this.session?.currentThread() ||
+      sequence !== this.sendSequence) { return; }
+    this.queueSave();
+    if (sendQueued && !this.checkpointState && !this.checkpointError && !this.checkpointLoading &&
+      !this.isBusy && !this.switching && this.queued.length) { await this.sendPrompt(true); }
   }
 
   private appendAssistantDelta(event: SessionEvent): void {
-    const messageId: string = this.activeAssistantId.length > 0 ?
-      this.activeAssistantId : (event.itemId ?? `assistant-${Date.now()}`);
+    const messageId: string = event.itemId || this.activeAssistantId || `assistant-${Date.now()}`;
     this.activeAssistantId = messageId;
     const next: ChatMessage[] = this.messages.slice();
     let index: number = -1;
@@ -982,11 +1882,12 @@ struct Index {
         id: existing.id,
         role: existing.role,
         title: existing.title,
-        text: existing.text + (event.text ?? ''),
+        text: (messageId === this.replaceAnswerId ? '' : existing.text) + (event.text ?? ''),
         status: existing.status
       };
     }
     this.messages = next;
+    if (messageId === this.replaceAnswerId) { this.replaceAnswerId = ''; }
   }
 
   private appendToolDelta(event: SessionEvent): void {

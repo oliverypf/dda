@@ -309,7 +309,7 @@ export class ReadonlyWorkspace {
       || this.#excludedRelativePaths.some((excluded) => relativeKey === excluded || relativeKey.startsWith(`${excluded}/`));
   }
 
-  async snapshot() {
+  async snapshot({ includeFileContents = true } = {}) {
     if (!this.root) return { granted: false, entries: [], sections: [] };
     const root = await mappedRealpath(this.root).catch(() => { throw new Error('WORKSPACE_NOT_FOUND'); });
     const metadata = await stat(root).catch(() => { throw new Error('WORKSPACE_UNAVAILABLE'); });
@@ -320,7 +320,8 @@ export class ReadonlyWorkspace {
       await walk(root, root, entries, (candidate, relativePath) => this.#isExcluded(candidate, relativePath), omittedDirectories);
       omittedDirectories.sort((left, right) => left.localeCompare(right, 'en'));
       const sections = [];
-      for (const entry of entries.filter((item) => item.kind === 'FILE')) {
+      const files = includeFileContents ? entries.filter((item) => item.kind === 'FILE') : [];
+      for (const entry of files) {
         if (sections.length >= 18) break;
         if (entry.sizeBytes > MAX_FILE_BYTES || SENSITIVE_PATH.test(entry.path)) continue;
         const candidate = resolve(root, entry.path);
@@ -549,7 +550,30 @@ export class ReadonlyWorkspace {
     return this.#read(relativePath, maxChars, offsetChars, findText, requireUnique, false);
   }
 
-  async #read(relativePath, maxChars, offsetChars, findText, requireUnique, inspectPresentation) {
+  // The host passes a digest and character ranges from successful tool reads.
+  // A partial window covers only lines fully contained in it.
+  async readObservedLines({ path, digest: observedDigest, sizeBytes, ranges }, line) {
+    if (!Number.isSafeInteger(line) || line < 1) return;
+    return this.#read(path, 1, 0, undefined, false, false, (content, currentDigest) => {
+      if (observedDigest !== currentDigest) return;
+      let start = 0;
+      const excerpt = [];
+      let sawTarget = false;
+      for (let number = 1; number <= line + 1 && start < content.length; number++) {
+        const newline = content.indexOf('\n', start);
+        const end = newline < 0 ? content.length : newline;
+        const textEnd = end > start && content[end - 1] === '\r' ? end - 1 : end;
+        if (number >= line - 1 && ranges.some(([lo, hi]) => lo <= start && textEnd <= hi)) {
+          excerpt.push(`${number}: ${content.slice(start, Math.min(textEnd, start + 320))}${textEnd - start > 320 ? '…' : ''}`);
+          if (number === line) sawTarget = true;
+        }
+        start = end + 1;
+      }
+      return sawTarget ? excerpt.join('\n') : undefined;
+    }, sizeBytes);
+  }
+
+  async #read(relativePath, maxChars, offsetChars, findText, requireUnique, inspectPresentation, projectObservedText, expectedSize) {
     if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > MAX_READ_CHARS) {
       throw new Error('WORKSPACE_INVALID_READ_LIMIT');
     }
@@ -559,6 +583,7 @@ export class ReadonlyWorkspace {
     let target;
     try { target = await this.#resolvePath(relativePath); } catch (error) { logWorkspaceFailure('read.resolve', relativePath, this.root, error); throw error; }
     if (!target.metadata.isFile()) throw new Error(`WORKSPACE_NOT_FILE:${target.relativePath}`);
+    if (Number.isSafeInteger(expectedSize) && target.metadata.size !== expectedSize) return;
     const path = target.relativePath;
     const isPptx = inspectPresentation && /\.pptx$/iu.test(path);
     let bytes;
@@ -597,6 +622,7 @@ export class ReadonlyWorkspace {
       content = decodeText(bytes, path || target.real);
     }
     if (content === undefined) throw new Error(`WORKSPACE_BINARY_FILE:${path}`);
+    if (projectObservedText) return projectObservedText(content, digest(bytes));
     const match = findText === undefined ? undefined : requireUnique
       ? uniqueExcerptOffset(content, findText, offsetChars) : content.indexOf(findText, offsetChars);
     const start = match === undefined ? offsetChars : match < 0 ? content.length : match;

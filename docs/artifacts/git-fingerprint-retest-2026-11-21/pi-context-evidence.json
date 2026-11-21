@@ -1,0 +1,117 @@
+{
+  "method": {
+    "fixture": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+    "model_id": "deepseek-v4-flash",
+    "clients": [
+      "dda, same frozen runtime as protocol.json",
+      "Pi 1.1.0"
+    ],
+    "measurement": "In fresh clones of the original seed (filesystem copies), capture each native client's initial HTTP request with the benchmark prompt, provider protocol, tool settings and launcher flags. Use a loopback server that returns a local HTTP 400 after counting the body. No upstream traffic or model actions. Count compact UTF-8 JSON bytes. Per-message text fields exclude the outer JSON quotes. Object values include their own punctuation.",
+    "historical_first_request_bytes": {
+      "dda": 178672,
+      "pi": 6220
+    },
+    "historical_proxy_saves": "Only request totals, tool names, and response metadata; no full prompt persisted."
+  },
+  "first_request": {
+    "dda": {
+      "raw_bytes": 178672,
+      "reserialization_matches_wire": true,
+      "tools_value_bytes": 12946,
+      "tools_count": 10,
+      "messages_value_bytes": 165622,
+      "messages": [
+        {
+          "role": "system",
+          "message_bytes": 3550,
+          "text_bytes_escaped": 3520
+        },
+        {
+          "role": "user",
+          "message_bytes": 161370,
+          "text_bytes_escaped": 161342,
+          "workspace_prefix_bytes": 798,
+          "directory_entries_bytes": 11172,
+          "selected_file_text_and_headers_bytes": 149253,
+          "selected_files": [
+            "package.json",
+            "runtime/src/acceptance-match.mjs",
+            "runtime/src/access-mode-instructions.mjs",
+            "runtime/src/agent-council.mjs",
+            "runtime/src/bayesian-assessment.mjs",
+            "runtime/src/binary-inspection-contract.mjs",
+            "runtime/src/browser-failure.mjs",
+            "runtime/src/candidate-draft-stage.mjs",
+            "runtime/src/candidate-fanout.mjs",
+            "runtime/src/capability-path.mjs",
+            "runtime/src/commit-metrics.mjs",
+            "runtime/src/computer-access.mjs",
+            "runtime/src/context-assembler.mjs",
+            "runtime/src/context-compaction.mjs",
+            "runtime/src/context-port.mjs",
+            "runtime/src/continuous-verifier.mjs",
+            "runtime/src/credit-blame-ledger.mjs",
+            "runtime/src/custom-instructions.mjs"
+          ]
+        },
+        {
+          "role": "user",
+          "message_bytes": 698,
+          "text_bytes_escaped": 670
+        }
+      ]
+    },
+    "pi": {
+      "raw_bytes": 6220,
+      "reserialization_matches_wire": true,
+      "tools_value_bytes": 2841,
+      "tools_count": 4,
+      "messages_value_bytes": 3231,
+      "messages": [
+        {
+          "role": "system",
+          "message_bytes": 2904,
+          "text_bytes_escaped": 2874
+        },
+        {
+          "role": "user",
+          "message_bytes": 324,
+          "text_bytes_escaped": 271
+        }
+      ]
+    }
+  },
+  "target_test_reads_in_dda_2": {
+    "file": "runtime/test/git-audit.test.mjs",
+    "source_length_chars": 5249,
+    "assertion_line": 88,
+    "assertion_line_start_char": 4473,
+    "provenance": "Tool arguments from the historical proxy responses; corresponding runtime event sequence and SHA-256 output digest were verified by replaying workspace.readForInspection against the same file. Line ranges are inclusive and based on on-disk line endings.",
+    "observations": [
+      { "round": 1, "seq": 72, "requested_window": "default", "lines": [1, 101], "includes_assertion": true, "output_digest": "sha256:398c3359ab233471e2a40b3e69af1468dae9a040ef28312614bce7b63372a958" },
+      { "round": 9, "seq": 395, "offsetChars": 2000, "maxChars": 1400, "lines": [46, 71], "includes_assertion": false, "output_digest": "sha256:219a17127fb35b985bc53bd5e601b5ff736f31fe1ad0b9e5bd0eeacb356ce709" },
+      { "round": 10, "seq": 404, "offsetChars": 3400, "maxChars": 2000, "lines": [71, 101], "includes_assertion": true, "output_digest": "sha256:a79caeef805b17fa2cdde3d8f0c020a8b30ce9d6eeb79bf76e29a06dfa5379a3" }
+    ]
+  },
+  "local_failed_retest_replay": {
+    "method": "Ran the original node --test command in the archived failed dda-2 worktree. Passed its native stdout/stderr and the unifiedTextDiff of the seed and resulting patch into the frozen RepairRetest helper. This is a local observation of the reconstructed message, not the historical provider payload.",
+    "exit": 1,
+    "transition": "failed_after_edit",
+    "frame": true,
+    "hasField": false,
+    "hasExpression": false,
+    "editAtTest": {
+      "tool": "file.patch",
+      "path": "runtime/src/execution-scope-snapshot.mjs",
+      "changes": [
+        "@@ -55,35 +55,83 @@",
+        "-export function compareGitObservations(before, after, scopeSnapshot = {}) {",
+        "-  const beforeStatus = before?.status ?? {};",
+        "-  const afterStatus = after?.status ?? {};",
+        "+const pathCodesByDigest = (status) => {",
+        "+  const digests = Array.isArray(status?.pathDigests) ? status.pathDigests : [];",
+        "+  const codes = Array.isArray(status?.statusCodes) ? status.statusCodes : [];"
+      ]
+    }
+  }
+}

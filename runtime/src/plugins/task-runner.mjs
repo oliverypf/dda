@@ -15,6 +15,8 @@ import { observedWorkspaceRead, proposedToolDecisionClaim, toolResultDecisionCla
 import { isNetworkUrlReviewTool, networkUrlForReview } from '../network-policy.mjs';
 import { isWebLookupTool, webLookupRequest, webPageEvidence, readableNetworkResponse, WEB_FETCH, WEB_SEARCH } from '../web-lookup.mjs';
 import { buildTestProcessReceipt } from '../decision/build-test-verification.mjs';
+import { RepairRetest } from '../repair-retest.mjs';
+import { requestsRepair } from '../rule-router.mjs';
 import { classifyReadOnlyGitCommand } from '../decision/workspace-context.mjs';
 import { nodeProcessIntent } from '../decision/process-intent.mjs';
 import { validateTaskPrompt, MAX_INTERNAL_PROMPT_CHARS } from '../task-harness.mjs';
@@ -266,8 +268,7 @@ const normalizeToolArgument = (value, { toolName } = {}) => {
   return canonicalJson(parsed);
 };
 
-const boundedToolResult = (value) => {
-  const text = JSON.stringify(value);
+const boundedToolResult = (text) => {
   if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
   return `${text.slice(0, MAX_TOOL_RESULT_CHARS - 1)}…`;
 };
@@ -459,7 +460,7 @@ const collectToolCalls = (calls) => {
 
 export const taskRunnerPlugin = cordisPlugin((ctx) => {
   ctx.provide('taskRunner', {
-    async run({ prompt, originalGoal, stepObjective, hostCallPrefix, executorTools, workflowInstructions, images = [], workspace, historyContext = '', recovery, signal, onToolCall, onToolResult, onEvent, mode = 'CONTROLLED', modelProvider, maxToolRounds, maxTokens, filesystemAccess = 'WORKSPACE', requiresWorkspaceMutation = false, taskContextFacts = [], taskClass = '', executionProfile, readOnlyStep = false, buildProcessPending, takeProjectBuildCommand, modelContextLimits } = {}) {
+    async run({ prompt, originalGoal, stepObjective, hostCallPrefix, executorTools, workflowInstructions, images = [], workspace, historyContext = '', recovery, signal, onToolCall, onToolResult, onEvent, mode = 'CONTROLLED', modelProvider, maxToolRounds, maxTokens, filesystemAccess = 'WORKSPACE', requiresWorkspaceMutation = false, taskContextFacts = [], taskClass = '', executionProfile, readOnlyStep = false, buildProcessPending, takeProjectBuildCommand, modelContextLimits, readObservedAssertion } = {}) {
       if (mode !== 'CONTROLLED') throw new Error('EXECUTION_MODE_INVALID');
       const provider = modelProvider ?? ctx.modelProvider;
       if (!provider || typeof provider.stream !== 'function') throw new Error('MODEL_PROVIDER_UNAVAILABLE');
@@ -469,6 +470,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const executionProfileId = normalizeExecutionProfile(executionProfile, taskClass);
       const queryTask = executionProfileId === EXECUTION_PROFILE_LOOKUP;
       const readOnlyWorkspaceTask = executionProfileId === EXECUTION_PROFILE_READONLY;
+      const repairGoal = requiresWorkspaceMutation || requestsRepair(originalGoal || prompt);
       const imageBlocks = toImageContentBlocks(images);
       const failureLessons = await readFailureLessons(workspace);
       const failureLessonsText = failureLessons.length
@@ -493,8 +495,10 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             ] : []),
             'Directory entries:',
             ...sorted(workspace.entries, 'path').map((entry) => `- ${entry.kind.toLowerCase()} ${entry.path}${entry.sizeBytes === undefined ? '' : ` (${entry.sizeBytes} bytes)`}`),
-            'Selected text files:',
-            ...sorted(workspace.sections, 'path').map((section) => `--- ${section.path} (${section.digest}) ---\n${section.content}`),
+            ...(repairGoal ? ['Read relevant files on demand with a workspace tool.'] : [
+              'Selected text files:',
+              ...sorted(workspace.sections, 'path').map((section) => `--- ${section.path} (${section.digest}) ---\n${section.content}`)
+            ]),
             `Snapshot: ${workspace.snapshotDigest}`
           ].join('\n')
         : workspace.deferred ? 'Project files have not been opened. Use a workspace tool if this task needs project files.'
@@ -569,6 +573,11 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       const canOfferImplementationCheckpoint = mode === 'CONTROLLED'
         && (tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write')
           || (toolDefinitions.get('kernel.host_request')?.readOnly === false));
+      const repair = mode === 'CONTROLLED' && !readOnlyStep && !queryTask && !readOnlyWorkspaceTask
+        && tools.some(tool => tool.name === 'file.patch' || tool.name === 'file.write')
+        && repairGoal ? new RepairRetest(workspace) : undefined;
+      let repairMessage;
+      let repairAfterDraft = false;
 
        const effectiveMaxToolRounds = queryTask ? QUERY_MAX_TOOL_ROUNDS : resolveMaxToolRounds(maxToolRounds);
        const roundsLeft = (round) => effectiveMaxToolRounds === Infinity || round <= effectiveMaxToolRounds;
@@ -586,6 +595,18 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
       for (let round = 1; roundsLeft(round); round += 1) {
         taskContextMessage(facts);
         const finishing = concludeNextRound || (queryTask && round === effectiveMaxToolRounds);
+        // Keep one current observation after the tool batch, even when the
+        // previous round only ran a diagnostic or the transcript was compacted.
+        if (repair) {
+          const prior = messages.indexOf(repairMessage);
+          if (prior >= 0) messages.splice(prior, 1);
+          const instruction = !finishing && repair.instruction(repairAfterDraft, await repair.assertionSource(readObservedAssertion));
+          repairAfterDraft = false;
+          if (instruction) {
+            repairMessage = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: instruction }] });
+            messages.push(repairMessage);
+          }
+        }
         const systemChars = typeof system === 'string' ? system.length : 0;
         const toolsChars = toolSchemaChars(finishing ? [] : tools);
         const budget = contextCompactionBudget({
@@ -831,6 +852,12 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
         }
         if (!finishing && !calls.length && lookupFollowup && round < effectiveMaxToolRounds - 1) {
           messages.push(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: lookupFollowup }] }));
+          continue;
+        }
+        if (!finishing && !calls.length && round < effectiveMaxToolRounds && repair?.continueAfterDraft()) {
+          repairAfterDraft = true;
+          await onEvent?.({ kind: 'harness.repair_continued', round, repairAttempt: repair.continuations,
+            discardedTextChars: turnText.length, discardedReasoningChars: turnReasoning.length });
           continue;
         }
         text += turnText;
@@ -1150,7 +1177,20 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               ...(!isError ? { outputDigest: sha256Digest(JSON.stringify(output)) } : {})
             });
           }
-          const resultDigest = sha256Digest(JSON.stringify(output));
+          const encoded = JSON.stringify(output);
+          const resultDigest = sha256Digest(encoded);
+          // A raw read may fit the file window yet exceed the model message
+          // limit after JSON escaping. Only attest windows delivered in full.
+          if (!isError && isWorkspaceContentTool(call.name) && encoded.length <= MAX_TOOL_RESULT_CHARS) {
+            repair?.observeRead(output, effectView.request);
+          }
+          const buildTest = processInvocation && (repair || typeof onToolResult === 'function') && buildTestProcessReceipt({
+            ...processInvocation, tool: call.name, output, outputDigest: resultDigest
+          });
+          if (buildTest && repair) {
+            const state = repair.observeTest(buildTest, output);
+            if (state) await onEvent?.({ kind: 'harness.repair_retest', round, state, invocationKey: buildTest.invocationKey });
+          }
           const rawToolMessage = typeof output?.message === 'string' ? safeErrorMessage(output.message, output.message) : '';
           const toolMessage = rawToolMessage.replace(/\s*Available snapshot paths:[\s\S]*$/u, '').trim();
           const outputTail = isError ? processOutputTail(output) : '';
@@ -1188,7 +1228,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
                 }
               : {
                   outputDigest: resultDigest,
-                  outputChars: JSON.stringify(output).length,
+                  outputChars: encoded.length,
                   ...(output?.idempotentReplay === true ? { idempotentReplay: true } : {})
                 })
           };
@@ -1225,6 +1265,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
             }
           }
           if (!isError && (call.name === 'file.write' || call.name === 'file.patch')) {
+            repair?.observeEdit(call.name, output);
             successfulWritesThisRun += 1;
             inspectionsSinceProgressCheckpoint = 0;
           }
@@ -1278,11 +1319,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
               text: 'HOST_TASK_CONCLUSION: Finish with the evidence already available. If external sources could not be obtained, say what could be established and what remains unverified. Do not invent facts or request another tool.' }] }));
           }
           if ((!isError || processFailureCode) && typeof onToolResult === 'function') {
-            const encoded = JSON.stringify(output);
             const workspaceRead = !isError ? observedWorkspaceRead(call.name, toolDefinition, output) : undefined;
-            const buildTest = processInvocation && buildTestProcessReceipt({
-              ...processInvocation, tool: call.name, output, outputDigest: resultDigest
-            });
             const observationText = output?.content ?? output?.text ?? output?.body;
             const readEvidence = readOnlyStep && !isError && ['workspace.read', 'web.fetch', 'network.request'].includes(call.name)
               && typeof observationText === 'string' ? { source: output.path || output.finalUrl || output.url,
@@ -1325,7 +1362,7 @@ export const taskRunnerPlugin = cordisPlugin((ctx) => {
           messages.push(createToolResultMessage({
             callId: call.id,
             isError,
-            content: [{ type: 'text', text: boundedToolResult(output) }]
+            content: [{ type: 'text', text: boundedToolResult(encoded) }]
           }));
           if (stopAfterResult) throw stopAfterResult;
         }

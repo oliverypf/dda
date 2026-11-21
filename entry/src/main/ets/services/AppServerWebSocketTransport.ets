@@ -1,5 +1,6 @@
 import webSocket from '@ohos.net.webSocket';
 import util from '@ohos.util';
+import { permissionResponse, PermissionReview, reviewPermissions } from './RemotePermissionApproval';
 import {
   CodexTransport,
   ConnectionState,
@@ -13,7 +14,6 @@ import {
   FsReadDirectoryParams,
   FsReadFileParams,
   InitializeParams,
-  JsonRpcRequest,
   RpcDirectoryEntry,
   RpcEnvelope,
   RpcInput,
@@ -26,14 +26,29 @@ import {
   TurnStartParams
 } from './CodexProtocol';
 
+const RPC_TIMEOUT_MS: number = 30000;
+
 interface PendingRequest {
+  timer: number;
   resolve: (message: RpcEnvelope) => void;
   reject: (error: Error) => void;
+}
+
+interface AppServerRequest {
+  jsonrpc: string;
+  id: number;
+  method: string;
+  params: RpcRequestParams | RpcParams;
+}
+
+interface ThreadStartedEventParams extends RpcParams {
+  thread?: RpcThread;
 }
 
 interface ApprovalRoute {
   rpcId: number | string;
   legacy: boolean;
+  permissionReview?: PermissionReview;
 }
 
 /**
@@ -51,7 +66,9 @@ export class AppServerWebSocketTransport implements CodexTransport {
   private readonly pending: Map<string, PendingRequest> = new Map();
   private readonly approvalIds: Map<string, ApprovalRoute> = new Map();
   private requestId: number = 0;
-  private connected: boolean = false;
+  private approvalSequence: number = 0;
+  private rejectHandshake?: (error: Error) => void;
+  private readonly attachedThreads: Set<string> = new Set();
   private threadId: string = '';
 
   constructor(endpoint: string, cwd: string = '/workspace') {
@@ -70,64 +87,81 @@ export class AppServerWebSocketTransport implements CodexTransport {
 
     const socket: webSocket.WebSocket = webSocket.createWebSocket();
     this.socket = socket;
+    let signalOpen: () => void = () => {};
+    const opened = new Promise<void>((resolve) => { signalOpen = resolve; });
+    socket.on('open', () => { if (this.socket === socket) { signalOpen(); } });
     socket.on('message', (error: Error, value: string | ArrayBuffer) => {
-      if (!error) {
+      if (this.socket === socket && !error) {
         this.handleIncoming(this.decodeMessage(value));
       }
     });
     socket.on('error', (error: Error) => {
-      this.failConnection(error);
+      if (this.socket === socket) { this.closeConnection(socket, error, true); }
     });
-    socket.on('close', (_error: Error, _result: webSocket.CloseResult) => {
-      this.connected = false;
+    socket.on('close', () => {
+      if (this.socket === socket) {
+        this.closeConnection(socket, new Error('App Server 连接已关闭'), false);
+      }
+    });
+
+    // Socket.connect() initiates the connection. Only 'open' means data can be sent.
+    // Race the entire handshake against closure/timeout, including the initialized send.
+    const aborted = new Promise<void>((_resolve, reject) => { this.rejectHandshake = reject; });
+    const timeout = setTimeout(() => {
+      if (this.socket === socket) {
+        this.closeConnection(socket, new Error('App Server 握手超时'), true);
+      }
+    }, RPC_TIMEOUT_MS);
+    try {
+      await Promise.race([this.handshake(socket, opened), aborted]);
+      if (this.socket !== socket) { throw new Error('App Server 连接已关闭'); }
       this.emit({
         kind: SessionEventKind.ConnectionChanged,
         id: 'connection',
-        state: ConnectionState.Disconnected,
-        text: 'App Server 连接已关闭'
+        state: ConnectionState.Connected,
+        text: 'Codex App Server 已连接'
       });
-    });
-
-    try {
-      await socket.connect(this.endpoint);
     } catch (error) {
-      const failure: Error = error as Error;
-      this.failConnection(failure);
-      throw failure;
+      if (this.socket === socket) { this.closeConnection(socket, error as Error, true); }
+      throw error as Error;
+    } finally {
+      clearTimeout(timeout);
+      signalOpen();
+      if (this.socket === socket) { this.rejectHandshake = undefined; }
     }
-    this.connected = true;
-    this.emit({
-      kind: SessionEventKind.ConnectionChanged,
-      id: 'connection',
-      state: ConnectionState.Connected,
-      text: 'Codex App Server 已连接'
-    });
+  }
 
+  private async handshake(socket: webSocket.WebSocket, opened: Promise<void>): Promise<void> {
+    try {
+      if (!await socket.connect(this.endpoint)) { throw new Error('连接请求未受理'); }
+    } catch (error) {
+      throw new Error('未能建立 WebSocket 连接：' + (error as Error).message);
+    }
+    await opened;
+    if (this.socket !== socket) { throw new Error('App Server 连接已关闭'); }
     const initializeParams: InitializeParams = {
-      clientInfo: {
-        name: 'dda',
-        title: 'dda',
-        version: '0.1.0'
-      },
-      capabilities: {
-        experimentalApi: true
-      }
+      clientInfo: { name: 'dda', title: 'dda', version: '0.1.0' },
+      capabilities: { experimentalApi: true }
     };
     await this.request('initialize', initializeParams);
+    if (this.socket !== socket) { throw new Error('App Server 连接已关闭'); }
     await this.sendRaw(CodexProtocol.initialized());
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
-    if (this.socket !== undefined) {
-      try {
-        await this.socket.close();
-      } catch (error) {
-        this.failConnection(error as Error);
-      }
+    const socket = this.socket;
+    if (socket) {
+      this.closeConnection(socket, new Error('已断开 App Server'), false);
+      await this.closeSocket(socket);
     }
-    this.socket = undefined;
-    this.rejectPending(new Error('连接已断开'));
+  }
+
+  private async closeSocket(socket: webSocket.WebSocket): Promise<void> {
+    try {
+      await socket.close();
+    } catch (_) {
+      // Peer closure or a failed handshake may already have closed the native socket.
+    }
   }
 
   async startThread(): Promise<string> {
@@ -142,11 +176,23 @@ export class AppServerWebSocketTransport implements CodexTransport {
     if (id.length === 0) {
       throw new Error('App Server 未返回 thread id');
     }
+    this.attachedThreads.add(id);
     this.threadId = id;
     return id;
   }
 
   async sendTurn(threadId: string, input: string): Promise<string> {
+    const socket = this.socket;
+    if (!this.attachedThreads.has(threadId)) {
+      // Reconnect to the selected thread on this connection. Never silently start a
+      // new conversation while the user is looking at a previously opened one.
+      const resumed = await this.request('thread/resume', { threadId: threadId });
+      if (this.socket !== socket || resumed.result?.thread?.id !== threadId) {
+        throw new Error('App Server 未能恢复所选会话');
+      }
+      this.attachedThreads.add(threadId);
+    }
+    this.threadId = threadId;
     const inputItem: RpcInput = {
       type: 'text',
       text: input
@@ -157,7 +203,9 @@ export class AppServerWebSocketTransport implements CodexTransport {
     };
     const response: RpcEnvelope = await this.request('turn/start', params);
     const turn: RpcTurn | undefined = response.result?.turn;
-    return turn?.id ?? '';
+    const turnId = turn?.id ?? '';
+    if (!turnId) { throw new Error('App Server 未返回 turn id'); }
+    return turnId;
   }
 
   async readDirectory(path: string): Promise<Array<WorkspaceEntry>> {
@@ -201,23 +249,34 @@ export class AppServerWebSocketTransport implements CodexTransport {
       return;
     }
     this.approvalIds.delete(requestId);
-    this.sendRaw(CodexProtocol.approvalResponse(route.rpcId, approved, route.legacy)).catch((error: Error) => {
-      this.emitError(error.message);
+    const socket = this.socket;
+    const reply = route.permissionReview ? permissionResponse(route.rpcId, approved ? route.permissionReview : undefined) :
+      CodexProtocol.approvalResponse(route.rpcId, approved, route.legacy);
+    this.sendRaw(reply).catch((error: Error) => {
+      if (this.socket === socket) { this.emitError(error.message); }
     });
   }
 
-  private request(method: string, params: RpcRequestParams): Promise<RpcEnvelope> {
+  private request(method: string, params: RpcRequestParams | RpcParams): Promise<RpcEnvelope> {
     const id: number = ++this.requestId;
     const key: string = id.toString();
     const response: Promise<RpcEnvelope> = new Promise<RpcEnvelope>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(key);
+        reject(new Error(`App Server 请求超时：${method}`));
+      }, RPC_TIMEOUT_MS);
       this.pending.set(key, {
+        timer: timer,
         resolve: resolve,
         reject: reject
       });
     });
-    this.sendRequest(id, method, params).catch((error: Error) => {
+    const request: AppServerRequest = { jsonrpc: '2.0', id: id, method: method, params: params };
+    const raw = JSON.stringify(request);
+    this.sendRaw(raw).catch((error: Error) => {
       const pending: PendingRequest | undefined = this.pending.get(key);
       if (pending !== undefined) {
+        clearTimeout(pending.timer);
         this.pending.delete(key);
         pending.reject(error);
       }
@@ -225,28 +284,14 @@ export class AppServerWebSocketTransport implements CodexTransport {
     return response;
   }
 
-  private async sendRequest(id: number, method: string, params: RpcRequestParams): Promise<void> {
-    const request: JsonRpcRequest = {
-      jsonrpc: '2.0',
-      id: id,
-      method: method,
-      params: params
-    };
-    await this.sendRaw(JSON.stringify(request));
-  }
-
   private async sendRaw(raw: string): Promise<void> {
-    if (!this.connected || this.socket === undefined) {
+    if (this.socket === undefined) {
       throw new Error('App Server 连接不可用');
     }
-    let sent: boolean = false;
     try {
-      sent = await this.socket.send(raw);
+      if (!await this.socket.send(raw)) { throw new Error('消息未送达'); }
     } catch (error) {
-      throw error as Error;
-    }
-    if (!sent) {
-      throw new Error('App Server 消息发送失败');
+      throw new Error('App Server 消息发送失败：' + (error as Error).message);
     }
   }
 
@@ -265,6 +310,7 @@ export class AppServerWebSocketTransport implements CodexTransport {
       if (message.id !== undefined && message.method === undefined) {
         const pending: PendingRequest | undefined = this.pending.get(message.id.toString());
         if (pending !== undefined) {
+          clearTimeout(pending.timer);
           this.pending.delete(message.id.toString());
           if (message.error !== undefined) {
             pending.reject(new Error(message.error.message));
@@ -328,11 +374,11 @@ export class AppServerWebSocketTransport implements CodexTransport {
         text: 'Turn 已完成'
       });
     } else if (method === 'thread/started') {
-      this.threadId = threadId;
+      const started = (params as ThreadStartedEventParams).thread?.id ?? threadId;
       this.emit({
         kind: SessionEventKind.ThreadStarted,
-        id: threadId,
-        threadId: threadId,
+        id: started,
+        threadId: started,
         text: '新会话已准备好'
       });
     } else if (method === 'item/commandExecution/requestApproval' ||
@@ -373,11 +419,27 @@ export class AppServerWebSocketTransport implements CodexTransport {
       this.emitError('审批请求缺少 JSON-RPC id');
       return;
     }
-    const requestId: string = message.id.toString();
+    // A server may reuse a JSON-RPC id after reconnect. Keep the UI action
+    // tied to this single approval and send the wire id only on its own socket.
+    const requestId = `server-approval-${++this.approvalSequence}`;
     const method: string = message.method ?? '';
+    let review: PermissionReview | null = null;
+    if (method === 'item/permissions/requestApproval') {
+      review = reviewPermissions(params.permissions, this.cwd);
+      if (!review) {
+        const socket = this.socket;
+        this.sendRaw(permissionResponse(message.id)).catch((error: Error) => {
+          if (this.socket === socket) { this.emitError(error.message); }
+        });
+        this.emit({ kind: SessionEventKind.ToolStarted, id: requestId, itemId: requestId, threadId: threadId,
+          turnId: params.turnId, command: '已拒绝额外权限：鸿蒙端只支持逐项显示的项目内读写路径。' });
+        return;
+      }
+    }
     this.approvalIds.set(requestId, {
       rpcId: message.id,
-      legacy: method === 'execCommandApproval' || method === 'applyPatchApproval'
+      legacy: method === 'execCommandApproval' || method === 'applyPatchApproval',
+      permissionReview: review ?? undefined
     });
     this.emit({
       kind: SessionEventKind.ApprovalRequired,
@@ -385,7 +447,7 @@ export class AppServerWebSocketTransport implements CodexTransport {
       threadId: threadId,
       turnId: params.turnId,
       requestId: requestId,
-      command: this.commandText(params.command),
+      command: review ? review.display : this.commandText(params.command),
       reason: params.reason ?? 'Codex 请求执行受保护操作。'
     });
   }
@@ -412,20 +474,23 @@ export class AppServerWebSocketTransport implements CodexTransport {
     });
   }
 
-  private failConnection(error: Error): void {
-    this.connected = false;
+  private closeConnection(socket: webSocket.WebSocket, error: Error, failed: boolean): void {
+    this.socket = undefined;
+    this.attachedThreads.clear();
+    this.approvalIds.clear();
+    this.rejectHandshake?.(error);
+    this.rejectHandshake = undefined;
+    this.pending.forEach((pending: PendingRequest) => {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    });
+    this.pending.clear();
     this.emit({
       kind: SessionEventKind.ConnectionChanged,
       id: 'connection',
-      state: ConnectionState.Error,
+      state: failed ? ConnectionState.Error : ConnectionState.Disconnected,
       text: error.message
     });
-    this.emitError(error.message);
-    this.rejectPending(error);
-  }
-
-  private rejectPending(error: Error): void {
-    this.pending.forEach((pending: PendingRequest) => pending.reject(error));
-    this.pending.clear();
+    if (failed) { this.closeSocket(socket); }
   }
 }

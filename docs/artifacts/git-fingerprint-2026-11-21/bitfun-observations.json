@@ -1,0 +1,142 @@
+[
+  {
+    "run": 1,
+    "version": "bitfun 0.2.19 (commit 9012552b30c7)",
+    "requests": 17,
+    "returnedModels": [
+      "deepseek-flash"
+    ],
+    "totalForwardedInputBytes": 2463965,
+    "completionTokens": 2490,
+    "firstBudgetStopSec": 53.594,
+    "budgetStopCount": 10,
+    "budgetStopCause": "input-byte limit inferred by exclusion",
+    "targetSourcePathVisible": {
+      "tool": "Read",
+      "toolId": "call_00_laPvfMYt5tCR5ZdjVPiy2236",
+      "secondsAfterFirstModelRequest": 14.8
+    },
+    "sourceRead": {
+      "tool": "Read",
+      "toolId": "call_00_unzNEmi5gQx7WfxoCrO23746",
+      "secondsAfterFirstModelRequest": 16.84
+    },
+    "sandboxTempError": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_jracfXsdkorBeYUaTHeL5363",
+      "secondsAfterFirstModelRequest": 23.33
+    },
+    "reproducedFingerprintAssertion": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_ymd3CaucO6qPqRsEbPLR7206",
+      "secondsAfterFirstModelRequest": 40.53
+    },
+    "sourceReadRequestedAtModelRequest": 7,
+    "postEditTargetTest": null,
+    "trackedFilesChanged": [],
+    "process": {
+      "client": "BitFun CLI",
+      "exe": "bitfun.exe",
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 358.55,
+      "model": "deepseek-v4-flash"
+    }
+  },
+  {
+    "run": 2,
+    "version": "bitfun 0.2.19 (commit 9012552b30c7)",
+    "requests": 18,
+    "returnedModels": [
+      "deepseek-flash"
+    ],
+    "totalForwardedInputBytes": 2463758,
+    "completionTokens": 4453,
+    "firstBudgetStopSec": 60.622,
+    "budgetStopCount": 10,
+    "budgetStopCause": "input-byte limit inferred by exclusion",
+    "targetSourcePathVisible": {
+      "tool": "Read",
+      "toolId": "call_01_9wuP9ZHw1O2JWizRjkri5807",
+      "secondsAfterFirstModelRequest": 12.64
+    },
+    "sourceRead": {
+      "tool": "Read",
+      "toolId": "call_00_bdxeZYPT6dNIHgxh31Kg1770",
+      "secondsAfterFirstModelRequest": 13.8
+    },
+    "sandboxTempError": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_fub4VrmuanGdWIxAR5lj0435",
+      "secondsAfterFirstModelRequest": 21.05
+    },
+    "reproducedFingerprintAssertion": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_kON7Vct3bcdcKzU2lgqP3445",
+      "secondsAfterFirstModelRequest": 36.51
+    },
+    "firstEdit": {
+      "tool": "Edit",
+      "toolId": "call_00_i7MfPJJQqXa6ai0P9ArG2013",
+      "secondsAfterFirstModelRequest": 48.72
+    },
+    "editCount": 2,
+    "sourceReadRequestedAtModelRequest": 5,
+    "postEditTargetTest": null,
+    "trackedFilesChanged": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "process": {
+      "client": "BitFun CLI",
+      "exe": "bitfun.exe",
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 365.89,
+      "model": "deepseek-v4-flash"
+    }
+  },
+  {
+    "run": 3,
+    "version": "bitfun 0.2.19 (commit 9012552b30c7)",
+    "requests": 20,
+    "returnedModels": [
+      "deepseek-flash"
+    ],
+    "totalForwardedInputBytes": 2455094,
+    "completionTokens": 2686,
+    "firstBudgetStopSec": 101.703,
+    "budgetStopCount": 10,
+    "budgetStopCause": "input-byte limit inferred by exclusion",
+    "targetSourcePathVisible": {
+      "tool": "Read",
+      "toolId": "call_00_7QiRJWZv46i3CGWI7P0z7315",
+      "secondsAfterFirstModelRequest": 10.74
+    },
+    "sourceRead": {
+      "tool": "Read",
+      "toolId": "call_00_7QiRJWZv46i3CGWI7P0z7315",
+      "secondsAfterFirstModelRequest": 10.74
+    },
+    "sandboxTempError": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_Rez6Vtnpnjk9X4vJu46I5802",
+      "secondsAfterFirstModelRequest": 21.28
+    },
+    "reproducedFingerprintAssertion": {
+      "tool": "ExecCommand",
+      "toolId": "call_00_v131rVwS6xCfllu7eWlK0182",
+      "secondsAfterFirstModelRequest": 87.2
+    },
+    "sourceReadRequestedAtModelRequest": 4,
+    "postEditTargetTest": null,
+    "trackedFilesChanged": [],
+    "process": {
+      "client": "BitFun CLI",
+      "exe": "bitfun.exe",
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 406.87,
+      "model": "deepseek-v4-flash"
+    }
+  }
+]

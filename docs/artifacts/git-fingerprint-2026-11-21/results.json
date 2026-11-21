@@ -1,42 +1,161 @@
 [
   {
     "session": "bitfun-1",
-    "calls": 0,
-    "reported_prompt_tokens": 0,
-    "completion_tokens": 0,
-    "request_bytes": 0,
-    "model_elapsed_s": null,
-    "returned_models": [],
-    "budget_rejections": 0,
-    "native_tools": {},
-    "worktree_changes": [],
-    "grade": null
+    "calls": 17,
+    "reported_prompt_tokens": 654737,
+    "completion_tokens": 2490,
+    "request_bytes": 2463965,
+    "model_elapsed_s": 356.0,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "budget_rejections": 10,
+    "native_tools": {
+      "ExecCommand": 7,
+      "Grep": 6,
+      "Read": 13
+    },
+    "worktree_changes": [
+      "?? .tmp/",
+      "?? diag.mjs"
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    }
   },
   {
     "session": "bitfun-2",
-    "calls": 0,
-    "reported_prompt_tokens": 0,
-    "completion_tokens": 0,
-    "request_bytes": 0,
-    "model_elapsed_s": null,
-    "returned_models": [],
-    "budget_rejections": 0,
-    "native_tools": {},
-    "worktree_changes": [],
-    "grade": null
+    "calls": 18,
+    "reported_prompt_tokens": 607201,
+    "completion_tokens": 4453,
+    "request_bytes": 2463758,
+    "model_elapsed_s": 363.5,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "budget_rejections": 10,
+    "native_tools": {
+      "ExecCommand": 6,
+      "Grep": 4,
+      "Read": 12,
+      "Edit": 2
+    },
+    "worktree_changes": [
+      " M runtime/src/git-observer.mjs",
+      "?? .tmp-probe/",
+      "?? .tmp-test/"
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    }
   },
   {
     "session": "bitfun-3",
-    "calls": 0,
-    "reported_prompt_tokens": 0,
-    "completion_tokens": 0,
-    "request_bytes": 0,
-    "model_elapsed_s": null,
-    "returned_models": [],
-    "budget_rejections": 0,
-    "native_tools": {},
+    "calls": 20,
+    "reported_prompt_tokens": 565294,
+    "completion_tokens": 2686,
+    "request_bytes": 2455094,
+    "model_elapsed_s": 404.2,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "budget_rejections": 10,
+    "native_tools": {
+      "ExecCommand": 11,
+      "Grep": 3,
+      "Read": 11
+    },
     "worktree_changes": [],
-    "grade": null
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    }
   },
   {
     "session": "dda-1",

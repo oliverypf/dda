@@ -1,0 +1,251 @@
+[
+  {
+    "run": "dda-1",
+    "native": {
+      "rc": 1,
+      "wall": 103.69012069702148
+    },
+    "live_calls": 9,
+    "live_responses": 9,
+    "upstream_errors": 0,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "live_request_bytes": 1164358,
+    "completion_tokens": 3565,
+    "budget_denials": 0,
+    "initial_local_request_bytes": 29453,
+    "first_live_request_bytes": 119030,
+    "preparation_wall_s": 39.065,
+    "first_product_write": {
+      "seq": 458,
+      "round": 11,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 3,
+      "live_bytes_through_request": 365784,
+      "live_wall_s": 22.808
+    },
+    "first_exact_target_green": {
+      "seq": 502,
+      "round": 12,
+      "live_request": 4,
+      "live_bytes_through_request": 508859,
+      "live_wall_s": 35.696
+    },
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "changed_files_from_checkpoint": [
+      "runtime/src/git-observer.mjs",
+      "runtime/test/tmp-git-metadata-probe.mjs"
+    ],
+    "checkpoint_relative_diff_sha256": "18e4617f4d9594e6d4069239d457d689c1cc8ed9c329e5ccbdabd74dc52ea71b",
+    "native_terminal": [
+      {
+        "kind": "verification.completed",
+        "seq": 1457,
+        "ms": 1795237989716,
+        "attempt": 1,
+        "status": "UNCERTAIN",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      },
+      {
+        "kind": "run.failed",
+        "seq": 1461,
+        "ms": 1795237991712,
+        "code": "PLAN_STEP_FAILED",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      }
+    ]
+  },
+  {
+    "run": "dda-2",
+    "native": {
+      "rc": 1,
+      "wall": 215.29048228263855
+    },
+    "live_calls": 16,
+    "live_responses": 16,
+    "upstream_errors": 0,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "live_request_bytes": 2358687,
+    "completion_tokens": 8256,
+    "budget_denials": 3,
+    "initial_local_request_bytes": 29453,
+    "first_live_request_bytes": 119030,
+    "preparation_wall_s": 39.019,
+    "first_product_write": {
+      "seq": 827,
+      "round": 14,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 6,
+      "live_bytes_through_request": 783835,
+      "live_wall_s": 44.769
+    },
+    "first_exact_target_green": null,
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "changed_files_from_checkpoint": [
+      "runtime/src/git-observer.mjs",
+      "runtime/test/tmp-git-metadata-probe.test.mjs"
+    ],
+    "checkpoint_relative_diff_sha256": "be3c360a30939febc25a82c793dbd688880f19038ed0acd35198fe75349cd1f1",
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 1754,
+        "ms": 1795238102911,
+        "code": "MODEL_TRANSPORT"
+      }
+    ]
+  },
+  {
+    "run": "dda-3",
+    "native": {
+      "rc": 1,
+      "wall": 191.94986772537231
+    },
+    "live_calls": 17,
+    "live_responses": 17,
+    "upstream_errors": 0,
+    "returned_models": [
+      "deepseek-flash"
+    ],
+    "live_request_bytes": 2436531,
+    "completion_tokens": 7252,
+    "budget_denials": 3,
+    "initial_local_request_bytes": 29453,
+    "first_live_request_bytes": 119030,
+    "preparation_wall_s": 39.215,
+    "first_product_write": {
+      "seq": 730,
+      "round": 13,
+      "path": "runtime/src/git-observer.mjs",
+      "live_request": 5,
+      "live_bytes_through_request": 635904,
+      "live_wall_s": 37.007
+    },
+    "first_exact_target_green": {
+      "seq": 1598,
+      "round": 25,
+      "live_request": 17,
+      "live_bytes_through_request": 2436531,
+      "live_wall_s": 145.999
+    },
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "changed_files_from_checkpoint": [
+      "runtime/src/git-observer.mjs",
+      "runtime/test/tmp-hooks-probe.mjs",
+      "runtime/test/tmp-meta-entry-probe.mjs",
+      "runtime/test/tmp-metadata-probe.mjs",
+      "runtime/test/tmp-observer-probe.mjs"
+    ],
+    "checkpoint_relative_diff_sha256": "b88e0b2094dacf9346c2853171a74368a904340d0e42ca80dbd43915cfd7018f",
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 1605,
+        "ms": 1795238079582,
+        "code": "MODEL_TRANSPORT"
+      }
+    ]
+  }
+]

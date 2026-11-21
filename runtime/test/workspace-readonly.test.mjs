@@ -34,6 +34,11 @@ test('lists and reads bounded workspace content through canonical relative paths
   assert.ok(snapshot.sections.some((section) => section.path === 'index.html'));
   assert.ok(snapshot.sections.some((section) => section.path === 'styles.css'));
   assert.ok(snapshot.sections.some((section) => section.path === 'Makefile'));
+  const index = await workspace.snapshot({ includeFileContents: false });
+  assert.deepEqual(index.entries, snapshot.entries);
+  assert.deepEqual(index.sections, []);
+  assert.notEqual(index.snapshotDigest, snapshot.snapshotDigest);
+  assert.equal((await workspace.read('src/main.ts')).content, 'export {}\n');
   await assert.rejects(workspace.read('.env'), /WORKSPACE_SENSITIVE_PATH/);
 });
 

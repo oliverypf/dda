@@ -1,3 +1,5 @@
+import { PermissionProfile } from './RemotePermissionApproval';
+
 export interface RpcError {
   code: number;
   message: string;
@@ -63,6 +65,7 @@ export interface RpcDirectoryEntry {
 }
 
 export interface RpcParams {
+  permissions?: PermissionProfile;
   threadId?: string;
   turnId?: string;
   itemId?: string;

@@ -1,0 +1,131 @@
+[
+  {
+    "run": "bitfun-1",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 358.55
+    }
+  },
+  {
+    "run": "bitfun-2",
+    "assessed_source_sha256": "9f5b4f8a573476cfe511e79f4ae8fec121d8dff3f4d2848a9a12e5a5bd27734e",
+    "final_source_sha256": "9f5b4f8a573476cfe511e79f4ae8fec121d8dff3f4d2848a9a12e5a5bd27734e",
+    "original_test_unmodified": true,
+    "terminal": {
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 365.89
+    }
+  },
+  {
+    "run": "bitfun-3",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "status": "exited",
+      "exit": 1,
+      "elapsed": 406.87
+    }
+  },
+  {
+    "run": "dda-1",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "rc": 1,
+      "wall": 250.00520777702332
+    }
+  },
+  {
+    "run": "dda-2",
+    "assessed_source_sha256": "d38ff7111306f1b0f4e3254bb6668a0dcd483f1f1b871c9973550bcfd313bd8f",
+    "final_source_sha256": "d38ff7111306f1b0f4e3254bb6668a0dcd483f1f1b871c9973550bcfd313bd8f",
+    "original_test_unmodified": true,
+    "terminal": {
+      "rc": 1,
+      "wall": 222.47012758255005
+    }
+  },
+  {
+    "run": "dda-3",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "rc": 1,
+      "wall": 177.26962542533875
+    }
+  },
+  {
+    "run": "dsh-1",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "exit": 1,
+      "status": "exited",
+      "elapsed": 199.53
+    }
+  },
+  {
+    "run": "dsh-2",
+    "assessed_source_sha256": "61227425d5b32cf6e6450317381230e7e09d605f06cfd720545db3a8b44ae302",
+    "final_source_sha256": "61227425d5b32cf6e6450317381230e7e09d605f06cfd720545db3a8b44ae302",
+    "original_test_unmodified": false,
+    "terminal": {
+      "exit": 1,
+      "status": "exited",
+      "elapsed": 186.47
+    }
+  },
+  {
+    "run": "dsh-3",
+    "assessed_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "final_source_sha256": "cc05fd083fe2b6a54b24c5d306500bccfe38768780f84dba32a4cec33629adae",
+    "original_test_unmodified": true,
+    "terminal": {
+      "exit": 1,
+      "status": "exited",
+      "elapsed": 215.46
+    }
+  },
+  {
+    "run": "pi-1",
+    "assessed_source_sha256": "ded09d6850c4921111ebd1823afbd122e42dc43f0b6c3df7c7e3025585287015",
+    "final_source_sha256": "ded09d6850c4921111ebd1823afbd122e42dc43f0b6c3df7c7e3025585287015",
+    "original_test_unmodified": true,
+    "terminal": {
+      "wallSeconds": 210.04,
+      "exitCode": 0,
+      "timedOut": false
+    }
+  },
+  {
+    "run": "pi-2",
+    "assessed_source_sha256": "02d0eab4563176488776f9e1d8a96462810b0e9eeae8494b8b21295d86614151",
+    "final_source_sha256": "02d0eab4563176488776f9e1d8a96462810b0e9eeae8494b8b21295d86614151",
+    "original_test_unmodified": true,
+    "terminal": {
+      "wallSeconds": 178.38,
+      "exitCode": 0,
+      "timedOut": false
+    }
+  },
+  {
+    "run": "pi-3",
+    "assessed_source_sha256": "2196f2560d4d20e57a209b013da56a1cd5ad4f1bf90ad58972e054b8755ad12a",
+    "final_source_sha256": "2196f2560d4d20e57a209b013da56a1cd5ad4f1bf90ad58972e054b8755ad12a",
+    "original_test_unmodified": true,
+    "terminal": {
+      "wallSeconds": 245.77,
+      "exitCode": 0,
+      "timedOut": false
+    }
+  }
+]

@@ -37,6 +37,18 @@ export class CodexSession {
     this.threadId = await this.transport.startThread();
   }
 
+  currentThread(): string {
+    return this.threadId;
+  }
+
+  async newThread(): Promise<void> {
+    this.threadId = await this.transport.startThread();
+  }
+
+  selectThread(id: string): void {
+    this.threadId = id;
+  }
+
   async disconnect(): Promise<void> {
     this.connected = false;
     await this.transport.disconnect();

@@ -17,6 +17,7 @@ const MAX_ARGUMENT_LENGTH = 4096;
 const MAX_PATH_LENGTH = 512;
 
 const MAX_FILE_CHARS = 1024 * 1024;
+const SELF_TERMINATION_GUIDANCE = ' If the user explicitly asks DDA to terminate itself, the only accepted form is taskkill /PID <current runtime PID or Windows desktop parent PID> with an optional /F. Any other taskkill target or flag is rejected.';
 
 /** Keep only top-level keys declared in schema.properties (Fix 1a). */
 export const pickDeclared = (value, schema) => {
@@ -114,6 +115,17 @@ const processOutputSchema = {
     commandDigest: { type: 'string' },
     cwd: { type: 'string' },
     lease: { type: ['string', 'null'] },
+    selfTermination: {
+      type: 'object',
+      properties: {
+        state: { const: 'REQUESTED' },
+        pid: { type: 'integer', minimum: 1 },
+        force: { type: 'boolean' },
+        owner: { type: 'string', enum: ['runtime', 'desktop'] }
+      },
+      required: ['state', 'pid', 'force', 'owner'],
+      additionalProperties: false
+    },
     // The Linux/HarmonyOS POSIX executor reports whether the outcome was
     // observed or is unknown (timeout/abort). Without this the approved
     // CONTROLLED shell result was rejected as TOOL_INVALID_OUTPUT.
@@ -671,8 +683,8 @@ export const registerExecutorTools = (registry, executor, {
   const commandMetadata = capability => ({ ...effectMetadata(capability),
     ...(Array.isArray(leaseProvider?.approvedCommands) ? { approvedCommands: leaseProvider.approvedCommands } : {}) });
   const commandGuidance = Array.isArray(leaseProvider?.approvedCommands)
-    ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}. An executable outside this list is not pre-authorized. Jev decides whether that command can run once or must ask the user. A clear inspection such as --version may proceed when Jev allows it. Installing software or an opaque program still asks the user once, does not gain administrator rights, and does not join the automatic allow list. Do not conclude the machine cannot install software before that question. Do not wrap the command in cmd, powershell, or another shell. Executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`
-    : ` ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`;
+    ? ` Lease-approved executables: ${JSON.stringify(leaseProvider.approvedCommands)}. An executable outside this list is not pre-authorized. Jev decides whether that command can run once or must ask the user. A clear inspection such as --version may proceed when Jev allows it. Installing software or an opaque program still asks the user once, does not gain administrator rights, and does not join the automatic allow list. Do not conclude the machine cannot install software before that question. Do not wrap the command in cmd, powershell, or another shell. Executor restrictions still apply. Pass the executable in command and each argument separately in args, with a workspace-relative cwd. ${SELF_TERMINATION_GUIDANCE} ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`
+    : ` ${SELF_TERMINATION_GUIDANCE} ${BUILD_EXECUTION_GUIDANCE} ${BINARY_INSPECTION_GUIDANCE}`;
   const executeWithLease = async (capability, input, operation, context) => {
     let lease;
     let effectStarted = false;
@@ -768,6 +780,7 @@ export const registerExecutorTools = (registry, executor, {
           throw new TextPatchError('WRITE_STALE_DIGEST');
         }
       }
+      if (currentDigest !== null) await context?.checkRepairCandidate?.({ workspace, path: resolvedPath, content: request.content });
       const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, request, (lease) => executor.writeFile(request, { lease }),
         { ...context, hostFileReview });
       // Ledger write after lease consumed, before registry output validation (Fix 1c / B4).
@@ -838,6 +851,7 @@ export const registerExecutorTools = (registry, executor, {
         const content = applyTextPatch(current.content, replacements, expectedDigest);
         const afterDigest = textDigest(content);
         const preview = diffPreview(current.content, content, current.path);
+        await context?.checkRepairCandidate?.({ workspace, path: current.path, content });
         const writeResult = await executeWithLease(CAPABILITIES.WRITE_FILE, { path: current.path, content }, async (lease) => {
           const latest = await workspace.read(current.path);
           if (latest.digest !== current.digest) throw new TextPatchError('PATCH_STALE_DIGEST');

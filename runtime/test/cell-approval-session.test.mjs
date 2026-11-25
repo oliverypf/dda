@@ -277,6 +277,30 @@ test('no live approver still yields SAFETY_LEASE_REQUIRED without a lease or eff
   assert.equal(store.list().find((record) => record.recordType === 'intent').state, 'REJECTED');
 });
 
+test('an approval without a host TTL waits for the user instead of expiring', async () => {
+  let clock = 1_000_000;
+  const { session, events, store, real } = harness({ ttlMs: 0, now: () => clock });
+  const failures = [];
+  const pending = session.requestApproval({ capability: CAPABILITIES.WRITE_FILE,
+    request: { path: 'later.txt' }, requireApproval: true,
+    onApprovalFailure: (failure) => failures.push(failure) });
+  await waitFor(() => requested(events).length === 1);
+  const card = requested(events)[0].payload;
+  assert.equal(card.approvalExpiresAt, undefined);
+  assert.equal(store.get(card.approvalId).expiresAt, undefined);
+  assert.equal(real.state, 'WAITING_APPROVAL');
+  // A day later the request is still pending and can be approved.
+  clock += 24 * 60 * 60 * 1000;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(real.state, 'WAITING_APPROVAL');
+  session.handleLine(JSON.stringify({ type: 'approval_response', requestId: card.requestId,
+    approved: true, displayedDigest: card.requestDigest }));
+  assert.equal(await pending, true);
+  assert.equal(store.get(card.approvalId).state, 'APPROVED');
+  assert.deepEqual(failures, []);
+  assert.equal(events.some((event) => event.kind === 'approval.expired'), false);
+});
+
 test('declined approval still fails the task and reports APPROVAL_DENIED', async () => {
   const { session, events, store, real } = harness();
   const failures = [];

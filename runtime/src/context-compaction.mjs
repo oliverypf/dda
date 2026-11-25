@@ -4,6 +4,7 @@ export const COMPACTION_MARKER = 'HOST_CONTEXT_COMPACTION_SUMMARY';
 export const DEFAULT_COMPACT_MAX_CHARS = 280_000;
 export const DEFAULT_KEEP_RECENT_ROUNDS = 6;
 export const EMERGENCY_KEEP_RECENT_ROUNDS = 2;
+const RETEST_KEEP_RECENT_ROUNDS = 3;
 const MAX_SUMMARY_CHARS = 14_000;
 const EMERGENCY_TOOL_RESULT_MAX_CHARS = 4_000;
 const MAX_TRACKED_WRITES = 64;
@@ -282,7 +283,7 @@ export const createContextCompactor = (options = {}) => {
     return { round: { assistant: nextAssistant, followUps: nextFollowUps }, changed: true };
   };
 
-  const compact = (messages, { emergency = false, maxChars } = {}) => {
+  const compact = (messages, { emergency = false, failedRetest = false, maxChars } = {}) => {
     if (!Array.isArray(messages)) return { compacted: false, beforeChars: 0, afterChars: 0, savedChars: 0, evictedRounds: 0 };
     if (!config.enabled && !emergency) {
       const chars = estimateMessagesChars(messages);
@@ -290,7 +291,7 @@ export const createContextCompactor = (options = {}) => {
     }
     const beforeChars = estimateMessagesChars(messages);
     const activeMaxChars = Number.isFinite(maxChars) && maxChars >= 4_000 ? Math.trunc(maxChars) : config.maxChars;
-    if (!emergency && beforeChars <= activeMaxChars) {
+    if (!emergency && !failedRetest && beforeChars <= activeMaxChars) {
       return { compacted: false, beforeChars, afterChars: beforeChars, savedChars: 0, evictedRounds: 0 };
     }
 
@@ -299,9 +300,24 @@ export const createContextCompactor = (options = {}) => {
       return { compacted: false, beforeChars, afterChars: beforeChars, savedChars: 0, evictedRounds: 0 };
     }
 
-    const keepCount = emergency
+    let keepCount = emergency
       ? Math.min(EMERGENCY_KEEP_RECENT_ROUNDS, Math.max(1, rounds.length - 1))
       : config.keepRecentRounds;
+    // The just-delivered assertion and patch are in the latest round. Keep that
+    // round and its immediate inputs verbatim, even on a large-window model.
+    // Summarize the old prefix only if it outweighs even our largest summary.
+    let compactForRetest = false;
+    if (failedRetest && !emergency && rounds.length > RETEST_KEEP_RECENT_ROUNDS) {
+      const older = rounds.slice(0, -RETEST_KEEP_RECENT_ROUNDS);
+      const oldChars = older.reduce((sum, r) => sum + estimateMessageChars(r.assistant) + estimateMessagesChars(r.followUps), 0);
+      if (oldChars > MAX_SUMMARY_CHARS) {
+        compactForRetest = true;
+        keepCount = RETEST_KEEP_RECENT_ROUNDS;
+      }
+    }
+    if (!emergency && !compactForRetest && beforeChars <= activeMaxChars) {
+      return { compacted: false, beforeChars, afterChars: beforeChars, savedChars: 0, evictedRounds: 0 };
+    }
     const evictCount = rounds.length > keepCount ? rounds.length - keepCount : 0;
 
     for (let i = 0; i < evictCount; i += 1) {
@@ -344,6 +360,7 @@ export const createContextCompactor = (options = {}) => {
     messages.splice(0, messages.length, ...rebuilt);
     return {
       compacted: true,
+      ...(compactForRetest ? { reason: 'FAILED_RETEST_HISTORY' } : {}),
       beforeChars,
       afterChars,
       savedChars: Math.max(0, beforeChars - afterChars),

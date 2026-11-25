@@ -1,0 +1,561 @@
+[
+  {
+    "run": "dda-1",
+    "live_requests": 6,
+    "live_bytes": 412590,
+    "completion_charged": 2017,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 433,
+      "ms": 1795245178044,
+      "round": 13,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "seq": 455,
+        "ms": 1795245192177,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 14,
+        "id": "repair-retest-14",
+        "name": "test.execute",
+        "outputDigest": "sha256:1496cb4e23ad299ba2815fcefa04fa346924d5bd32692f5087ab826bd9a24ca6",
+        "outputChars": 752,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".",
+        "exitCode": 0,
+        "host_scheduled": true
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "files_changed_from_checkpoint": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "ae3ca606e72dc097f5d9d7a101ee42555b75ed17494ddcc94bf9800cfea32646",
+    "patch_bytes": 2108,
+    "native_terminal": [
+      {
+        "kind": "verification.completed",
+        "seq": 1257,
+        "ms": 1795245197779,
+        "attempt": 1,
+        "status": "UNCERTAIN",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      },
+      {
+        "kind": "run.failed",
+        "seq": 1261,
+        "ms": 1795245199443,
+        "code": "PLAN_STEP_FAILED",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 87.65973281860352
+    },
+    "cli_deadline": {
+      "start_ms": 1795245149219,
+      "duration_s": 408,
+      "deadline_s": 1795245557.219
+    },
+    "last_native_event_s_after_red": 51.164,
+    "candidate_previews": [
+      {
+        "seq": 420,
+        "ms": 1795245173122,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 13,
+        "id": "call_00_LD6YvJqGUiIAZRM7oag01879/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:21309e12d7f4c17674477d2ecc28cf5dcbf592792e937195be5b86ef7668097f",
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-8fmTR4",
+        "exitCode": 0
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "seq": 422,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 13,
+        "exitCode": 0,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 420,
+        "preview_cwd": ".dda-candidate-8fmTR4",
+        "parent_id": "call_00_LD6YvJqGUiIAZRM7oag01879",
+        "parent_write_seq": 433,
+        "parent_write_ok": true,
+        "applied_after_preview": true
+      }
+    ]
+  },
+  {
+    "run": "dda-2",
+    "live_requests": 9,
+    "live_bytes": 638702,
+    "completion_charged": 1468,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [
+      {
+        "t": 1795245185.8198767,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 80961,
+        "accepted_bytes": 638702,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 1468
+      },
+      {
+        "t": 1795245186.3533654,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 80961,
+        "accepted_bytes": 638702,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 1468
+      },
+      {
+        "t": 1795245187.3787262,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 80961,
+        "accepted_bytes": 638702,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 1468
+      }
+    ],
+    "first_second_patch": null,
+    "target_retests": [],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "files_changed_from_checkpoint": [],
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "patch_bytes": 0,
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 399,
+        "ms": 1795245188932,
+        "code": "MODEL_TRANSPORT"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 77.93716478347778
+    },
+    "cli_deadline": {
+      "start_ms": 1795245149223,
+      "duration_s": 408,
+      "deadline_s": 1795245557.223
+    },
+    "last_native_event_s_after_red": 41.374,
+    "candidate_previews": [
+      {
+        "seq": 380,
+        "ms": 1795245183662,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "id": "call_00_b7WwFnarNFm5ytdpVyLf5274/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:ee2864bc5865bbc3f6b1b93a07d2f18e3a5d2985a67322340fe965961f705d5d",
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-4HJFQs",
+        "exitCode": 1
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "seq": 382,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "exitCode": 1,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 380,
+        "preview_cwd": ".dda-candidate-4HJFQs",
+        "parent_id": "call_00_b7WwFnarNFm5ytdpVyLf5274",
+        "parent_write_seq": 383,
+        "parent_write_ok": false,
+        "returned_to_model": {
+          "status": "rejected",
+          "operands": [
+            "sha256:a9c5d80d741002f9454946ec39c9818184c1e54c978bbe2bf31a15af5d5d3dc5",
+            "sha256:c0188a325a5052a2a37ebd89362deba453095573fad2eb2c02d655aac5e3b008"
+          ],
+          "observations": 1,
+          "exitCode": 1
+        },
+        "applied_after_preview": false
+      }
+    ]
+  },
+  {
+    "run": "dda-3",
+    "live_requests": 9,
+    "live_bytes": 691570,
+    "completion_charged": 3123,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [
+      {
+        "t": 1795245232.3716133,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89359,
+        "accepted_bytes": 691570,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3123
+      },
+      {
+        "t": 1795245232.914712,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89359,
+        "accepted_bytes": 691570,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3123
+      },
+      {
+        "t": 1795245233.9519227,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89359,
+        "accepted_bytes": 691570,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3123
+      }
+    ],
+    "first_second_patch": null,
+    "target_retests": [],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "files_changed_from_checkpoint": [],
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "patch_bytes": 0,
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 1084,
+        "ms": 1795245235654,
+        "code": "MODEL_TRANSPORT"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 124.04543280601501
+    },
+    "cli_deadline": {
+      "start_ms": 1795245148839,
+      "duration_s": 408,
+      "deadline_s": 1795245556.839
+    },
+    "last_native_event_s_after_red": 87.927,
+    "candidate_previews": [
+      {
+        "seq": 865,
+        "ms": 1795245191139,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 14,
+        "id": "call_00_Cc6wyqcQ1wI4setR1sAE8954/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:8a48a77bd8d3ac60c62757718d10a56e4fe77f03d86c6185e439b52202f49d6e",
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-uwGQVS",
+        "exitCode": 1
+      },
+      {
+        "seq": 950,
+        "ms": 1795245206156,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 15,
+        "id": "call_00_1Ow20WfpMNMU7DB7UkTi5758/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:05489edfea87c9eceeedc28fca204b627df634f11d402c549d3282a66edc9a88",
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-X6GiIR",
+        "exitCode": 1
+      },
+      {
+        "seq": 1046,
+        "ms": 1795245219060,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "id": "call_00_7hMHCaAp8TshLjsNv4Vn5928/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:a1fa14706659d08504290eb2e988966cb02343ad836d45f3ec044b22b40595c9",
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-LP5X7C",
+        "exitCode": 1
+      },
+      {
+        "seq": 1075,
+        "ms": 1795245232288,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 17,
+        "id": "call_00_zeXkouJo4BgkrYDSK0fj7863/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:25a01554737ab955cfa2d9c24cb4f08f9cf2db546a3d5f3c8d23e06951e05bf7",
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-3zm1jB",
+        "exitCode": 1
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "seq": 867,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 14,
+        "exitCode": 1,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 865,
+        "preview_cwd": ".dda-candidate-uwGQVS",
+        "parent_id": "call_00_Cc6wyqcQ1wI4setR1sAE8954",
+        "parent_write_seq": 868,
+        "parent_write_ok": false,
+        "returned_to_model": {
+          "status": "rejected",
+          "operands": [
+            "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+            "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+          ],
+          "observations": 1,
+          "exitCode": 1
+        },
+        "applied_after_preview": false
+      },
+      {
+        "seq": 952,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 15,
+        "exitCode": 1,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 950,
+        "preview_cwd": ".dda-candidate-X6GiIR",
+        "parent_id": "call_00_1Ow20WfpMNMU7DB7UkTi5758",
+        "parent_write_seq": 953,
+        "parent_write_ok": false,
+        "returned_to_model": {
+          "status": "rejected",
+          "operands": [
+            "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+            "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+          ],
+          "observations": 1,
+          "exitCode": 1
+        },
+        "applied_after_preview": false
+      },
+      {
+        "seq": 1048,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "exitCode": 1,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 1046,
+        "preview_cwd": ".dda-candidate-LP5X7C",
+        "parent_id": "call_00_7hMHCaAp8TshLjsNv4Vn5928",
+        "parent_write_seq": 1049,
+        "parent_write_ok": false,
+        "returned_to_model": {
+          "status": "rejected",
+          "operands": [
+            "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+            "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+          ],
+          "observations": 1,
+          "exitCode": 1
+        },
+        "applied_after_preview": false
+      },
+      {
+        "seq": 1077,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 17,
+        "exitCode": 1,
+        "path": "runtime/src/git-observer.mjs",
+        "preview_seq": 1075,
+        "preview_cwd": ".dda-candidate-3zm1jB",
+        "parent_id": "call_00_zeXkouJo4BgkrYDSK0fj7863",
+        "parent_write_seq": 1078,
+        "parent_write_ok": false,
+        "returned_to_model": {
+          "status": "rejected",
+          "operands": [
+            "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+            "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+          ],
+          "observations": 1,
+          "exitCode": 1
+        },
+        "applied_after_preview": false
+      }
+    ]
+  }
+]

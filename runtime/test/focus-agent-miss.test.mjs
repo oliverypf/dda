@@ -100,7 +100,7 @@ test('T-fm-1: four EXCERPT_AMBIGUOUS focus rounds do not TOOL_NO_NEW_EVIDENCE an
 });
 
 // T-fm-2: 4× focus ok same digest → still TOOL_NO_NEW_EVIDENCE
-test('T-fm-2: four successful same-digest focus rounds still TOOL_NO_NEW_EVIDENCE', async () => {
+test('T-fm-2: four successful same-digest focus rounds conclude without TOOL_NO_NEW_EVIDENCE', async () => {
   const registry = new ToolRegistry();
   registry.register({
     name: 'workspace.focus',
@@ -140,25 +140,22 @@ test('T-fm-2: four successful same-digest focus rounds still TOOL_NO_NEW_EVIDENC
   await root.plugin(providerPlugin);
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'vacuum focus',
         workspace: baseWorkspace,
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_NO_NEW_EVIDENCE/
-    );
-    // First success establishes digest; 4 same-digest rounds trigger one vacuum escape,
-    // then another 4 trip TOOL_NO_NEW_EVIDENCE (focus-probe-escape-r1).
+      });
+    // First success establishes digest; every 4 same-digest rounds send one host note,
+    // and after three notes the turn concludes instead of failing.
     assert.ok(events.filter((e) => e.kind === 'tool.result' && e.ok === true).length >= 4);
-    assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 1);
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 3);
   } finally {
     await root.fiber.dispose();
   }
 });
 
 // T-fm-3: recoverable probe budget → TOOL_RECOVERABLE_PROBE_LOOP
-test('T-fm-3: recoverable probe rounds hit TOOL_RECOVERABLE_PROBE_LOOP at budget 8', async () => {
+test('T-fm-3: recoverable probe rounds conclude without TOOL_RECOVERABLE_PROBE_LOOP', async () => {
   const registry = new ToolRegistry();
   registry.register({
     name: 'workspace.focus',
@@ -201,20 +198,17 @@ test('T-fm-3: recoverable probe rounds hit TOOL_RECOVERABLE_PROBE_LOOP at budget
   await root.plugin(providerPlugin);
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'probe until budget',
         workspace: baseWorkspace,
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_RECOVERABLE_PROBE_LOOP/
-    );
+      });
     const fails = events.filter((e) => e.kind === 'tool.result' && e.ok === false);
-    // focus-probe-escape-r1: first budget hit escapes once; second exhaustion still throws.
-    assert.equal(fails.length, 16);
+    // Each budget hit sends a host note; after three notes the turn concludes without failing.
+    assert.equal(fails.length, 32);
     assert.equal(fails.every((f) => f.errorCode === 'EXCERPT_NOT_FOUND'), true);
     assert.equal(fails.every((f) => f.nextAction === 'RETRY_WITH_UNIQUE_LOCATOR_OR_LIST'), true);
-    assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 1);
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 3);
   } finally {
     await root.fiber.dispose();
   }

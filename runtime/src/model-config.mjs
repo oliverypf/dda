@@ -578,7 +578,7 @@ export const resolveDecisionConfig = ({ fileConfig = {}, env = process.env } = {
   const defaultOnFlag = (envName, configName) => parseBoolean(envValue(envName)) ?? configured[configName] ?? true;
   return validateDecisionConfig({
     enabled, enforce, endpoint, apiKeyEnv, model, timeoutMs, verificationTimeoutMs, maxStateChars,
-    classificationEnabled: featureFlag('DDA_JEV_CLASSIFY_ENABLED', 'classificationEnabled'),
+    ...(configured.classificationEnabled === undefined ? {} : { classificationEnabled: configured.classificationEnabled }),
     routeSelectionEnabled: featureFlag('DDA_JEV_ROUTE_ENABLED', 'routeSelectionEnabled'),
     topologyEnabled: featureFlag('DDA_JEV_TOPOLOGY_ENABLED', 'topologyEnabled'),
     planReviewEnabled: featureFlag('DDA_JEV_PLAN_REVIEW_ENABLED', 'planReviewEnabled'),

@@ -115,20 +115,6 @@ test('T-pva-1: DGU tip-path and ≥2 promote align report and nested verificatio
   );
 });
 
-// ——— T-pva-2 ———
-
-test('T-pva-2: DGR behavior-reject promote aligns report and nested verification to PASS', async () => {
-  const execution = await runCoordinator({ report: greenRejectFail(), maxAttempts: 1 });
-  const entry = execution.results.at(-1);
-  assert.equal(execution.ok, true);
-  assert.equal(execution.plan.steps[0].status, 'SUCCEEDED');
-  assert.equal(entry.report.status, 'PASS');
-  assert.equal(entry.result.verification.status, 'PASS');
-  assert.equal(entry.result.ok, true);
-  assert.ok(checkIds(entry.report).has(DGR_PROMOTE_ID), 'DGR promote audit check is present on report');
-  assert.ok(checkIds(entry.result.verification).has(DGR_PROMOTE_ID), 'DGR promote audit check is present on nested verification');
-});
-
 // ——— T-pva-3 ———
 
 test('T-pva-3: reports that fail promote eligibility remain UNCERTAIN/FAIL', async () => {

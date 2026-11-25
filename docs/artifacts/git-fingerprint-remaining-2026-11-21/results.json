@@ -1,0 +1,358 @@
+[
+  {
+    "run": "dda-1",
+    "live_requests": 11,
+    "live_bytes": 708229,
+    "completion_charged": 3076,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [
+      {
+        "t": 1795241192.0936754,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 60181,
+        "accepted_bytes": 708229,
+        "accepted_requests": 11,
+        "reserved_or_spent_tokens": 3076
+      },
+      {
+        "t": 1795241192.656792,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 60181,
+        "accepted_bytes": 708229,
+        "accepted_requests": 11,
+        "reserved_or_spent_tokens": 3076
+      },
+      {
+        "t": 1795241193.704615,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 60181,
+        "accepted_bytes": 708229,
+        "accepted_requests": 11,
+        "reserved_or_spent_tokens": 3076
+      }
+    ],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 675,
+      "ms": 1795241153854,
+      "round": 13,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "kind": "tool.result",
+        "seq": 699,
+        "ms": 1795241168672,
+        "round": 14,
+        "attempt": 1,
+        "name": "test.execute",
+        "ok": false,
+        "exitCode": 1,
+        "command": "node",
+        "errorCode": "TEST_CHECK_FAILED",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ]
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "files_changed_from_checkpoint": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "fb10604ddbf01d1959f27c23ff6efb05ae55eae209874bc001ee19cae44a3d52",
+    "patch_bytes": 936,
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 843,
+        "ms": 1795241195701,
+        "code": "MODEL_TRANSPORT"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 120.72692108154297
+    },
+    "cli_deadline": {
+      "start_ms": 1795241125468,
+      "duration_s": 408,
+      "deadline_s": 1795241533.468
+    },
+    "last_native_event_s_after_red": 72.385
+  },
+  {
+    "run": "dda-2",
+    "live_requests": 9,
+    "live_bytes": 669841,
+    "completion_charged": 3685,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [
+      {
+        "t": 1795241186.7253218,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89472,
+        "accepted_bytes": 669841,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3685
+      },
+      {
+        "t": 1795241187.325352,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89472,
+        "accepted_bytes": 669841,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3685
+      },
+      {
+        "t": 1795241188.4664397,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89472,
+        "accepted_bytes": 669841,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3685
+      }
+    ],
+    "first_second_patch": null,
+    "target_retests": [],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "files_changed_from_checkpoint": [],
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "patch_bytes": 0,
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 1205,
+        "ms": 1795241190570,
+        "code": "MODEL_TRANSPORT"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 115.26031804084778
+    },
+    "cli_deadline": {
+      "start_ms": 1795241125113,
+      "duration_s": 408,
+      "deadline_s": 1795241533.113
+    },
+    "last_native_event_s_after_red": 67.272
+  },
+  {
+    "run": "dda-3",
+    "live_requests": 9,
+    "live_bytes": 678763,
+    "completion_charged": 3151,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [
+      {
+        "t": 1795241197.1219032,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89277,
+        "accepted_bytes": 678763,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3151
+      },
+      {
+        "t": 1795241197.684343,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89277,
+        "accepted_bytes": 678763,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3151
+      },
+      {
+        "t": 1795241198.7289197,
+        "kind": "budget_stop",
+        "reasons": [
+          "raw_request_bytes"
+        ],
+        "attempt_bytes": 89277,
+        "accepted_bytes": 678763,
+        "accepted_requests": 9,
+        "reserved_or_spent_tokens": 3151
+      }
+    ],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 238,
+      "ms": 1795241139408,
+      "round": 10,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "kind": "tool.result",
+        "seq": 292,
+        "ms": 1795241154868,
+        "round": 11,
+        "attempt": 1,
+        "name": "test.execute",
+        "ok": false,
+        "exitCode": 1,
+        "command": "node",
+        "errorCode": "TEST_CHECK_FAILED",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ]
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": false,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": false,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": false
+    },
+    "files_changed_from_checkpoint": [
+      "probe-digest.mjs",
+      "probe-hooks.mjs",
+      "probe-metadata.mjs",
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "f969f230414cf4baa569be2df771c7278102b452c427dba17de5ede9d771ec85",
+    "patch_bytes": 7803,
+    "native_terminal": [
+      {
+        "kind": "run.failed",
+        "seq": 490,
+        "ms": 1795241200543,
+        "code": "MODEL_TRANSPORT"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 124.64360213279724
+    },
+    "cli_deadline": {
+      "start_ms": 1795241125236,
+      "duration_s": 408,
+      "deadline_s": 1795241533.236
+    },
+    "last_native_event_s_after_red": 76.537
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "trial": 3,
+  "round": 11,
+  "callId": "call_00_A7feeSauPRrgJa3CmPWk9773",
+  "callSeq": 353,
+  "verdictSeq": 374,
+  "product": "runtime/src/git-observer.mjs",
+  "checkpointProducerDigest": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+  "argumentsDigest": "sha256:4a22f993dc4ba329b2a5e271aad44868e42d44aac7fac18bb6cc4269e8994a7f",
+  "candidateDigest": "sha256:02675b0f3b3907e7cef05920049d4071462f89a4376243c0eaef291b70c4e484",
+  "liveCandidateExit": 0,
+  "liveAssertionPassed": true,
+  "liveWriteOk": false,
+  "independentGrade": {
+    "passed": 0,
+    "failed": 2,
+    "errored": 0,
+    "green": false
+  },
+  "control": {
+    "compiled": true,
+    "actualCollection": "METADATA_FILES",
+    "watchedKeys": [
+      "index",
+      "FETCH_HEAD"
+    ],
+    "visitedKeys": [
+      "index"
+    ],
+    "originalTestsPassed": 3
+  }
+}

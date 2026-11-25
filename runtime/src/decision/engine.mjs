@@ -263,8 +263,16 @@ export class DecisionEngine {
   async judgeBuildTestClaims({ claims, runId, signal }) {
     if (!claims.length) return [];
     const kind = 'VERIFY_BUILD_TEST_CLAIMS';
-    const unavailable = claim => ({ id: claim.id, status: 'UNKNOWN',
-      code: 'BUILD_TEST_VERIFIER_UNAVAILABLE', message: `Jev 未返回可核对的判断（${claim.statement}）`, evidence: [] });
+    const receiptRefs = receipt => [receipt.id, receipt.outputDigest, ...(receipt.artifacts ?? []).map(file => file.id)].filter(Boolean);
+    const unavailable = claim => {
+      if (claim.deterministicCheck && ['PASS', 'FAIL'].includes(claim.deterministicCheck.status)) {
+        return { ...claim.deterministicCheck, id: claim.id };
+      }
+      return { id: claim.id, status: 'UNKNOWN',
+        code: 'BUILD_TEST_VERIFIER_UNAVAILABLE', message: `Jev 未返回可核对的判断（${claim.statement}）`,
+        evidence: [...new Set(claim.evidence.flatMap(receiptRefs))],
+        ...(claim.remainingFields?.length ? { remainingFields: claim.remainingFields } : {}) };
+    };
     if (!this.#enabled) return claims.map(unavailable);
     const questions = Object.fromEntries(claims.map(({ id, kind: claimKind, statement, evidence, verifiedFields, remainingFields }) => {
       const criteria = Object.fromEntries(evidence.flatMap(receipt => [
@@ -286,7 +294,6 @@ export class DecisionEngine {
     }
     // Cite the exact host records visible to this verdict, including files
     // observed during commands whose summaries describe an output.
-    const receiptRefs = receipt => [receipt.id, receipt.outputDigest, ...(receipt.artifacts ?? []).map(file => file.id)].filter(Boolean);
     const checks = claims.map(claim => {
       const choice = answers?.[claim.id]?.choice;
       if (choice === 'INSUFFICIENT') return { id: claim.id, status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING',

@@ -1,0 +1,126 @@
+{
+  "kind": "offline_historical_candidate_controls",
+  "model_requests": 0,
+  "source_checkpoint": "../git-fingerprint-retest-2026-11-21/dda-2.patch",
+  "candidate_api": "RepairRetest.checkCandidate",
+  "assertion_path": "runtime/test/git-audit.test.mjs",
+  "assertion_line": 88,
+  "candidate_path": "runtime/src/git-observer.mjs",
+  "recorded_target": {
+    "command": "node",
+    "args": [
+      "--test",
+      "runtime/test/git-audit.test.mjs"
+    ],
+    "cwd": ".",
+    "timeoutMs": 240000,
+    "maxOutputChars": 8000
+  },
+  "method": "Two independent temporary copies of the historical checkpoint runtime and package.json. Only candidate git-observer.mjs content is supplied to the host in memory. No candidate is applied to either original. Each original before/after digest covers the producer, erroneous consumer and protected test. Operands are the original assertion arguments (digest strings).",
+  "cases": [
+    {
+      "name": "remaining-dda-1",
+      "candidate_source_artifact": "../git-fingerprint-remaining-2026-11-21/dda-1.patch",
+      "applied_to_checkpoint": false,
+      "candidate_content_sha256": "sha256:af19ed8a87a9be121a4d76dd0834fd445d6382c2cd26948a12209a44732efa1f",
+      "assertion": "assert.equal(before.metadataDigest, afterRefresh.metadataDigest);",
+      "verdict": {
+        "status": "rejected",
+        "operands": [
+          "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+          "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+        ],
+        "observations": 1,
+        "exitCode": 1
+      },
+      "controlled_test": {
+        "tool": "test.execute",
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "private_copy": true,
+        "ok": false,
+        "exitCode": 1,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false,
+        "stdout_sha256": "sha256:c90e2bc70e7b842d0a78ebfa66abc8485de6f81937bea18d98c6740359ae0e07"
+      },
+      "original_before": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      },
+      "original_after": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      },
+      "original_unchanged": true,
+      "host_before": {
+        "runtime/src/repair-retest.mjs": "sha256:9e15874ebd1b01cc038e7454524e9647a8779088dfec719d929b114734b469d1",
+        "runtime/src/repair-candidate-workspace.mjs": "sha256:853146d3ed0154b7ab1fb1dccbf8aae338dcb0a76e64d07082035e19740acebc",
+        "runtime/src/controlled-tools.mjs": "sha256:15ab9cb13e6f9f43a5012a86020ce076459271eae88ba98fbb91c6c8862afc4c"
+      },
+      "host_after": {
+        "runtime/src/repair-retest.mjs": "sha256:9e15874ebd1b01cc038e7454524e9647a8779088dfec719d929b114734b469d1",
+        "runtime/src/repair-candidate-workspace.mjs": "sha256:853146d3ed0154b7ab1fb1dccbf8aae338dcb0a76e64d07082035e19740acebc",
+        "runtime/src/controlled-tools.mjs": "sha256:15ab9cb13e6f9f43a5012a86020ce076459271eae88ba98fbb91c6c8862afc4c"
+      }
+    },
+    {
+      "name": "resume-dda-3",
+      "candidate_source_artifact": "../git-fingerprint-resume-2026-11-21/dda-3.patch",
+      "applied_to_checkpoint": false,
+      "candidate_content_sha256": "sha256:a3ee2bc36d1578c4861b8944558088ceffb80b04811295e81b027520f1c9cd5d",
+      "assertion": "assert.equal(before.metadataDigest, afterRefresh.metadataDigest);",
+      "verdict": {
+        "status": "passed",
+        "operands": [
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377",
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377"
+        ],
+        "observations": 1,
+        "exitCode": 0
+      },
+      "controlled_test": {
+        "tool": "test.execute",
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "private_copy": true,
+        "ok": true,
+        "exitCode": 0,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false,
+        "stdout_sha256": "sha256:9f21db5f5702c78c5ed4b5c1a5d410cb7d2d47ec7e1c92aa8010633980c2eeb9"
+      },
+      "original_before": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      },
+      "original_after": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      },
+      "original_unchanged": true,
+      "host_before": {
+        "runtime/src/repair-retest.mjs": "sha256:9e15874ebd1b01cc038e7454524e9647a8779088dfec719d929b114734b469d1",
+        "runtime/src/repair-candidate-workspace.mjs": "sha256:853146d3ed0154b7ab1fb1dccbf8aae338dcb0a76e64d07082035e19740acebc",
+        "runtime/src/controlled-tools.mjs": "sha256:15ab9cb13e6f9f43a5012a86020ce076459271eae88ba98fbb91c6c8862afc4c"
+      },
+      "host_after": {
+        "runtime/src/repair-retest.mjs": "sha256:9e15874ebd1b01cc038e7454524e9647a8779088dfec719d929b114734b469d1",
+        "runtime/src/repair-candidate-workspace.mjs": "sha256:853146d3ed0154b7ab1fb1dccbf8aae338dcb0a76e64d07082035e19740acebc",
+        "runtime/src/controlled-tools.mjs": "sha256:15ab9cb13e6f9f43a5012a86020ce076459271eae88ba98fbb91c6c8862afc4c"
+      }
+    }
+  ]
+}

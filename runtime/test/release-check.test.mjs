@@ -11,7 +11,6 @@ import { AgentDecisionTrace } from '../src/decision-trace.mjs';
 
 const proposeEligibleDecisions = async (trace, runId) => {
   for (const [index, decisionType] of [
-    'CLASSIFY_TASK',
     'SELECT_ROUTE',
     'ALLOCATE_ROLE_CONTEXTS',
     'CREATE_PLAN',
@@ -121,7 +120,7 @@ test('release-check excludes incomplete runs from learning instead of failing th
     role: 'coordinator',
     roleContextId: 'context-release',
     bindingSnapshotId: 'snapshot-binding',
-    decisionType: 'CLASSIFY_TASK',
+    decisionType: 'SELECT_ROUTE',
     objectiveRef: 'objective-release',
     constraintSnapshotId: 'snapshot-constraints',
     featureSnapshotId: 'snapshot-features',

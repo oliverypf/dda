@@ -45,3 +45,14 @@ test('a declared executable build gets an execution step without a planning-mode
   assert.deepEqual(result.plan.steps.map(step => step.actionKind), ['EXECUTE']);
   assert.match(result.plan.steps[0].summary, /build:windows:full-local/);
 });
+
+test('declared install requirements override the prompt gate', () => {
+  const goal = '这台机子上需要安装查看pptx的软件，安装一个';
+  const install = { name: 'shell.execute', command: 'winget', args: ['install', 'viewer'], state: 'SUCCEEDED' };
+  assert.equal(installationEvidenceGap(goal, [], { required: false }), undefined);
+  assert.equal(installationEvidenceGap('如何安装 LibreOffice', [], { required: false }), undefined);
+  assert.ok(installationEvidenceGap(goal, [], { required: true }));
+  assert.equal(installationEvidenceGap('把 ripgrep 装上', [{ ...install, args: ['install', 'ripgrep'] }], { required: true }), undefined);
+  assert.ok(installationEvidenceGap('把 ripgrep 装上', [], { required: true }));
+  assert.ok(installationEvidenceGap(goal, []));
+});

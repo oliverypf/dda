@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 const REQUIRED_DECISION_TYPES = Object.freeze([
-  'CLASSIFY_TASK',
   'SELECT_ROUTE',
   'ALLOCATE_ROLE_CONTEXTS',
   'CREATE_PLAN',

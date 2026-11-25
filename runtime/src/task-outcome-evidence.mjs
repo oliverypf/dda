@@ -1,10 +1,11 @@
 // Only tool receipts from this run can establish that an installation occurred.
-export function installationEvidenceGap(goal, actions) {
+export function installationEvidenceGap(goal, actions, { required } = {}) {
+  if (required === false) return undefined;
   const instruction = String(goal ?? '').trim();
   const requestsInstall = /^(?:(?:请|麻烦|帮我|帮忙|给我|直接|现在|需要|重新|在(?:这台|本)[^，。]{0,12})\s*)*安装\s*\S/iu.test(instruction)
     || /^(?:please\s+)?(?:install|reinstall)\s+\S/iu.test(instruction)
     || /(?:需要|帮我|请|给我)安装[^。！？\n]*(?:软件|查看器|客户端|应用|浏览器)/u.test(instruction);
-  if (!requestsInstall || /(?:[?？]$|安装(?:说明|教程|指南|方法|步骤|失败|报错|了吗)|不要安装|无需安装|不用安装|是否安装|需要安装吗|怎么|如何|how (?:can|do|to)|instructions|guide)/iu.test(instruction)) return undefined;
+  if (required !== true && (!requestsInstall || /(?:[?？]$|安装(?:说明|教程|指南|方法|步骤|失败|报错|了吗)|不要安装|无需安装|不用安装|是否安装|需要安装吗|怎么|如何|how (?:can|do|to)|instructions|guide)/iu.test(instruction))) return undefined;
   const namedPackage = /(?:安装\s*|\binstall\s+)([a-z0-9][a-z0-9._+-]*)[。!！]?$/iu.exec(instruction)?.[1]?.toLowerCase();
   const installed = actions.some(action => {
     if (action.state !== 'SUCCEEDED' || action.invocationAttempted === false || action.name !== 'shell.execute') return false;

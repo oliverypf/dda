@@ -58,7 +58,7 @@ test('T-t1-1: focus/read missing path returns WORKSPACE_* not TOOL_HANDLER_FAILE
 });
 
 // T-t1-2: ≥3 WORKSPACE_NOT_FOUND focus → no TOOL_REPEATED_FAILURE; unrecoverable still hard-stops
-test('T-t1-2: repeated WORKSPACE_NOT_FOUND focus does not TOOL_REPEATED_FAILURE; crash still does', async () => {
+test('T-t1-2: repeated WORKSPACE_NOT_FOUND focus does not TOOL_REPEATED_FAILURE; a repeated crash concludes the turn', async () => {
   const registry = new ToolRegistry();
   let focusCalls = 0;
   registry.register({
@@ -137,7 +137,7 @@ test('T-t1-2: repeated WORKSPACE_NOT_FOUND focus does not TOOL_REPEATED_FAILURE;
     }
   }
 
-  // Part B: unstructured TOOL_HANDLER_FAILED ×3 → still hard-stops
+  // Part B: a request that keeps crashing concludes the turn; it does not fail the task
   {
     focusCalls = 0;
     const events = [];
@@ -160,17 +160,15 @@ test('T-t1-2: repeated WORKSPACE_NOT_FOUND focus does not TOOL_REPEATED_FAILURE;
     await root.plugin(providerPlugin);
     await root.plugin(taskRunnerPlugin);
     try {
-      await assert.rejects(
-        root.taskRunner.run({
+      await root.taskRunner.run({
           prompt: 'crash probe',
           workspace: baseWorkspace,
           onEvent: (e) => events.push(e)
-        }),
-        /TOOL_REPEATED_FAILURE:workspace\.focus:TOOL_HANDLER_FAILED/
-      );
+        });
       const fails = events.filter((e) => e.kind === 'tool.result' && e.ok === false);
-      assert.ok(fails.length >= 2);
+      assert.equal(fails.length, 4);
       assert.equal(fails[0].errorCode, 'TOOL_HANDLER_FAILED');
+      assert.equal(fails.at(-1).nextAction, 'FINISH_FROM_RECORDED_EVIDENCE');
     } finally {
       await root.fiber.dispose();
     }

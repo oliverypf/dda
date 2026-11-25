@@ -98,7 +98,7 @@ test('T-dgu-2: BEHAVIOR_REJECTED / tests red / empty checks → no promote (pred
       { id: 'output.non_empty', status: 'PASS' },
       { id: 'jev-behavior-judge', status: 'UNKNOWN' }
     ]
-  })), false, 'missing evidence.tests must not promote');
+  })), true, 'other green deterministic checks suffice when evidence.tests is absent');
   assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
     checks: [
       { id: 'evidence.tests', status: 'PASS' },
@@ -322,4 +322,38 @@ test('T-srm-3: DGU tip-path maxAttempts:1 + ≥2 promote still green; REJECTED n
     actionErrorCodes: ['TOPOLOGY_BUDGET_PROBES'],
     checkMessages: ['1 个动作执行失败（TOPOLOGY_BUDGET_PROBES）']
   }), false);
+});
+
+// ——— T-dgu-4: advisory claim checks + host.execution are the live step shape ———
+
+test('T-dgu-4: host.execution green + advisory claim UNKNOWN promotes; jev-only or non-advisory UNKNOWN does not', () => {
+  assert.equal(isDeterministicGreenJevEvidenceUncertain({
+    status: 'UNCERTAIN',
+    failureCodes: [JEV_EVIDENCE_REQUIRED],
+    checks: [
+      { id: 'host.execution', status: 'PASS', message: 'executor finished' },
+      { id: 'build-test-claim-1', status: 'UNKNOWN', advisory: true, reportedStatus: 'FAIL', message: 'claim mismatch' },
+      { id: 'jev-behavior-judge', status: 'UNKNOWN', message: 'JEV_REJECTION_UNEXPLAINED' }
+    ]
+  }), true, 'advisory claim checks must not block the deterministic-green gate');
+
+  assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
+    checks: [{ id: 'jev-behavior-judge', status: 'UNKNOWN' }]
+  })), false, 'the jev check alone is not deterministic evidence');
+
+  assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
+    checks: [
+      { id: 'host.execution', status: 'PASS' },
+      { id: 'build-test-claim-1', status: 'UNKNOWN', message: 'claim mismatch without advisory flag' },
+      { id: 'jev-behavior-judge', status: 'UNKNOWN' }
+    ]
+  })), false, 'a non-advisory UNKNOWN check still blocks');
+
+  assert.equal(isDeterministicGreenJevEvidenceUncertain(greenUncertain({
+    checks: [
+      { id: 'host.execution', status: 'PASS' },
+      { id: 'build-test-claim-1', status: 'FAIL', message: 'host conflict' },
+      { id: 'jev-behavior-judge', status: 'UNKNOWN' }
+    ]
+  })), false, 'a non-advisory FAIL check still blocks');
 });

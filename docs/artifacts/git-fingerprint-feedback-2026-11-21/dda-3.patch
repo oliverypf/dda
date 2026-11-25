@@ -1,0 +1,52 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -204,18 +204,24 @@
+ // `.git/index` embeds Git's working-tree lstat/fsmonitor cache (rewritten by
+ // ordinary `git status` in IDEs/shells even when zero staged entries change;
+ // actual staged content is already captured by `indexDigest` via `git diff --cached`),
+-// and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+-// existence and symlink status without hashing volatile cache bytes/timestamps.
++// and `FETCH_HEAD` is created/rewritten by background IDE `git fetch`. Their
++// content and presence are therefore kept out of the fingerprint; see
++// `readMetadataEntry`.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
++  // Volatile metadata files (`index`, `FETCH_HEAD`) are rewritten or created by
++  // background Git refreshes (`git status` stat-cache flips, `git fetch`), so
++  // their bytes and their presence/type are deliberately excluded from the
++  // fingerprint: the missing and present cases yield the identical empty entry
++  // and the key keeps its slot. Staged content is still covered by
++  // `indexDigest` (`git diff --cached`) and a symlink swapped in place of these
++  // files is still surfaced through `metadataLinkDetected`.
++  if (volatileContent) return {};
+   const metadata = await lstat(filePath).catch(() => null);
+   if (!metadata) return { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+-  if (volatileContent) {
+-    return { exists: true, type };
+-  }
+   const entry = {
+     exists: true,
+     type,
+@@ -241,10 +247,15 @@
+   const entries = {};
+   let linkDetected = false;
+   for (const name of METADATA_FILES) {
+-    const entry = await readMetadataEntry(resolve(gitDir, name), {
+-      volatileContent: VOLATILE_METADATA_FILES.has(name)
+-    });
++    const volatileContent = VOLATILE_METADATA_FILES.has(name);
++    const entry = await readMetadataEntry(resolve(gitDir, name), { volatileContent });
+     entries[name] = entry;
++    // Volatile files are still stat-checked here so a symlink substitution is
++    // detected even though their fingerprint entry carries no content.
++    if (volatileContent && !linkDetected) {
++      const metadata = await lstat(resolve(gitDir, name)).catch(() => null);
++      linkDetected ||= metadata?.isSymbolicLink() === true;
++    }
+     linkDetected ||= entry.type === 'link';
+   }
+   const hooksDirectory = resolve(gitDir, 'hooks');

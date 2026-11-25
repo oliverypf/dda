@@ -404,20 +404,21 @@ export const stampJevEvidenceRequired = (verification, {
 /**
  * freeze-harness-deterministic-green-jev-uncertain-r1:
  * Final UNCERTAIN whose only failure code is JEV_EVIDENCE_REQUIRED, with
- * deterministic checks (incl. evidence.tests) all PASS/SKIPPED and
- * jev-behavior-judge not FAIL. Empty / unknown deterministic checks are NOT green.
+ * deterministic checks (non-advisory, non-jev-behavior-judge) all PASS/SKIPPED
+ * and jev-behavior-judge not FAIL. Empty / unknown deterministic checks are
+ * NOT green.
  */
 const isJevBehaviorJudgeCheck = (check) => {
   const id = String(check?.id ?? '');
   return id === 'jev-behavior-judge' || id.endsWith('.jev-behavior-judge');
 };
 
-const isEvidenceTestsCheck = (check) => {
-  const id = String(check?.id ?? '');
-  return id === 'evidence.tests' || id.endsWith('.evidence.tests');
-};
-
 const statusOfCheck = (check) => String(check?.status ?? '').toUpperCase();
+
+// Advisory claim checks are report annotations, not host observations; they
+// never decide deterministic green. An evidence.tests check still counts when
+// present, but is no longer required to exist.
+const isDeterministicCheck = (check) => !isJevBehaviorJudgeCheck(check) && check?.advisory !== true;
 
 export const isDeterministicGreenJevEvidenceUncertain = (verification) => {
   if (String(verification?.status ?? '').toUpperCase() !== 'UNCERTAIN') return false;
@@ -433,12 +434,8 @@ export const isDeterministicGreenJevEvidenceUncertain = (verification) => {
   const behavior = checks.find(isJevBehaviorJudgeCheck);
   if (behavior && statusOfCheck(behavior) === 'FAIL') return false;
 
-  const deterministic = checks.filter((check) => !isJevBehaviorJudgeCheck(check));
+  const deterministic = checks.filter(isDeterministicCheck);
   if (!deterministic.length) return false;
-
-  const tests = deterministic.find(isEvidenceTestsCheck);
-  if (!tests) return false;
-  if (!['PASS', 'SKIPPED'].includes(statusOfCheck(tests))) return false;
 
   for (const check of deterministic) {
     const status = statusOfCheck(check);
@@ -485,90 +482,6 @@ export const promoteDeterministicGreenJevUncertain = (verification, options = {}
   };
 };
 
-/**
- * freeze-harness-deterministic-green-jev-behavior-reject-r1, extended by
- * freeze-harness-mid-rejected-friction-r1 to include REPEATED_ACTION:
- * Final FAIL whose failureCodes ⊆ {JEV_BEHAVIOR_REJECTED, ACTION_FAILED,
- * REPEATED_ACTION}
- * (must include JEV_BEHAVIOR_REJECTED), with deterministic checks (incl.
- * evidence.tests) all PASS/SKIPPED. jev-behavior-judge may be FAIL (the reject).
- * Empty / UNKNOWN deterministic checks are NOT green. ACTION_FAILED or
- * REPEATED_ACTION without REJECTED does NOT promote. Does not weaken sticky /
- * probe-only.
- */
-const BEHAVIOR_REJECT_PROMOTE_CODES = new Set([
-  'JEV_BEHAVIOR_REJECTED',
-  'ACTION_FAILED',
-  'REPEATED_ACTION'
-]);
-
-const isActionsProgressCheck = (check) => {
-  const id = String(check?.id ?? '');
-  return id === 'actions.progress' || id.endsWith('.actions.progress');
-};
-
-/**
- * actions.progress FAIL is the check-level twin of ACTION_FAILED (± probe budget
- * noise). Live residual (run76 t2-121 / t3-114, run77 t3-117) pairs
- * REJECTED + evidence.tests PASS with actions.progress FAIL — allow that when
- * ACTION_FAILED is already in failureCodes. Other deterministic FAILs still block.
- */
-const isAllowedActionProgressFail = (check, codes) => {
-  if (!isActionsProgressCheck(check)) return false;
-  if (statusOfCheck(check) !== 'FAIL') return false;
-  return codes.includes('ACTION_FAILED');
-};
-
-export const isDeterministicGreenJevBehaviorReject = (verification) => {
-  if (String(verification?.status ?? '').toUpperCase() !== 'FAIL') return false;
-  const codes = (Array.isArray(verification?.failureCodes) ? verification.failureCodes : [])
-    .map((code) => String(code ?? '').trim())
-    .filter(Boolean);
-  if (!codes.length) return false;
-  if (!codes.includes('JEV_BEHAVIOR_REJECTED')) return false;
-  if (!codes.every((code) => BEHAVIOR_REJECT_PROMOTE_CODES.has(code))) return false;
-
-  const checks = Array.isArray(verification?.checks) ? verification.checks : [];
-  if (!checks.length) return false;
-
-  const deterministic = checks.filter((check) => !isJevBehaviorJudgeCheck(check));
-  if (!deterministic.length) return false;
-
-  const tests = deterministic.find(isEvidenceTestsCheck);
-  if (!tests) return false;
-  if (!['PASS', 'SKIPPED'].includes(statusOfCheck(tests))) return false;
-
-  for (const check of deterministic) {
-    const status = statusOfCheck(check);
-    if (isAllowedActionProgressFail(check, codes)) continue;
-    if (status === 'FAIL') return false;
-    if (!['PASS', 'SKIPPED'].includes(status)) return false;
-  }
-  return true;
-};
-
-/**
- * Promote terminal FAIL+JEV_BEHAVIOR_REJECTED (tests green) → PASS.
- * Caller must gate with isDeterministicGreenJevBehaviorReject first.
- */
-export const promoteDeterministicGreenJevBehaviorReject = (verification) => {
-  const priorChecks = Array.isArray(verification?.checks) ? verification.checks : [];
-  return {
-    ...verification,
-    status: 'PASS',
-    nextAction: 'COMPLETE',
-    summary: 'Deterministic checks green; promoted terminal FAIL+JEV_BEHAVIOR_REJECTED to PASS',
-    failureCodes: [],
-    checks: [
-      ...priorChecks,
-      {
-        id: 'deterministic-green-jev-behavior-reject-promote',
-        status: 'PASS',
-        message: 'freeze-harness-deterministic-green-jev-behavior-reject-r1'
-      }
-    ]
-  };
-};
 
 
 const clone = (value) => structuredClone(value);
@@ -1117,8 +1030,6 @@ export const runVerifierRecovery = async ({
       && !postMissEvidenceDeltaJustFired
       && !postMissUncertainExhaustedJustFired
       && (report.status === 'FAIL' || report.status === 'STALLED')
-      // freeze-harness-dgr-before-post-miss-replan-r1: preserve DGR FAIL for coordinator promotion.
-      && !isDeterministicGreenJevBehaviorReject(report)
       && agentMiss
       && postMissUncertainReplanned
       && !postMissTerminalReplanned

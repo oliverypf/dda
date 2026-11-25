@@ -238,7 +238,10 @@ export async function verificationSourceEvidence({ workspace, snapshot, actions 
     && action.outputDigest === action.verifiedResult.outputDigest
     && ['workspace.read', 'kernel.workspace_read', 'workspace.focus', 'kernel.workspace_focus'].includes(action.name))
     .map(action => action.verifiedResult.workspaceRead.path);
-  const paths = [...new Set([...readPaths.toReversed(), ...(snapshot.sections ?? []).map(section => section.path)])]
+  // Only cite files that the current run actually observed or referenced in a
+  // durable process receipt. Snapshot sections are background metadata and do
+  // not establish evidence for this task.
+  const paths = [...new Set(readPaths.toReversed())]
     .filter(path => cited(path) && !/\.pptx$/iu.test(path)).slice(0, 4);
   const words = new Set(answer.toLowerCase().match(/[a-z][a-z\d_.:-]{2,}|[\p{Script=Han}]{2,10}/gu) ?? []);
   for (const path of paths) {

@@ -18,17 +18,20 @@ test('a step citing observed sources gets bounded current excerpts and only its 
   } };
   const receipt = { id: 'build-test-process-1', kind: 'BUILD', command: 'node', args: ['src/build.mjs'],
     outputDigest: digest, exitCode: 0, artifacts: [{ path: 'out/deck.pptx', sizeBytes: 900, sha256: digest, pptx: { slideCount: 3, entryCount: 18 } }] };
+  const observedDesktop = { ...observed, id: 'desktop-read', verifiedResult: {
+    outputDigest: digest, workspaceRead: { scope: 'IN_WORKSPACE', readOnly: true, path: 'desktop/README.md' }
+  } };
   const result = await verificationSourceEvidence({
     snapshot: { granted: true, sections: ['README.md', 'desktop/README.md', 'notes.md', 'absent.md'].map(path => ({ path, content: 'stale' })) },
     workspace: { async read(path) {
       paths.push(path);
       return { path, digest, content: ['header', 'unrelated', 'import foo', 'Cordis Runtime uses PolicyLease'].join('\n') };
     } },
-    actions: [observed, { ...observed, state: 'FAILED', verifiedResult: { ...observed.verifiedResult, workspaceRead: { path: 'draft.mjs' } } }],
+    actions: [observed, observedDesktop, { ...observed, state: 'FAILED', verifiedResult: { ...observed.verifiedResult, workspaceRead: { path: 'draft.mjs' } } }],
     conclusion: 'Compared `src/build.mjs` and `desktop/README.md` for Cordis Runtime and PolicyLease. out/deck.pptx exists. notes.md.bak and draft.mjs were proposed.',
     receipts: [{ ...receipt, id: 'other', args: ['foo.js'], artifacts: [] }, receipt]
   });
-  assert.deepEqual(paths, ['src/build.mjs', 'desktop/README.md']);
+  assert.deepEqual(paths, ['desktop/README.md', 'src/build.mjs']);
   assert.equal(result.length, 3);
   assert.ok(result.every(item => item.claim.length <= 500 && item.source === digest));
   assert.deepEqual(JSON.parse(result[0].claim).artifact.pptx, { slideCount: 3, entryCount: 18 });

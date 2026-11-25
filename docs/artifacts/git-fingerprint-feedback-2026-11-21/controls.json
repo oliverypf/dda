@@ -1,0 +1,205 @@
+{
+  "kind": "offline-historical-producer-controls",
+  "modelRequests": 0,
+  "productWrites": 0,
+  "assertionLine": 88,
+  "request": {
+    "command": "node",
+    "args": [
+      "--test",
+      "runtime/test/git-audit.test.mjs"
+    ],
+    "cwd": ".",
+    "timeoutMs": 240000,
+    "maxOutputChars": 8000
+  },
+  "method": "Actual RepairRetest.checkCandidate and controlled test.execute for the unchanged baseline and three historical candidate contents. Two rejected candidates go through rememberRejection. All four executions run in private copies. No candidate is applied to the checkpoint.",
+  "originalBefore": {
+    "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+    "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+    "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+  },
+  "producerSite": {
+    "path": "runtime/src/git-observer.mjs",
+    "digest": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+    "line": 260,
+    "field": "metadataDigest",
+    "sourceLine": "  return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };"
+  },
+  "observations": [
+    {
+      "name": "checkpoint",
+      "source": "unchanged checkpoint producer",
+      "candidateContentDigest": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+      "verdict": {
+        "status": "rejected",
+        "operands": [
+          "sha256:c42e57be1d7f8ed12046dc76d27b40f79c1c16eecfdb30e8fc3ad1b43fb2c76f",
+          "sha256:d2574c0182bbc63124784559f1f99b4f2a8ee60aa545dc600c2069ba6eeae063"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 260,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "exists"
+              ],
+              "before": false,
+              "after": true
+            },
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": {
+                "missing": true
+              },
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1
+      },
+      "receipt": {
+        "tool": "test.execute",
+        "privateCopy": true,
+        "exitCode": 1,
+        "ok": false,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false
+      },
+      "originalAfter": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      }
+    },
+    {
+      "name": "historical-red-round-14",
+      "source": "../git-fingerprint-prepatch-2026-11-21/dda-3.json",
+      "round": 14,
+      "candidateContentDigest": "sha256:4cde05bc9a25ecd833818e9301bc0e82cc44d295bc0c67184a5c95f11428cc4f",
+      "verdict": {
+        "status": "rejected",
+        "operands": [
+          "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+          "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 262,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": "absent",
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1,
+        "repeatCount": 1
+      },
+      "receipt": {
+        "tool": "test.execute",
+        "privateCopy": true,
+        "exitCode": 1,
+        "ok": false,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false
+      },
+      "originalAfter": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      }
+    },
+    {
+      "name": "historical-red-round-15",
+      "source": "../git-fingerprint-prepatch-2026-11-21/dda-3.json",
+      "round": 15,
+      "candidateContentDigest": "sha256:ee98e3e06023178a7f82c411449a75b866c3c33d1d729f02e772bd7cdcb970ef",
+      "verdict": {
+        "status": "rejected",
+        "operands": [
+          "sha256:62d33192cd3b06809fe11213d78dd174b7c96d5a8cf784c2ab5d9d90a3d3824f",
+          "sha256:0550fb59df3112bb30cad053339067237370fe73fd69ded3a84ec7714f4181c0"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 263,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": "absent",
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1,
+        "repeatCount": 2
+      },
+      "receipt": {
+        "tool": "test.execute",
+        "privateCopy": true,
+        "exitCode": 1,
+        "ok": false,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false
+      },
+      "originalAfter": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      }
+    },
+    {
+      "name": "historical-green",
+      "source": "../git-fingerprint-resume-2026-11-21/dda-3.patch",
+      "candidateContentDigest": "sha256:a3ee2bc36d1578c4861b8944558088ceffb80b04811295e81b027520f1c9cd5d",
+      "verdict": {
+        "status": "passed",
+        "operands": [
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377",
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377"
+        ],
+        "observations": 1,
+        "exitCode": 0
+      },
+      "receipt": {
+        "tool": "test.execute",
+        "privateCopy": true,
+        "exitCode": 0,
+        "ok": true,
+        "aborted": false,
+        "timedOut": false,
+        "truncated": false
+      },
+      "originalAfter": {
+        "runtime/src/git-observer.mjs": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+        "runtime/src/execution-scope-snapshot.mjs": "sha256:6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+        "runtime/test/git-audit.test.mjs": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41"
+      }
+    }
+  ]
+}

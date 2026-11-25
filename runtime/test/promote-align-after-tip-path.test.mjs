@@ -95,7 +95,7 @@ test('T-pat-1b: two distinct promoted steps still aggregate PASS', () => {
     ...structuredClone(tipPathPass),
     checks: [
       ...tipPathPass.checks.filter((c) => c.id !== TIP_PATH_ID),
-      { id: 'deterministic-green-jev-behavior-reject-promote', status: 'PASS', message: 'dgr' }
+      { id: 'deterministic-green-jev-uncertain-promote', status: 'PASS', message: 'dgu' }
     ]
   };
   const b = entry(bReport, 1);

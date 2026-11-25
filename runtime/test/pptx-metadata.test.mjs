@@ -345,3 +345,18 @@ test('distinguishes an existing generator from a requested generator script', ()
     ['已有生成脚本 old.mjs，请新建生成脚本 new.mjs。', ['new.mjs']]
   ]) assert.deepEqual(requestedDeliverables(prompt).map(spec => spec.path ?? spec.extension), expected, prompt);
 });
+
+test('declared deliverable specs replace prompt inference', async () => {
+  const missing = async () => undefined;
+  const empty = await prepareDeliverableVerification({
+    prompt: 'Create report.pptx with 1 slide.', declaredSpecs: [], resolveFile: missing, startedAtMs: 0
+  });
+  assert.deepEqual(await empty({ actions: [] }), []);
+  const declared = await prepareDeliverableVerification({
+    prompt: '回复：ok', declaredSpecs: [{ path: 'out/report.json' }], resolveFile: missing, startedAtMs: 0
+  });
+  const checks = await declared({ actions: [] });
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0].status, 'FAIL');
+  assert.match(checks[0].message, /没有可核对的交付文件/u);
+});

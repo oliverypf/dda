@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { controlledBuildEnvironment, runControlledBuild } from './build-controlled.mjs';
-import { fullLocalBuildEnvironment, runFullLocalBuild } from './build-full-local.mjs';
+import { fullLocalBuildEnvironment, prepareBuildTarget, runFullLocalBuild } from './build-full-local.mjs';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename } from 'node:path';
 
 test('Phase 1.5 build fixes the controlled channel without mutating caller environment', () => {
   const environment = { DDA_BUILD_RELEASE_CHANNEL: 'WINDOWS_FULL_LOCAL', PATH: 'toolchain' };
@@ -47,4 +50,28 @@ test('full local build fixes the release channel without mutating caller environ
   };
   assert.equal(runFullLocalBuild({ desktopRoot, environment: {}, spawn, fast: true }), 3);
   assert.equal(spawnCalls[0].options.env.DDA_BUILD_RELEASE_CHANNEL, 'WINDOWS_FULL_LOCAL');
+});
+
+test('stage-only reuses an existing executable without invoking Tauri', async () => {
+  const spawnCalls = [];
+  const root = await mkdtemp(join(tmpdir(), 'dda-stage-only-'));
+  const target = join(root, 'dda-desktop.exe');
+  await writeFile(target, 'exe');
+  assert.equal(runFullLocalBuild({ desktopRoot: 'C:\\work\\hmCodex\\desktop', targetExecutable: target, stageOnly: true, spawn: (...args) => spawnCalls.push(args) }), 0);
+  assert.deepEqual(spawnCalls, []);
+});
+
+test('locked executable is renamed with the established backup convention', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dda-build-lock-'));
+  const target = join(root, 'dda-desktop.exe');
+  await writeFile(target, 'old exe');
+  const result = await prepareBuildTarget({
+    path: target,
+    platform: 'win32',
+    now: new Date('2026-11-23T12:34:56Z'),
+    spawn: () => ({ status: 32 })
+  });
+  assert.equal(result.disposition, 'RENAMED_LOCKED_TARGET');
+  assert.match(basename(result.backup), /^dda-desktop\.locked-before-20261123123456\.exe$/);
+  assert.equal(await readFile(result.backup, 'utf8'), 'old exe');
 });

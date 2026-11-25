@@ -1,0 +1,37 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -211,11 +211,13 @@
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+-  if (!metadata) return { exists: false };
++  // A missing volatile file is reported with the same shape a plain-file
++  // existence produces, so a background `git status`/`git fetch` that only
++  // creates (or removes) `.git/index`/`FETCH_HEAD` cannot change the metadata
++  // digest, while a symlink swap on that key (`type: 'link'`) still does.
++  if (!metadata) return volatileContent ? { exists: true, type: 'file' } : { exists: false };
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+-  if (volatileContent) {
+-    return { exists: true, type };
+-  }
++  if (volatileContent) return { exists: true, type };
+   const entry = {
+     exists: true,
+     type,
+@@ -241,10 +243,12 @@
+   const entries = {};
+   let linkDetected = false;
+   for (const name of METADATA_FILES) {
+-    const entry = await readMetadataEntry(resolve(gitDir, name), {
+-      volatileContent: VOLATILE_METADATA_FILES.has(name)
+-    });
++    const volatileContent = VOLATILE_METADATA_FILES.has(name);
++    const entry = await readMetadataEntry(resolve(gitDir, name), { volatileContent });
+     entries[name] = entry;
++    // Benign presence flips of a volatile file never count as link detection;
++    // a real symlink still leaves `type: 'link'` in the digest for that key.
++    if (volatileContent && entry.exists !== true) continue;
+     linkDetected ||= entry.type === 'link';
+   }
+   const hooksDirectory = resolve(gitDir, 'hooks');

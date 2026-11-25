@@ -552,10 +552,15 @@ export class ReadonlyWorkspace {
 
   // The host passes a digest and character ranges from successful tool reads.
   // A partial window covers only lines fully contained in it.
-  async readObservedLines({ path, digest: observedDigest, sizeBytes, ranges }, line) {
-    if (!Number.isSafeInteger(line) || line < 1) return;
+  async readObservedLines({ path, digest: observedDigest, sizeBytes, ranges }, location) {
+    const offset = location?.offsetChars;
+    if (offset === undefined && (!Number.isSafeInteger(location) || location < 1)) return;
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || !ranges.some(([lo, hi]) => lo <= offset && offset < hi))) return;
     return this.#read(path, 1, 0, undefined, false, false, (content, currentDigest) => {
       if (observedDigest !== currentDigest) return;
+      // Source lookups may have started in the middle of a file. Resolve a
+      // previously observed character position without exposing unseen lines.
+      const line = offset === undefined ? location : content.slice(0, offset).split('\n').length;
       let start = 0;
       const excerpt = [];
       let sawTarget = false;
@@ -563,7 +568,7 @@ export class ReadonlyWorkspace {
         const newline = content.indexOf('\n', start);
         const end = newline < 0 ? content.length : newline;
         const textEnd = end > start && content[end - 1] === '\r' ? end - 1 : end;
-        if (number >= line - 1 && ranges.some(([lo, hi]) => lo <= start && textEnd <= hi)) {
+        if (number >= line - 1 && (!location?.exact || number === line) && ranges.some(([lo, hi]) => lo <= start && textEnd <= hi)) {
           excerpt.push(`${number}: ${content.slice(start, Math.min(textEnd, start + 320))}${textEnd - start > 320 ? '…' : ''}`);
           if (number === line) sawTarget = true;
         }

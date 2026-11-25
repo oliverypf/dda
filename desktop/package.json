@@ -39,6 +39,7 @@
     "build:windows:phase1:fast": "node \"%npm_config_local_prefix%/scripts/build-phase1-fast.mjs\"",
     "test:ui:disconnect": "node \"%npm_config_local_prefix%/scripts/ui-disconnect-test.mjs\"",
     "build:windows:full-local": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\"",
+    "build:windows:stage-only": "node \"%npm_config_local_prefix%/scripts/build-full-local.mjs\" --stage-only",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
     "build:exe": "call \"C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\Common7\\Tools\\VsDevCmd.bat\" -arch=x64 -host_arch=x64 && npm run build:windows -- --no-bundle",
     "test:ui:history": "node \"%npm_config_local_prefix%/scripts/ui-history-test.mjs\"",

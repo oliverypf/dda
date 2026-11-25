@@ -63,6 +63,37 @@ function reconcileRegionChildren(container: Node, desired: Node): void {
 // state and DOM identity when older pages are prepended.
 const rendered = new WeakMap<Element, string>();
 
+export function preserveDisclosureStates(previous: HTMLElement, next: HTMLElement): void {
+  const previousKeyed = new Map<string, HTMLDetailsElement>();
+  const previousUnkeyed: HTMLDetailsElement[] = [];
+  for (const detail of previous.querySelectorAll('details')) {
+    const detailKey = detail.dataset.detailKey;
+    if (detailKey) previousKeyed.set(detailKey, detail);
+    else if (!detail.hasAttribute('data-auto-open')) previousUnkeyed.push(detail);
+  }
+  const previousAuto = [...previous.querySelectorAll<HTMLDetailsElement>('details[data-auto-open]')];
+  let autoIndex = 0;
+  let unkeyedIndex = 0;
+  for (const detail of next.querySelectorAll('details')) {
+    const detailKey = detail.dataset.detailKey;
+    if (detailKey) {
+      const prior = previousKeyed.get(detailKey);
+      if (prior) detail.open = prior.open;
+      continue;
+    }
+    if (detail.hasAttribute('data-auto-open')) {
+      const prior = previousAuto[autoIndex++];
+      if (prior?.dataset.userToggled === '1') {
+        detail.dataset.userToggled = '1';
+        detail.open = prior.open;
+      }
+      continue;
+    }
+    const prior = previousUnkeyed[unkeyedIndex++];
+    if (prior) detail.open = prior.open;
+  }
+}
+
 export type KeyedListHooks<T> = {
   /** Skip HTML when the mounted row already represents this exact item. */
   reuse?: (element: HTMLElement, item: T) => boolean;
@@ -100,8 +131,7 @@ export function syncKeyedList<T>(container: HTMLElement, items: T[], key: (item:
       if (!element || rendered.get(element) !== content) {
         const next = createRow(id, content, initialize);
         if (element) {
-          const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
-          next.querySelectorAll('details').forEach((detail, index) => { detail.open = disclosures[index] ?? detail.open; });
+          preserveDisclosureStates(element, next);
           if (position === element) position = next;
           element.replaceWith(next);
         }
@@ -158,8 +188,7 @@ export async function syncKeyedListIncrementally<T>(container: HTMLElement, item
     }
     const next = createRow(id, content, initialize);
     hooks?.bind?.(next, item);
-    const disclosures = [...element.querySelectorAll('details')].map((detail) => detail.open);
-    next.querySelectorAll('details').forEach((detail, index) => { detail.open = disclosures[index] ?? detail.open; });
+    preserveDisclosureStates(element, next);
     element.replaceWith(next);
   }
   for (const [id, element] of [...container.children].map((child) => [(child as HTMLElement).dataset.key!, child as HTMLElement] as const)) {

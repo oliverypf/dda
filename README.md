@@ -1,77 +1,41 @@
-# dda
+# 独立验收写入门禁实验
 
-产品名称统一为 `dda`，桌面程序为 `dda-desktop.exe`。为沿用已有配置和历史记录，数据目录 `%LOCALAPPDATA%\hmCodex`、数据库 `hmcodex.db`、应用标识和浏览器存储键保留兼容名称。运行时、linux-cli 与桌面默认读取的环境变量统一为 `DDA_*`（例如 `DDA_PLATFORM`、`DDA_MODEL_CONFIG`）；旧的 `HMCODEX_*` 名称不再读取。MSI 的升级 GUID 固定为原值，发布者显示为 `dda`。仓库实际目录与归档证据中的旧路径不变。
+本归档验证任务专用的独立语义验收已经接入候选写入前门禁。门禁在候选临时工作区内运行可信的合成探针，模型不能选择探针、输入或判定规则。原断言通过且独立验收全部通过时才允许写入。验收失败直接拒绝，验收结果不完整进入一次受限复测，最终仍未通过就继续拒绝。
 
-Windows MVP 的只读任务会把脱敏 Trajectory 追加到 `%LOCALAPPDATA%\hmCodex\trajectory.jsonl`，下一次任务最多恢复最近三个 run 的结构化摘要作为有界 context；原始 prompt、模型全文、隐藏思维链和凭据不会写入或恢复。
+## 门禁控制
 
-面向 HarmonyOS、Windows 和 Linux 的多平台 Agent 工作台。
+零模型控制使用冻结的错误候选和参考候选。三类错误候选都通过原测试，但都被门禁拒绝。参考候选全部通过。
 
-当前 Windows 未完成工作集中到 [阶段四：功能补齐、运行时收敛与发布验收](docs/WINDOWS_PHASE4_IMPLEMENTATION_PLAN.md)，逐项状态见 [阶段四验收矩阵](docs/WINDOWS_PHASE4_ACCEPTANCE_MATRIX.md)。阶段四仅推进 Windows 本地版本，使用自研 Node/Cordis runtime 直接调用模型 provider；按用户要求取消 App Server 接入，多平台产品实现暂不纳入。Linux 端已确定为无界面 CLI，详细实施入口见 [Linux CLI 实施计划](docs/LINUX_CLI_IMPLEMENTATION_PLAN.md)、[CLI 契约](docs/LINUX_CLI_CONTRACT.md) 和 [Linux 平台适配设计](docs/LINUX_PLATFORM_ADAPTER_DESIGN.md)。
+| 案例 | 错误候选原测试 | 错误候选独立验收 | 参考候选独立验收 |
+| --- | ---: | ---: | ---: |
+| 目录迁移 | 2/2 | 0/6 | 6/6 |
+| 分页 | 3/3 | 0/5 | 5/5 |
+| 异步队列 | 2/2 | 0/5 | 5/5 |
 
-本项目建设可独立安装、独立运行的 Agent 工作台。当前优先完善 Windows 的 Tauri 桌面客户端与自研 Node/Cordis runtime，由 runtime 管理模型调用、任务编排、受控工具、审批、验证和审计。鸿蒙端使用 ArkTS 原生工作台，Linux 端使用 CLI。Windows 的核心能力包括：
+独立探针覆盖目录迁移的试运行副作用、嵌套二进制复制、占用目录保护、普通命令目录初始化、缺失源和缺失参数。分页覆盖同时间戳排序、最旧方向、游标行删除、跨频道游标和输入顺序。异步队列覆盖跨键并发、尾随版本合并、首轮失败、尾随失败后复用和版本回退。
 
-- Thread：会话与历史
-- Turn：一次用户请求及其执行过程
-- Item：消息、推理摘要、命令、文件变更和工具调用
-- 版本化命令与事件：任务请求、流式状态和审批回执
-- 流式消息、命令输出、审批卡片和错误状态
-- 项目/文件工作区上下文
+## 正式续跑
 
-Windows 客户端启动并管理自研本地运行时，负责模型 provider、受控 Executor、工作区和本地 Memory Journal，不依赖 App Server。演示模式用于验证客户端交互。HarmonyOS 既有直连模式属于迁移期历史实现，不作为当前 Windows 开发路线。Windows MVP 的 Cordis runtime 默认走 OpenAI Responses，可显式切换 OpenAI Chat Completions、兼容网关或 DeepSeek Harness；模型路由配置位于 `%LOCALAPPDATA%\hmCodex\model-config.json`，也可通过 `--config` 或 `DDA_MODEL_CONFIG` 指定，API key 只从配置中声明的环境变量读取；同时支持持久化演化提案和受控状态迁移，桌面端取消任务会终止对应的本地 runtime 进程树。在线任务会以脱敏 outcome 进入 evaluator；可通过 `evolution cohort` 按模型、协议和任务类别形成 baseline cohort，再用于离线 replay。Memory proposal 必须保留来源事件；无来源候选不会被 accepted 或激活为 active memory。
+模型为 `deepseek-v4-flash`，关闭 thinking。每次沿用原断点剩余预算，最多 16 个请求、711126 字节请求体、22098 个输出 token，每请求最多 4096 token。正式结果见 `results.json`。
 
-Agent Harness 总体设计见 [docs/AGENT_HARNESS_DESIGN.md](docs/AGENT_HARNESS_DESIGN.md)，当前 Jev Decision Plane 迁移方案见 [docs/JEV_DECISION_PLANE_DESIGN.md](docs/JEV_DECISION_PLANE_DESIGN.md)；实现级协议、状态机、数据、Agent Decision Trace、安全、插件、部署、HarmonyOS 平台、评价、运维隐私和 UI 规范从 [docs/LONG_TERM_DESIGN_INDEX.md](docs/LONG_TERM_DESIGN_INDEX.md) 进入。v0.6 采用渐进迁移，目标架构与各端当前实现需要区分：
+| 案例 | 轮次 | 真实请求 | 原测试 | 独立验收 | 最终工作区 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 目录迁移 | 3 | 3/2/2 | 2/2、2/2、2/2 | 6/6、6/6、6/6 | 3/3 通过 |
+| 分页 | 3 | 2/2/2 | 3/3、3/3、3/3 | 5/5、5/5、5/5 | 3/3 通过 |
+| 异步队列 | 3 | 8/13/2 | 1/2、2/2、2/2 | 1/5、5/5、5/5 | 2/3 通过 |
 
-- 目标架构（设计契约）：UI 经 `HarnessFacade` 提交命令并订阅聚合后的 `HarnessReadModel`，Core 只依赖模型调用、执行、工作区和审批四类领域端口，`RoleSessionManager` 管理通用角色上下文，Codex 协议与会话代码收敛到 Codex Adapter 内。
-- Windows 桌面端当前实现：已使用 `HarnessReadModel` 作为 UI 消费的聚合读模型（契约见 `contracts/v1/harness-read-model.schema.json`）；`HarnessFacade` 这一命令入口尚未作为独立符号落地。Linux CLI 不依赖桌面 UI，直接消费 runtime command result 和 `runtime-event` JSONL，契约见 [Linux CLI 命令与输出契约](docs/LINUX_CLI_CONTRACT.md)。
-- HarmonyOS 使用 `CodexSession` 调度原生 `LocalModelTransport`，由应用直接调用模型服务。会话、草稿、项目文件及审批记录保存在设备上。其他连接中可显式选择演示或远程 App Server。
+异步队列第一轮没有修出可接受候选，门禁拒绝了语义不完整的提交。其余两轮通过原测试和独立验收。结果说明门禁已经拦住了过宽或不完整候选，但异步队列在当前预算下仍未达到稳定修复。
 
-Phase 1 即记录每个关键 Agent 的结构化决策（候选、证据、选择、预期和结果），由 Jev Decision Plane 统一完成需要语义判断的选择，用于审计、归因与后续受约束学习，但不保存隐藏思维链。路线先完成 Phase 0.5 协议合规，再交付 Phase 1 只读闭环；只有 Phase 1.5 的运行时安全、审批、一次性 `PolicyLease`、Rule Verifier 和 Jev Action Gate 闭环通过后才开放写入、命令和网络能力。旧的 LLM-as-a-Verifier、独立 Candidate Judge 和 OpenViking 不属于当前实现。
+正式运行的 DDA 进程都记录了 `BUILD_TEST_VERIFIER_UNAVAILABLE` 并以 CLI 返回码 1 结束，这是最终语义评分不可用。原测试和独立验收由独立评分器实际执行，表中的结果来自这些可复核的测试记录。
 
-Jev 只在有限候选和有界证据内辅助任务分类、执行拓扑、模型/角色候选、工具语义门禁、验证后的恢复方向以及 Stop/Continue 判断；它不能直接执行动作、授予权限、签发租约、绕过审批或覆盖安全硬规则。命令、文件写入、网络访问、路径范围、凭据和 Rule Verifier 事实由确定性安全组件、审批和 Executor 控制。
+## 文件
 
-Windows 本地运行方式：安装或启动桌面客户端，授权工作区并配置模型 provider，由客户端启动自研 runtime 执行任务。开发、模型配置及构建步骤见 [desktop/README.md](desktop/README.md)。App Server 不属于 Windows 的启动依赖、阶段四工作包或发布验收条件。
+- `controls.json` 保存三类错误候选和参考候选的零模型门禁矩阵。
+- `results.json` 保存九次正式续跑、预算、候选、写入和最终评分。
+- `runtime/src/repair-task-acceptance.mjs` 保存三类可信任务探针。
+- `runtime/src/repair-retest.mjs` 和 `runtime/src/repair-candidate-workspace.mjs` 保存候选门禁及临时探针执行流程。
+- `runtime/test/repair-task-acceptance.test.mjs` 验证过宽候选拒绝、参考候选通过和异常回执受限复测。
 
-Windows 本地开发路径：项目已复制到本机 NTFS 目录
-`C:\Users\User\hmCodex-local`。后续构建、测试和运行都应直接在这个目录中进行，避免
-网络盘和 UNC 路径映射导致的工作目录、原生链接器和文件监听问题。原始共享盘副本仍可作为
-备份，但不作为本地开发入口。
+## 审计说明
 
-```powershell
-# 本地开发入口
-Set-Location C:\Users\User\hmCodex-local
-```
-
-构建或测试时优先在 `C:\Users\User\hmCodex-local` 下运行。模型配置和 API key
-不随盘符映射保存：配置仍位于 `%LOCALAPPDATA%\hmCodex\model-config.json`，密钥
-仅从 `DENGJIUWANLE_API_KEY` 等配置声明的环境变量读取。
-
-多平台架构与迁移路线见 [docs/MULTI_PLATFORM_ARCHITECTURE.md](docs/MULTI_PLATFORM_ARCHITECTURE.md)，对应架构决策见 [docs/adr/0006-multi-platform-clients.md](docs/adr/0006-multi-platform-clients.md)。
-
-安全边界：
-
-- HarmonyOS、Windows 和 Linux 客户端默认只负责展示、请求编排和用户确认；本地运行时可以在同一客户端内执行受控命令，但不根据模型消息直接执行。
-- 命令执行与文件变更必须由本地或远程 Executor 按 sandbox/approval policy 执行；客户端保留拒绝权。
-- 鸿蒙端通过系统 Asset Store 按模型端点保存 API 密钥。会话、技能、模型目录设置和项目文件使用应用私有存储。
-
-## 鸿蒙端首次使用
-
-1. 打开「设置 → 本机模型」，按服务提供方选择 Responses 或 Chat Completions，填写服务地址和模型 ID。支持模型目录的服务可以点击「获取模型目录」选择模型。需要鉴权时填写该服务的 API 密钥并保存。
-2. 在底部输入任务并发送。设备直接请求所选模型服务。进入「项目文件」可建立本机项目，导入文本文档的副本；模型列目录、读文件、创建文件和替换文本时会显示对应审批。通过「导出此文件」取回修改后的副本。
-3. 在「历史任务」中重新打开会话或导出 Markdown。在「技能与记忆」中可保存指令、长期偏好、常用提示及导入的 SKILL.md。密钥由设备保管，技能正文由用户选用。
-
-4. 需要多角色处理时，在「设置 → Jev 编排」填写 System One 服务地址、模型和独立的密钥。Jev 根据任务选择单执行者，或依次安排规划、执行和复核。模型调用项目工具时，界面会列出操作内容供你批准。
-5. 在「项目文件 → 项目命令」可以直接运行 `pwd`、`ls`、`cat`、`wc`、`check-json`、`check-js` 和 `git hash-object`。执行者也能在审批后调用这些命令。项目可使用 `npm test` 入口运行兼容的检查脚本。例如在 `package.json` 中填写 `"scripts": {"test": "node --check src/main.js && check-json settings.json"}`，再让执行者「修复这两个文件并运行 npm test」。
-6. 任务中断后，重新打开原会话，在「任务断点」继续。应用保存计划、执行阶段、复核意见和已确认的操作。写入已获批准但结果未知时，可让应用核对目标文件。内容与获批结果一致即可继续，核对失败会保留断点供你检查。
-
-验证：
-
-- 构建 HAP：`hvigorw assembleHap --no-daemon --no-incremental`
-- 编译并运行单元测试任务：`hvigorw test -p module=entry --no-daemon`
-- 执行 `node --test entry/test/host/*.test.mjs` 可运行主机集成测试。测试使用回环 HTTP 服务和临时项目，覆盖角色选择、命令退出码、复核驳回、文件写入和跨进程恢复。可用 `DEVECO_STUDIO_HOME` 指定 DevEco 安装目录。
-- 页面清单位于 `entry/src/main/resources/base/profile/main_pages.json`，测试桥接入口位于 `entry/src/test/List.test.ets`。
-- Windows Phase 1 的 runtime、desktop、TypeScript 和 Tauri 独立套件默认并行运行：在 `desktop` 目录执行 `npm run test:all:parallel`；UI 套件因共享安装进程和本地 store 必须随后顺序执行。详见 [Windows 测试执行约定](docs/WINDOWS_TESTING_WORKFLOW.md)。
-
-官方参考：
-
-- https://github.com/openai/codex
-- https://developers.openai.com/codex/app-server
+`results-history.json` 和 `results-paging.json` 来自首批冻结宿主，三轮均完成真实模型续跑和独立评分。之后补充了 `runtime/src/index.mjs` 的验收回执事件投影，`results-queue.json` 使用投影修复后的冻结宿主并保存了逐项 `acceptance.checks`。投影修改只影响记录字段，不改变候选门禁判定。随后尝试重新启动历史迁移和分页时遇到模型服务 400/连接中断，未将这些无工具调用的失败轮次计入正式结果。

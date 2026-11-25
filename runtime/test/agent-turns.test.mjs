@@ -66,6 +66,28 @@ test('planner runs an isolated no-tool turn and validates a bounded DAG plan', a
   assert.match(planner.plan.planDigest, /^sha256:/u);
 });
 
+test('planner parses declared task requirements without changing the plan', async () => {
+  const steps = [{ stepId: 'inspect', summary: 'Inspect files', actionKind: 'READ', dependencies: [] }];
+  const withRequirements = await runPlannerTurn({
+    provider: providerFor([
+      { type: 'text-delta', text: JSON.stringify({ planId: 'p1', steps,
+        requirements: { build: true, test: false, deliverables: [{ path: 'docs/a.pptx', minSlides: 8 }] } }) }
+    ]),
+    prompt: '编译并汇报'
+  });
+  assert.deepEqual(withRequirements.requirements, { build: true, test: false, artifact: false, install: false,
+    deliverables: [{ path: 'docs/a.pptx',
+      presentation: { min: 8, max: undefined, sourcePage: undefined, requirePath: false, requireUrl: false } }] });
+  const withoutRequirements = await runPlannerTurn({
+    provider: providerFor([
+      { type: 'text-delta', text: JSON.stringify({ planId: 'p1', steps }) }
+    ]),
+    prompt: '编译并汇报'
+  });
+  assert.equal(withoutRequirements.requirements, undefined);
+  assert.equal(withRequirements.plan.planDigest, withoutRequirements.plan.planDigest);
+});
+
 test('planner falls back to one bounded step for unstructured output', async () => {
   const result = await runPlannerTurn({
     provider: providerFor([{ type: 'text-delta', text: 'I will inspect the workspace and report findings.' }]),

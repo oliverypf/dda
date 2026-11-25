@@ -10,17 +10,14 @@ import { listenOnFetchablePort } from './helpers/listen-loopback.mjs';
 
 const MARKER = 'JEV_ROUTE_MIGRATION_MARKER';
 
-// Drive a minimal read-only inspect task that completes before any recovery,
-// while a fixture Jev endpoint records which bounded candidate decisions the
-// host actually asked it to make. CLASSIFY_TASK and SELECT_ROUTE run before any
-// model turn, so the fixture captures them regardless of the later outcome.
+// Drive a minimal task while a fixture Jev endpoint records which bounded
+// candidate decisions the host actually asks it to make.
 const runScenario = async (t, { optIn, routeChoice = 'route-selected' }) => {
   const root = await mkdtemp(join(tmpdir(), 'hmcodex-jev-plane-'));
   const workspace = join(root, 'workspace');
   await mkdir(workspace);
   await writeFile(join(workspace, 'README.md'), `${MARKER}\n`);
   const candidateDecisions = [];
-  let classifyChoices;
   let routeChoices;
   const server = createServer(async (req, res) => {
     const chunks = [];
@@ -34,8 +31,7 @@ const runScenario = async (t, { optIn, routeChoice = 'route-selected' }) => {
         if (id === 'candidate') {
           const kind = body.state?.action?.kind;
           candidateDecisions.push(kind);
-          if (kind === 'CLASSIFY_TASK') { classifyChoices = choices; choice = choices.includes('inspect') ? 'inspect' : choices[0]; }
-          else if (kind === 'SELECT_ROUTE') { routeChoices = choices; choice = choices.includes(routeChoice) ? routeChoice : choices[0]; }
+          if (kind === 'SELECT_ROUTE') { routeChoices = choices; choice = choices.includes(routeChoice) ? routeChoice : choices[0]; }
         }
         if (id === 'actionGate') choice = 'ALLOW';
         if (id === 'verification') choice = 'PASS';
@@ -65,21 +61,20 @@ const runScenario = async (t, { optIn, routeChoice = 'route-selected' }) => {
     decision: { enabled: true, enforce: true, endpoint: `http://127.0.0.1:${port}/jev`, apiKeyEnv: 'JEV_PLANE_KEY', timeoutMs: 5000 }
   }));
   const env = { JEV_PLANE_KEY: 'local-key', DDA_JEV_ENABLED: '1', DDA_JEV_ENFORCE: '1' };
-  if (optIn) { env.DDA_JEV_CLASSIFY_ENABLED = '1'; env.DDA_JEV_ROUTE_ENABLED = '1'; }
+  if (optIn) env.DDA_JEV_ROUTE_ENABLED = '1';
   const result = await runEvidenceProcess(process.execPath, ['src/index.mjs', 'task', '--config', config, '--workspace', workspace,
     '--prompt', 'Read README.md and report its marker.', '--trajectory-store', join(root, 'trajectory.jsonl')], {
     cwd: new URL('..', import.meta.url), env, timeoutMs: 30000
   });
-  return { result, candidateDecisions, classifyChoices, routeChoices };
+  return { result, candidateDecisions, routeChoices };
 };
 
-test('CLASSIFY_TASK and SELECT_ROUTE consult Jev only when the operator opts in', async (t) => {
-  const { result, candidateDecisions, classifyChoices, routeChoices } = await runScenario(t, { optIn: true });
+test('classification is absent and SELECT_ROUTE still consults Jev when opted in', async (t) => {
+  const { result, candidateDecisions, routeChoices } = await runScenario(t, { optIn: true });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
-  assert.ok(candidateDecisions.includes('CLASSIFY_TASK'), 'the opted-in classifier consults Jev over bounded candidates');
+  assert.equal(candidateDecisions.includes('CLASSIFY_TASK'), false);
   assert.ok(candidateDecisions.includes('SELECT_ROUTE'), 'route selection reaches Jev instead of being dead code');
-  assert.deepEqual(classifyChoices?.slice().sort(), ['inspect', 'modify', 'query', 'test', 'unknown'].sort());
   assert.deepEqual(routeChoices?.slice().sort(), ['route-blocked', 'route-selected'].sort());
 });
 
@@ -92,10 +87,10 @@ test('a Jev SELECT_ROUTE block fails closed before any role allocation', async (
   assert.ok(candidateDecisions.includes('SELECT_ROUTE'), 'the block is a Jev route decision, not a rule default');
 });
 
-test('without opt-in the deterministic classifier and router stay authoritative', async (t) => {
+test('without route opt-in the generic router stays authoritative', async (t) => {
   const { result, candidateDecisions } = await runScenario(t, { optIn: false });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(JSON.parse(result.stdout.trim()).ok, true);
-  assert.equal(candidateDecisions.includes('CLASSIFY_TASK'), false, 'classification stays on the rule path when not opted in');
+  assert.equal(candidateDecisions.includes('CLASSIFY_TASK'), false);
   assert.equal(candidateDecisions.includes('SELECT_ROUTE'), false, 'route selection stays on the rule path when not opted in');
 });

@@ -1,0 +1,130 @@
+{
+  "sourceTreeSha256": "sha256:57916e5f3a7defa5b83f00600e12609acb4ace55eed2c86f76f00528a51eccb1",
+  "gradeSuiteSha256": "sha256:69e3dbf44bc34e01ad8b70f43d894944483db3cade5492ac71659959fe94fabd",
+  "platform": "win32",
+  "node": "v24.19.0",
+  "exitCode": 1,
+  "passed": 0,
+  "failed": 2,
+  "errored": 0,
+  "green": false,
+  "tests": [
+    {
+      "name": "additional_link_with_existing_link",
+      "mode": {
+        "kind": "synthetic-lstat",
+        "nativeError": "EPERM"
+      },
+      "before": {
+        "links": [
+          "index"
+        ],
+        "fileDigests": {
+          "index": "6d912f7d1df21b7b652d0235c2d1ff23da4d62a5c4878a37f7e8e47911292638",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:9ba18b2e3a45d41d5c2a47409447f3d3bff3a6efeee53006897f24a548b11e05",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "control": {
+        "links": [
+          "index"
+        ],
+        "fileDigests": {
+          "index": "6d912f7d1df21b7b652d0235c2d1ff23da4d62a5c4878a37f7e8e47911292638",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:9ba18b2e3a45d41d5c2a47409447f3d3bff3a6efeee53006897f24a548b11e05",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "after": {
+        "links": [
+          "index",
+          "FETCH_HEAD"
+        ],
+        "fileDigests": {
+          "index": "6d912f7d1df21b7b652d0235c2d1ff23da4d62a5c4878a37f7e8e47911292638",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:9ba18b2e3a45d41d5c2a47409447f3d3bff3a6efeee53006897f24a548b11e05",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "checks": {
+        "available": true,
+        "linksDetectedBothTimes": true,
+        "unchangedHead": true,
+        "unchangedStaging": true,
+        "metadataFingerprintsDiffer": false
+      },
+      "status": "failed",
+      "message": "{\"available\":true,\"linksDetectedBothTimes\":true,\"unchangedHead\":true,\"unchangedStaging\":true,\"metadataFingerprintsDiffer\":false}\n\n'failed' !== 'passed'\n"
+    },
+    {
+      "name": "move_link_between_metadata_paths",
+      "mode": {
+        "kind": "synthetic-lstat",
+        "nativeError": "EPERM"
+      },
+      "before": {
+        "links": [
+          "index"
+        ],
+        "fileDigests": {
+          "index": "bad121964c480cfeeced6668614a43332399ca02750f60e11cfc79d62e9cb457",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:eb6ae4550375abd36244c29f3d87d85542cdbeb15adaa791428749b1a6c1c403",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "control": {
+        "links": [
+          "index"
+        ],
+        "fileDigests": {
+          "index": "bad121964c480cfeeced6668614a43332399ca02750f60e11cfc79d62e9cb457",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:eb6ae4550375abd36244c29f3d87d85542cdbeb15adaa791428749b1a6c1c403",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "after": {
+        "links": [
+          "FETCH_HEAD"
+        ],
+        "fileDigests": {
+          "index": "bad121964c480cfeeced6668614a43332399ca02750f60e11cfc79d62e9cb457",
+          "FETCH_HEAD": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "available": true,
+        "metadataLinkDetected": true,
+        "metadataDigest": "sha256:fd6df9d4f0b86fffabc00f03e8561d4770972d6a3fdd98883e5da7d53db2545c",
+        "headDigest": "sha256:eb6ae4550375abd36244c29f3d87d85542cdbeb15adaa791428749b1a6c1c403",
+        "indexDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "checks": {
+        "available": true,
+        "linksDetectedBothTimes": true,
+        "unchangedHead": true,
+        "unchangedStaging": true,
+        "metadataFingerprintsDiffer": false
+      },
+      "status": "failed",
+      "message": "{\"available\":true,\"linksDetectedBothTimes\":true,\"unchangedHead\":true,\"unchangedStaging\":true,\"metadataFingerprintsDiffer\":false}\n\n'failed' !== 'passed'\n"
+    }
+  ]
+}

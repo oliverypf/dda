@@ -1,0 +1,47 @@
+TAP version 13
+# Subtest: GitObserver returns redacted stable repository state and detects changes
+ok 1 - GitObserver returns redacted stable repository state and detects changes
+  ---
+  duration_ms: 1971.034375
+  type: 'test'
+  ...
+# Subtest: Git metadata fingerprints detect config changes outside an execution scope
+ok 2 - Git metadata fingerprints detect config changes outside an execution scope
+  ---
+  duration_ms: 1985.145
+  type: 'test'
+  ...
+# Subtest: Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes
+not ok 3 - Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes
+  ---
+  duration_ms: 2016.14
+  type: 'test'
+  location: 'C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-remaining-live-20261121\\grading\\dda-3\\runtime\\test\\original.mjs:78:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'sha256:41023112921ca9db487434953dbd1ce7359c32eb8e60ee1b0173ff945f3c89ff'
+    - 'sha256:2153234584347c9a8a2dc301343b205352dc1bc7752b7657b84c191dea4c8a86'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'sha256:2153234584347c9a8a2dc301343b205352dc1bc7752b7657b84c191dea4c8a86'
+  actual: 'sha256:41023112921ca9db487434953dbd1ce7359c32eb8e60ee1b0173ff945f3c89ff'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/User/hmCodex-local/.codex-tmp/fp-remaining-live-20261121/grading/dda-3/runtime/test/original.mjs:88:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    async Test.run (node:internal/test_runner/test:1389:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 2
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6246.268907

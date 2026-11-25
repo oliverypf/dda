@@ -1,0 +1,198 @@
+{
+  "model": "deepseek-v4-flash",
+  "thinking": "disabled",
+  "baseline": "../git-fingerprint-2026-11-21/protocol.json",
+  "wrong_patch": "../git-fingerprint-retest-2026-11-21/dda-2.patch",
+  "previous_replay": "../git-fingerprint-resume-2026-11-21/replay.py",
+  "native_replay_rounds": 8,
+  "first_live_round": 9,
+  "local_preflight_trials": 1,
+  "live_trials": 3,
+  "historical_budget_and_cutpoint": {
+    "source": "fp-retry-20261121/dda-2",
+    "historical_red_sequence": 305,
+    "historical_red_ms": 1795233725036,
+    "historical_proxy_first_s": "1795233658.782758",
+    "historical_cli_first_model_request_ms": 1795233658668,
+    "historical_run_started_ms": 1795233654987,
+    "proxy_wall_remaining_s": 413.746758,
+    "cli_first_request_wall_remaining_s": 413.632,
+    "historical_launcher_config_mtime_ns": 1795233653289175600,
+    "cli_guard_seconds": 408,
+    "spent": {
+      "requests": 8,
+      "raw_request_bytes": 1788874,
+      "completion_tokens": 2478
+    },
+    "limits": {
+      "requests": 16,
+      "raw_request_bytes": 711126,
+      "completion_tokens": 22098,
+      "per_request_output_tokens": 4096
+    },
+    "old_rows": [
+      {
+        "n": 1,
+        "raw_request_bytes": 178672,
+        "completion_tokens": 106
+      },
+      {
+        "n": 2,
+        "raw_request_bytes": 200749,
+        "completion_tokens": 81
+      },
+      {
+        "n": 3,
+        "raw_request_bytes": 206484,
+        "completion_tokens": 192
+      },
+      {
+        "n": 4,
+        "raw_request_bytes": 220246,
+        "completion_tokens": 167
+      },
+      {
+        "n": 5,
+        "raw_request_bytes": 231855,
+        "completion_tokens": 1436
+      },
+      {
+        "n": 6,
+        "raw_request_bytes": 245195,
+        "completion_tokens": 91
+      },
+      {
+        "n": 7,
+        "raw_request_bytes": 251614,
+        "completion_tokens": 277
+      },
+      {
+        "n": 8,
+        "raw_request_bytes": 254059,
+        "completion_tokens": 128
+      }
+    ]
+  },
+  "host": {
+    "source_sha256": "991edef9e8a14a0435345f068c4f513d3522fe15e7faffc3158143cb0507a716",
+    "host_head": "cbde27b8afffbf5aa5b4c2d089a8e20572ad19bb"
+  },
+  "host_end": {
+    "source_sha256": "991edef9e8a14a0435345f068c4f513d3522fe15e7faffc3158143cb0507a716",
+    "all_clients_terminal": true
+  },
+  "original_inputs": {
+    "seed": "0bdc70002b6da74c2f34064e61c0804b390c530d",
+    "wrong_workspace_sha256": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "wrong_file_sha256": "6e0c290da44abf0a06661695f1006e79409b9a48d30e9ab3bf50dac455947e1f",
+    "wrong_patch_sha256": "be640e7fdf53230982397e7841a0b6e1a3161aa97d3a511e9b49a5aa7962dfc2",
+    "prompt_sha256": "0a0f6e6400e48b6698fcff7c65fafc2af5d37504d65c8423e8909c502bcd6b36",
+    "grade_sha256": "75bdeb54373fde2dc08b84c04e3c1674bd26ca3370b2fc236c9fa25676fbcf10",
+    "budget_proxy_sha256": "2c72a0f7c7cc5ba1a1779f2b6eec652a219165211795da96259e4b712f94dc72",
+    "launcher_sha256": "d3dd4469ee51c5a58743cd3a2df6aac580f9354f6828e604843e61aba135bebd"
+  },
+  "actual_launcher_proxy_and_inputs": {
+    "launch_dda.py": "b65e03f82468203ed23a7c096400ec95a3d8c408ba6196da7325babda6bf0384",
+    "upstream/proxy.py": "6ab7df811017b04019429b438ef6872f813a1a109629f96c137f7c22b156e6f9",
+    "grade.py": "75bdeb54373fde2dc08b84c04e3c1674bd26ca3370b2fc236c9fa25676fbcf10",
+    "prompt.txt": "0a0f6e6400e48b6698fcff7c65fafc2af5d37504d65c8423e8909c502bcd6b36"
+  },
+  "preflight_proof": {
+    "workspace_sha256": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "workspace_matches_wrong": true,
+    "tracked_change": "M runtime/src/execution-scope-snapshot.mjs",
+    "repair_message_count": 1,
+    "assertion_line_in_repair_message": true,
+    "assertion_line": "assert.equal(before.metadataDigest, afterRefresh.metadataDigest);",
+    "assertion_source_digest": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+    "assertion_source_path": "runtime/test/git-audit.test.mjs",
+    "assertion_source_line": 88,
+    "previous_edit_path_in_repair_message": "runtime/src/execution-scope-snapshot.mjs",
+    "previous_diff_in_repair_message": true,
+    "previous_diff_chars": 7043,
+    "previous_diff_sha256": "976c236adbd53b0d5c554ffcdc9dca16af66897cf606929e8b78a06cebba2fe6",
+    "stack_line_88": true,
+    "repair_message_sha256": "e9b33383cc53412f1a27ba7bc1a9e8a863f94f341b293bcc58f4eeaf5b5a1a57",
+    "failed_after_edit_event": true,
+    "red_target_ran": true
+  },
+  "preflight_presented_context": {
+    "first_live_request_bytes": 54772,
+    "source": {
+      "path": "runtime/test/git-audit.test.mjs",
+      "digest": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+      "line": 88,
+      "excerpt": "87:   const afterRefresh = await observer.snapshot({ reason: 'ACTION_COMPLETED' });\n88:   assert.equal(before.metadataDigest, afterRefresh.metadataDigest);\n89:   assert.equal(before.indexDigest, afterRefresh.indexDigest);",
+      "possibleProducers": [
+        {
+          "field": "metadataDigest",
+          "path": "runtime/src/git-observer.mjs",
+          "excerpt": "259:   entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;\n260:   return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };\n261: };"
+        }
+      ]
+    },
+    "history_compaction": [
+      {
+        "sequence": 194,
+        "payload": {
+          "stepId": "execute",
+          "attempt": 1,
+          "round": 9,
+          "reason": "FAILED_RETEST_HISTORY",
+          "beforeChars": 98396,
+          "afterChars": 35915,
+          "savedChars": 62481,
+          "evictedRounds": 5,
+          "totalCompactedRounds": 5,
+          "keptRounds": 3
+        }
+      }
+    ]
+  },
+  "initial_grade": {
+    "external": [
+      {
+        "passed": false,
+        "name": "worktree_refresh"
+      },
+      {
+        "passed": true,
+        "name": "staged_change"
+      },
+      {
+        "passed": true,
+        "name": "config_change"
+      }
+    ],
+    "original": [
+      {
+        "passed": true,
+        "name": "GitObserver returns redacted stable repository state and detects changes"
+      },
+      {
+        "passed": true,
+        "name": "Git metadata fingerprints detect config changes outside an execution scope"
+      },
+      {
+        "passed": false,
+        "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+      }
+    ],
+    "immutable_test": true,
+    "green": false
+  },
+  "wall_policy": "Both live clocks begin at the native replayed round-8 red tool.result timestamp. Proxy enforces 413.746758 s from historical first proxy request to red. CLI enforces 408 s across model calls and local tools, conservatively rounding down the remaining launcher time using the config file closed before its unlogged start. CLI first model.request_started instead gives 413.632 s.",
+  "trial_workspaces": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-prepatch-live-20261121",
+  "local_preflight_workspace": "C:\\Users\\User\\hmCodex-local\\.codex-tmp\\fp-prepatch-check-20261121",
+  "comparison": "../git-fingerprint-remaining-2026-11-21/results.json",
+  "collection_wrapper": "trial.py",
+  "preflight_native_checkpoint": {
+    "warm_rounds": 8,
+    "wrong_edit_sequence": 127,
+    "failed_retest_sequence": 192,
+    "first_continuation_bytes": 54772,
+    "wrong_tree": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+    "candidate_preflight_and_auto_retest_guidance": true
+  },
+  "trace_limit": "CLI projections omit candidatePreview, decision status, and operands. Preview receipts are linked by /candidate-test and private cwd, then cross-checked against the parent write. Only rejected tool messages expose their sampled assertion operands. An original-target retest requires the real workspace cwd; host-scheduled rounds consume no model requests."
+}

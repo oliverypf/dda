@@ -8,7 +8,6 @@ import { currentAccessMode } from '../filesystem-access.mjs';
 import { sha256Digest } from '../trajectory-store.mjs';
 import { APPROVAL_ERROR_CODES, APPROVAL_OUTCOMES, resolveApprovalOutcome, assessRequestRisk, classifySessionCommand, COMMAND_OUTSIDE_SESSION_LEASE } from '../controlled-tools.mjs';
 
-const DEFAULT_APPROVAL_TTL_MS = 900_000;
 
 const requireDirectory = async (path) => {
   if (!(await lstat(path)).isDirectory()) throw new Error('COMMAND_APPROVAL_STORE_INVALID');
@@ -114,7 +113,9 @@ export const createApprovalSession = (deps) => {
   const gate = createCellApprovalGate();
   const holds = { n: 0 };
   const approvalContexts = deps.approvalContexts;
-  const ttlMs = deps.approvalTtlMs ?? DEFAULT_APPROVAL_TTL_MS;
+  // No TTL by default: a pending approval waits for the user's answer, a
+  // cancelled task, or the end of its cell. A host may still pass a bound.
+  const ttlMs = Number.isFinite(deps.approvalTtlMs) && deps.approvalTtlMs > 0 ? deps.approvalTtlMs : undefined;
   const now = deps.now ?? Date.now;
   const logger = deps.logger ?? console;
   const savedApprovals = deps.commandApprovalDirectory ? commandApprovals(deps.commandApprovalDirectory) : undefined;
@@ -248,6 +249,7 @@ export const createApprovalSession = (deps) => {
   };
 
   const armTimer = (pending, requestId) => {
+    if (ttlMs === undefined) return;
     pending.timer = setTimeout(() => {
       if (!claim(pending, requestId)) return;
       settleWinner(pending, requestId, {
@@ -420,8 +422,8 @@ export const createApprovalSession = (deps) => {
       }
       if (await checkpoint('gate')) return false;
 
-      const approvalExpiresAt = now() + ttlMs;
-      safeRequest.approvalExpiresAt = approvalExpiresAt;
+      const approvalExpiresAt = ttlMs === undefined ? undefined : now() + ttlMs;
+      if (approvalExpiresAt !== undefined) safeRequest.approvalExpiresAt = approvalExpiresAt;
 
       const operationId = `operation-${requestId}`;
       const bindingSnapshot = deps.bindingSnapshot();

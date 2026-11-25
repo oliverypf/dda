@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: additional_link_with_existing_link
+ok 1 - additional_link_with_existing_link
+  ---
+  duration_ms: 2245.381719
+  type: 'test'
+  ...
+# Subtest: move_link_between_metadata_paths
+ok 2 - move_link_between_metadata_paths
+  ---
+  duration_ms: 2231.523281
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4705.697968

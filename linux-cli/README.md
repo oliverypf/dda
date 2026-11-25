@@ -86,7 +86,7 @@ Jev 需要每个部署显式开启，满足下面任一条件才算“已配置�
 
 未改写端点时，默认直连 TypeSafe 官方 System One 接口（`https://api.typesafe.ai/v1/systemone`，密钥变量 `JEV_API_KEY`）。密钥和端点由各自部署的环境在本地提供，仓库不预置具体部署的密钥配置。
 
-Go-free tip / bench **推荐**用 OpenCode Zen：`decision.endpoint=https://opencode.ai/zen/v1/systemone`，`model=jev-1.13-free`，`apiKeyEnv=OPENCODE_GO_API_KEY`（Console `OPENCODE_API_KEY` 可后补；GO-key fallback 可用）。完整示例见 `runtime/model-config.example.json`。
+使用 OpenCode Go 订阅时：`decision.endpoint=https://opencode.ai/zen/go/v1/systemone`，`model=gemini-decision-1`，`apiKeyEnv=OPENCODE_GO_API_KEY`。Go 里的 `jev-1.14` 和 Zen 的 `jev-1.13-free` 有地区限制，返回 403 RegionError 时改用 `gemini-decision-1`（Console `OPENCODE_API_KEY` 可后补；GO-key fallback 可用）。完整示例见 `runtime/model-config.example.json`。
 
 如需换到别的 System One 主机（例如 OpenRouter / TypeSafe 备援），在部署本地的 `model-config.json` 里写 `decision` 块，为新端点命名 `apiKeyEnv`。
 

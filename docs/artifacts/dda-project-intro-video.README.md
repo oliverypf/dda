@@ -87,23 +87,38 @@ node docs/render-project-intro-video.mjs
 - 修改文案或分镜后，只需编辑 `dda-project-intro-video.html` 再重跑该命令；若脚本以
   `endedBy != playback-complete` 退出（看门狗中断），产物不可用，需重跑。
 
+## 校验成片
+
+```powershell
+node docs/verify-project-intro-video.mjs
+```
+
+只读校验：先算文件摘要、解析 mp4/webm 容器结构，再用 Chrome headless 以 `blob:` 载入成片解码、
+seek 与像素取样，按 13 项阈值判定（时长 85–90 秒、1280×720、`readyState=4`、4 点 seek、7 个幕切点、
+无黑屏、字幕逐字推进、无音轨、母版自包含、渲染已正常完成），结果写入
+`dda-project-intro-video.verify.json`。退出码 0 只代表跑完，`verdict.ok` 才是判定结论。
+
+用 `blob:` 而不是直接打开 `file://`，是因为 `file://` 页面里的 `<video>` 会污染 canvas，
+`getImageData` 会抛 `SecurityError`，无法做像素统计。
+
 ## 成片校验结果（只读实测）
 
 校验脚本不修改成片，只用 Chrome headless 解码、seek 与取样统计；明细见 `dda-project-intro-video.verify.json`。
+本次校验 `verdict.ok = true`，13 项检查全部通过。
 
-- **时长与分辨率**：`mp4` 解码时长 87.06 秒、1280×720、`readyState=4`；`webm` 同样 1280×720，但 `video.duration` 为 `null`（容器无 Duration 元素）。
+- **时长与分辨率**：`mp4` 解码时长 87.17 秒、1280×720、`readyState=4`；`webm` 同样 1280×720，但 `video.duration` 为 `null`（容器无 Duration 元素）。
 - **可定位性**：两个成片在 5 / 30 / 60 / 84 秒处 seek 全部命中（`currentTime` 精确落点），无解码错误。
-- **画面结构**：以 1 秒粒度取样 88 帧，检出 7 个切点（1/10/21/34/50/66/78 秒），与分镜边界 9/20/33/49/65/77 秒一致；亮度均值 10.4–29.8，仅 0 秒处为暗场起步，无黑屏段。
-- **字幕与入场动画**：10–19.5 秒区间以 4fps 取样，字幕带亮像素占比从 0.37% 单调升到 4.63% 并在 17.25 秒饱和，证明逐字推进；9–11 秒卡片入场在约 2 秒内收敛为静帧。
+- **画面结构**：以 1 秒粒度取样 87 帧（320×180），用相邻帧像素平均绝对差检出 7 个主切点（1/10/21/34/50/66/78 秒，峰值 11.7–18.3），与分镜边界 9/20/33/49/65/77 秒一致，偏差 ≤ 1 秒；另有 17/28/38/44/57/59/73 秒的次峰（幕内卡片入场与逐字字幕），峰值仅 0.6–2.8，不影响幕判定。亮度均值 11.0–29.9，仅 0 秒处为暗场起步，无黑屏段。
+- **字幕**：10–19.5 秒区间以 4fps 取样 38 帧，字幕带亮像素占比从 0.017% 单调升到 0.568%（非递减占比 97.3%），证明逐字推进而非整句闪现。
 - **母版自包含**：`dda-project-intro-video.html` 加载时外部请求 0 个、页面错误 0 个，页内 7 个分镜、声明总长 `01:27`，与成片一致。
 - **音轨**：`mp4` 中不存在 `mp4a` box 与 `soun` handler，`webm` 中不存在 `A_OPUS`/`OpusHead`，两个成片均为纯视频轨（与上文“未合成语音”一致）。
-- **帧率**：`render.json` 抓到 711 帧 / 87 秒，实测解码更新率 7.3–8 fps；字幕逐字推进可辨，但快速运镜会偏卡。
+- **帧率**：`render.json` 记录当前这版抓到 960 帧 / 87 秒（实测 11.03 fps，其中 uniqueFrames 400）；字幕逐字推进可辨，但快速运镜会偏卡。
 
 ## 已知限制与后续优化建议
 
 - 旁白以**逐字字幕**呈现，未合成语音；如需配音，可导出脚本用 TTS 生成音轨后与画面合成。
-- `.webm` 由浏览器 `MediaRecorder` 直接产出，容器里没有 duration 元数据：Chrome 实测 `video.duration` 为 `null`（`.mp4` 为 87.06 秒），画面可正常解码与拖动，但部分播放器会显示不确定时长。需要严格时长显示时使用 `.mp4`。
+- `.webm` 由浏览器 `MediaRecorder` 直接产出，容器里没有 duration 元数据：Chrome 实测 `video.duration` 为 `null`（`.mp4` 为 87.17 秒），画面可正常解码与拖动，但部分播放器会显示不确定时长。需要严格时长显示时使用 `.mp4`。
 - 分镜 4 为工作台 UI 的矢量线框示意，非真实录屏；如需真实界面，可运行桌面端后录制替换该幕。
-- `.mp4` 为 fragmented MP4，`mvhd` 的 `duration` 写的是 0：Chrome 能靠 `moof` 分片解出 87.06 秒并可任意 seek，但只读 `mvhd` 的工具会报 0 时长；需要严格元数据时用 `ffmpeg -i in.mp4 -c copy out.mp4` 重写索引。
-- 抓帧率受逐帧截图与 JPEG 转码限制（约 8fps）。若需要 30fps 成片，应改为在页面内按 `requestAnimationFrame` 直接绘制到 canvas 并延长录制时长，而不是提高截图频率。
+- `.mp4` 为 fragmented MP4，`mvhd` 的 `duration` 写的是 0：Chrome 能靠 `moof` 分片解出 87.17 秒并可任意 seek，但只读 `mvhd` 的工具会报 0 时长；需要严格元数据时用 `ffmpeg -i in.mp4 -c copy out.mp4` 重写索引。
+- 抓帧率受逐帧截图与 JPEG 转码限制（当前实测约 11fps）。若需要 30fps 成片，应改为在页面内按 `requestAnimationFrame` 直接绘制到 canvas 并延长录制时长，而不是提高截图频率。
 - 音乐/音效未内置，可在导出阶段叠加低强度科技氛围背景音乐（注意音量低于人声）。

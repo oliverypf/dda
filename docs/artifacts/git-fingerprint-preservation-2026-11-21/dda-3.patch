@@ -1,0 +1,26 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -207,6 +207,11 @@
+ // and `FETCH_HEAD` is rewritten by background IDE `git fetch`. Check their
+ // existence and symlink status without hashing volatile cache bytes/timestamps.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
++// `FETCH_HEAD` is created/rewritten by a background IDE `git fetch`. Whether it
++// is absent, present or freshly written says nothing about staged content or
++// repository configuration, so its presence is folded into one constant
++// representation; only a symlink relocation stays visible.
++const REFRESH_ONLY_METADATA_FILES = new Set(['FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+@@ -244,7 +249,9 @@
+     const entry = await readMetadataEntry(resolve(gitDir, name), {
+       volatileContent: VOLATILE_METADATA_FILES.has(name)
+     });
+-    entries[name] = entry;
++    entries[name] = REFRESH_ONLY_METADATA_FILES.has(name)
++      ? { exists: true, type: entry.type === 'link' ? 'link' : 'refresh' }
++      : entry;
+     linkDetected ||= entry.type === 'link';
+   }
+   const hooksDirectory = resolve(gitDir, 'hooks');

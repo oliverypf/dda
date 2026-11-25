@@ -140,7 +140,7 @@ selection falls back to deterministic cost/latency order, and behavior is
 `UNCERTAIN`. The judgments are recorded in Decision Trace as
 `FAILURE_ROUTER`, `ASSESS_EVIDENCE`, `TEST_SELECTOR`, `STOP_OR_CONTINUE`,
 `ESCALATE_OR_REQUEST_USER`, `SELECT_CANDIDATE`, `ACTION_GATE`, `VERIFY_BEHAVIOR`,
-`CLASSIFY_TASK`, `SELECT_ROUTE`, `SELECT_TOPOLOGY`, `REVIEW_PLAN`,
+`SELECT_ROUTE`, `SELECT_TOPOLOGY`, `REVIEW_PLAN`,
 `DIAGNOSE_VERIFICATION`, `SELECT_PROBE`, `SELECT_REPLAN_PLAN`, and
 `SELECT_CLARIFICATION_REQUEST`.
 Recovery direction selection is recorded as `SELECT_RECOVERY_DIRECTION`; a
@@ -153,12 +153,11 @@ The corresponding
 environment overrides are `DDA_JEV_ENABLED`, `DDA_JEV_ENFORCE`,
 `DDA_JEV_ENDPOINT`, `DDA_JEV_API_KEY_ENV`, `DDA_JEV_MODEL`,
 `DDA_JEV_TIMEOUT_MS`, and `DDA_JEV_MAX_STATE_CHARS`.
-The extended semantic stages are opt-in through `classificationEnabled`,
-`routeSelectionEnabled`,
+The extended semantic stages are opt-in through `routeSelectionEnabled`,
 `topologyEnabled`,
 `planReviewEnabled`, `diagnosisEnabled`, `recoveryDirectionEnabled`, and
 `contextPackEnabled`, or the matching environment
-variables `DDA_JEV_CLASSIFY_ENABLED`, `DDA_JEV_ROUTE_ENABLED`,
+variables `DDA_JEV_ROUTE_ENABLED`,
 `DDA_JEV_TOPOLOGY_ENABLED`,
 `DDA_JEV_PLAN_REVIEW_ENABLED`,
 `DDA_JEV_DIAGNOSIS_ENABLED`, `DDA_JEV_RECOVERY_DIRECTION_ENABLED`, and
@@ -182,16 +181,9 @@ with `DDA_JEV_TOPOLOGY_ENABLED`). Every task result reports
 circuits and per-stage wall-clock time).
 
 The decision engine is resolved once, from the file-backed `decision` block and
-the `DDA_JEV_*` overrides, before task classification, so `CLASSIFY_TASK`,
-`SELECT_ROUTE`, and `SELECT_TOPOLOGY` all consult the same opt-in engine. These
-three stages default to the deterministic rules and are marked `RULE_FALLBACK`
-in Decision Trace until opted in. The migration is still partial, not complete:
-`SELECT_ROUTE` only lets Jev tighten an already safety-checked route to
-`BLOCKED` (fail-closed) and never widens it; the rule classifier still emits
-only `inspect | modify | test | unknown`, so the `diagnose` task class never
-occurs and the `DIAGNOSE_PROBE_RECOVER` topology candidate is currently
-unreachable; and a rule-path topology choice is not yet written as a
-`SELECT_TOPOLOGY` decision.
+the `DDA_JEV_*` overrides. Route and topology choices consult the same opt-in
+engine. Route selection can only tighten an already safety-checked route to
+`BLOCKED` and never widen it.
 
 Provider prompt caching uses deterministic tool definitions, a stable hashed
 workspace/model/role routing key, and an append-only request prefix. It never

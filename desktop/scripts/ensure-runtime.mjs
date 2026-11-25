@@ -1,7 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { projectPaths } from './windows-path.mjs';
+import { resolveWindowsProcessCommand } from '../../runtime/src/platform/windows-command.mjs';
 
 const { runtimeRoot: runtimeDir } = projectPaths(import.meta.url);
 if (Number(process.versions.node.split('.')[0]) < 24) {
@@ -13,11 +14,13 @@ if (typeof DatabaseSync !== 'function' || typeof backup !== 'function') {
 }
 const sqliteProbe = new DatabaseSync(':memory:');
 try { sqliteProbe.prepare('SELECT sqlite_version()').get(); } finally { sqliteProbe.close(); }
-const cordisEntry = resolve(runtimeDir, 'node_modules/@deepseek-ai/cordis/package.json');
+const manifest = JSON.parse(readFileSync(resolve(runtimeDir, 'package.json'), 'utf8'));
+const missing = Object.keys(manifest.dependencies).some(name =>
+  !existsSync(resolve(runtimeDir, 'node_modules', name, 'package.json')));
 
-if (!existsSync(cordisEntry)) {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npm, ['install', '--omit=dev'], {
+if (missing) {
+  const npm = await resolveWindowsProcessCommand({ command: 'npm', args: ['install', '--omit=dev'] });
+  const result = spawnSync(npm.command, npm.args, {
     cwd: runtimeDir,
     stdio: 'inherit'
   });

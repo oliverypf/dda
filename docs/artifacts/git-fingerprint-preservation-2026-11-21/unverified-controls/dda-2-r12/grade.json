@@ -1,0 +1,31 @@
+{
+  "sourceTreeSha256": "sha256:03fe3e9fd5350177cc6b532984db6201f79ac0ec8d207ac50b6f83bcfc30e7a7",
+  "gradeSuiteSha256": "sha256:69e3dbf44bc34e01ad8b70f43d894944483db3cade5492ac71659959fe94fabd",
+  "platform": "win32",
+  "node": "v24.19.0",
+  "exitCode": 1,
+  "passed": 0,
+  "failed": 0,
+  "errored": 2,
+  "green": false,
+  "tests": [
+    {
+      "name": "additional_link_with_existing_link",
+      "mode": {
+        "kind": "synthetic-lstat",
+        "nativeError": "EPERM"
+      },
+      "status": "error",
+      "message": "Unexpected token 'export'"
+    },
+    {
+      "name": "move_link_between_metadata_paths",
+      "mode": {
+        "kind": "synthetic-lstat",
+        "nativeError": "EPERM"
+      },
+      "status": "error",
+      "message": "Unexpected token 'export'"
+    }
+  ]
+}

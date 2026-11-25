@@ -1,0 +1,166 @@
+{
+  "modelRequests": 0,
+  "productWrites": 0,
+  "targetPath": "runtime/test/git-audit.test.mjs",
+  "targetDigest": "sha256:df865a1403b424cb9fb39b4488db7d6266d7e0d0c8f03398ff102fe34be1de41",
+  "originalDigest": "sha256:8b34c496ca57917b5e50e242de7e1872555dd997ac440932a44f80f84841a71a",
+  "baseline": {
+    "status": "rejected",
+    "assertionPassed": false,
+    "operands": [
+      "sha256:c42e57be1d7f8ed12046dc76d27b40f79c1c16eecfdb30e8fc3ad1b43fb2c76f",
+      "sha256:d2574c0182bbc63124784559f1f99b4f2a8ee60aa545dc600c2069ba6eeae063"
+    ],
+    "preservation": {
+      "status": "observed",
+      "site": {
+        "path": "runtime/src/git-observer.mjs",
+        "line": 260,
+        "field": "metadataDigest"
+      },
+      "key": "FETCH_HEAD",
+      "otherKey": "index",
+      "branch": {
+        "field": "type",
+        "literal": "link"
+      },
+      "aggregateConstant": true,
+      "checks": {
+        "additional": true,
+        "relocated": true
+      }
+    },
+    "producerInputs": {
+      "path": "runtime/src/git-observer.mjs",
+      "line": 260,
+      "field": "metadataDigest",
+      "differences": [
+        {
+          "path": [
+            "FETCH_HEAD",
+            "exists"
+          ],
+          "before": false,
+          "after": true
+        },
+        {
+          "path": [
+            "FETCH_HEAD",
+            "type"
+          ],
+          "before": {
+            "missing": true
+          },
+          "after": "file"
+        }
+      ],
+      "truncated": false
+    },
+    "observations": 1,
+    "exitCode": 1
+  },
+  "results": [
+    {
+      "trial": "dda-1",
+      "candidateDigest": "sha256:e20c779c89069bad29165d2ab6fe8376356cd26f7c9a713a3f22985c8f2e6e42",
+      "expected": "rejected",
+      "verdict": {
+        "status": "rejected",
+        "assertionPassed": true,
+        "operands": [
+          "sha256:6af7ddfd293c70a026ac370e1cfcec579c3b9a41c8424f15adf1f781450aae59",
+          "sha256:6af7ddfd293c70a026ac370e1cfcec579c3b9a41c8424f15adf1f781450aae59"
+        ],
+        "preservation": {
+          "status": "collapsed",
+          "site": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 266,
+            "field": "metadataDigest"
+          },
+          "key": "FETCH_HEAD",
+          "otherKey": "index",
+          "branch": {
+            "field": "type",
+            "literal": "link"
+          },
+          "aggregateConstant": true,
+          "checks": {
+            "additional": false,
+            "relocated": false
+          }
+        },
+        "observations": 1,
+        "exitCode": 0
+      }
+    },
+    {
+      "trial": "dda-2",
+      "candidateDigest": "sha256:d5447f6e9db566e4f54473a04e5eda251ab7c5a5018729ded76e8e142c549a2a",
+      "expected": "passed",
+      "verdict": {
+        "status": "passed",
+        "assertionPassed": true,
+        "operands": [
+          "sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d",
+          "sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d"
+        ],
+        "preservation": {
+          "status": "preserved",
+          "site": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 268,
+            "field": "metadataDigest"
+          },
+          "key": "FETCH_HEAD",
+          "otherKey": "index",
+          "branch": {
+            "field": "type",
+            "literal": "link"
+          },
+          "aggregateConstant": true,
+          "checks": {
+            "additional": true,
+            "relocated": true
+          }
+        },
+        "observations": 1,
+        "exitCode": 0
+      }
+    },
+    {
+      "trial": "dda-3",
+      "candidateDigest": "sha256:589ffcdf3c3d5c4ab11d66f53b0a14fd3e5279b0904fb155ee08042003190c00",
+      "expected": "rejected",
+      "verdict": {
+        "status": "rejected",
+        "assertionPassed": true,
+        "operands": [
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377",
+          "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377"
+        ],
+        "preservation": {
+          "status": "collapsed",
+          "site": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 271,
+            "field": "metadataDigest"
+          },
+          "key": "FETCH_HEAD",
+          "otherKey": "index",
+          "branch": {
+            "field": "type",
+            "literal": "link"
+          },
+          "aggregateConstant": true,
+          "checks": {
+            "additional": false,
+            "relocated": false
+          }
+        },
+        "observations": 1,
+        "exitCode": 0
+      }
+    }
+  ]
+}

@@ -235,6 +235,116 @@ test('a complete machine-readable test report carries run counts and the execute
   assert.equal(processReceipt('test.execute', command, stdout.replace('"tests":3', '"tests":9')).testCounts, undefined);
 });
 
+test('settles wrapped test summaries from receipts and ignores explicit coverage notes', async () => {
+  const command = { command: 'node', args: ['--test', 'test/refresh-queue.test.mjs'] };
+  const receipt = await recordBuildTestReceipt(processReceipt('test.execute', command,
+    'TAP version 13\n# tests 2\n# pass 2\n# fail 0\n# skipped 0'), 'test-queue-1', observe);
+  const report = prepareBuildTestVerification(
+    '执行完成：src/refresh-queue.mjs 已重写，`node --test test/refresh-queue.test.mjs` 在 `cwd=.` 下退出码 0，2 个测试全部通过（tests 2，pass 2，fail 0，skipped 0，todo 0）。',
+    [receipt]
+  );
+  assert.deepEqual(report.claims, []);
+  assert.equal(report.checks[0].status, 'PASS');
+  assert.deepEqual(report.checks[0].evidence, ['test-queue-1', digest]);
+  const metadata = prepareBuildTestVerification(
+    `已修复 \`src/refresh-queue.mjs\`（当前 ${digest}，1545 字节），\`node --test test/refresh-queue.test.mjs\` 退出码 0，2 个测试全部通过、0 失败。`,
+    [receipt]
+  );
+  assert.deepEqual(metadata.claims, []);
+  assert.equal(metadata.checks[0].status, 'PASS');
+  const compact = prepareBuildTestVerification(
+    '结果：`node --test test/refresh-queue.test.mjs` 在 `cwd=.` 下退出码 0，2 个测试全过（tests 2，pass 2，fail 0，skipped 0，todo 0）。',
+    [receipt]
+  );
+  assert.deepEqual(compact.claims, []);
+  assert.equal(compact.checks[0].status, 'PASS');
+  const reportStyle = prepareBuildTestVerification(
+    '本步完成：`src/refresh-queue.mjs` 已修改，`node --test test/refresh-queue.test.mjs`（cwd 为工作区根），退出码 0，tests 2 / pass 2 / fail 0 / skipped 0 / todo 0）。',
+    [receipt]
+  );
+  assert.deepEqual(reportStyle.claims, []);
+  assert.equal(reportStyle.checks[0].status, 'PASS');
+  const inlineCwd = prepareBuildTestVerification(
+    '`src/refresh-queue.mjs` 已改写，`node --test test/refresh-queue.test.mjs` 在 cwd `.` 下退出码 0：2 个测试通过、0 失败',
+    [receipt]
+  );
+  assert.deepEqual(inlineCwd.claims, []);
+  assert.equal(inlineCwd.checks[0].status, 'PASS');
+  const compactChineseCounts = prepareBuildTestVerification(
+    '结果：`node --test test/refresh-queue.test.mjs` 退出码 0，通过 2、失败 0、跳过 0',
+    [receipt]
+  );
+  assert.deepEqual(compactChineseCounts.claims, []);
+  assert.equal(compactChineseCounts.checks[0].status, 'PASS');
+  const leadingTotal = prepareBuildTestVerification(
+    '全部 2 项测试通过。',
+    [receipt]
+  );
+  assert.deepEqual(leadingTotal.claims, []);
+  assert.equal(leadingTotal.checks[0].status, 'PASS');
+  const timeoutMetadata = prepareBuildTestVerification(
+    '验证：`node --test test/refresh-queue.test.mjs`（cwd=`.`，超时 240000ms）退出码 0，tests 2 / pass 2 / fail 0 / skipped 0 / todo 0。',
+    [receipt]
+  );
+  assert.deepEqual(timeoutMetadata.claims, []);
+  assert.equal(timeoutMetadata.checks[0].status, 'PASS');
+  const semanticTail = prepareBuildTestVerification(
+    '验证：`node --test test/refresh-queue.test.mjs`（cwd `.`）退出码 0，tests 2 / pass 2 / fail 0 / skipped 0，两个用例全部通过（同键不重叠、最新修订不丢）。',
+    [receipt]
+  );
+  assert.deepEqual(semanticTail.claims, []);
+  assert.equal(semanticTail.checks[0].status, 'PASS');
+  const chineseCountTail = prepareBuildTestVerification(
+    '验证**：`node --test test/refresh-queue.test.mjs`（cwd `.`）退出码 0，2 个测试通过、0 失败：`a burst during a refresh rebuilds the latest revision once` 与 `a later request on an idle key runs independently`',
+    [receipt]
+  );
+  assert.deepEqual(chineseCountTail.claims, []);
+  assert.equal(chineseCountTail.checks[0].status, 'PASS');
+  const historical = prepareBuildTestVerification(
+    '验证过程：第一次运行测试时退出码为 1，失败项为 heartbeat revision 不一致，据此做了第 2 处改动。',
+    [receipt]
+  );
+  assert.deepEqual(historical, { claims: [], checks: [] });
+  const narrative = prepareBuildTestVerification(
+    '首个用例 `1,3` 的合并顺序与结果 `feed@1,feed@3` 均通过，idle key 也独立执行。',
+    [receipt]
+  );
+  assert.deepEqual(narrative, { claims: [], checks: [] });
+  const note = prepareBuildTestVerification(
+    '未验证的部分：测试套件只覆盖两个用例，失败 worker 后仍能继续处理 pending/后续请求。',
+    [receipt]
+  );
+  assert.deepEqual(note, { claims: [], checks: [] });
+});
+
+test('current test conclusions select the latest receipt for the same invocation', async () => {
+  const command = { command: 'node', args: ['--test', 'test/refresh-queue.test.mjs'] };
+  const failed = await recordBuildTestReceipt(processReceipt('test.execute', command,
+    'TAP version 13\n# tests 2\n# pass 1\n# fail 1', { ok: false, exitCode: 1 }), 'test-queue-old', observe);
+  const passed = await recordBuildTestReceipt(processReceipt('test.execute', command,
+    'TAP version 13\n# tests 2\n# pass 2\n# fail 0'), 'test-queue-new', observe);
+  const report = prepareBuildTestVerification(
+    '已修复，`node --test test/refresh-queue.test.mjs` 退出码 0，tests 2，pass 2，fail 0。',
+    [{ ...failed, endedAtMs: 100 }, { ...passed, endedAtMs: 200 }]
+  );
+  assert.deepEqual(report.claims, []);
+  assert.equal(report.checks[0].status, 'PASS');
+  assert.deepEqual(report.checks[0].evidence, ['test-queue-new', digest]);
+});
+
+test('an unavailable semantic verifier keeps the claim unknown but cites its receipts', async () => {
+  const receipt = await recordBuildTestReceipt(build(), 'build-unknown-1', observe);
+  const engine = createDecisionEngine({ enabled: false });
+  const [result] = await engine.judgeBuildTestClaims({ claims: [{
+    id: 'build-test-claim-1', statement: '构建成功并已发布到公网', kind: 'BUILD', evidence: [receipt],
+    remainingFields: ['发布范围']
+  }], runId: 'unknown' });
+  assert.equal(result.status, 'UNKNOWN');
+  assert.equal(result.code, 'BUILD_TEST_VERIFIER_UNAVAILABLE');
+  assert.deepEqual(result.evidence, ['build-unknown-1', digest, 'build-unknown-1-artifact-1', 'build-unknown-1-artifact-2']);
+  assert.deepEqual(result.remainingFields, ['发布范围']);
+});
+
 
 test('reconciles generated document, script receipt and step heading without accepting an unobserved binary', () => {
   const path = 'dda-overview.pptx';
@@ -282,6 +392,15 @@ test('checks independently recorded shell fields and grouped document measuremen
   assert.deepEqual(review(command + '，用户已经验收').claims[0].remainingFields, ['用户已经验收']);
 });
 
+
+test('does not turn deferred validation process notes into build claims', () => {
+  const receipt = { id: 'build-deck-1', stepId: 'build-deck-direct', kind: 'BUILD', command: 'node',
+    args: ['docs/build-project-pptx.mjs'], cwd: '.', exitCode: 0, outputDigest: 'sha256:' + '1'.repeat(64),
+    artifacts: [{ id: 'build-deck-1-artifact-1', path: 'docs/dda-project-intro.pptx',
+      sha256: 'sha256:' + '2'.repeat(64), sizeBytes: 26565, disposition: 'GENERATED', pptx: { slideCount: 12, entryCount: 35 } }] };
+  const report = prepareBuildTestVerification('我只完成了构建这一步，核验步骤留给后续调度。', [receipt], { currentStepId: 'build-deck-direct' });
+  assert.deepEqual(report, { claims: [], checks: [] });
+});
 
 test('verifies each process field in the reported Chinese command summary', () => {
   const text = '命令：`node build-dda-overview.mjs`，工作目录 `.`，退出码 `0`，stdout 为 `OK: dda-overview.pptx written`，无报错、无超时';

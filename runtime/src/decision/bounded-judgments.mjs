@@ -22,18 +22,14 @@ export const EXECUTION_PROFILE_READONLY = 'workspace-readonly';
 export const EXECUTION_PROFILE_FULL = 'full-executor';
 export const EXECUTION_PROFILE_RESEARCH = 'mixed-source-readonly';
 
-// The planner can name the evidence needed by a step. Legacy checkpoints also
-// work: use explicit source references in their objective as a fallback.
-export function stepExecutionProfile({ initial, step, goal, readOnly }) {
+// The planner names the evidence a step needs. A step without declared
+// sources keeps the task profile: wording in the objective never removes tools.
+export function stepExecutionProfile({ initial, step, readOnly }) {
   if (!readOnly) return initial;
-  const localCue = /(?:workspace|repository|local files?|\brepo\b|README\b|工作区|仓库|本地|源码|项目文件|[\w./-]+\.(?:md|rs|mjs|tsx?|json|ya?ml|csv|txt)\b)/iu;
-  const webCue = /(?:https?:\/\/|web\s*(?:page|site|search)|\bonline\b|official\s+(?:docs?|documentation|source)|external\s+(?:source|reference)|网页|官网|联网|在线|外部(?:来源|资料)|官方(?:文档|网站))/iu;
   const sources = step.evidenceSources ?? [];
-  const objective = step.summary ?? '';
-  const local = sources.includes('workspace') || localCue.test(objective);
-  const web = sources.includes('web') || webCue.test(objective);
-  const mixedGoal = localCue.test(goal) && webCue.test(goal);
-  if (local && web || mixedGoal && !local && !web) return EXECUTION_PROFILE_RESEARCH;
+  const local = sources.includes('workspace');
+  const web = sources.includes('web');
+  if (local && web) return EXECUTION_PROFILE_RESEARCH;
   if (web) return EXECUTION_PROFILE_LOOKUP;
   if (local && initial === EXECUTION_PROFILE_LOOKUP) return EXECUTION_PROFILE_READONLY;
   return initial;

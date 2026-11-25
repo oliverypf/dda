@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { spawn } from 'node:child_process';
 import { PluginRegistry, pluginManifest } from './plugins/registry.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { hostToolPolicyDecisionClaim, modelAnswerDecisionClaim, sessionCommandLeaseDecisionClaim, verifiedToolDecisionEvidence, verifiedWorkspaceReadEvidence } from './decision/evidence-claim.mjs';
@@ -30,17 +31,6 @@ import {
   CAPABILITY_PATH_DENY,
   CAPABILITY_PATH_REQUIRE_APPROVAL
 } from './capability-path.mjs';
-import {
-  applyRiskVectorGate,
-  combineTrajectoryRisk,
-  hintRank,
-  isRiskVectorEnabled,
-  riskVectorGateHint,
-  riskVectorTelemetry,
-  scoreRiskVector,
-  RISK_VECTOR_DENY,
-  RISK_VECTOR_REQUIRE_APPROVAL
-} from './risk-vector.mjs';
 import {
   applyBehaviorPosteriorToTrust,
   behaviorPosteriorKey,
@@ -158,7 +148,7 @@ import { runHistoryCommand } from './history-cli.mjs';
 import { createRuleVerifier } from './rule-verifier.mjs';
 import { createTaskRunCoordinator } from './task-run-coordinator.mjs';
 import { createTaskCancelRegistry, taskCancelStorePath } from './task-cancel-registry.mjs';
-import { classifyTask, createRuleRouter, requestsRepair, TASK_CLASSES } from './rule-router.mjs';
+import { createRuleRouter, requestsRepair } from './rule-router.mjs';
 import { claimDesktopWorkspace, needsProjectTool } from './desktop-workspace.mjs';
 import {
   ROLE_SETS,
@@ -166,7 +156,6 @@ import {
   choiceRequest,
   executionProfileCriteria,
   roleSetCriteria,
-  ruleExecutionProfile,
   ruleRoleSetId,
   singleAgentPlanCriteria,
   SINGLE_PLAN_BOUNDED,
@@ -179,19 +168,13 @@ import { reconcileInterruptedThreads } from './thread-reconciliation.mjs';
 import { createRoleSessionManager } from './role-session-manager.mjs';
 import { createTaskSafetyPrecheck } from './task-safety-precheck.mjs';
 
-// S2-12 risk hint: a settled low-risk inspect task stays single-candidate, an
-// unclassified task class escalates to the design's "no history" fanout case,
-// and a controlled non-inspect step is treated as high risk.
-const candidateFanoutRisk = (taskClass, mode) => taskClass === 'query'
-  ? 'LOW'
-  : taskClass === 'inspect'
-    ? (mode === 'CONTROLLED' ? 'MEDIUM' : 'LOW')
-    : (mode === 'CONTROLLED' ? 'HIGH' : 'MEDIUM');
+  // S2-12 risk hint for the generic route.
+const candidateFanoutRisk = (_taskClass, mode) => mode === 'CONTROLLED' ? 'MEDIUM' : 'LOW';
 
 import { assembleCheckpointContext, assembleMemoryContext, assembleTrajectoryContext } from './context-assembler.mjs';
 import { createMemoryJournal } from './memory-journal.mjs';
 import { createJournalContextPort } from './journal-context-port.mjs';
-import { memoryLessonKey, memoryScopeKey } from './memory-workspace.mjs';
+import { memoryLessonKey, memoryScopeKey, memoryWorkspaceKey } from './memory-workspace.mjs';
 import { appliedMemoryIds, attachMemoryWorkspacePaths, extractRunReusableExperience, extractDreamExperienceCandidates, selectRunLesson } from './experience-extractor.mjs';
 import { createDreamScheduler } from './dream-scheduler.mjs';
 import { createDreamMaintenanceSupervisor, parseDreamActiveRuns, parseDreamMaintenanceFailureLimit, parseDreamMaintenanceInterval } from './dream-maintenance-supervisor.mjs';
@@ -227,7 +210,7 @@ import { currentAccessMode, insideRoot } from './filesystem-access.mjs';
 import { createPluginGovernance, pluginGovernanceDigest } from './plugin-governance.mjs';
 import { createDynamicPluginLoader, validatePluginDependencies, validatePluginManifest } from './plugin-loader.mjs';
 import { createCapabilityScopedPluginContext, pluginContextGrantSummary, validatePluginInject } from './plugin-context.mjs';
-import { actionDecisionEvidence, pathScopeEvidence, resolveRequiresWorkspaceMutation, isOpenPlanContinuation, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery, stampJevEvidenceRequired } from './task-recovery-controller.mjs';
+import { actionDecisionEvidence, pathScopeEvidence, resolveRequiresWorkspaceMutation, isOpenPlanContinuation, isPlanContinueReplanEligible, planContinueReplanHostNote, createRecoveryContext, runVerifierRecovery } from './task-recovery-controller.mjs';
 import { createProfileRegistry } from './profile-registry.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { presentationWorkflow, resolveRoleWorkflows } from './role-workflows.mjs';
@@ -249,6 +232,8 @@ import { createPlanStepCoordinator } from './plan-step-coordinator.mjs';
 import { installationEvidenceGap, directResponseSatisfied } from './task-outcome-evidence.mjs';
 import { continuationPlanForUncertainResume, uncertainBlockedStepIds } from './uncertain-step-continuation.mjs';
 import { buildAggregatePlanVerification } from './promote-align-aggregate.mjs';
+import { adviseReportClaimChecks, formatAdvisoryNotes, isAdvisoryCheck, runFailureReport, settleBehaviorDecision, settleStepVerification } from './verdict-policy.mjs';
+import { resolveBuildTestRequirements } from './task-requirements.mjs';
 import { open, readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -284,6 +269,7 @@ const BOOLEAN_ARGS = new Set(['--resume', '--defer-workspace', '--auto-evolution
 const APPROVAL_TTL_MS = 900_000;
 // One CLI invocation runs at most one task; never derive identity from errors.
 let taskResponseRunId;
+let taskSelfTerminationRequest;
 
 // The desktop shell owns this process's stdout pipe. When the shell exits or
 // restarts while a run is still streaming, the pipe can close mid-write. A
@@ -308,6 +294,41 @@ const writeStdout = (text) => {
 const flushStdout = (text) => new Promise((resolve, reject) => {
   process.stdout.write(text, (error) => error ? reject(error) : resolve());
 });
+
+// A self-termination request is committed only after the final JSON response
+// has drained to the desktop pipe. This keeps the action auditable and avoids
+// turning a valid taskkill request into a truncated tool response.
+const terminateCurrentRuntime = (request) => {
+  if (!request || !Number.isInteger(request.pid)) return false;
+  if (request.owner === 'desktop'
+    && process.env.DDA_PLATFORM === 'windows-desktop'
+    && request.pid === process.ppid) {
+    try {
+      const killer = spawn('taskkill.exe', ['/PID', String(request.pid), '/F'], {
+        detached: true,
+        windowsHide: true,
+        stdio: 'ignore'
+      });
+      killer.unref?.();
+    } catch {
+      // The fallback below still closes this runtime if the desktop target
+      // disappeared before the detached killer could start.
+    }
+    setTimeout(() => process.exit(0), 250);
+    return true;
+  }
+  if (request.pid !== process.pid) return false;
+  try {
+    process.kill(process.pid, 'SIGTERM');
+  } catch {
+    process.exit(0);
+    return true;
+  }
+  // SIGTERM is the normal Windows/Node path. The fallback covers hosts that
+  // accept the signal call but do not deliver it to the current process.
+  setTimeout(() => process.exit(0), 250);
+  return true;
+};
 
 const argValue = (name) => {
   for (let index = 3; index < process.argv.length; index += 1) {
@@ -487,8 +508,7 @@ const boundedVerificationChecks = (checks) => Array.isArray(checks)
 // report before it is flattened into the aggregate verification.
 const PROMOTE_VERIFICATION_CHECK_IDS = new Set([
   'deterministic-green-jev-uncertain-promote',
-  'deterministic-green-jev-uncertain-tip-path',
-  'deterministic-green-jev-behavior-reject-promote'
+  'deterministic-green-jev-uncertain-tip-path'
 ]);
 
 // stageDesktopBuild publishes the runtime at <build-id>/runtime/src/index.mjs.
@@ -560,6 +580,7 @@ const manifests = () => {
 };
 
 async function runTask() {
+  taskSelfTerminationRequest = undefined;
   const imagesFile = arg('--images-file', '');
   const cliImagePaths = argValuesAll('--image');
   const fileImages = imagesFile ? await loadImageInputsFile(imagesFile) : [];
@@ -697,8 +718,6 @@ async function runTask() {
   const gateApprovalDecisions = new Map();
   const stepGateScope = new AsyncLocalStorage();
   const activeGateDecisions = () => stepGateScope.getStore()?.decisions ?? gateApprovalDecisions;
-  // Risk Vector (freeze-risk-vector-r1): per-run step vectors for trajectory combine.
-  const riskVectors = [];
   // Trust deepen (freeze-trust-deepen-r1): α/β behavior posterior + Path-weighted blame.
   // DDA_TRUST_DEEPEN=0 disables (default ON). Soft-fail; never exempts hardDecision/lease.
   const behaviorPosteriorStore = createBehaviorPosteriorStore();
@@ -1534,9 +1553,8 @@ async function runTask() {
   let decisionEngine;
   let decisionConfig;
   // The Jev decision plane is resolved once, from the file-backed `decision`
-  // block and the DDA_JEV_* environment overrides, before task
-  // classification so CLASSIFY_TASK, SELECT_ROUTE and SELECT_TOPOLOGY consult
-  // the same opt-in engine instead of a separate env-only instance. Each
+  // block and the DDA_JEV_* environment overrides so route and topology
+  // decisions consult the same opt-in engine instead of a separate env-only instance. Each
   // decision point is additionally gated by its own feature flag and fails
   // closed to the deterministic rules whenever Jev is disabled, unavailable or
   // returns an illegal choice. Opt-in uses the shared isDecisionPlaneConfigured
@@ -1562,6 +1580,7 @@ async function runTask() {
   let streamedReasoningText = "";
   let plannerTurn;
   let plannerPlan;
+  let taskRequirements;
   let councilResult;
   let executionPlan;
   let taskContextFacts = [];
@@ -1685,10 +1704,16 @@ async function runTask() {
         const consolidationEvidence = await collectDecisionEvidence({ limit: 4 });
         const proposalJustified = verified || Boolean(lesson);
         const recalledMemories = Array.isArray(contextRecall.items) ? contextRecall.items : [];
+        const consolidationMemories = (await locateMemories(memoryJournal.list()))
+          .filter((item) => String(item.scope).toLowerCase() === 'workspace'
+            && String(item.kind).toUpperCase() === 'TASK_OUTCOME'
+            && ['PROPOSED', 'VERIFIED', 'ACTIVE'].includes(String(item.status).toUpperCase())
+            && memoryWorkspaceKey(item.workspacePath) === memoryWorkspaceKey(thread.cwd || workspaceRoot));
         const proposedSourceDigest = sha256Digest(JSON.stringify([event.eventId]));
-        const conflictMemories = recalledMemories.filter((item) =>
-          String(item.scope).toLowerCase() === 'workspace'
-          && String(item.kind).toUpperCase() === 'TASK_OUTCOME');
+        const conflictMemories = [...new Map([...recalledMemories, ...consolidationMemories]
+          .filter((item) => String(item.scope).toLowerCase() === 'workspace'
+            && String(item.kind).toUpperCase() === 'TASK_OUTCOME')
+          .map((item) => [item.memoryId, item])).values()];
         const supersessionCandidates = conflictMemories.filter((item) => item.sourceDigest !== proposedSourceDigest);
         const consolidationDecision = await recordDecision({
           stepId: 'memory-consolidation',
@@ -1830,12 +1855,8 @@ async function runTask() {
       metadata: { sourceRunId: resumeSourceRunId }
     });
   }
-  await coordinator.transitionAndFlush('CLASSIFYING');
-  await saveThreadCheckpoint('CLASSIFYING', {
-    // Keep an executable plan intact if recovery fails during preparation.
-    ...(restoredResumePlan ? {} : { plan: [{ id: 'classify', status: 'RUNNING', actionDigest: sha256Digest(prompt.slice(0, 240)) }] }),
-    pendingActions: ['classify task']
-  });
+  await coordinator.transitionAndFlush('PRECHECKING');
+  await saveThreadCheckpoint('PRECHECKING', { pendingActions: ['evaluate task safety'] });
   const configArgument = argValue('--config');
   const environmentConfigPath = process.env.DDA_MODEL_CONFIG?.trim() || undefined;
   const configuredPath = configArgument ?? environmentConfigPath ?? defaultModelConfigPath();
@@ -1864,71 +1885,29 @@ async function runTask() {
       config: decisionConfig
     });
   }
-  const ruleTaskClass = classifyTask(prompt);
+  // Pre-plan uses keep the prompt-regex guess: they run before any planner
+  // output exists and only select the more thorough path.
   const requestedBuildTest = requestedBuildTestItems(prompt, extractAcceptanceCommands({ prompt, envValue: '' }));
   const requiresBuildTestExecution = requestedBuildTest.build || requestedBuildTest.test;
+  // Planner-declared requirements override prompt-regex inference once the
+  // planner turn completes; commands still found in acceptance criteria count.
+  const verifiedBuildTestRequirements = (commands = []) => resolveBuildTestRequirements(taskRequirements,
+    requestedBuildTestItems(prompt, commands), requestedBuildTestItems('', commands));
+  const requiresVerifiedBuildTest = () => {
+    const r = verifiedBuildTestRequirements(extractAcceptanceCommands({ prompt, envValue: '' }));
+    return r.build || r.test;
+  };
   // Only unconditional executable-build requests get the mandatory process step.
   // Conditional builds and questions about existing files retain their own plans.
   const executableBuildRequest = requestedBuildTest.build && requestedBuildTest.artifact
     && /^(?:(?:请|帮我|重新|再)?\s*(?:编译|构建|打包)\s*(?:这个项目的|项目的)?\s*(?:exe|可执行文件)|(?:please\s+)?(?:build|compile)\s+(?:the\s+)?exe)[。.!！\s]*$/iu.test(prompt);
-  let taskClass = ruleTaskClass;
-  let classificationSource = 'rule';
-  // CLASSIFY_TASK consults Jev only when the operator opts in with
-  // DDA_JEV_CLASSIFY_ENABLED or decision.classificationEnabled; otherwise
-  // the deterministic rule classifier remains authoritative.
-  if (decisionEngine?.enabled && decisionConfig?.classificationEnabled === true) {
-    const classificationCandidates = TASK_CLASSES.map((candidateId) => ({
-      candidateId,
-      modelId: candidateId,
-      status: 'SUCCEEDED',
-      expectedCost: 0,
-      expectedLatencyMs: 0
-    }));
-    const semanticClassification = await decisionEngine.selectCandidates({
-      state: {
-        taskId: runId,
-        goal: prompt,
-        action: { kind: 'CLASSIFY_TASK', summary: 'Classify the user task before routing' },
-        observation: { status: 'PENDING' },
-        evidence: [{ id: `task-prompt-${runId}`, type: 'user_goal', claim: 'User task supplied for bounded classification', source: `prompt-digest:${sha256Digest(prompt)}` }]
-      },
-      candidates: classificationCandidates
-    });
-    if (semanticClassification.source === 'jev' && classificationCandidates.some(({ candidateId }) => candidateId === semanticClassification.selectedCandidateId)) {
-      taskClass = semanticClassification.selectedCandidateId;
-      classificationSource = 'jev';
-    }
-  }
+  // Classification is intentionally absent from the execution path. Keep the
+  // legacy field shape for downstream telemetry and historical readers.
+  const ruleTaskClass = 'unknown';
+  const taskClass = 'unknown';
   currentTaskClass = taskClass;
-  let executionProfileId = requiresBuildTestExecution ? EXECUTION_PROFILE_FULL : ruleExecutionProfile(taskClass);
-  const classification = { taskClass, classifier: classificationSource === 'jev' ? 'jev-1.0' : 'rule-1.0', ruleTaskClass };
-  const classificationDecision = await recordDecision({
-    stepId: 'classification',
-    role: 'classifier',
-    roleContextId: `${runId}-classifier`,
-    decisionType: 'CLASSIFY_TASK',
-    actionKind: 'CLASSIFY',
-    summary: `Classified task as ${taskClass}`,
-    outputRefs: [`classification-${runId}`],
-    options: TASK_CLASSES.map((candidate) => ({
-      optionId: `classify-${candidate}`,
-      actionKind: 'CLASSIFY',
-      summary: `Classify task as ${candidate}`,
-      requiredCapabilityIds: [],
-      evidenceRefs: [],
-      riskCodes: [],
-      rejectionReasonCodes: candidate === taskClass ? [] : ['RULE_PATTERN_MISMATCH']
-    })),
-    selectedOptionId: `classify-${taskClass}`,
-    reasonCodes: [classificationSource === 'jev' ? 'JEV_DECISION' : 'DETERMINISTIC_RULE', ...(classificationSource === 'jev' ? [] : ['RULE_FALLBACK']), ...(taskClass !== ruleTaskClass ? ['JEV_OVERRULED_RULE_CLASS'] : []), 'NO_EVIDENCE_REQUIRED'],
-    selectionCriteria: [classificationSource === 'jev' ? 'jev-bounded-semantic-classification' : 'task-classification-rule']
-  });
+  let executionProfileId = EXECUTION_PROFILE_FULL;
   setDecisionSnapshot('feature', { promptDigest: sha256Digest(prompt), mode, agentMode, taskClass });
-  const taskClassifiedEvent = await coordinator.recordEventAndFlush('TaskClassified', classification);
-  linkDecisionEvent(classificationDecision, taskClassifiedEvent.event);
-  emitEvent('task.classified', classification);
-  await coordinator.transitionAndFlush('PRECHECKING');
-  await saveThreadCheckpoint('PRECHECKING', { pendingActions: ['evaluate task safety'] });
   const precheck = createTaskSafetyPrecheck().evaluate({ prompt, taskClass, mode, workspaceRoot: requestedWorkspace, workspaceDeferred: deferredWorkspace });
   setDecisionSnapshot('constraint', {
     mode,
@@ -2012,7 +1991,7 @@ async function runTask() {
     roleContextId: `${runId}-router`,
     decisionType: 'SELECT_ROUTE',
     actionKind: 'ROUTE',
-    parentDecisionIds: [classificationDecision.decisionId],
+    parentDecisionIds: [],
     summary: routeSelected ? 'Selected the configured route' : `Blocked route: ${routeDecision.reason}`,
     outputRefs: [`route-${runId}`],
     options: [
@@ -2054,7 +2033,7 @@ async function runTask() {
   await coordinator.transitionAndFlush('ALLOCATING_CONTEXTS');
   setRuntimePhase('ROLE_BINDING_RESOLUTION');
   // The Jev decision engine and decision config were already resolved before
-  // classification. Reuse the same file-backed config here only to resolve the
+  // routing. Reuse the same file-backed config here only to resolve the
   // model route, so the decision plane is never rebuilt mid-run.
   const modelConfig = resolveModelConfig({
     fileConfig,
@@ -2449,7 +2428,18 @@ async function runTask() {
     ...(approvedNetworkTargets.length ? { networkTargets: approvedNetworkTargets } : {}),
     ...executionOptions(mode)
   });
-  const executor = createPlatformExecutor({ monitor });
+  const onSelfTerminationRequested = (request) => {
+    taskSelfTerminationRequest ??= {
+      pid: request.pid,
+      force: request.force === true,
+      owner: request.owner === 'desktop' ? 'desktop' : 'runtime',
+      action: request.action,
+      command: request.command,
+      args: Array.isArray(request.args) ? [...request.args] : [],
+      requestedAtMs: Date.now()
+    };
+  };
+  const executor = createPlatformExecutor({ monitor, onSelfTerminationRequested });
   const snapshot = deferredWorkspace
     ? { granted: false, deferred: true, entries: [], sections: [], snapshotDigest: sha256Digest('workspace-unopened:' + runId) }
     : {};
@@ -3437,7 +3427,7 @@ async function runTask() {
             currentStep: 'plan-tier-selection',
             action: { kind: 'SELECT_PLAN_TIER', summary: 'Choose direct observation, planning, or planning with council review' },
             observation: { status: 'PRE_PLANNER', taskClass, executionMode: mode },
-            evidence: [{ id: `plan-tier-${runId}`, type: 'route', claim: `Task classified as ${taskClass} in ${mode}`, source: `task-class:${taskClass}` }]
+            evidence: [{ id: `plan-tier-${runId}`, type: 'route', claim: `Generic task route selected in ${mode}`, source: 'task-class:unknown' }]
           },
           candidates: tierCandidates.map((tier, index) => ({ candidateId: tier, modelId: tier, status: 'SUCCEEDED', expectedCost: index + 1, expectedLatencyMs: index + 1 })),
           signal: taskAbortController.signal
@@ -3496,13 +3486,16 @@ async function runTask() {
           onEvent: roleTurnEvent
         }));
         plannerPlan = plannerTurn.plan;
+        taskRequirements = plannerTurn.requirements;
+        if (taskRequirements) logger.info(`task requirements | runId=${runId} | requirements=${JSON.stringify(taskRequirements)}`);
         emitEvent('plan.created', {
           planId: plannerPlan.planId,
           stepCount: plannerPlan.steps.length,
           steps: plannerPlan.steps.slice(0, 8).map((s) => ({
             stepId: s.stepId,
             summary: String(s.summary ?? '').slice(0, 200)
-          }))
+          })),
+          ...(taskRequirements ? { requirements: taskRequirements } : {})
         });
       }
       let shouldDeliberate = !restoredResumePlan
@@ -3706,7 +3699,7 @@ async function runTask() {
           steps: plannerPlan.steps.slice(0, 8).map(({ stepId, summary }) => ({ stepId, summary }))
         });
       }
-      const planningEvidence = await collectDecisionEvidence({ kinds: ['RoleBindingsResolved', 'TaskClassified', 'TaskRunCreated'], limit: 6 });
+      const planningEvidence = await collectDecisionEvidence({ kinds: ['RoleBindingsResolved', 'TaskRunCreated'], limit: 6 });
       const planningEvidenceIds = planningEvidence.map((ref) => ref.evidenceId);
       plannerDecision = await recordDecision({
         stepId: 'planning',
@@ -3842,13 +3835,16 @@ async function runTask() {
             onEvent: roleTurnEvent
           });
           plannerPlan = plannerTurn.plan;
+          taskRequirements = plannerTurn.requirements;
+          if (taskRequirements) logger.info(`task requirements | runId=${runId} | requirements=${JSON.stringify(taskRequirements)}`);
           emitEvent('plan.created', {
             planId: plannerPlan.planId,
             stepCount: plannerPlan.steps.length,
             steps: plannerPlan.steps.slice(0, 8).map((step) => ({
               stepId: step.stepId,
               summary: String(step.summary ?? '').slice(0, 200)
-            }))
+            })),
+            ...(taskRequirements ? { requirements: taskRequirements } : {})
           });
         }
       }
@@ -3875,7 +3871,7 @@ async function runTask() {
     }
     if (agentMode !== 'multi') {
       if (!plannerPlan) {
-      const planningEvidence = await collectDecisionEvidence({ kinds: ['RoleBindingsResolved', 'TaskClassified', 'TaskRunCreated'], limit: 6 });
+      const planningEvidence = await collectDecisionEvidence({ kinds: ['RoleBindingsResolved', 'TaskRunCreated'], limit: 6 });
       const planningEvidenceIds = planningEvidence.map((ref) => ref.evidenceId);
       plannerDecision = await recordDecision({
         stepId: 'planning',
@@ -3970,8 +3966,8 @@ async function runTask() {
       // immediately before the process died. Persist it into this coordinator
       // before initialization so the scheduler can reconcile it and refuse an
       // automatic replay when the outcome is not provably known.
-      // The resume pipeline rebuilds classification, routing, and planning
-      // first. Enter EXECUTING explicitly before RECOVERING so the state
+      // The resume pipeline rebuilds routing and planning first. Enter
+      // EXECUTING explicitly before RECOVERING so the state
       // transition remains legal under the terminal-safe state machine.
       if (coordinator.state === 'PLANNING') {
         await coordinator.transitionAndFlush('EXECUTING', { reason: 'THREAD_RESUME_EXECUTION_RECONCILIATION' });
@@ -4176,8 +4172,8 @@ async function runTask() {
         return role;
       }) : baseExecutor;
       const readOnlyStep = ['READ', 'REPORT'].includes(String(step.actionKind).toUpperCase())
-        || (!requiresBuildTestExecution && (ruleTaskClass === 'query' || taskClass === 'query'));
-      const stepProfile = stepExecutionProfile({ initial: executionProfileId, step, goal: stepGoal, readOnly: readOnlyStep });
+        || (!requiresVerifiedBuildTest() && (ruleTaskClass === 'query' || taskClass === 'query'));
+      const stepProfile = stepExecutionProfile({ initial: executionProfileId, step, readOnly: readOnlyStep });
       emitEvent('step.execution_profile', { stepId: step.stepId, executionProfileId: stepProfile });
       const canWriteInStep = !readOnlyStep && stepProfile === EXECUTION_PROFILE_FULL;
       const stepRequiresMutation = canWriteInStep && (planRequiresWorkspaceMutation({ steps: [step] })
@@ -4455,6 +4451,7 @@ async function runTask() {
           workspace: snapshot,
           historyContext: recoveryText,
           readObservedAssertion: (observation, line) => workspace.readObservedLines(observation, line),
+          repairWorkspace: workspace,
           recovery,
           mode,
           modelProvider: recoveryModelProvider,
@@ -4586,7 +4583,7 @@ async function runTask() {
             // A build prerequisite must be able to collect the observation it
             // exists to provide. Confirm the path before using the fast path.
             const fastPathEnabled = decisionConfig?.readonlyFastPathEnabled;
-            const buildPrerequisiteRead = requiresBuildTestExecution && (prerequisiteRead || isBinaryInspection(call.name)) && fastPathEnabled !== false;
+            const buildPrerequisiteRead = requiresVerifiedBuildTest() && (prerequisiteRead || isBinaryInspection(call.name)) && fastPathEnabled !== false;
             const fastPathCandidate = readonlyFastPathDecision({
               enabled: decisionEngine.enabled && (fastPathEnabled === true || buildPrerequisiteRead),
               name: call.name,
@@ -4858,89 +4855,6 @@ async function runTask() {
                 });
               }
             }
-            // Risk Vector: ten-dim + trajectory soft gate after Capability Path, before S4 spectrum.
-            // Soft tighten only; never exempts hard BLOCK / lease. DDA_RISK_VECTOR=0 disables (default ON).
-            const riskVectorEnabled = isRiskVectorEnabled();
-            let riskVectorApplied = {
-              elevated: false,
-              decision: toolGate.decision,
-              reasonCode: toolGate.reasonCode,
-              hint: 'NONE',
-              vector: undefined
-            };
-            let riskVectorTelem = undefined;
-            if (riskVectorEnabled) {
-              try {
-                const priorVector = riskVectors.length > 0 ? riskVectors[riskVectors.length - 1] : undefined;
-                const stepVector = scoreRiskVector({
-                  toolName: call.name ? String(call.name) : '',
-                  pathAnalysis: capabilityPathAnalysis,
-                  runStats: {
-                    toolCount: (Array.isArray(previousActions) ? previousActions.length : 0)
-                      + (Array.isArray(verificationActions) ? verificationActions.length : 0)
-                      + riskVectors.length,
-                    fanout: 1,
-                    goal: typeof prompt === 'string' ? prompt : undefined
-                  },
-                  toolArgs: call.requestSummary && typeof call.requestSummary === 'object'
-                    ? call.requestSummary
-                    : undefined,
-                  priorVector
-                });
-                riskVectors.push(stepVector);
-                const combined = combineTrajectoryRisk(riskVectors);
-                const stepHint = riskVectorGateHint(stepVector);
-                const comboHint = riskVectorGateHint(combined);
-                const useCombined = hintRank(comboHint) > hintRank(stepHint);
-                const gateVector = useCombined
-                  ? { ...combined, toolName: stepVector.toolName }
-                  : stepVector;
-                const effectiveHint = useCombined ? comboHint : stepHint;
-                riskVectorTelem = riskVectorTelemetry(gateVector, { stepCount: combined.stepCount });
-                riskVectorApplied = applyRiskVectorGate({
-                  gateDecision: toolGate,
-                  vector: gateVector,
-                  hint: effectiveHint,
-                  enabled: true,
-                  toolReadOnly
-                });
-                if (riskVectorApplied.elevated) {
-                  const fromDecision = toolGate.decision;
-                  toolGate = {
-                    ...toolGate,
-                    decision: riskVectorApplied.decision,
-                    reasonCode: riskVectorApplied.reasonCode
-                      ?? (riskVectorApplied.decision === 'BLOCK'
-                        ? RISK_VECTOR_DENY
-                        : RISK_VECTOR_REQUIRE_APPROVAL)
-                  };
-                  emitEvent('risk.vector_gate_elevated', {
-                    id: call.id,
-                    name: call.name,
-                    from: fromDecision,
-                    to: toolGate.decision,
-                    reasonCode: toolGate.reasonCode,
-                    hint: riskVectorApplied.hint,
-                    riskVector: riskVectorTelem,
-                    combined: useCombined
-                  });
-                } else if (riskVectorTelem && (riskVectorTelem.score >= 0.25 || useCombined)) {
-                  emitEvent('risk.vector_observed', {
-                    id: call.id,
-                    name: call.name,
-                    decision: toolGate.decision,
-                    hint: riskVectorApplied.hint,
-                    riskVector: riskVectorTelem,
-                    combined: useCombined
-                  });
-                }
-              } catch (riskVectorErr) {
-                emitEvent('risk.vector_soft_fail', {
-                  reasonCode: 'RISK_VECTOR_RESOLVE',
-                  error: riskVectorErr instanceof Error ? riskVectorErr.message : String(riskVectorErr)
-                });
-              }
-            }
             // S3/S4: State gate after S1. Spectrum (default ON) maps MONITOR→LIMIT,
             // SANDBOX→approval+control, QUARANTINE reason split. DDA_SAFETY_SPECTRUM=0
             // falls back to S3 applySafetyStateGate. DDA_SAFETY_STATE=0 disables both.
@@ -5063,19 +4977,23 @@ async function runTask() {
             }
             const fastPathTaken = toolGate.reasonCode === READONLY_FAST_PATH_REASON && Boolean(fastPathDecision);
             if (fastPathTaken) emitEvent('jev.action_gate_skipped', { id: call.id, name: call.name, reasonCode: READONLY_FAST_PATH_REASON });
-            // Persist the gate for this exact call. Once Jev is configured,
-            // its approval requirement (including the conservative fallback)
-            // applies to workspace effects even under FULL_ACCESS.
+            // Persist the gate for this exact call. FULL_ACCESS covers ordinary
+            // workspace effects, including a Jev REQUIRE_APPROVAL signal. The
+            // independent safety and danger gates below still reach the map.
+            const workspaceEffect = !toolReadOnly
+              && [CAPABILITIES.SHELL, CAPABILITIES.TEST, CAPABILITIES.WRITE_FILE].includes(call.toolPolicyFacts?.capability);
+            const fullAccessWorkspace = workspaceEffect
+              && await currentAccessMode(getAccessMode) === 'FULL_ACCESS';
             // S1: SAFETY profile elevate must enter the same map — otherwise soft
             // tighten is dead (today only source==='jev' was written).
             const jevRequireApproval = toolGateRaw.decision === 'REQUIRE_APPROVAL'
               && toolGateRaw.source === 'jev'
-              && toolGateRaw.fallbackUsed !== true;
-            const workspaceEffect = !toolReadOnly
-              && [CAPABILITIES.SHELL, CAPABILITIES.TEST, CAPABILITIES.WRITE_FILE].includes(call.toolPolicyFacts?.capability);
+              && toolGateRaw.fallbackUsed !== true
+              && !fullAccessWorkspace;
             const workspaceApprovalRequired = workspaceEffect
               && decisionExplicitlyConfigured && decisionConfig?.enabled === true
-              && toolGateRaw.decision === 'REQUIRE_APPROVAL';
+              && toolGateRaw.decision === 'REQUIRE_APPROVAL'
+              && !fullAccessWorkspace;
             // A real Jev ALLOW is stored so the lease path can run one
             // outside-list executable without a dialog. A fallback ALLOW is
             // not stored. Safety elevation leaves decision as
@@ -5094,7 +5012,7 @@ async function runTask() {
               activeGateDecisions().set(call.id, allowEntry);
               if (call.argumentsDigest) activeGateDecisions().set(call.argumentsDigest, allowEntry);
             }
-            if (toolGate.decision === 'REQUIRE_APPROVAL' && (workspaceApprovalRequired || jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || capabilityPathApplied.elevated || riskVectorApplied.elevated || safetyStateApplied.elevated)) {
+            if (toolGate.decision === 'REQUIRE_APPROVAL' && (workspaceApprovalRequired || jevRequireApproval || safetyApplied.elevated || trustXApplied.elevated || capabilityPathApplied.elevated || safetyStateApplied.elevated)) {
               const gateEntry = {
                 requireApproval: true,
                 reasonCodes: [
@@ -5106,10 +5024,9 @@ async function runTask() {
                 ...(workspaceApprovalRequired ? { mandatoryApproval: true } : {}),
                 reasonCode: toolGate.reasonCode
                   ?? (safetyStateApplied.elevated ? SAFETY_STATE_REQUIRE_APPROVAL
-                    : (riskVectorApplied.elevated ? RISK_VECTOR_REQUIRE_APPROVAL
-                      : (capabilityPathApplied.elevated ? CAPABILITY_PATH_REQUIRE_APPROVAL
+                    : (capabilityPathApplied.elevated ? CAPABILITY_PATH_REQUIRE_APPROVAL
                         : (trustXApplied.elevated ? TRUST_X_REQUIRE_APPROVAL
-                          : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL')))))
+                          : (safetyApplied.elevated ? SAFETY_PROFILE_REQUIRE_APPROVAL : 'JEV_ACTION_GATE_REQUIRE_APPROVAL'))))
               };
               activeGateDecisions().set(call.id, gateEntry);
               if (call.argumentsDigest) activeGateDecisions().set(call.argumentsDigest, gateEntry);
@@ -5132,10 +5049,6 @@ async function runTask() {
               ...(Array.isArray(capabilityPathTelem?.highRiskSinks)
                 ? capabilityPathTelem.highRiskSinks.slice(0, 8).map((s) => `CAPABILITY_SINK:${s}`)
                 : []),
-              ...telemetryElevateReason(riskVectorApplied, toolGate.reasonCode),
-              ...(riskVectorTelem
-                ? [`RISK_VECTOR_SCORE:${riskVectorTelem.score}`, `RISK_VECTOR_STEPS:${riskVectorTelem.stepCount}`]
-                : []),
               ...(safetyStateApplied.state ? [`SAFETY_STATE:${safetyStateApplied.state}`] : []),
               ...telemetryElevateReason(safetyStateApplied, toolGate.reasonCode),
               ...(safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
@@ -5155,8 +5068,6 @@ async function runTask() {
                 ? `Rule fast path allowed read-only ${call.name} without a Jev round-trip`
                 : safetyStateApplied.elevated
                   ? `SAFETY state elevated action gate to ${toolGate.decision} for ${call.name}`
-                  : riskVectorApplied.elevated
-                    ? `Risk Vector elevated action gate to ${toolGate.decision} for ${call.name}`
                     : capabilityPathApplied.elevated
                       ? `Capability Path elevated action gate to ${toolGate.decision} for ${call.name}`
                       : trustXApplied.elevated
@@ -5199,8 +5110,6 @@ async function runTask() {
                     ? (safetySpectrumEnabled && safetyStateApplied.softOutcome && safetyStateApplied.softOutcome !== 'NONE'
                       ? 'safety-spectrum-action-gate'
                       : 'safety-state-action-gate')
-                    : riskVectorApplied.elevated
-                      ? 'risk-vector-action-gate'
                       : capabilityPathApplied.elevated
                         ? 'capability-path-action-gate'
                         : safetyApplied.elevated
@@ -5235,8 +5144,6 @@ async function runTask() {
                 requiredControls: safetyStateApplied.requiredControls ?? [],
                 // Capability Path Declared→Effective (freeze-capability-path-r1).
                 ...(capabilityPathTelem ? { capabilityPath: capabilityPathTelem } : {}),
-                // Risk Vector ten-dim + trajectory (freeze-risk-vector-r1).
-                ...(riskVectorTelem ? { riskVector: riskVectorTelem } : {})
               },
               sensitivity: 'SECURITY_AUDIT'
             });
@@ -5525,6 +5432,26 @@ async function runTask() {
               ...(event.outputChars !== undefined ? { outputChars: event.outputChars } : {}),
               ...(event.inspectionCount !== undefined ? { inspectionCount: event.inspectionCount } : {}),
               ...(event.kind === 'harness.repair_retest' ? { state: event.state, invocationKey: event.invocationKey } : {}),
+              ...(['harness.repair_candidate', 'harness.repair_baseline'].includes(event.kind) ? {
+                status: event.status, assertionLine: event.assertionLine, observations: event.observations,
+                ...(event.candidateDigest ? { candidateDigest: event.candidateDigest } : {}),
+                ...(event.operands ? { operands: event.operands } : {}),
+                ...(event.producerInputs ? { producerInputs: event.producerInputs } : {}),
+                ...(typeof event.assertionPassed === 'boolean' ? { assertionPassed: event.assertionPassed } : {}),
+                ...(event.acceptance && typeof event.acceptance === 'object' ? { acceptance: event.acceptance } : {}),
+                ...(event.preservation ? { preservation: event.preservation } : {}),
+                ...(event.asyncQueue ? { asyncQueue: event.asyncQueue } : {}),
+                ...(event.retest && Number.isSafeInteger(event.retest.attempts)
+                  && event.retest.attempts >= 2 && event.retest.attempts <= 2
+                  && ['unverified', 'rejected', 'passed'].includes(event.retest.initialStatus)
+                  && ['unverified', 'rejected', 'passed'].includes(event.retest.finalStatus)
+                  && typeof event.retest.resolved === 'boolean'
+                  ? { retest: { attempts: event.retest.attempts, initialStatus: event.retest.initialStatus,
+                    finalStatus: event.retest.finalStatus, resolved: event.retest.resolved } } : {}),
+                ...(event.repeatCount ? { repeatCount: event.repeatCount } : {})
+              } : {}),
+              ...(event.candidatePreview ? { candidatePreview: true } : {}),
+              ...(event.baselinePreview ? { baselinePreview: true } : {}),
               ...(event.kind === 'harness.repair_continued' ? { repairAttempt: event.repairAttempt,
                 discardedTextChars: event.discardedTextChars, discardedReasoningChars: event.discardedReasoningChars } : {}),
               ...(event.ok !== undefined ? { ok: event.ok } : {}),
@@ -5829,8 +5756,9 @@ async function runTask() {
         const draft = result.conclusionText ?? result.text;
         let { buildTest, buildTestChecks, observedClaims } = await verifyReport(draft);
         const answer = result.text.trimEnd();
+        const verifiedBuildTest = verifiedBuildTestRequirements(extractAcceptanceCommands({ prompt, envValue: '' }));
         const canClarify = decisionEngine.enabled && !clarifiedReportSteps.has(step.stepId) && answer.endsWith(draft);
-        const repair = canClarify && documentReportRepair({ text: draft, goal: prompt, step, isDeliveryStep, requestedBuildTest,
+        const repair = canClarify && documentReportRepair({ text: draft, goal: prompt, step, isDeliveryStep, requestedBuildTest: verifiedBuildTest,
           verifiedFiles, hostChecks, ruleStatus: verification.status, checks: buildTestChecks, observedClaims, receipts: buildTestReceipts });
         let proposal;
         if (repair) {
@@ -5887,8 +5815,43 @@ async function runTask() {
               receiptIds: proposal.receiptIds, selectedCandidateId: selection.selectedCandidateId, adopted,
               ...(repair ? { revisedReport: proposal.revised, edits: proposal.edits } : {}) } });
         }
-        const buildTestFailure = buildTestChecks.find(check => check.status === 'FAIL')
-          ?? buildTestChecks.find(check => check.status === 'UNKNOWN');
+        buildTestChecks = adviseReportClaimChecks(buildTestChecks);
+        const fixedHostReport = fixedBuildTestReport(buildTestReceipts, verifiedBuildTest);
+        const fixedHostItems = fixedHostReport?.items.filter(item => item.status !== 'NOT_REQUESTED') ?? [];
+        const fixedHostFailure = fixedHostItems.find(item => item.status === 'VERIFIED'
+          && item.results.some(result => result.execution && result.execution !== 'SUCCEEDED'));
+        const fixedHostFailureCheck = fixedHostFailure ? {
+          id: fixedHostFailure.id, status: 'FAIL', code: 'BUILD_TEST_EXECUTION_FAILED',
+          message: `${fixedHostFailure.label}执行失败（${fixedHostFailure.detail}）`,
+          evidence: [...new Set(fixedHostFailure.results.flatMap(result => result.evidence))]
+        } : undefined;
+        if (fixedHostFailureCheck) buildTestChecks = [...buildTestChecks, fixedHostFailureCheck];
+        const blockingBuildTestChecks = buildTestChecks.filter(check => !isAdvisoryCheck(check));
+        const buildTestFailure = blockingBuildTestChecks.find(check => check.status === 'FAIL')
+          ?? fixedHostFailureCheck ?? blockingBuildTestChecks.find(check => check.status === 'UNKNOWN');
+        const buildTestRepairContinuation = buildTestFailure?.code === 'BUILD_TEST_EXECUTION_FAILED'
+          && !planContinueHostNote;
+        if (buildTestRepairContinuation) {
+          pendingBuildTestRepairContext = {
+            stepId: step.stepId,
+            failure: {
+              id: buildTestFailure.id,
+              code: buildTestFailure.code,
+              message: String(buildTestFailure.message ?? '').slice(0, 500),
+              evidence: Array.isArray(buildTestFailure.evidence) ? buildTestFailure.evidence.slice(0, 8) : []
+            },
+            previousPatches: (result.actions ?? [])
+              .filter(action => ['file.patch', 'file.write'].includes(action.name))
+              .slice(-8)
+              .map(action => ({
+                name: action.name,
+                ...(typeof action.path === 'string' ? { path: action.path.slice(0, 240) } : {}),
+                ...(typeof action.argumentsDigest === 'string' ? { argumentsDigest: action.argumentsDigest } : {}),
+                ...(typeof action.outputDigest === 'string' ? { outputDigest: action.outputDigest } : {}),
+                ...(typeof action.contentDigest === 'string' ? { contentDigest: action.contentDigest } : {})
+              }))
+          };
+        }
         if (buildTestChecks.length) {
           verification.checks = [...verification.checks, ...buildTestChecks];
           await trajectory.append({ runId, kind: 'BuildTestConclusionsReviewed',
@@ -5952,22 +5915,39 @@ async function runTask() {
         // Only validate the execution scope of a prerequisite READ step here.
         // Mixed actions and final goal verification need the ordinary judgment.
         const workspaceRead = decisionEngine.enabled && ruleVerificationStatus === 'PASS' && prerequisiteRead && planReview?.probeId !== step.stepId
-          ? verifiedWorkspaceReadEvidence(requiresBuildTestExecution && !previousActions.length
+          ? verifiedWorkspaceReadEvidence(requiresVerifiedBuildTest() && !previousActions.length
             ? result.actions.filter(action => action.invocationAttempted !== false)
             : result.actions, previousActions) : undefined;
-        const deliveryGap = executionPlan.steps.at(-1)?.stepId === step.stepId && installationEvidenceGap(
-          prompt, [...priorResults.flatMap(entry => entry.result?.result?.actions ?? []), ...observedActions]);
+        const deliveryGap = executionPlan.steps.at(-1)?.stepId === step.stepId
+          && installationEvidenceGap(
+            prompt, [...priorResults.flatMap(entry => entry.result?.result?.actions ?? []), ...observedActions],
+            { required: taskRequirements?.install });
         const verificationDisabled = !decisionEngine.enabled;
         const conclusion = result.conclusionText ?? result.text;
         const citedEvidence = decisionEngine.enabled && !workspaceRead && !buildTestFailure && !deliveryGap
           ? await verificationSourceEvidence({ workspace, snapshot, conclusion, receipts: buildTestReceipts,
               actions: [...priorResults.flatMap(entry => entry.result?.result?.actions ?? []), ...observedActions] })
           : [];
-        const behaviorDecision = failedDeliverable
+        const fixedHostExecutionPass = fixedHostItems.length > 0 && fixedHostItems.every(item => {
+          if (item.status !== 'VERIFIED' || !item.results.length) return false;
+          if (item.id === 'build-artifact-origin') return true;
+          return item.results.every(result => {
+            if (result.execution !== 'SUCCEEDED' || result.exitCode !== 0) return false;
+            if (!result.counts) return true;
+            return result.counts.fail === 0
+              && result.counts.pass === result.counts.tests - (result.counts.skipped ?? 0);
+          });
+        });
+        const deterministicBuildTestPass = !buildTestFailure && (verifiedBuildTest.build || verifiedBuildTest.test)
+          && ((blockingBuildTestChecks.length > 0 && blockingBuildTestChecks.every(check => check.status === 'PASS'))
+            || (blockingBuildTestChecks.length === 0 && fixedHostExecutionPass));
+        const behaviorDecision = settleBehaviorDecision(failedDeliverable
           ? { decision: 'FAIL', source: 'rule', reasonCode: 'DELIVERABLE_UNVERIFIED' }
           : deliveryGap
           ? { decision: 'UNCERTAIN', source: 'rule', reasonCode: 'INSTALLATION_UNVERIFIED' }
-          : verificationDisabled && !buildTestFailure && !requiresWorkspaceMutation && !requiresBuildTestExecution
+          : deterministicBuildTestPass
+          ? { decision: 'PASS', source: 'rule', fallbackUsed: false, reasonCode: 'BUILD_TEST_VERIFIED' }
+          : verificationDisabled && !buildTestFailure && !requiresWorkspaceMutation && !requiresVerifiedBuildTest()
             && directResponseSatisfied(prompt, result.conclusionText ?? result.text, inputImages, observedActions)
           ? { decision: 'PASS', source: 'rule', reasonCode: 'DIRECT_RESPONSE_DELIVERED' }
           : buildTestFailure
@@ -5989,7 +5969,7 @@ async function runTask() {
             requirements: [{ id: `requirement-${step.stepId}`, description: step.summary, status: verification.status === 'PASS' ? 'supported' : 'unknown' }]
           },
           evidence: behaviorEvidence, supplementalEvidence: citedEvidence
-        }));
+        })));
         const preventLookupPass = webLookupIncomplete && behaviorDecision.decision === 'PASS';
         const semanticStatus = preventLookupPass ? 'UNCERTAIN' : behaviorDecision.decision;
         const behaviorReason = preventLookupPass ? 'EXTERNAL_EVIDENCE_MISSING' : behaviorDecision.reasonCode;
@@ -6029,67 +6009,14 @@ async function runTask() {
           },
           decision: behaviorDecision
         };
-        if (failedDeliverable) {
-          verification = { ...verification, status: 'FAIL', nextAction: 'REPAIR_DELIVERABLE',
-            summary: failedDeliverable.message, failureCodes: ['DELIVERABLE_UNVERIFIED'] };
-        } else if (deliveryGap) {
-          verification = { ...verification, status: 'UNCERTAIN', stopRecovery: true,
-            failureCodes: ['INSTALLATION_UNVERIFIED'], nextAction: 'REVIEW_INSTALLATION', summary: deliveryGap };
-        } else if (buildTestFailure) {
-          verification = { ...verification, status: semanticStatus, stopRecovery: true,
-            nextAction: 'REVIEW_BUILD_TEST_CONCLUSIONS', summary: buildTestFailure.message,
-            failureCodes: semanticVerifierTurn.verdict.failureCodes };
-        } else if (missingExternalEvidence) {
-          verification = {
-            ...verification, status: 'UNCERTAIN', stopRecovery: true, nextAction: 'PROVIDE_EXTERNAL_EVIDENCE',
-            summary: 'External sources are needed to verify the answer. Available findings were preserved.',
-            failureCodes: [...new Set(['EXTERNAL_EVIDENCE_MISSING', ...verification.failureCodes])],
-            checks: [...verification.checks, {
-              id: 'external-evidence', status: 'UNKNOWN',
-              message: ['EXTERNAL_EVIDENCE_MISSING', ...new Set(externalEvidence.map(item => item.claim))].join(' · '),
-              evidence: [...new Set([...externalEvidence.map(item => item.id), ...behaviorEvidenceRefs])].slice(0, 8)
-            }]
-          };
-        } else if (workspaceReadVerified) {
-          const summary = 'Jev confirmed that the completed reads used read-only tools inside the authorized workspace';
-          verification = { ...verification, summary, checks: [...verification.checks, {
-            id: 'workspace-read-scope', status: 'PASS', message: summary,
-            evidence: behaviorEvidenceRefs
-          }] };
-        } else if (semanticStatus === 'FAIL') {
-          verification = {
-            ...verification, status: 'FAIL',
-            nextAction: stopForBehaviorConflict ? 'REVIEW_BEHAVIOR' : 'REQUEST_EVIDENCE',
-            ...(stopForBehaviorConflict ? { stopRecovery: true } : {}),
-            summary: `Jev rejected the observed behavior: ${behaviorReason}`,
-            failureCodes: [...new Set([...verification.failureCodes, 'JEV_BEHAVIOR_REJECTED',
-              ...(['RESULT_CONTRADICTS_EVIDENCE', 'GOAL_CONFLICT', 'UNSAFE_BEHAVIOR'].includes(behaviorReason) ? [behaviorReason] : [])])],
-            checks: [...verification.checks, { id: 'jev-behavior-judge', status: 'FAIL', message: behaviorReason, evidence: behaviorEvidenceRefs }]
-          };
-        } else if (semanticStatus === 'UNCERTAIN' && verification.status === 'PASS') {
-          // freeze-harness-uncertain-agent-miss-r1: stamp JEV_EVIDENCE_REQUIRED
-          // (no summary-only path) for a genuine evidence-gap verdict. A
-          // transient provider failure is not an evidence gap: keep the verdict
-          // UNCERTAIN with only the jev-behavior-judge UNKNOWN check so
-          // canRetryVerificationOnly re-verifies the same execution instead of
-          // arming the reapproval gate and replaying side effects.
-          verification = providerFailure
-            ? {
-                ...verification,
-                status: 'UNCERTAIN',
-                ...(behaviorReason === 'JEV_DISABLED_VERIFICATION_FALLBACK' ? { stopRecovery: true,
-                  failureCodes: [behaviorReason], nextAction: 'CONFIGURE_VERIFIER' } : {}),
-                summary: `The semantic verifier is unavailable (${behaviorReason})`,
-                checks: [
-                  ...(verification.checks ?? []),
-                  { id: 'jev-behavior-judge', status: 'UNKNOWN', message: behaviorReason, evidence: behaviorEvidenceRefs }
-                ]
-              }
-            : stampJevEvidenceRequired(verification, {
-                reasonCode: behaviorDecision.reasonCode,
-                evidenceIds: behaviorEvidenceRefs
-              });
-        }
+        verification = settleStepVerification({
+          verification, failedDeliverable, deliveryGap, buildTestFailure,
+          buildTestRepairContinuation,
+          buildTestFailureCodes: semanticVerifierTurn.verdict.failureCodes,
+          missingExternalEvidence, externalEvidence, workspaceReadVerified,
+          semanticStatus, behaviorReason, behaviorDecision, stopForBehaviorConflict,
+          providerFailure, behaviorEvidenceRefs
+        });
         await coordinator.recordEventAndFlush('SemanticVerificationCompleted', {
           attempt, stepId: step.stepId, status: semanticStatus,
           failureCodes: semanticVerifierTurn.verdict.failureCodes,
@@ -6826,12 +6753,13 @@ async function runTask() {
     };
     // freeze-harness-plan-continue-r1: one plan-step READY re-exec on CONTINUE_EXECUTION+writes.
     let pendingPlanContinueHostNote = undefined;
+    let pendingBuildTestRepairContext = undefined;
     const { prepareDeliverableVerification, checkpointDeliverables } = await import('./deliverable-verifier.mjs');
     const deliverableGoalDigest = sha256Digest(prompt);
     const recordedDeliverables = new Set();
     const previousGeneratedFiles = [];
     const verifyDeliverables = await prepareDeliverableVerification({
-      prompt, startedAtMs: runStartedAtMs,
+      prompt, declaredSpecs: taskRequirements?.deliverables, startedAtMs: runStartedAtMs,
       recoveredFiles: resumeRequested ? checkpointDeliverables({ events: priorEvents, sourceRunId: resumeSourceRunId,
         checkpointDigest: resumeSourceCheckpointDigest, threadId: thread.id, goalDigest: deliverableGoalDigest,
         onGeneratedFile: (path, digest) => previousGeneratedFiles.push({ path, digest }) }) : [],
@@ -6886,7 +6814,16 @@ async function runTask() {
             ...(stepId ? { stepId } : {}),
             ...(Number.isInteger(attempt) ? { attempt } : {})
           });
-          pendingPlanContinueHostNote = planContinueReplanHostNote();
+          const repairContext = pendingBuildTestRepairContext;
+          pendingBuildTestRepairContext = undefined;
+          const repairFeedback = repairContext
+            ? ` HOST_BUILD_TEST_FAILURE_REPAIR: ${JSON.stringify({
+              stepId: repairContext.stepId,
+              failure: repairContext.failure,
+              previousPatches: repairContext.previousPatches
+            })} Read the failed assertion and current source, use the failure check to choose a different fix, and submit a new bounded patch. Do not repeat the same patch action digest.`
+            : '';
+          pendingPlanContinueHostNote = `${planContinueReplanHostNote()}${repairFeedback}`;
         }
       },
       executeStep: async (args) => {
@@ -6917,7 +6854,7 @@ async function runTask() {
       },
       verifyStep: async ({ result }) => result?.verification ?? { status: 'FAIL', failureCodes: ['STEP_VERIFICATION_MISSING'] }
     });
-    const buildTestRequirements = requestedBuildTestItems(prompt, extractAcceptanceCommands({
+    const buildTestRequirements = verifiedBuildTestRequirements(extractAcceptanceCommands({
       prompt, acceptanceCriteria: planExecution.plan?.acceptanceCriteria
     }));
     const buildTest = fixedBuildTestReport(buildTestReceipts, buildTestRequirements);
@@ -6932,7 +6869,8 @@ async function runTask() {
       await trajectory.append({ runId, kind: 'BuildTestReportCompleted', payload: buildTest, sensitivity: 'SECURITY_AUDIT' });
     }
     const installGap = installationEvidenceGap(prompt,
-      planExecution.results.flatMap(entry => entry.result?.result?.actions ?? []));
+      planExecution.results.flatMap(entry => entry.result?.result?.actions ?? []),
+      { required: taskRequirements?.install });
     const planFailed = !planExecution.ok && !isOpenPlanContinuation(planExecution.report);
     const finalDeliverables = planFailed ? [] : await verifyDeliverables({
       actions: planExecution.results.flatMap(entry => entry.result?.result?.actions ?? []),
@@ -6941,15 +6879,8 @@ async function runTask() {
     });
     const missingDeliverable = finalDeliverables.find(check => check.status !== 'PASS');
     if (planFailed || pendingBuildTest.length || installGap || missingDeliverable) {
-      const failedReport = planFailed ? (planExecution.report ?? { status: 'FAIL' })
-        : missingDeliverable ? { status: 'FAIL', nextAction: 'REPAIR_DELIVERABLE', summary: missingDeliverable.message,
-          failureCodes: ['DELIVERABLE_UNVERIFIED'], checks: finalDeliverables }
-        : installGap ? { status: 'UNCERTAIN', nextAction: 'REVIEW_INSTALLATION',
-          summary: installGap, failureCodes: ['INSTALLATION_UNVERIFIED'] } : {
-        status: 'UNCERTAIN', nextAction: 'REVIEW_BUILD_TEST_CONCLUSIONS',
-        summary: pendingBuildTest.map(item => `${item.label} ${item.detail}`).join('。'),
-        failureCodes: pendingBuildTest.map(item => item.code)
-      };
+      const failedReport = runFailureReport({ planFailed, planReport: planExecution.report,
+        missingDeliverable, finalDeliverables, installGap, pendingBuildTest });
       const failure = new Error(`PLAN_STEP_FAILED:${planExecution.failedStepId ?? 'unknown'}:${failedReport.status}`);
       failure.stepId = planExecution.failedStepId ?? 'unknown';
       failure.phase = 'VERIFYING';
@@ -6986,7 +6917,9 @@ async function runTask() {
     const completedStepRuns = authoritativePlanEntries.map((entry) => entry.result);
     if (!completedStepRuns.length) throw new Error('PLAN_NO_COMPLETED_STEPS');
     const result = {
-      text: [...completedStepRuns.map((entry) => entry.result.text), ...(buildTest ? [formatBuildTestReport(buildTest)] : [])].filter(Boolean).join('\n\n'),
+      text: [...completedStepRuns.map((entry) => entry.result.text), ...(buildTest ? [formatBuildTestReport(buildTest)] : []),
+        formatAdvisoryNotes(authoritativePlanEntries.flatMap((entry) =>
+          entry.report?.checks ?? entry.result?.verification?.checks ?? []))].filter(Boolean).join('\n\n'),
       reasoningChars: completedStepRuns.reduce((sum, entry) => sum + Number(entry.result.reasoningChars ?? 0), 0),
       toolRounds: completedStepRuns.reduce((sum, entry) => sum + Number(entry.result.toolRounds ?? 0), 0),
       toolCallCount: completedStepRuns.reduce((sum, entry) => sum + Number(entry.result.toolCallCount ?? 0), 0),
@@ -7212,6 +7145,7 @@ async function runTask() {
       toolRounds: result.toolRounds,
       toolCallCount: result.toolCallCount,
       executionMode: mode,
+      ...(taskSelfTerminationRequest ? { selfTermination: { ...taskSelfTerminationRequest, state: 'REQUESTED' } } : {}),
       agentMode,
       ...(plannerPlan ? {
         plan: {
@@ -9631,19 +9565,22 @@ try {
   const output = `${JSON.stringify(result)}\n`;
   if (command === 'task') {
     await flushStdout(output);
-    process.exit(0);
+    if (!terminateCurrentRuntime(result?.selfTermination ?? taskSelfTerminationRequest)) process.exit(0);
   }
-  writeStdout(output);
+  if (command !== 'task') writeStdout(output);
 } catch (error) {
   const buildTestFailure = error?.nextAction === 'REVIEW_BUILD_TEST_CONCLUSIONS' ? trajectoryErrorPayload(error) : undefined;
   const output = `${JSON.stringify({ ok: false, ...(taskResponseRunId ? { runId: taskResponseRunId } : {}), error: error instanceof Error ? error.message : String(error),
+    ...(taskSelfTerminationRequest ? { selfTermination: { ...taskSelfTerminationRequest, state: 'REQUESTED' } } : {}),
     ...(error?.buildTest ? { buildTest: error.buildTest } : {}),
     ...(buildTestFailure ? { verification: { status: buildTestFailure.reportStatus, summary: buildTestFailure.summary,
       nextAction: buildTestFailure.nextAction, failureCodes: buildTestFailure.failureCodes, checks: buildTestFailure.checks } } : {}),
     ...(error?.harness ? { harness: error.harness } : {}), plugins: manifests() })}\n`;
   if (command === 'task') {
-    try { await flushStdout(output); } finally { process.exit(1); }
+    try { await flushStdout(output); } finally {
+      if (!terminateCurrentRuntime(taskSelfTerminationRequest)) process.exit(1);
+    }
   }
-  writeStdout(output);
+  if (command !== 'task') writeStdout(output);
   process.exitCode = 1;
 }

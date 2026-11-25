@@ -1,0 +1,1162 @@
+[
+  {
+    "run": "dda-1",
+    "live_requests": 4,
+    "live_bytes": 255110,
+    "completion_charged": 1640,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 456,
+      "ms": 1795252977980,
+      "round": 11,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "sequence": 476,
+        "ms": 1795252991231,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 12,
+        "id": "repair-retest-12",
+        "name": "test.execute",
+        "outputDigest": "sha256:b1e9273d80e706dcc00a479b66105995bbd7359f82c921367c86ec77f9f3245c",
+        "outputChars": 754,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".",
+        "exitCode": 0,
+        "host_scheduled": true,
+        "upstream_requests_with_test_receipt": [
+          4
+        ]
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "files_changed_from_checkpoint": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "8b681ac46d8122cb440e339c2a96472250126c774edfb21f8f6ed3fc20e9f038",
+    "patch_bytes": 1373,
+    "native_terminal": [
+      {
+        "kind": "verification.completed",
+        "seq": 1201,
+        "ms": 1795252996200,
+        "attempt": 1,
+        "status": "UNCERTAIN",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      },
+      {
+        "kind": "run.failed",
+        "seq": 1205,
+        "ms": 1795252997928,
+        "code": "PLAN_STEP_FAILED",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 99.00771069526672
+    },
+    "cli_deadline": {
+      "start_ms": 1795252934217,
+      "duration_s": 408,
+      "deadline_s": 1795253342.217
+    },
+    "last_native_event_s_after_red": 64.863,
+    "native_checkpoint": {
+      "wrong_tree": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+      "warm_rounds": 8,
+      "wrong_edit_sequence": 127,
+      "failed_retest_sequence": 193,
+      "first_request_bytes": 54973,
+      "first_request_sha256": "d24937ca30e298ef409c8eedea8521d396b0645673420f6dc2090873e01a18f2",
+      "baseline_feedback": {
+        "status": "rejected",
+        "operands": [
+          "sha256:c42e57be1d7f8ed12046dc76d27b40f79c1c16eecfdb30e8fc3ad1b43fb2c76f",
+          "sha256:d2574c0182bbc63124784559f1f99b4f2a8ee60aa545dc600c2069ba6eeae063"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 260,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "exists"
+              ],
+              "before": false,
+              "after": true
+            },
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": {
+                "missing": true
+              },
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1
+      },
+      "proactive_preview_seq": 214,
+      "red_to_preview_exit_s": 16.651
+    },
+    "proactive_previews": [
+      {
+        "sequence": 214,
+        "ms": 1795252950868,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 9,
+        "id": "repair/9/baseline-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:aaac43309fdc458c19d8dd21e0af11ca92f3cd1dd9ccd3d2566604cf9839389d",
+        "baselinePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-MAigDt",
+        "exitCode": 1,
+        "paid_requests_before_completion": 0
+      }
+    ],
+    "candidate_previews": [
+      {
+        "sequence": 443,
+        "ms": 1795252973824,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 11,
+        "id": "call_00_AuzsHNZmFfpjb8i8wGhv9278/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:00380d7be9411b74b3e717dad966fee3b118c3300cd6c5a5fbda1131905e3843",
+        "candidatePreview": true,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-T4Uhgb",
+        "exitCode": 0
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "round": 11,
+        "preview_seq": 443,
+        "preview_cwd": ".dda-candidate-T4Uhgb",
+        "preview_exit_code": 0,
+        "parent_id": "call_00_AuzsHNZmFfpjb8i8wGhv9278",
+        "write_seq": 456,
+        "write_ok": true,
+        "applied_after_preview": true,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [],
+        "upstream_requests_with_receipt": [],
+        "denied_attempts_with_receipt": []
+      }
+    ],
+    "other_workspace_tests": [],
+    "continuation_write_results": [
+      {
+        "sequence": 456,
+        "ms": 1795252977980,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 11,
+        "id": "call_00_AuzsHNZmFfpjb8i8wGhv9278",
+        "name": "file.patch",
+        "outputDigest": "sha256:534d16d838ed4ada58884a80140768a81c0298716bea566443782cafbce51167",
+        "outputChars": 4731,
+        "ok": true,
+        "path": "runtime/src/git-observer.mjs"
+      }
+    ],
+    "first_paid_round": 9,
+    "baseline_evidence_delivered_in": [
+      1,
+      2,
+      3
+    ],
+    "last_rejection_note_delivered_in": []
+  },
+  {
+    "run": "dda-2",
+    "live_requests": 3,
+    "live_bytes": 181714,
+    "completion_charged": 1265,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 351,
+      "ms": 1795252977153,
+      "round": 10,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "sequence": 372,
+        "ms": 1795252989476,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 11,
+        "id": "repair-retest-11",
+        "name": "test.execute",
+        "outputDigest": "sha256:b7a52530ce8dafb68cb3266ed597463ddd300f508972b4297d497ef4303a49c1",
+        "outputChars": 752,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".",
+        "exitCode": 0,
+        "host_scheduled": true,
+        "upstream_requests_with_test_receipt": [
+          3
+        ]
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "files_changed_from_checkpoint": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "87766d4ee80009819c563cbbe15962cb998ab508e38b7a423b8b09b75db56ba3",
+    "patch_bytes": 1396,
+    "native_terminal": [
+      {
+        "kind": "verification.completed",
+        "seq": 958,
+        "ms": 1795252993600,
+        "attempt": 1,
+        "status": "UNCERTAIN",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      },
+      {
+        "kind": "run.failed",
+        "seq": 961,
+        "ms": 1795252995282,
+        "code": "PLAN_STEP_FAILED",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 96.12914562225342
+    },
+    "cli_deadline": {
+      "start_ms": 1795252934002,
+      "duration_s": 408,
+      "deadline_s": 1795253342.002
+    },
+    "last_native_event_s_after_red": 62.209,
+    "native_checkpoint": {
+      "wrong_tree": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+      "warm_rounds": 8,
+      "wrong_edit_sequence": 127,
+      "failed_retest_sequence": 193,
+      "first_request_bytes": 54973,
+      "first_request_sha256": "b1df0e710eb0e7c0d666475e8ee391dcaec69d43c7015d40202875cd752abde2",
+      "baseline_feedback": {
+        "status": "rejected",
+        "operands": [
+          "sha256:c42e57be1d7f8ed12046dc76d27b40f79c1c16eecfdb30e8fc3ad1b43fb2c76f",
+          "sha256:d2574c0182bbc63124784559f1f99b4f2a8ee60aa545dc600c2069ba6eeae063"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 260,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "exists"
+              ],
+              "before": false,
+              "after": true
+            },
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": {
+                "missing": true
+              },
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1
+      },
+      "proactive_preview_seq": 215,
+      "red_to_preview_exit_s": 17.421
+    },
+    "proactive_previews": [
+      {
+        "sequence": 215,
+        "ms": 1795252951423,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 9,
+        "id": "repair/9/baseline-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:f4eb36fa4503c1e15222e707ea7a588bb14d47bee6b1cbe3636aa779c4e31c10",
+        "baselinePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-qITxRP",
+        "exitCode": 1,
+        "paid_requests_before_completion": 0
+      }
+    ],
+    "candidate_previews": [
+      {
+        "sequence": 338,
+        "ms": 1795252972764,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 10,
+        "id": "call_00_YZb9J0xJCMd1TNTskVLE2999/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:8a09d2ea6380b39e81492a94399e31430d0c2420526a346574b5379281f5b0a6",
+        "candidatePreview": true,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-jPr7rk",
+        "exitCode": 0
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "round": 10,
+        "preview_seq": 338,
+        "preview_cwd": ".dda-candidate-jPr7rk",
+        "preview_exit_code": 0,
+        "parent_id": "call_00_YZb9J0xJCMd1TNTskVLE2999",
+        "write_seq": 351,
+        "write_ok": true,
+        "applied_after_preview": true,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [],
+        "upstream_requests_with_receipt": [],
+        "denied_attempts_with_receipt": []
+      }
+    ],
+    "other_workspace_tests": [],
+    "continuation_write_results": [
+      {
+        "sequence": 351,
+        "ms": 1795252977153,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 10,
+        "id": "call_00_YZb9J0xJCMd1TNTskVLE2999",
+        "name": "file.patch",
+        "outputDigest": "sha256:2d75c751c218b26134cf2cf9101f466ef763e018d1cde467cd60c96d17a84967",
+        "outputChars": 1924,
+        "ok": true,
+        "path": "runtime/src/git-observer.mjs"
+      }
+    ],
+    "first_paid_round": 9,
+    "baseline_evidence_delivered_in": [
+      1,
+      2
+    ],
+    "last_rejection_note_delivered_in": []
+  },
+  {
+    "run": "dda-3",
+    "live_requests": 10,
+    "live_bytes": 703581,
+    "completion_charged": 4459,
+    "upstream_models": [
+      "deepseek-flash"
+    ],
+    "budget_denials": [],
+    "first_second_patch": {
+      "kind": "tool.result",
+      "seq": 881,
+      "ms": 1795253056312,
+      "round": 17,
+      "attempt": 1,
+      "name": "file.patch",
+      "ok": true,
+      "path": "runtime/src/git-observer.mjs"
+    },
+    "target_retests": [
+      {
+        "sequence": 900,
+        "ms": 1795253066920,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 18,
+        "id": "repair-retest-18",
+        "name": "test.execute",
+        "outputDigest": "sha256:3138008cfe169683c5eb84d40eb52939003994728ca43fff5a43893ddc4d0144",
+        "outputChars": 754,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".",
+        "exitCode": 0,
+        "host_scheduled": true,
+        "upstream_requests_with_test_receipt": [
+          10
+        ]
+      }
+    ],
+    "grade": {
+      "external": [
+        {
+          "passed": true,
+          "name": "worktree_refresh"
+        },
+        {
+          "passed": true,
+          "name": "staged_change"
+        },
+        {
+          "passed": true,
+          "name": "config_change"
+        }
+      ],
+      "original": [
+        {
+          "passed": true,
+          "name": "GitObserver returns redacted stable repository state and detects changes"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints detect config changes outside an execution scope"
+        },
+        {
+          "passed": true,
+          "name": "Git metadata fingerprints ignore .git/index stat-cache refresh and FETCH_HEAD updates while catching staged index changes"
+        }
+      ],
+      "immutable_test": true,
+      "green": true
+    },
+    "files_changed_from_checkpoint": [
+      "runtime/src/git-observer.mjs"
+    ],
+    "patch_sha256": "d2222b4b4cb9d52af6c5417e2ac5c7b9901d91c69d52f43d824afb160a7eea92",
+    "patch_bytes": 2744,
+    "native_terminal": [
+      {
+        "kind": "verification.completed",
+        "seq": 1575,
+        "ms": 1795253072167,
+        "attempt": 1,
+        "status": "UNCERTAIN",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      },
+      {
+        "kind": "run.failed",
+        "seq": 1579,
+        "ms": 1795253074300,
+        "code": "PLAN_STEP_FAILED",
+        "failureCodes": [
+          "BUILD_TEST_VERIFIER_UNAVAILABLE"
+        ],
+        "nextAction": "REVIEW_BUILD_TEST_CONCLUSIONS"
+      }
+    ],
+    "cli": {
+      "rc": 1,
+      "wall": 175.6149890422821
+    },
+    "cli_deadline": {
+      "start_ms": 1795252934573,
+      "duration_s": 408,
+      "deadline_s": 1795253342.573
+    },
+    "last_native_event_s_after_red": 141.12,
+    "native_checkpoint": {
+      "wrong_tree": "b68919dedcc41e605cf358b711654b1b31e08840f41f82feb0708b9e1d6f9c13",
+      "warm_rounds": 8,
+      "wrong_edit_sequence": 127,
+      "failed_retest_sequence": 193,
+      "first_request_bytes": 54973,
+      "first_request_sha256": "ddaf11bb7dc94253002ebdbc60b9c883f0a517f831d7b0ed62f420a31231113a",
+      "baseline_feedback": {
+        "status": "rejected",
+        "operands": [
+          "sha256:c42e57be1d7f8ed12046dc76d27b40f79c1c16eecfdb30e8fc3ad1b43fb2c76f",
+          "sha256:d2574c0182bbc63124784559f1f99b4f2a8ee60aa545dc600c2069ba6eeae063"
+        ],
+        "producerInputs": {
+          "path": "runtime/src/git-observer.mjs",
+          "line": 260,
+          "field": "metadataDigest",
+          "differences": [
+            {
+              "path": [
+                "FETCH_HEAD",
+                "exists"
+              ],
+              "before": false,
+              "after": true
+            },
+            {
+              "path": [
+                "FETCH_HEAD",
+                "type"
+              ],
+              "before": {
+                "missing": true
+              },
+              "after": "file"
+            }
+          ],
+          "truncated": false
+        },
+        "observations": 1,
+        "exitCode": 1
+      },
+      "proactive_preview_seq": 214,
+      "red_to_preview_exit_s": 16.04
+    },
+    "proactive_previews": [
+      {
+        "sequence": 214,
+        "ms": 1795252950613,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 9,
+        "id": "repair/9/baseline-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:deccce1ef2a0d78ea16a6cfac4e4ccf95345bf3287b876e5dceffba303b8ccba",
+        "baselinePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-zeV5CZ",
+        "exitCode": 1,
+        "paid_requests_before_completion": 0
+      }
+    ],
+    "candidate_previews": [
+      {
+        "sequence": 373,
+        "ms": 1795252973840,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 11,
+        "id": "call_00_cOlXrgJ7LLvmXE8cC9Eg5395/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:2a69364f6977d19f8afd3027012ed2fbd75edabbf05981164b7829854e1fbc42",
+        "candidatePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-8etyWJ",
+        "exitCode": 1
+      },
+      {
+        "sequence": 424,
+        "ms": 1795252992250,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 12,
+        "id": "call_00_oFE48ai57YW7jEzaSfTM5891/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:a98533ed434452e5003f6093a75a5d4faf0e354e56f744d4f41abb4d5f0adcce",
+        "candidatePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-XeStC1",
+        "exitCode": 1
+      },
+      {
+        "sequence": 474,
+        "ms": 1795253006650,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 13,
+        "id": "call_00_1O9Z7csQ8CrZC2QdbXql3856/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:b61a9ea7a61a1faca23e0a8da6c491780f91664458e734f64eea0510dd866b55",
+        "candidatePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-ShadK3",
+        "exitCode": 1
+      },
+      {
+        "sequence": 589,
+        "ms": 1795253020309,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 14,
+        "id": "call_00_n4xrwuxGj3QN7FFB5HLs9310/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:33d9b27fe9d3cd5fbf272a925e98fda723236878c0cbb188c467f0b76071032e",
+        "candidatePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-5BoscY",
+        "exitCode": 1
+      },
+      {
+        "sequence": 801,
+        "ms": 1795253037025,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "id": "call_00_kOzc4azpPCl79o8j8iEe3817/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:b96207ed9810d437be89deb813a6a8ded73bfb2a4d23b8303c690fa8c02dbc8c",
+        "candidatePreview": true,
+        "ok": false,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-dj9hVU",
+        "exitCode": 1
+      },
+      {
+        "sequence": 868,
+        "ms": 1795253053187,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 17,
+        "id": "call_00_jX8Z0cOHPKjusq77lZSu9829/candidate-test",
+        "name": "test.execute",
+        "outputDigest": "sha256:6355c5b0dfe1d0ab22438b321efe7f6f37cfde435aac25d4938e16527f869b1e",
+        "candidatePreview": true,
+        "ok": true,
+        "command": "node",
+        "args": [
+          "--test",
+          "runtime/test/git-audit.test.mjs"
+        ],
+        "cwd": ".dda-candidate-Oif3Dn",
+        "exitCode": 0
+      }
+    ],
+    "candidate_verdicts": [
+      {
+        "round": 11,
+        "preview_seq": 373,
+        "preview_cwd": ".dda-candidate-8etyWJ",
+        "preview_exit_code": 1,
+        "parent_id": "call_00_cOlXrgJ7LLvmXE8cC9Eg5395",
+        "write_seq": 376,
+        "write_ok": false,
+        "applied_after_preview": false,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [
+          "7b075b2a7ed437d39083114c74100c6a1d94e61670515d1283d0a4c1c74c6862"
+        ],
+        "upstream_requests_with_receipt": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "denied_attempts_with_receipt": [],
+        "captured_verdict": {
+          "status": "rejected",
+          "operands": [
+            "sha256:9de8a334385d6ba10ef8ab036d23c0785ae9bcc15f600f9e74135f5596cd6942",
+            "sha256:54f446b0c28d4ca6bbfa15bc41e9fbc20c96561b3b2e2fa5927ac02472a0055b"
+          ],
+          "producerInputs": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 264,
+            "field": "metadataDigest",
+            "differences": [
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "exists"
+                ],
+                "before": false,
+                "after": true
+              }
+            ],
+            "truncated": false
+          },
+          "observations": 1,
+          "exitCode": 1,
+          "repeatCount": 1
+        },
+        "verdict_delivered": true
+      },
+      {
+        "round": 12,
+        "preview_seq": 424,
+        "preview_cwd": ".dda-candidate-XeStC1",
+        "preview_exit_code": 1,
+        "parent_id": "call_00_oFE48ai57YW7jEzaSfTM5891",
+        "write_seq": 427,
+        "write_ok": false,
+        "applied_after_preview": false,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [
+          "12c9f8793412d42881f152afdb7c6b43ae671a15241aaf3b6ebd69677284723a"
+        ],
+        "upstream_requests_with_receipt": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "denied_attempts_with_receipt": [],
+        "captured_verdict": {
+          "status": "rejected",
+          "operands": [
+            "sha256:6a436b12a3cc773fd023e4cc76237a653abe373a28eb799b35e834d879972afc",
+            "sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d"
+          ],
+          "producerInputs": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 265,
+            "field": "metadataDigest",
+            "differences": [
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "exists"
+                ],
+                "before": false,
+                "after": {
+                  "missing": true
+                }
+              },
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "volatile"
+                ],
+                "before": {
+                  "missing": true
+                },
+                "after": true
+              }
+            ],
+            "truncated": false
+          },
+          "observations": 1,
+          "exitCode": 1,
+          "repeatCount": 1
+        },
+        "verdict_delivered": true
+      },
+      {
+        "round": 13,
+        "preview_seq": 474,
+        "preview_cwd": ".dda-candidate-ShadK3",
+        "preview_exit_code": 1,
+        "parent_id": "call_00_1O9Z7csQ8CrZC2QdbXql3856",
+        "write_seq": 477,
+        "write_ok": false,
+        "applied_after_preview": false,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [
+          "3e15be431a239a87179c1ccee6ae4bbc7b4a057105468bae96ecdf138cad2253"
+        ],
+        "upstream_requests_with_receipt": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "denied_attempts_with_receipt": [],
+        "captured_verdict": {
+          "status": "rejected",
+          "operands": [
+            "sha256:7c80638c5da942be788035b2b043cf7b09a41a7b99a7fc5a93b072f8431f14dc",
+            "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377"
+          ],
+          "producerInputs": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 264,
+            "field": "metadataDigest",
+            "differences": [
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "exists"
+                ],
+                "before": false,
+                "after": {
+                  "missing": true
+                }
+              }
+            ],
+            "truncated": false
+          },
+          "observations": 1,
+          "exitCode": 1,
+          "repeatCount": 1
+        },
+        "verdict_delivered": true
+      },
+      {
+        "round": 14,
+        "preview_seq": 589,
+        "preview_cwd": ".dda-candidate-5BoscY",
+        "preview_exit_code": 1,
+        "parent_id": "call_00_n4xrwuxGj3QN7FFB5HLs9310",
+        "write_seq": 592,
+        "write_ok": false,
+        "applied_after_preview": false,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [
+          "2ab56ef81c8fc55add1773154ab08fe5473ed1403cf9dbc6615b25547981d00e"
+        ],
+        "upstream_requests_with_receipt": [
+          7,
+          8,
+          9,
+          10
+        ],
+        "denied_attempts_with_receipt": [],
+        "captured_verdict": {
+          "status": "rejected",
+          "operands": [
+            "sha256:7c80638c5da942be788035b2b043cf7b09a41a7b99a7fc5a93b072f8431f14dc",
+            "sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377"
+          ],
+          "producerInputs": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 264,
+            "field": "metadataDigest",
+            "differences": [
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "exists"
+                ],
+                "before": false,
+                "after": {
+                  "missing": true
+                }
+              }
+            ],
+            "truncated": false
+          },
+          "observations": 1,
+          "exitCode": 1,
+          "repeatCount": 2
+        },
+        "verdict_delivered": true
+      },
+      {
+        "round": 16,
+        "preview_seq": 801,
+        "preview_cwd": ".dda-candidate-dj9hVU",
+        "preview_exit_code": 1,
+        "parent_id": "call_00_kOzc4azpPCl79o8j8iEe3817",
+        "write_seq": 804,
+        "write_ok": false,
+        "applied_after_preview": false,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [
+          "9fe5008245ac343eab5573a5c21dd6bcd6ee4df86dcfa6b05f7f26f1fe6c74b7"
+        ],
+        "upstream_requests_with_receipt": [
+          9,
+          10
+        ],
+        "denied_attempts_with_receipt": [],
+        "captured_verdict": {
+          "status": "rejected",
+          "operands": [
+            "sha256:f0e90811951056b208cc06ea5e2062e818584c85f701a25d6c84f012b3f32bf2",
+            "sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d"
+          ],
+          "producerInputs": {
+            "path": "runtime/src/git-observer.mjs",
+            "line": 266,
+            "field": "metadataDigest",
+            "differences": [
+              {
+                "path": [
+                  "FETCH_HEAD",
+                  "volatile"
+                ],
+                "before": {
+                  "missing": true
+                },
+                "after": true
+              }
+            ],
+            "truncated": false
+          },
+          "observations": 1,
+          "exitCode": 1,
+          "repeatCount": 1
+        },
+        "verdict_delivered": true
+      },
+      {
+        "round": 17,
+        "preview_seq": 868,
+        "preview_cwd": ".dda-candidate-Oif3Dn",
+        "preview_exit_code": 0,
+        "parent_id": "call_00_jX8Z0cOHPKjusq77lZSu9829",
+        "write_seq": 881,
+        "write_ok": true,
+        "applied_after_preview": true,
+        "tracked_tool_feedback": "rejected-candidate message",
+        "observed_receipt_hashes": [],
+        "upstream_requests_with_receipt": [],
+        "denied_attempts_with_receipt": []
+      }
+    ],
+    "other_workspace_tests": [],
+    "continuation_write_results": [
+      {
+        "sequence": 376,
+        "ms": 1795252973898,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 11,
+        "id": "call_00_cOlXrgJ7LLvmXE8cC9Eg5395",
+        "name": "file.patch",
+        "ok": false,
+        "errorCode": "CANDIDATE_CHECK_FAILED",
+        "message": "Replacement matched. The assertion ran and failed; revise the behavior against the unchanged source. {\"status\":\"rejected\",\"operands\":[\"sha256:9de8a334385d6ba10ef8ab036d23c0785ae9bcc15f600f9e74135f5596cd6942\",\"sha256:54f446b0c28d4ca6bbfa15bc41e9fbc20c96561b3b2e2fa5927ac02472a0055b\"],\"producerInputs\":{\"path\":\"runtime/src/git-observer.mjs\",\"line\":264,\"field\":\"metadataDigest\",\"differences\":[{\"path\":[\"FETCH_HEAD\",\"exists\"],\"before\":false,\"after\":true}],\"truncated\":false},\"observations\":1,\"exitCode\":1,\"repeatCount\":1}",
+        "path": "runtime/src/git-observer.mjs"
+      },
+      {
+        "sequence": 427,
+        "ms": 1795252992307,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 12,
+        "id": "call_00_oFE48ai57YW7jEzaSfTM5891",
+        "name": "file.patch",
+        "ok": false,
+        "errorCode": "CANDIDATE_CHECK_FAILED",
+        "message": "Replacement matched. The assertion ran and failed; revise the behavior against the unchanged source. {\"status\":\"rejected\",\"operands\":[\"sha256:6a436b12a3cc773fd023e4cc76237a653abe373a28eb799b35e834d879972afc\",\"sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d\"],\"producerInputs\":{\"path\":\"runtime/src/git-observer.mjs\",\"line\":265,\"field\":\"metadataDigest\",\"differences\":[{\"path\":[\"FETCH_HEAD\",\"exists\"],\"before\":false,\"after\":{\"missing\":true}},{\"path\":[\"FETCH_HEAD\",\"volatile\"],\"before\":{\"missing\":true},\"after\":true}],\"truncated\":false},\"observations\":1,\"exitCode\":1,\"repeatCount\":1}",
+        "path": "runtime/src/git-observer.mjs"
+      },
+      {
+        "sequence": 477,
+        "ms": 1795253006703,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 13,
+        "id": "call_00_1O9Z7csQ8CrZC2QdbXql3856",
+        "name": "file.patch",
+        "ok": false,
+        "errorCode": "CANDIDATE_CHECK_FAILED",
+        "message": "Replacement matched. The assertion ran and failed; revise the behavior against the unchanged source. {\"status\":\"rejected\",\"operands\":[\"sha256:7c80638c5da942be788035b2b043cf7b09a41a7b99a7fc5a93b072f8431f14dc\",\"sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377\"],\"producerInputs\":{\"path\":\"runtime/src/git-observer.mjs\",\"line\":264,\"field\":\"metadataDigest\",\"differences\":[{\"path\":[\"FETCH_HEAD\",\"exists\"],\"before\":false,\"after\":{\"missing\":true}}],\"truncated\":false},\"observations\":1,\"exitCode\":1,\"repeatCount\":1}",
+        "path": "runtime/src/git-observer.mjs"
+      },
+      {
+        "sequence": 592,
+        "ms": 1795253020356,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 14,
+        "id": "call_00_n4xrwuxGj3QN7FFB5HLs9310",
+        "name": "file.patch",
+        "ok": false,
+        "errorCode": "CANDIDATE_CHECK_FAILED",
+        "message": "Replacement matched. The assertion ran and failed; revise the behavior against the unchanged source. {\"status\":\"rejected\",\"operands\":[\"sha256:7c80638c5da942be788035b2b043cf7b09a41a7b99a7fc5a93b072f8431f14dc\",\"sha256:b9a7475352ff2d0dee2c3829b2ce52430347a17fb78ea014429b677769346377\"],\"producerInputs\":{\"path\":\"runtime/src/git-observer.mjs\",\"line\":264,\"field\":\"metadataDigest\",\"differences\":[{\"path\":[\"FETCH_HEAD\",\"exists\"],\"before\":false,\"after\":{\"missing\":true}}],\"truncated\":false},\"observations\":1,\"exitCode\":1,\"repeatCount\":2}",
+        "path": "runtime/src/git-observer.mjs"
+      },
+      {
+        "sequence": 804,
+        "ms": 1795253037073,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 16,
+        "id": "call_00_kOzc4azpPCl79o8j8iEe3817",
+        "name": "file.patch",
+        "ok": false,
+        "errorCode": "CANDIDATE_CHECK_FAILED",
+        "message": "Replacement matched. The assertion ran and failed; revise the behavior against the unchanged source. {\"status\":\"rejected\",\"operands\":[\"sha256:f0e90811951056b208cc06ea5e2062e818584c85f701a25d6c84f012b3f32bf2\",\"sha256:467a9556a22c0b95078ea4375b455fc71b3be8e6ff95938346b56a894ea8145d\"],\"producerInputs\":{\"path\":\"runtime/src/git-observer.mjs\",\"line\":266,\"field\":\"metadataDigest\",\"differences\":[{\"path\":[\"FETCH_HEAD\",\"volatile\"],\"before\":{\"missing\":true},\"after\":true}],\"truncated\":false},\"observations\":1,\"exitCode\":1,\"repeatCount\":1}",
+        "path": "runtime/src/git-observer.mjs"
+      },
+      {
+        "sequence": 881,
+        "ms": 1795253056312,
+        "stepId": "execute",
+        "attempt": 1,
+        "round": 17,
+        "id": "call_00_jX8Z0cOHPKjusq77lZSu9829",
+        "name": "file.patch",
+        "outputDigest": "sha256:6f17333ca2e8636e53f17ad07458e7832357bfefa3a89e937803db1d0e4600e1",
+        "outputChars": 5383,
+        "ok": true,
+        "path": "runtime/src/git-observer.mjs"
+      }
+    ],
+    "first_paid_round": 9,
+    "baseline_evidence_delivered_in": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "last_rejection_note_delivered_in": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  }
+]

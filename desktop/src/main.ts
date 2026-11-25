@@ -35,6 +35,7 @@ import { VERIFICATION_FAILURE_REASON, isConversationTimelineItem } from './domai
 import { buildTestVerificationFailure, planFailureMessage } from './domain/plan-failure';
 import { decisionsForRun, hasRouteDecisionRecord, isBlockedRouteSelection, migrateLegacyPinnedModel, routeFailureNotice, routeFailureThread, createPinNoticeSession, storePinMigrationNotice, threadRuntimeRunId, type RouteFailureNotice } from './domain/routing-settings';
 import { TASK_COMPOSER_MODEL_STORAGE_KEY, composerChoiceBindsSession, readTaskComposerModels, resolveTaskComposerModel } from './domain/task-composer-model';
+import { requirementsSummary } from './domain/task-requirements';
 import { DEFAULT_CONTEXT_LIMIT_TOKENS, MAX_CONTEXT_LIMIT_TOKENS, MIN_CONTEXT_LIMIT_TOKENS, parseContextLimitTokens, resolveContextLimitTokens } from './domain/model-context-limits';
 import './styles.css';
 import { removeDeletedRunTimeline } from './domain/projection-status';
@@ -64,7 +65,21 @@ import { sidebarProjectIdForCwd, sidebarProjectIdForThread } from './domain/proj
 import { deduplicateWorkspaceRoots, dropEphemeralProjectBookmarks, isEphemeralWorkspaceRoot, mainCheckoutForTaskWorktree, mergeProjectBookmarksByWorkspaceRoot, pruneAutoPollutedBookmarks, remapProjectArchiveIds, sameProjectWorkspace, sameWorkspaceRoot, workspaceRootForDisplay, workspaceThreadOptions } from './domain/workspace';
 import { reconciledContextsForTask } from './domain/role-activity';
 import { isUncertainSideEffectFailure, threadRecoveryBlock } from './domain/thread-recovery';
-import { commandLineForToolEvent, exitCodeForToolEvent, exitCodeLabelForToolEvent, outputTailForToolEvent, pathBadgeText, pathForToolEvent, WORKSPACE_REASON_LABELS } from './domain/tool-command';
+import {
+  TOOL_ACTION_LABELS,
+  WORKSPACE_REASON_LABELS,
+  commandLineForToolEvent,
+  exitCodeForToolEvent,
+  exitCodeLabelForToolEvent,
+  groupConversationTimelineEntries,
+  normalizeToolDisplayKey,
+  outputTailForToolEvent,
+  pathForToolEvent,
+  sameTimelineRenderEntry,
+  toolStepOutputMeta,
+  toolStepTargetBadge,
+  type TimelineRenderEntry
+} from './domain/tool-command';
 import { TaskSessionController, newestTaskFirst, sessionIsPristineDraft, sessionStatusText, sessionStillExecuting, sessionThreadActivity, type ScopedRunState, type TaskSession } from './domain/task-session';
 import { reconcileUnseenTasks, taskAttentionLabel, taskAttentionState, type AttentionObservation, type AttentionSnapshot } from './domain/task-attention';
 import { appendValidatedImages, DEFAULT_IMAGE_ONLY_PROMPT, extractClipboardFiles, formatAttachmentSize, MAX_COMPOSER_IMAGE_BYTES, MAX_COMPOSER_IMAGES, MAX_COMPOSER_TOTAL_IMAGE_BYTES, nextImageAttachmentId, resolveImageMediaType, type ComposerImageAttachment } from './domain/image-attachments';
@@ -159,12 +174,39 @@ const pauseTranscriptFollow = (transcript: HTMLElement): void => {
   transcriptScrollTop = transcript.scrollTop;
   transcriptRestores.delete(transcript);
 };
+const nestedTranscriptScrollerSelector = [
+  '.timeline-tool-group-list',
+  '.timeline-thinking-body',
+  '.timeline-step-details pre',
+  '.file-preview pre'
+].join(',');
+const transcriptScrollMax = (transcript: HTMLElement): number =>
+  Math.max(0, transcript.scrollHeight - transcript.clientHeight);
 document.addEventListener('wheel', event => {
-  const transcript = event.target instanceof Element ? event.target.closest<HTMLElement>('.transcript') : null;
-  if (transcript && event.deltaY < 0 && !event.ctrlKey && transcript.scrollHeight > transcript.clientHeight) {
-    pauseTranscriptFollow(transcript);
-  }
-}, { capture: true, passive: true });
+  if (event.ctrlKey || event.deltaY === 0) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const transcript = target?.closest<HTMLElement>('.transcript');
+  if (!transcript || transcript.scrollHeight <= transcript.clientHeight) return;
+
+  if (event.deltaY < 0) pauseTranscriptFollow(transcript);
+
+  // Expanded tool groups and long detail blocks have their own scroll port.
+  // Once that port reaches an edge, keep the wheel gesture moving through the
+  // conversation instead of leaving the outer transcript apparently stuck.
+  const nested = target?.closest<HTMLElement>(nestedTranscriptScrollerSelector);
+  if (!nested || nested.scrollHeight <= nested.clientHeight) return;
+  const atTop = nested.scrollTop <= transcriptBottomTolerance;
+  const atBottom = nested.scrollTop + nested.clientHeight >= nested.scrollHeight - transcriptBottomTolerance;
+  const crossesTop = event.deltaY < 0 && atTop;
+  const crossesBottom = event.deltaY > 0 && atBottom;
+  if (!crossesTop && !crossesBottom) return;
+
+  const previousTop = transcript.scrollTop;
+  const nextTop = Math.min(transcriptScrollMax(transcript), Math.max(0, previousTop + event.deltaY));
+  if (nextTop === previousTop) return;
+  event.preventDefault();
+  transcript.scrollTop = nextTop;
+}, { capture: true, passive: false });
 document.addEventListener('pointerdown', event => {
   const transcript = event.target;
   if (!(transcript instanceof HTMLElement) || !transcript.matches('.transcript') || event.button !== 0) return;
@@ -2085,30 +2127,8 @@ const statusDisplayLabel = (value: unknown, fallback = '状态未读取'): strin
 };
 
 const toolDisplayLabel = (value: unknown): string => {
-  const raw = typeof value === 'string' ? value.toLowerCase() : '';
-  // Kernel ops are the same workspace actions with a `kernel.` prefix and
-  // underscores (`kernel.workspace_focus`). Show them as the workspace tool.
-  const key = raw.startsWith('kernel.') ? raw.slice('kernel.'.length).replaceAll('_', '.') : raw;
-  const labels: Record<string, string> = {
-    'workspace.list': '查看工作区目录',
-    'workspace.read': '读取工作区文件',
-    'workspace.focus': '定位源码片段',
-    'workspace.snapshot': '记录工作区快照',
-    'shell.execute': '执行命令',
-    'file.read': '读取文件',
-    'file.write': '写入文件',
-    'file.patch': '修改文件',
-    'test.execute': '运行测试',
-    'network.request': '发送网络请求',
-    'web.search': '搜索网页',
-    'web.fetch': '读取网页',
-    'browser.open': '打开网页',
-    'memory.search': '搜索记忆',
-    'memory.write': '保存记忆',
-    'kernel.exec': '代码 cell',
-    'user.clarify': '询问你'
-  };
-  return labels[key] ?? humanizeCode(value, '受控工具');
+  const key = normalizeToolDisplayKey(value);
+  return TOOL_ACTION_LABELS[key] ?? humanizeCode(value, '受控工具');
 };
 
 const reasonDisplayLabel = (value: unknown): string => {
@@ -3526,6 +3546,83 @@ const processResultHtml = (item: TimelineItem): string => {
   return exit || output ? `<div class="timeline-process-result">${exit}${output}</div>` : '';
 };
 
+const toolStepRowHtml = (item: TimelineItem, grouped: boolean): string => {
+  const toolName = item.toolName ?? 'tool';
+  const toolLabel = toolDisplayLabel(toolName);
+  const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
+  const awaitingApproval = isRunning && Boolean(item.awaitingApproval);
+  const isSuccess = item.status === 'COMPLETE';
+  const isFailed = item.status === 'ERROR';
+
+  if (!grouped && toolName === 'kernel.exec') {
+    const targetInfo = toolStepTargetBadge(item);
+    return `
+        <article class="timeline-item timeline-tool-step timeline-tool-cell" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(toolName)}">
+          <div class="timeline-step-indicator">
+            <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
+          </div>
+          <div class="timeline-step-content">
+            ${sandboxBadgeHtml(item)}
+            ${unknownJournalHtml(item)}
+            ${cellExecTimelineHtml(item.rows)}
+            <div class="timeline-step-header">
+              <strong class="timeline-step-title">${awaitingApproval ? `等待批准 ${escapeHtml(toolLabel)}` : item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在 ' : isSuccess ? '已完成 ' : isFailed ? '失败 ' : ''}${escapeHtml(toolLabel)}`}</strong>
+              ${targetInfo ? `<code class="timeline-step-target">${escapeHtml(targetInfo)}</code>` : ''}
+              <time>${formatTime(item.createdAtMs)}</time>
+            </div>
+            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : isFailed && item.body ? `<div class="timeline-step-summary timeline-step-error">${escapeHtml(item.body)}</div>` : ''}
+            <span class="timeline-body sr-only">${escapeHtml(item.body)}</span>
+            ${processResultHtml(item)}
+          </div>
+        </article>`;
+  }
+
+  const targetInfo = toolStepTargetBadge(item);
+  const outputMeta = toolStepOutputMeta(item);
+  const stepIcon = awaitingApproval
+    ? 'circle-alert'
+    : isRunning
+      ? 'loader-circle'
+      : isSuccess
+        ? 'check-circle-2'
+        : isFailed
+          ? 'x-circle'
+          : timelineIcon(item);
+  const titleText = awaitingApproval
+    ? `等待批准 · ${toolLabel}`
+    : isRunning
+      ? (toolLabel.startsWith('正在') ? toolLabel : `正在${toolLabel}`)
+      : isFailed
+        ? `失败 · ${toolLabel}`
+        : toolLabel;
+  const showFullCommandToggle = Boolean(
+    item.commandText && (item.commandText.includes('\n') || item.commandText.trim().length > 60)
+  );
+  const tag = grouped ? 'div' : 'article';
+  const rowClass = grouped ? 'timeline-tool-row' : 'timeline-item timeline-tool-step';
+  const roleAttr = grouped ? ' role="listitem"' : '';
+
+  return `
+        <${tag} class="${rowClass}"${roleAttr} data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(toolName)}">
+          <div class="timeline-tool-line">
+            <span class="timeline-step-indicator" aria-hidden="true">
+              <i data-lucide="${stepIcon}" class="${isRunning && !awaitingApproval ? 'spin' : ''}"></i>
+            </span>
+            <span class="timeline-step-title">${escapeHtml(titleText)}</span>
+            ${targetInfo ? `<code class="timeline-step-target">${escapeHtml(targetInfo)}</code>` : ''}
+            ${outputMeta ? `<span class="timeline-step-meta">${escapeHtml(outputMeta)}</span>` : ''}
+            <time class="timeline-step-time">${formatTime(item.createdAtMs)}</time>
+          </div>
+          <span class="timeline-body sr-only">${escapeHtml(item.body)}</span>
+          ${awaitingApproval ? '<div class="timeline-step-summary timeline-step-approval">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : isFailed && item.body ? `<div class="timeline-step-summary timeline-step-error">${escapeHtml(item.body)}</div>` : ''}
+          ${processResultHtml(item)}
+          ${showFullCommandToggle ? `<details class="timeline-step-details" data-detail-key="cmd:${escapeHtml(item.itemId)}">
+            <summary>查看${item.commandText!.includes('\n') ? '命令详情' : '完整命令'}</summary>
+            <pre><code>${escapeHtml(item.commandText!)}</code></pre>
+          </details>` : ''}
+        </${tag}>`;
+};
+
 const timelineItemHtml = (item: TimelineItem): string => {
   // Cursor/Codex-style collapsible model thinking block
   if (item.thinking) {
@@ -3537,7 +3634,7 @@ const timelineItemHtml = (item: TimelineItem): string => {
       : `已${baseLabel}${duration ? `（${duration}）` : ''}`;
     return `
         <article class="timeline-item timeline-thinking-item" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}">
-          <details class="timeline-thinking-details" ${isThinking ? 'open' : ''}>
+          <details class="timeline-thinking-details" data-auto-open="${isThinking ? 'true' : 'false'}" ${isThinking ? 'open' : ''}>
             <summary class="timeline-thinking-summary">
               <span class="timeline-thinking-icon"><i data-lucide="brain"></i></span>
               <span class="timeline-thinking-label">${escapeHtml(headerText)}</span>
@@ -3549,47 +3646,9 @@ const timelineItemHtml = (item: TimelineItem): string => {
         </article>`;
   }
 
-  // Codex-style tool cards: only when producer set toolName (no title/evidence heuristics).
+  // Codex-style compact tool row: only when producer set toolName.
   if (item.toolName) {
-    const toolLabel = toolDisplayLabel(item.toolName);
-    const isRunning = item.status === 'STREAMING' || item.status === 'PENDING';
-    const awaitingApproval = isRunning && item.awaitingApproval;
-    const isSuccess = item.status === 'COMPLETE';
-    const isFailed = item.status === 'ERROR';
-    
-    // 提取关键信息：文件名或命令 — structured fields only; a body-text
-    // filename regex produced misleading badges (e.g. cache-dir names from the
-    // failure message's available-paths hint), so no body fallback here.
-    let targetInfo = '';
-    if (item.commandText) {
-      const cmd = item.commandText.split('\n')[0].trim();
-      targetInfo = cmd.length > 60 ? cmd.substring(0, 60) + '...' : cmd;
-    } else if (item.targetPath) {
-      targetInfo = pathBadgeText(item.targetPath);
-    }
-    
-    return `
-        <article class="timeline-item timeline-tool-step" data-status="${item.status}" data-item-id="${escapeHtml(item.itemId)}" data-tool-name="${escapeHtml(item.toolName)}">
-          <div class="timeline-step-indicator">
-            <i data-lucide="${isRunning ? 'loader-circle' : isSuccess ? 'check-circle-2' : isFailed ? 'x-circle' : timelineIcon(item)}" class="${isRunning ? 'spin' : ''}"></i>
-          </div>
-          <div class="timeline-step-content">
-            ${sandboxBadgeHtml(item)}
-            ${unknownJournalHtml(item)}
-            ${item.toolName === 'kernel.exec' ? cellExecTimelineHtml(item.rows) : ''}
-            <div class="timeline-step-header">
-              <strong class="timeline-step-title">${awaitingApproval ? `等待批准 ${escapeHtml(toolLabel)}` : item.cellState === 'STARTED' ? escapeHtml(CELLS_RUNNING_LABEL) : item.cellState === 'UNKNOWN' ? escapeHtml(CELLS_UNKNOWN_TITLE) : item.cellState === 'RESET' ? escapeHtml(CELLS_RESET_TITLE) : `${isRunning ? '正在' : isSuccess ? '已完成' : isFailed ? '失败' : ''} ${escapeHtml(toolLabel)}`}</strong>
-              ${targetInfo ? `<span class="timeline-step-target">${escapeHtml(targetInfo)}</span>` : ''}
-              <time>${formatTime(item.createdAtMs)}</time>
-            </div>
-            ${awaitingApproval ? '<div class="timeline-step-summary">等待你批准。请在审批卡片上选择「批准一次」或「拒绝操作」。</div>' : item.body && !isRunning && (isFailed || !targetInfo) ? `<div class="timeline-step-summary">${escapeHtml(item.body)}</div>` : ''}
-            ${processResultHtml(item)}
-            ${item.commandText ? `<details class="timeline-step-details">
-              <summary>查看${item.commandText.includes('\n') ? '命令详情' : '完整命令'}</summary>
-              <pre><code>${escapeHtml(item.commandText)}</code></pre>
-            </details>` : ''}
-          </div>
-        </article>`;
+    return toolStepRowHtml(item, false);
   }
   
   // Agent 回复和其他事件：保持原样式
@@ -3611,6 +3670,37 @@ const timelineItemHtml = (item: TimelineItem): string => {
             ${processResultHtml(item)}
             ${item.status === 'STREAMING' ? '<span class="stream-caret" aria-label="正在生成"></span>' : ''}
           </div>
+        </article>`;
+};
+
+const timelineEntryHtml = (entry: TimelineRenderEntry): string => {
+  if (entry.kind === 'item') return timelineItemHtml(entry.item);
+  const isRunning = entry.status === 'STREAMING';
+  const isWaiting = entry.awaitingApproval;
+  const isFailed = entry.status === 'ERROR';
+  const groupIcon = isWaiting
+    ? 'circle-alert'
+    : isRunning
+      ? 'loader-circle'
+      : isFailed
+        ? 'x-circle'
+        : 'square-terminal';
+  return `
+        <article class="timeline-item timeline-tool-group" data-status="${entry.status}" data-item-id="${escapeHtml(entry.key)}" data-tool-group-count="${entry.items.length}">
+          <details class="timeline-tool-group-details" data-auto-open="${entry.autoOpen ? 'true' : 'false'}" ${entry.autoOpen ? 'open' : ''}>
+            <summary class="timeline-tool-group-summary">
+              <span class="timeline-tool-group-icon" aria-hidden="true">
+                <i data-lucide="${groupIcon}" class="${isRunning ? 'spin' : ''}"></i>
+              </span>
+              <span class="timeline-tool-group-label">${escapeHtml(entry.summaryLabel)}</span>
+              ${entry.stepProgressLabel ? `<span class="timeline-tool-group-badge">${escapeHtml(entry.stepProgressLabel)}</span>` : ''}
+              <time class="timeline-tool-group-time">${formatTime(entry.latestAtMs)}</time>
+              <i class="timeline-tool-group-chevron" data-lucide="chevron-right" aria-hidden="true"></i>
+            </summary>
+            <div class="timeline-tool-group-list" role="list">
+              ${entry.items.map((item) => toolStepRowHtml(item, true)).join('')}
+            </div>
+          </details>
         </article>`;
 };
 
@@ -4250,11 +4340,14 @@ const refreshModeControls = (): void => {
   if (popLabel) setTextIfChanged(popLabel, full ? ACCESS_PILL_ON : ACCESS_PILL_OFF);
 };
 
-const timelineRowItem = new WeakMap<HTMLElement, TimelineItem>();
+const timelineRowItem = new WeakMap<HTMLElement, TimelineRenderEntry>();
 const timelineRowHooks = {
-  reuse: (element: HTMLElement, item: TimelineItem): boolean => timelineRowItem.get(element) === item,
-  bind: (element: HTMLElement, item: TimelineItem): void => { timelineRowItem.set(element, item); }
+  reuse: (element: HTMLElement, entry: TimelineRenderEntry): boolean =>
+    sameTimelineRenderEntry(timelineRowItem.get(element), entry),
+  bind: (element: HTMLElement, entry: TimelineRenderEntry): void => { timelineRowItem.set(element, entry); }
 };
+const groupHistoryEntries = (items: TimelineItem[]): TimelineRenderEntry[] =>
+  groupConversationTimelineEntries(items, { liveTaskActive: false, labelForTool: toolDisplayLabel });
 const ensureHistoryShell = (region: HTMLElement): HTMLElement => {
   let list = region.querySelector<HTMLElement>('[data-history-items]');
   if (!list) {
@@ -4277,10 +4370,11 @@ const parkHistoryTranscript = (): void => {
   const list = app?.querySelector<HTMLElement>('[data-history-items]');
   if (!view || view.loading || !list) return;
   const visible = model.timeline.filter(isConversationTimelineItem);
+  const entries = groupHistoryEntries(visible);
   const rows = [...list.children].filter((node): node is HTMLElement =>
     node instanceof HTMLElement && node.classList.contains('timeline-item'));
-  if (rows.length === 0 || rows.length !== visible.length) return;
-  if (rows.some((row, index) => row.dataset.key !== visible[index]?.itemId || timelineRowItem.get(row) !== visible[index])) return;
+  if (rows.length === 0 || rows.length !== entries.length) return;
+  if (rows.some((row, index) => row.dataset.key !== entries[index]?.key || !sameTimelineRenderEntry(timelineRowItem.get(row), entries[index]))) return;
   const holder = document.createElement('div');
   for (const row of rows) holder.appendChild(row);
   parkedHistory.delete(view.threadId);
@@ -4325,7 +4419,7 @@ const renderHistoryView = (timelineItems = model.timeline): void => {
   // but are not rendered. eventId / sequence / digest stay on the items for export and audit.
   const historyItems = region.querySelector<HTMLElement>('[data-history-items]')!;
   const visibleHistory = timelineItems.filter(isConversationTimelineItem);
-  syncKeyedList(historyItems, visibleHistory, (item) => item.itemId, timelineItemHtml, historyIcons, timelineRowHooks);
+  syncKeyedList(historyItems, groupHistoryEntries(visibleHistory), (entry) => entry.key, timelineEntryHtml, historyIcons, timelineRowHooks);
   const emptyHistory = historyItems.querySelector('[data-history-empty]');
   if (visibleHistory.length === 0 && !view.loading) {
     if (!emptyHistory) {
@@ -5077,7 +5171,10 @@ function attachLiveTimeline(container: HTMLElement): void {
     return;
   }
   if (!liveTimeline || liveTimeline.container !== container || !liveTimeline.human.isMountedIn(humanHost)) {
-    liveTimeline = { container, human: new LiveTimeline(humanHost, timelineItemHtml, historyIcons, followLiveTranscript) };
+    liveTimeline = {
+      container,
+      human: new LiveTimeline(humanHost, timelineEntryHtml, historyIcons, followLiveTranscript, showLiveTaskCopy, toolDisplayLabel)
+    };
   }
 }
 const liveTaskRunning = (): boolean => Boolean(model.activeRun && !clarificationRunEnded(model.activeRun.state));
@@ -6488,10 +6585,18 @@ const getInlineThinkState = (key: string): ThinkingStreamState => {
 };
 
 document.addEventListener('click', (event) => {
-  const summary = (event.target as Element | null)?.closest('.timeline-thinking-summary');
-  if (!summary) return;
-  const details = summary.closest<HTMLDetailsElement>('.timeline-thinking-details');
-  if (details) details.dataset.userToggled = '1';
+  const target = event.target as Element | null;
+  const thinkingSummary = target?.closest('.timeline-thinking-summary');
+  if (thinkingSummary) {
+    const details = thinkingSummary.closest<HTMLDetailsElement>('.timeline-thinking-details');
+    if (details) details.dataset.userToggled = '1';
+    return;
+  }
+  const groupSummary = target?.closest('.timeline-tool-group-summary');
+  if (groupSummary) {
+    const details = groupSummary.closest<HTMLDetailsElement>('.timeline-tool-group-details');
+    if (details) details.dataset.userToggled = '1';
+  }
 }, true);
 
 const applyRuntimeEvent = (event: RuntimeEvent): void => {
@@ -6651,7 +6756,9 @@ const applyRuntimeEvent = (event: RuntimeEvent): void => {
     const lines = steps
       .map((s, idx) => `${idx + 1}. ${typeof s?.summary === 'string' && s.summary.trim() ? s.summary.trim() : String(s?.stepId ?? '')}`)
       .filter((line) => line.length > 3);
+    const requirementLine = requirementsSummary(payload.requirements);
     if (lines.length > 0) {
+      if (requirementLine) lines.push(requirementLine);
       model = completeAllStreamingThinking(model, event.runId);
       model = upsertStreamingThinking(model, `${event.runId}-plan-summary`, lines.join('\n'), {
         complete: true,
@@ -7852,8 +7959,8 @@ const selectThread = async (threadId: string): Promise<void> => {
     model = { ...model, timeline: [] };
     renderHistoryView();
     await syncKeyedListIncrementally(
-      app.querySelector<HTMLElement>('[data-history-items]')!, pageModel.timeline.filter(isConversationTimelineItem),
-      (item) => item.itemId, timelineItemHtml, historyIcons,
+      app.querySelector<HTMLElement>('[data-history-items]')!, groupHistoryEntries(pageModel.timeline.filter(isConversationTimelineItem)),
+      (entry) => entry.key, timelineEntryHtml, historyIcons,
       () => historyView !== view || historyRenderSerial !== renderSerial || running, 16, timelineRowHooks);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
     model = { ...model, timeline: pageModel.timeline };
@@ -7924,8 +8031,8 @@ const loadOlderHistory = async (): Promise<void> => {
     view.cursor = page.nextCursor;
     renderHistoryView();
     await syncKeyedListIncrementally(
-      app.querySelector<HTMLElement>('[data-history-items]')!, mergedTimeline.filter(isConversationTimelineItem),
-      (item) => item.itemId, timelineItemHtml, historyIcons,
+      app.querySelector<HTMLElement>('[data-history-items]')!, groupHistoryEntries(mergedTimeline.filter(isConversationTimelineItem)),
+      (entry) => entry.key, timelineEntryHtml, historyIcons,
       () => historyView !== view || historyRenderSerial !== renderSerial || running, 16, timelineRowHooks);
     if (historyView !== view || historyRenderSerial !== renderSerial || running) return;
     model = { ...model, timeline: mergedTimeline };

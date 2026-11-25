@@ -77,8 +77,8 @@ function infiniteFocusProvider(id, name = 'workspace.focus', argsForRound = (rou
   }, `${id}-provider`);
 }
 
-// T-fe-1: vacuum → 4 writes=0 → 1× escape no throw; another 4 → TOOL_NO_NEW_EVIDENCE
-test('T-fe-1: vacuum budget escapes once then throws TOOL_NO_NEW_EVIDENCE', async () => {
+// T-fe-1: vacuum → every 4 rounds one host note (3×), then the turn concludes without failing
+test('T-fe-1: vacuum budget sends three host notes then concludes without failing', async () => {
   const registry = focusTool(() => ({
     content: 'unchanging-window',
     found: true,
@@ -91,26 +91,23 @@ test('T-fe-1: vacuum budget escapes once then throws TOOL_NO_NEW_EVIDENCE', asyn
   await root.plugin(infiniteFocusProvider('fe-vacuum'));
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'vacuum until kill',
         workspace: baseWorkspace,
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_NO_NEW_EVIDENCE/
-    );
+      });
     const escapes = events.filter((e) => e.kind === 'harness.focus_vacuum_escape');
-    assert.equal(escapes.length, 1);
+    assert.equal(escapes.length, 3);
     assert.equal(escapes[0].rounds, 4);
     assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 0);
-    assert.ok(events.filter((e) => e.kind === 'tool.result' && e.ok === true).length >= 8);
+    assert.equal(events.filter((e) => e.kind === 'tool.result' && e.ok === true).length, 17);
   } finally {
     await root.fiber.dispose();
   }
 });
 
-// T-fe-2: probe → 8 writes=0 → 1× escape; another 8 → TOOL_RECOVERABLE_PROBE_LOOP
-test('T-fe-2: probe budget escapes once then throws TOOL_RECOVERABLE_PROBE_LOOP', async () => {
+// T-fe-2: probe → every 8 rounds one host note (3×), then the turn concludes without failing
+test('T-fe-2: probe budget sends three host notes then concludes without failing', async () => {
   const registry = focusTool(() => {
     const err = new Error('EXCERPT_NOT_FOUND:locator');
     err.code = 'EXCERPT_NOT_FOUND';
@@ -125,30 +122,27 @@ test('T-fe-2: probe budget escapes once then throws TOOL_RECOVERABLE_PROBE_LOOP'
   })));
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'probe until kill',
         workspace: baseWorkspace,
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_RECOVERABLE_PROBE_LOOP/
-    );
+      });
     const escapes = events.filter((e) => e.kind === 'harness.focus_probe_escape');
-    assert.equal(escapes.length, 1);
+    assert.equal(escapes.length, 3);
     assert.equal(escapes[0].rounds, 8);
     assert.ok(Array.isArray(escapes[0].recentExcerptCodes));
     assert.ok(escapes[0].recentExcerptCodes.includes('EXCERPT_NOT_FOUND'));
     assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 0);
     const fails = events.filter((e) => e.kind === 'tool.result' && e.ok === false);
-    assert.equal(fails.length, 16);
+    assert.equal(fails.length, 32);
     assert.equal(fails.every((f) => f.nextAction === 'RETRY_WITH_UNIQUE_LOCATOR_OR_LIST'), true);
   } finally {
     await root.fiber.dispose();
   }
 });
 
-// T-fe-3: writes≥1 approaching either kill → no escape
-test('T-fe-3a: writes≥1 vacuum kill does not escape', async () => {
+// T-fe-3: an earlier write does not turn a read loop into a task failure
+test('T-fe-3a: writes≥1 vacuum loop gets the same host notes and concludes', async () => {
   const registry = new ToolRegistry({ allowSideEffects: true });
   registry.register({
     name: 'file.write',
@@ -216,16 +210,13 @@ test('T-fe-3a: writes≥1 vacuum kill does not escape', async () => {
   await root.plugin(providerPlugin);
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'write then vacuum',
         workspace: baseWorkspace,
         mode: 'CONTROLLED',
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_NO_NEW_EVIDENCE/
-    );
-    assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 0);
+      });
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 3);
     assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 0);
     assert.ok(events.some((e) => e.kind === 'tool.result' && e.name === 'file.write' && e.ok === true));
   } finally {
@@ -233,7 +224,7 @@ test('T-fe-3a: writes≥1 vacuum kill does not escape', async () => {
   }
 });
 
-test('T-fe-3b: writes≥1 probe kill does not escape', async () => {
+test('T-fe-3b: writes≥1 probe loop gets the same host notes and concludes', async () => {
   const registry = new ToolRegistry({ allowSideEffects: true });
   registry.register({
     name: 'file.write',
@@ -300,19 +291,16 @@ test('T-fe-3b: writes≥1 probe kill does not escape', async () => {
   await root.plugin(providerPlugin);
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(
-      root.taskRunner.run({
+    await root.taskRunner.run({
         prompt: 'write then probe',
         workspace: baseWorkspace,
         mode: 'CONTROLLED',
         onEvent: (e) => events.push(e)
-      }),
-      /TOOL_RECOVERABLE_PROBE_LOOP/
-    );
-    assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 0);
+      });
+    assert.equal(events.filter((e) => e.kind === 'harness.focus_probe_escape').length, 3);
     assert.equal(events.filter((e) => e.kind === 'harness.focus_vacuum_escape').length, 0);
     const fails = events.filter((e) => e.kind === 'tool.result' && e.ok === false);
-    assert.equal(fails.length, 8);
+    assert.equal(fails.length, 32);
   } finally {
     await root.fiber.dispose();
   }

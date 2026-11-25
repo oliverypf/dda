@@ -29,8 +29,19 @@ const run = (args, env) => new Promise((resolve, reject) => {
 test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-'));
   await writeFile(join(workspace, 'README.md'), '# Test workspace\n');
-  const server = createServer((_request, response) => {
+  let requestCount = 0;
+  const server = createServer(async (request, response) => {
+    const body = [];
+    for await (const chunk of request) body.push(chunk);
+    requestCount += 1;
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    if (requestCount === 1) {
+      const argumentsText = JSON.stringify({ path: 'README.md' });
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-readme', type: 'function', function: { name: 'workspace.read', arguments: argumentsText } }] }, finish_reason: null }] })}\n\n`);
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
+      response.end('data: [DONE]\n\n');
+      return;
+    }
     response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Cordis task complete.' }, finish_reason: null }] })}\n\n`);
     response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 4, completion_tokens: 3 } })}\n\n`);
     response.end('data: [DONE]\n\n');
@@ -64,7 +75,7 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
   assert.equal(database.subarray(0, 16).toString(), 'SQLite format 3\0');
   await assert.rejects(readFile(result.trajectoryStore), { code: 'ENOENT' });
   assert.deepEqual(payload.tools.map((tool) => tool.name), [
-    'workspace.list', 'workspace.read', 'workspace.focus',
+    'workspace.list', 'workspace.read', 'workspace.inspect_binary', 'workspace.focus',
     'shell.execute', 'file.write', 'file.diff', 'file.patch', 'test.execute'
   ]);
   assert.ok(payload.plugins.some((plugin) => plugin.id === 'model-deepseek'));
@@ -95,19 +106,28 @@ test('Phase 1 runs a read-only task through the Cordis DeepSeek adapter', async 
     && /^snapshot-[0-9a-f]{64}$/u.test(decision.constraintSnapshotId)
     && /^snapshot-[0-9a-f]{64}$/u.test(decision.bindingSnapshotId)));
   assert.ok(new Set(sample.decisions.map((decision) => decision.bindingSnapshotId)).size > 1);
-  const classifyDecision = sample.decisions.find((decision) => decision.decisionType === 'CLASSIFY_TASK');
-  const classifyOutcome = sample.outcomes.find((outcome) => outcome.decisionId === classifyDecision.decisionId);
   const durableEvents = await createHarnessEventStore({ storagePath: `${result.trajectoryStore}.db` }).list();
   const taskClassifiedEventIds = durableEvents.filter((event) => event.kind === 'TaskClassified').map((event) => event.eventId);
-  assert.ok(taskClassifiedEventIds.length > 0);
-  assert.ok(classifyOutcome.executionEventIds.some((eventId) => taskClassifiedEventIds.includes(eventId)));
+  assert.equal(sample.decisions.some((decision) => decision.decisionType === 'CLASSIFY_TASK'), false);
+  assert.equal(taskClassifiedEventIds.length, 0);
 });
 
 test('Phase 1 records memory conflict and supersession suggestions from recalled memories', async (t) => {
   const workspace = await mkdtemp(join(tmpdir(), 'hmcodex-runtime-memory-conflict-'));
   await writeFile(join(workspace, 'README.md'), '# Memory fixture\n');
-  const server = createServer((_request, response) => {
+  let requestCount = 0;
+  const server = createServer(async (request, response) => {
+    const body = [];
+    for await (const chunk of request) body.push(chunk);
+    requestCount += 1;
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    if (requestCount === 1) {
+      const argumentsText = JSON.stringify({ path: 'README.md' });
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-memory-readme', type: 'function', function: { name: 'workspace.read', arguments: argumentsText } }] }, finish_reason: null }] })}\n\n`);
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
+      response.end('data: [DONE]\n\n');
+      return;
+    }
     response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'memory conflict task complete' }, finish_reason: null }] })}\n\n`);
     response.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
     response.end('data: [DONE]\n\n');
@@ -125,6 +145,7 @@ test('Phase 1 records memory conflict and supersession suggestions from recalled
     sourceEventIds: ['prior-event'],
     scope: 'workspace',
     kind: 'TASK_OUTCOME',
+    workspacePath: workspace,
     confidence: 0.9
   });
   journal.verify(proposed.memoryId, { accepted: true, reason: 'fixture' });

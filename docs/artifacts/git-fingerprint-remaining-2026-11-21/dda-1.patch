@@ -1,0 +1,21 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -211,10 +211,15 @@
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+-  if (!metadata) return { exists: false };
++  if (!metadata) {
++    // A volatile file that background tooling creates (e.g. `git fetch` writing
++    // `FETCH_HEAD`, which is often absent in fresh clones) must not change the
++    // fingerprint; only link substitution is security relevant.
++    return volatileContent ? { type: 'absent' } : { exists: false };
++  }
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+   if (volatileContent) {
+-    return { exists: true, type };
++    return { type };
+   }
+   const entry = {
+     exists: true,

@@ -1,0 +1,43 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -239,11 +239,21 @@
+   if (!gitDirText) throw new Error('GIT_METADATA_PATH_FAILED');
+   const gitDir = await realpath(resolve(root, gitDirText)).catch(() => resolve(root, gitDirText));
+   const entries = {};
++  const cacheEntries = {};
+   let linkDetected = false;
+   for (const name of METADATA_FILES) {
+-    const entry = await readMetadataEntry(resolve(gitDir, name), {
+-      volatileContent: VOLATILE_METADATA_FILES.has(name)
+-    });
++    // Volatile files are tracked through `cacheEntries` below, not through the
++    // presence/size fingerprint: background `git status` creates or rewrites
++    // them (a missing `.git/index` becomes present, `FETCH_HEAD` appears after
++    // `git fetch`), and that must not look like a repository configuration
++    // change. `indexDigest` (git diff --cached) still catches staged content.
++    if (VOLATILE_METADATA_FILES.has(name)) {
++      const cacheEntry = await readMetadataEntry(resolve(gitDir, name), { volatileContent: true });
++      cacheEntries[name] = cacheEntry;
++      linkDetected ||= cacheEntry.type === 'link';
++      continue;
++    }
++    const entry = await readMetadataEntry(resolve(gitDir, name));
+     entries[name] = entry;
+     linkDetected ||= entry.type === 'link';
+   }
+@@ -257,7 +267,13 @@
+     linkDetected ||= entry.type === 'link';
+   }
+   entries.hooksTruncated = hookNames.length > MAX_PATH_DIGESTS;
+-  return { metadataDigest: digestText(stableStringify(entries)), metadataLinkDetected: linkDetected };
++  return {
++    metadataDigest: digestText(stableStringify(entries)),
++    // Stable presence/symlink view of volatile files: stable across stat-cache
++    // refreshes, but still reports a volatile file turning into a symlink.
++    metadataCacheDigest: digestText(stableStringify(cacheEntries)),
++    metadataLinkDetected: linkDetected
++  };
+ };
+ 
+ const createObservation = ({ root, repositoryRoot, head, status, index, workingTree, untracked, metadata, now, reason }) => {

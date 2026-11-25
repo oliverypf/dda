@@ -1,7 +1,7 @@
 /**
  * freeze-harness-promote-align-after-tip-path-r1
  *
- * After tip-path / DGR / DGU promote→PASS, the terminal aggregate
+ * After tip-path / DGU promote→PASS, the terminal aggregate
  * verification.completed (and harness.progress.verification) must remain PASS.
  * Historical pre-promote attempts stay in planExecution.results for audit, but
  * must not poison the aggregate into FAIL promoted:true as last_ver.
@@ -9,8 +9,7 @@
 
 export const DEFAULT_PROMOTE_VERIFICATION_CHECK_IDS = Object.freeze(new Set([
   'deterministic-green-jev-uncertain-promote',
-  'deterministic-green-jev-uncertain-tip-path',
-  'deterministic-green-jev-behavior-reject-promote'
+  'deterministic-green-jev-uncertain-tip-path'
 ]));
 
 /** Last entry per stepId is the authoritative post-promote report. */

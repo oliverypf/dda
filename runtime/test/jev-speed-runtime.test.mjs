@@ -78,6 +78,7 @@ const scenario = async (t, {
   separateCritic = false,
   tierChoice = 'DIRECT',
   verificationChoice = 'PASS',
+  verificationReason,
   actionGateChoice = 'ALLOW',
   actionGateReason = 'UNSPECIFIED',
   onStdoutLine,
@@ -145,6 +146,9 @@ const scenario = async (t, {
           jev.verifications.push(choice);
           jev.verificationRequests.push({ stepId: body.state?.action?.stepId, choices, context: question.instructions.context });
           jev.order.push(`VERIFY:${choice}`);
+        }
+        if (id === 'verificationReason') {
+          choice = typeof verificationReason === 'function' ? verificationReason(body.state) : (verificationReason ?? choice);
         }
         if (id === 'failureType') choice = 'NONE';
         if (id === 'evidence') {
@@ -514,11 +518,16 @@ test('build and test conclusions cite actual invocation and current artifact rec
   });
   const payload = lastJsonLine(result.stdout);
   assert.equal(result.code, 0, `${result.stderr}\n${JSON.stringify({ error: payload.error, verification: payload.verification, errors: payload.harness?.errors })}`);
-  assert.deepEqual(jev.buildTestQuestions.map(question => question.claimKind), ['BUILD', 'ARTIFACT', 'TEST_RESULT']);
+  // The literal test summary is settled from the recorded invocation. It no
+  // longer needs a second semantic JEV question that could become UNCERTAIN.
+  assert.deepEqual(jev.buildTestQuestions.map(question => question.claimKind), ['BUILD', 'ARTIFACT']);
   assert.deepEqual(jev.buildTestQuestions[0].evidence[0].args, ['build.mjs']);
   assert.equal(jev.buildTestQuestions[0].evidence[0].exitCode, 0);
   assert.equal(jev.buildTestQuestions[1].evidence[0].artifacts[0].path, 'output.exe');
-  assert.equal(jev.buildTestQuestions[2].evidence[0].testCounts.pass, 1);
+  const testCheck = payload.verification.checks.find(check => /测试结果/u.test(check.message));
+  assert.ok(testCheck);
+  assert.equal(testCheck.status, 'PASS');
+  assert.ok(testCheck.evidence.some(ref => ref.startsWith('build-test-process-')));
   const checks = payload.verification.checks.filter(check => check.id.includes('.build-test-claim-'));
   assert.equal(checks.length, 3);
   assert.ok(checks.every(check => check.status === 'PASS' && check.evidence[0].startsWith('build-test-process-')));
@@ -686,6 +695,8 @@ test('registry probe uses host registration, scopes the judgment, and respects a
   assert.equal(evidence.catalog.registered, false);
   assert.match(accepted.model.executorInputs[1], /does not contain the exact tool ID my-plan-step/);
   const rejected = await scenario(t, { ...options, answerText: 'my-plan-step is registered and can be invoked.',
+    // Only a stated rejection reason still vetoes; an unexplained FAIL is withheld.
+    verificationReason: (state) => state.action?.stepId === 'council-probe' ? 'RESULT_CONTRADICTS_EVIDENCE' : 'UNSPECIFIED',
     verificationChoice: (_, state) => {
       if (state.action?.stepId !== 'council-probe') return 'PASS';
       assert.equal(state.goal, probe);
@@ -1003,12 +1014,9 @@ test('Jev controls a workspace write under FULL_ACCESS even with a stale workspa
         }
       });
       assert.ok(jev.actionGateTools.includes('file.write'));
-      assert.equal(await readFile(join(workspace, 'note.txt'), 'utf8'), choice === 'ALLOW' ? 'hello\n' : 'note\n');
+      assert.equal(await readFile(join(workspace, 'note.txt'), 'utf8'), choice === 'BLOCK' ? 'note\n' : 'hello\n');
       if (choice === 'BLOCK') {
         assert.ok(model.toolContents.some((content) => content.includes('TOOL_ACTION_BLOCKED_BY_JEV')));
-      } else if (choice !== 'ALLOW') {
-        assert.ok(model.toolContents.some((content) => content.includes('SAFETY_LEASE_REQUIRED')),
-          JSON.stringify(model.toolContents));
       }
     });
   }

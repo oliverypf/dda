@@ -1,0 +1,26 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -209,12 +209,20 @@
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
+ 
++const missingMetadataEntry = Object.freeze({ exists: false });
++// Volatile entries (`.git/index`, `FETCH_HEAD`) collapse to one constant
++// representation: their presence, size and mtime are rewritten by ordinary
++// background refreshes, so no volatile field may enter `metadataDigest`.
++// Staged content stays covered by `indexDigest`; symlinks are still reported
++// through `metadataLinkDetected` before the entry is collapsed.
++const volatileMetadataEntry = Object.freeze({ volatile: true });
++
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+-  if (!metadata) return { exists: false };
++  if (!metadata) return volatileContent ? volatileMetadataEntry : missingMetadataEntry;
+   const type = metadata.isSymbolicLink() ? 'link' : metadata.isFile() ? 'file' : metadata.isDirectory() ? 'directory' : 'other';
+   if (volatileContent) {
+-    return { exists: true, type };
++    return type === 'link' ? Object.freeze({ volatile: true, type }) : volatileMetadataEntry;
+   }
+   const entry = {
+     exists: true,

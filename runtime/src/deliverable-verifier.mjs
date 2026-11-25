@@ -275,8 +275,8 @@ export function checkpointDeliverables({ events = [], sourceRunId, checkpointDig
   return [...facts.values()];
 }
 
-export async function prepareDeliverableVerification({ prompt, resolveFile, startedAtMs, recoveredFiles = [], recordFile }) {
-  const specs = requestedDeliverables(prompt);
+export async function prepareDeliverableVerification({ prompt, declaredSpecs, resolveFile, startedAtMs, recoveredFiles = [], recordFile }) {
+  const specs = Array.isArray(declaredSpecs) ? declaredSpecs : requestedDeliverables(prompt);
   const baseline = new Map();
   for (const { path } of specs) {
     if (path) baseline.set(key(path), await inspect(path, resolveFile, false).catch(() => undefined));

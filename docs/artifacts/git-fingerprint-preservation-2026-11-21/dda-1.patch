@@ -1,0 +1,29 @@
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -208,6 +208,16 @@
+ // existence and symlink status without hashing volatile cache bytes/timestamps.
+ const VOLATILE_METADATA_FILES = new Set(['index', 'FETCH_HEAD']);
+ const MAX_METADATA_FILE_BYTES = 16 * 1024 * 1024;
++// Volatile files are rewritten at any moment by background tooling, so their
++// presence is not stable evidence either: an absent file must not be
++// distinguishable from an existing regular file for those names. Symlinked or
++// otherwise non-regular entries stay distinct so a link attack still fails
++// closed.
++const normalizeVolatileEntry = (name, entry) => {
++  if (!VOLATILE_METADATA_FILES.has(name)) return entry;
++  if (entry.type === 'file' || entry.exists === false) return { exists: true, type: 'file' };
++  return entry;
++};
+ 
+ const readMetadataEntry = async (filePath, { volatileContent = false } = {}) => {
+   const metadata = await lstat(filePath).catch(() => null);
+@@ -244,7 +254,7 @@
+     const entry = await readMetadataEntry(resolve(gitDir, name), {
+       volatileContent: VOLATILE_METADATA_FILES.has(name)
+     });
+-    entries[name] = entry;
++    entries[name] = normalizeVolatileEntry(name, entry);
+     linkDetected ||= entry.type === 'link';
+   }
+   const hooksDirectory = resolve(gitDir, 'hooks');

@@ -109,7 +109,7 @@ test('stdout approval round-trip persists and consumes a one-shot lease', async 
   assert.match(approvalRequested.payload.risk, /^(LOW|MEDIUM|HIGH)$/);
   assert.equal(approvalRequested.payload.policyVersion, 'runtime-safety-1');
   assert.match(approvalRequested.payload.scope.snapshotDigest, /^sha256:[0-9a-f]{64}$/);
-  assert.equal(typeof approvalRequested.payload.approvalExpiresAt, 'number');
+  assert.equal(approvalRequested.payload.approvalExpiresAt, undefined);
   assert.equal(typeof approvalRequested.payload.intentId, 'string');
   assert.equal(typeof approvalRequested.payload.approvalId, 'string');
   assert.ok(events.some((event) => event.kind === 'lease.issued'));
@@ -120,6 +120,6 @@ test('stdout approval round-trip persists and consumes a one-shot lease', async 
   const payload = JSON.parse(stdout.trim().split(/\r?\n/).at(-1));
   assert.equal(payload.ok, true);
   const persisted = JSON.parse(await readFile(executionState, 'utf8'));
-  assert.ok(persisted.records.some((record) => record.recordType === 'approval' && record.state === 'APPROVED' && typeof record.expiresAt === 'number'));
+  assert.ok(persisted.records.some((record) => record.recordType === 'approval' && record.state === 'APPROVED' && record.expiresAt === undefined));
   assert.ok(persisted.records.some((record) => record.recordType === 'lease' && record.state === 'CONSUMED'));
 });

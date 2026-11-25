@@ -1,0 +1,171 @@
+diff --git a/probe-digest.mjs b/probe-digest.mjs
+new file mode 100644
+--- /dev/null
++++ b/probe-digest.mjs
+@@ -0,0 +1,41 @@
++import { mkdtemp, writeFile } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawn } from 'node:child_process';
++import { createGitObserver } from './runtime/src/git-observer.mjs';
++
++const runGit = (cwd, args) => new Promise((resolve, reject) => {
++  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
++    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, shell: false, windowsHide: true,
++    stdio: ['ignore', 'pipe', 'pipe']
++  });
++  let out = ''; let err = '';
++  child.stdout.on('data', (c) => { out += c; });
++  child.stderr.on('data', (c) => { err += c; });
++  child.once('error', reject);
++  child.once('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err))));
++});
++
++const root = await mkdtemp(join(tmpdir(), 'probe-git-digest-'));
++await runGit(root, ['init', '-q']);
++await runGit(root, ['config', 'user.email', 'a@b.invalid']);
++await runGit(root, ['config', 'user.name', 'A']);
++await writeFile(join(root, 'README.md'), '# fixture\n', 'utf8');
++await runGit(root, ['add', 'README.md']);
++await runGit(root, ['commit', '-qm', 'fixture']);
++
++const observer = createGitObserver({ workspaceRoot: root });
++const before = await observer.snapshot({ reason: 'ACTION_STARTED' });
++await writeFile(join(root, 'README.md'), '# updated\n', 'utf8');
++await runGit(root, ['status']);
++await writeFile(join(root, '.git', 'FETCH_HEAD'), `${'0'.repeat(40)}\tnot-for-merge\tbranch main\n`, 'utf8');
++const after = await observer.snapshot({ reason: 'ACTION_COMPLETED' });
++console.log('metadataDigest equal:', before.metadataDigest === after.metadataDigest);
++console.log('before', before.metadataDigest);
++console.log('after ', after.metadataDigest);
++console.log('indexDigest equal:', before.indexDigest === after.indexDigest);
++console.log('index before', before.indexDigest);
++console.log('index after ', after.indexDigest);
++console.log('pathDigests equal:', JSON.stringify(before.status.pathDigests) === JSON.stringify(after.status.pathDigests));
++console.log('statusCodes before', JSON.stringify(before.status.statusCodes));
++console.log('statusCodes after ', JSON.stringify(after.status.statusCodes));
+diff --git a/probe-hooks.mjs b/probe-hooks.mjs
+new file mode 100644
+--- /dev/null
++++ b/probe-hooks.mjs
+@@ -0,0 +1,41 @@
++import { mkdtemp, readdir, stat, writeFile } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { spawn } from 'node:child_process';
++
++const runGit = (cwd, args) => new Promise((resolve, reject) => {
++  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
++    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, shell: false, windowsHide: true,
++    stdio: ['ignore', 'pipe', 'pipe']
++  });
++  let out = ''; let err = '';
++  child.stdout.on('data', (c) => { out += c; });
++  child.stderr.on('data', (c) => { err += c; });
++  child.once('error', reject);
++  child.once('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err))));
++});
++
++const root = await mkdtemp(join(tmpdir(), 'probe-git-hooks-'));
++await runGit(root, ['init', '-q']);
++await runGit(root, ['config', 'user.email', 'a@b.invalid']);
++await runGit(root, ['config', 'user.name', 'A']);
++await writeFile(join(root, 'README.md'), '# fixture\n', 'utf8');
++await runGit(root, ['add', 'README.md']);
++await runGit(root, ['commit', '-qm', 'fixture']);
++
++const dump = async (label) => {
++  const dir = join(root, '.git', 'hooks');
++  const names = (await readdir(dir)).sort();
++  console.log(`--- ${label}: ${names.length} entries ---`);
++  for (const name of names) {
++    const info = await stat(join(dir, name)).catch(() => null);
++    console.log(`${name} mode=${info?.mode} size=${info?.size} type=${info?.isFile() ? 'file' : info?.isSymbolicLink() ? 'link' : 'other'}`);
++  }
++};
++
++await dump('before');
++await writeFile(join(root, 'README.md'), '# updated\n', 'utf8');
++await runGit(root, ['status']);
++await dump('after-status');
++await writeFile(join(root, '.git', 'FETCH_HEAD'), `${'0'.repeat(40)}\tnot-for-merge\tbranch main\n`, 'utf8');
++await dump('after-fetchhead-write');
+diff --git a/probe-metadata.mjs b/probe-metadata.mjs
+new file mode 100644
+--- /dev/null
++++ b/probe-metadata.mjs
+@@ -0,0 +1,48 @@
++import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { createHash } from 'node:crypto';
++import { spawn } from 'node:child_process';
++
++const sha = (value) => `sha256:${createHash('sha256').update(value).digest('hex').slice(0, 16)}`;
++const runGit = (cwd, args) => new Promise((resolve, reject) => {
++  const child = spawn(process.platform === 'win32' ? 'git.exe' : 'git', args, {
++    cwd, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, shell: false, windowsHide: true,
++    stdio: ['ignore', 'pipe', 'pipe']
++  });
++  let out = ''; let err = '';
++  child.stdout.on('data', (c) => { out += c; });
++  child.stderr.on('data', (c) => { err += c; });
++  child.once('error', reject);
++  child.once('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err))));
++});
++
++const root = await mkdtemp(join(tmpdir(), 'probe-git-meta-'));
++await runGit(root, ['init', '-q']);
++await runGit(root, ['config', 'user.email', 'a@b.invalid']);
++await runGit(root, ['config', 'user.name', 'A']);
++await writeFile(join(root, 'README.md'), '# fixture\n', 'utf8');
++await runGit(root, ['add', 'README.md']);
++await runGit(root, ['commit', '-qm', 'fixture']);
++
++const dump = async (label) => {
++  const gitDir = join(root, '.git');
++  const names = (await readdir(gitDir)).sort();
++  const lines = [];
++  for (const name of names) {
++    const path = join(gitDir, name);
++    const info = await stat(path).catch(() => null);
++    if (!info || !info.isFile()) { lines.push(`${name} dir`); continue; }
++    const content = await readFile(path).catch(() => Buffer.alloc(0));
++    lines.push(`${name} size=${content.byteLength} sha=${sha(content)} mtime=${Math.trunc(info.mtimeMs)}`);
++  }
++  console.log(`--- ${label} ---`);
++  for (const line of lines) console.log(line);
++};
++
++await dump('before');
++await writeFile(join(root, 'README.md'), '# updated\n', 'utf8');
++await runGit(root, ['status']);
++await dump('after-status');
++await writeFile(join(root, '.git', 'FETCH_HEAD'), `${'0'.repeat(40)}\tnot-for-merge\tbranch main\n`, 'utf8');
++await dump('after-fetchhead-write');
+diff --git a/runtime/src/git-observer.mjs b/runtime/src/git-observer.mjs
+--- a/runtime/src/git-observer.mjs
++++ b/runtime/src/git-observer.mjs
+@@ -216,18 +216,18 @@
+   if (volatileContent) {
+     return { exists: true, type };
+   }
++  // Only durable metadata identity is recorded: presence, entry type, mode and
++  // content. `.git/config` and `.git/HEAD` are rewritten by read commands such
++  // as `git fetch`/`git status`, so volatile size/mtime must never feed the
++  // fingerprint; a genuine config change still alters `contentDigest`.
+   const entry = {
+     exists: true,
+     type,
+-    size: Number.isFinite(metadata.size) ? metadata.size : 0,
+     mode: metadata.mode
+   };
+   if (metadata.isFile() && metadata.size <= MAX_METADATA_FILE_BYTES) {
+     const content = await readFile(filePath).catch(() => null);
+     if (content) entry.contentDigest = digestBytes(content);
+-    else entry.mtimeMs = Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs) : 0;
+-  } else {
+-    entry.mtimeMs = Number.isFinite(metadata.mtimeMs) ? Math.trunc(metadata.mtimeMs) : 0;
+   }
+   return entry;
+ };

@@ -16,9 +16,6 @@ import {
   TRUST_X_REQUIRE_APPROVAL
 } from '../src/trust-x.mjs';
 import {
-  RISK_VECTOR_REQUIRE_APPROVAL
-} from '../src/risk-vector.mjs';
-import {
   SAFETY_STATE_REQUIRE_APPROVAL
 } from '../src/safety-state.mjs';
 
@@ -105,11 +102,10 @@ test('telemetryElevateReason skips when gate already holds elevate code', () => 
   );
 });
 
-// T-dd-1 / T-dd-2: Path / Trust / RV / SAFETY_STATE elevate self-injury → propose OK, no dup
+// T-dd-1 / T-dd-2: Path / Trust / SAFETY_STATE elevate self-injury → propose OK, no dup
 for (const { name, elevateCode } of [
   { name: 'Path', elevateCode: CAPABILITY_PATH_REQUIRE_APPROVAL },
   { name: 'Trust(X)', elevateCode: TRUST_X_REQUIRE_APPROVAL },
-  { name: 'Risk Vector', elevateCode: RISK_VECTOR_REQUIRE_APPROVAL },
   { name: 'SAFETY_STATE', elevateCode: SAFETY_STATE_REQUIRE_APPROVAL }
 ]) {
   test(`T-dd elevate self-injury (${name}): assemble + propose succeeds without dup`, async () => {

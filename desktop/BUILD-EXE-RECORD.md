@@ -622,3 +622,82 @@ npm run build:windows:full-local # 完整本地构建：Tauri CLI build --target
   - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`runtime/src/decision/plan-tier.mjs`、`runtime/src/decision/pptx-metadata.mjs`、`runtime/src/kernel/resident-kernel.mjs`、`runtime/src/deliverable-verifier.mjs`、`runtime/src/memory-verifier.mjs`
   - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
 - 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 14:46 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第二十六次编译（2026-11-23 19:14，本会话最新产物）
+
+- 在 `desktop/` 执行 `npm run build:exe`，退出码 0，总耗时 9m55s（Vite 7.50s；Rust `Finished release profile` 8m33s）。编译前无 dda 进程占用、独占打开测试 OK，一次通过；CLI x64 绑定在位。
+- 编译前 exe 为 11-20 15:23 版（SHA `91e004c1…`）。期间 `desktop/src/main.ts`、`styles.css`、`domain/models.ts`、`src-tauri/src/lib.rs` 均为 11-20 16:27 修改（晚于旧 exe），Rust 侧 `lib.rs:1028` 警告行号未变但确实重编；前端 chunk 名仍为 `index-8zo4-Rds.js`、CSS `index-DJ_-lfQd.css`（内容哈希未变，说明这些源码改动未改变最终 bundle 内容）。83 个模块；Rust 仍只有原有 2 条警告（dead_code、链接器 stdout 非 UTF-8）。
+- 新增插件耗时提示（信息性）：`vite:prepare-out-dir renderStart` 3.8s、`vite:css-post renderChunk` 1.7s。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 大小 11,965,952 字节，生成时间 2026-11-23 19:14:54
+  - PE Machine `0x8664`（x64），ProductName `dda`，FileVersion `0.1.0`，PE TimeDateStamp `0x6B04202C`
+  - SHA-256 `59ef246234933553e30e85960eaa3ae9539f8f064ff9173654be982e17675bab`
+  - 内嵌 chunk `index-8zo4-Rds.js` 与 CSS `index-DJ_-lfQd.css` 均校验命中
+- 期间共 37 个源文件变动，其中 33 个在 `runtime/src/`（含 11-23 当天 `index.mjs` 09:09、`repair-retest.mjs` 16:47，以及 decision/、repair-* 系列），属 bundle resources、不进裸 exe，故另行暂存：
+  - staged 可运行目录：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-WOqH82\dda-desktop.exe`
+  - staged exe SHA-256 `59ef2462…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`agent-turns.mjs`、`context-compaction.mjs`、`repair-retest.mjs`、`decision/bounded-judgments.mjs`、`kernel/approval-session.mjs`、`plugins/workspace-readonly.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 11-23 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第二十七次编译（2026-11-23 21:01，本会话最新产物）
+
+- 在 `desktop/` 执行 `npm run build:exe`，退出码 0，总耗时 5m40s（Vite 3.62s；Rust `Finished release profile` 4m48s）。编译前无 dda 进程占用、独占打开测试 OK，一次通过；CLI x64 绑定在位。
+- 编译前 exe 为同日 19:14 版（SHA `59ef2462…`）。`desktop/src` 与 Rust 源码最新仍为 11-20 16:27（已被早前 exe 收录），前端 chunk 名保持 `index-8zo4-Rds.js`、CSS `index-DJ_-lfQd.css`（内容哈希未变）；`lib.rs:1028` 警告行号未变。83 个模块；Rust 重编了 `vswhom-sys`、`embed-resource`、`tauri-build`、`tauri` 等一批 crate（缓存持续失效），仍只有原有 2 条警告（dead_code、链接器 stdout 非 UTF-8）。
+- `desktop/package.json` 于 20:36 新增脚本 `build:windows:stage-only`（`build-full-local.mjs --stage-only`），不影响本次编译产物。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 大小 11,965,952 字节（与上版相同），生成时间 2026-11-23 21:01:08
+  - PE Machine `0x8664`（x64），ProductName `dda`，FileVersion `0.1.0`，PE TimeDateStamp `0x6B043914`
+  - SHA-256 `aebc74a263b64cbc65145314f4de9494b8e18d7290b13c9f46f5ec9e1ec10e64`（哈希变化为重新链接所致）
+  - 内嵌 chunk `index-8zo4-Rds.js` 与 CSS `index-DJ_-lfQd.css` 均校验命中
+- 真正的新改动是 20:36–20:44 的 3 个 `runtime/src` 文件（`index.mjs`、`controlled-tools.mjs`、`restricted-windows-executor.mjs`），属 bundle resources、不进裸 exe，故另行暂存：
+  - staged 可运行目录：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-pV1t2b\dda-desktop.exe`
+  - staged exe SHA-256 `aebc74a2…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`controlled-tools.mjs`、`restricted-windows-executor.mjs`、`agent-turns.mjs`、`kernel/approval-session.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 20:36–20:44 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第二十八次编译（2026-11-24 15:23，本会话最新产物）
+
+- 在 `desktop/` 执行 `npm run build:exe`，退出码 0，总耗时 5m58s（Vite 4.67s；Rust `Finished release profile` 5m08s）。编译前有 `dda-desktop` 进程（PID 18928，12:38 启动）但独占打开测试 OK、exe 未锁，无需改名备份，一次通过；CLI x64 绑定在位。
+- 编译前 exe 为当日 12:36 外部构建（SHA `be9249af…`），dist 有 14:40 的新前端产物未进 exe。前端 `main.ts`、`styles.css`（14:40）及 `tool-command.ts`（14:29）、`ui/live-timeline.ts`/`keyed-list.ts`（14:32）改动均被本次收录：chunk 由 `index-8zo4-Rds.js` 变为 `index-CX9SytvF.js`（483.40 kB），CSS 由 `index-DJ_-lfQd.css` 变为 `index-Dr_aH7n7.css`（77.34 kB），83 个模块；exe 内新 chunk/CSS 校验命中、旧 chunk 已消失。Rust `lib.rs` 未改（11-20），仍重编 `tauri` 等一批 crate（缓存持续失效），警告仅原有 2 条（dead_code、链接器 stdout 非 UTF-8）。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 大小 11,972,096 字节，生成时间 2026-11-24 15:23:30
+  - PE Machine `0x8664`（x64），ProductName `dda`，FileVersion `0.1.0`，PE TimeDateStamp `0x6B053B71`
+  - SHA-256 `ff7306c3ceb2561a86853040a6beccf322c274b869171fe33a759484525c84c2`
+- 期间 9 个 `runtime/src` 文件改动（`index.mjs` 13:07、`decision/workspace-context.mjs` 11:08、`decision/build-test-verification.mjs`、`decision-evaluation.mjs`、`model-config.mjs`、`task-run-coordinator.mjs`、`rule-router.mjs`、`plugins/task-runner.mjs` 等），属 bundle resources、不进裸 exe，已暂存：
+  - staged 可运行目录：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-XJT2y6\dda-desktop.exe`
+  - staged exe SHA-256 `ff7306c3…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`decision/workspace-context.mjs`、`decision/build-test-verification.mjs`、`decision-evaluation.mjs`、`model-config.mjs`、`task-run-coordinator.mjs`、`rule-router.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 11-24 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第二十九次编译（2026-11-25 10:14，本会话最新产物）
+
+- 在 `desktop/` 执行 `npm run build:exe`，退出码 0，总耗时 6m17s（Vite 4.74s；Rust `Finished release profile` 5m22s）。编译前无 dda 进程占用、独占打开测试 OK，一次通过；CLI x64 绑定在位。
+- 编译前 exe 为 11-24 17:58 外部构建（SHA `06c14e6f…`），dist 为 17:53。`main.ts`（11-24 18:19）、`domain/task-requirements.ts`（18:18）晚于旧 exe/dist，被本次收录：chunk 由 `index-CX9SytvF.js` 变为 `index-De3B8irD.js`（484.17 kB），模块数 83→84，CSS 保持 `index-Dr_aH7n7.css`（77.34 kB）；exe 内新 chunk/CSS 校验命中、旧 chunk 消失。Rust `lib.rs` 未改（11-20），仍重编 `tauri` 等一批 crate（缓存持续失效），警告仅原有 2 条（dead_code、链接器 stdout 非 UTF-8）。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 大小 11,973,120 字节，生成时间 2026-11-25 10:14:12
+  - PE Machine `0x8664`（x64），ProductName `dda`，FileVersion `0.1.0`，PE TimeDateStamp `0x6B064474`
+  - SHA-256 `37c7ddeadbf5cec9b5245208e5f5a12d77e49d1f9dfd19f1d22cdfa16c3cdf96`
+- 期间 14 个 `runtime/src` 文件改动（`index.mjs` 11-25 09:21、`task-requirements.mjs` 18:14、`verdict-policy.mjs` 18:15、`promote-align-aggregate.mjs` 18:17、`deliverable-verifier.mjs`、`kernel/approval-session.mjs`、`task-recovery-controller.mjs` 等），属 bundle resources、不进裸 exe，已暂存：
+  - staged 可运行目录：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-KVT0a0\dda-desktop.exe`
+  - staged exe SHA-256 `37c7ddea…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`task-requirements.mjs`、`verdict-policy.mjs`、`promote-align-aggregate.mjs`、`deliverable-verifier.mjs`、`kernel/approval-session.mjs`、`task-recovery-controller.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源，验证 11-24/11-25 的 runtime 改动须运行 staged 版；未启动 exe 做 GUI 冒烟。
+
+## 第三十次编译（2026-11-25 14:05，本会话最新产物）
+
+- 在 `desktop/` 执行 `npm run build:exe`，退出码 0，总耗时 4m39s（Vite 3.26s；Rust `Finished release profile` 3m48s）。编译前有 `dda-desktop` 进程（PID 13324，10:17 启动）但独占打开测试 OK、exe 未锁，无需改名备份，一次通过；CLI x64 绑定在位。
+- 编译前 exe/裸 exe 均为当日 10:14 版（SHA `37c7ddea…`），dist 已换成 12:24 的 `index-DuHuxtvS.js`。唯一源码改动 `main.ts`（11:46）晚于旧 exe，被本次收录：chunk 由 `index-De3B8irD.js` 变为 `index-DuHuxtvS.js`（484.66 kB），84 个模块，CSS 保持 `index-Dr_aH7n7.css`（77.34 kB）；exe 内新 chunk/CSS 校验命中、旧 chunk 消失。Rust `lib.rs` 未改（11-20），本轮仅增量编译 `dda-desktop` 主 crate（依赖缓存命中），警告仅原有 2 条（dead_code、链接器 stdout 非 UTF-8）。
+- **当前裸 exe**：`desktop/src-tauri/target/x86_64-pc-windows-msvc/release/dda-desktop.exe`
+  - 大小 11,973,632 字节，生成时间 2026-11-25 14:05:30
+  - PE Machine `0x8664`（x64），ProductName `dda`，FileVersion `0.1.0`，PE TimeDateStamp `0x6B067AAA`
+  - SHA-256 `d317caa6992dad5207302ff4966598fa11da418caed29fe54926638fdf4495a9`
+- 本轮无新的 `runtime/src` 改动（最新 `index.mjs` 09:21 已在 10:14 版暂存过），仍重新暂存以确保 staged 目录使用本次新 exe：
+  - staged 可运行目录：`C:\Users\User\AppData\Local\dda\desktop-builds\build-x86_64-pc-windows-msvc-cqJKtm\dda-desktop.exe`
+  - staged exe SHA-256 `d317caa6…` 与裸 exe 完全一致
+  - 资源逐字节比对（staged 与工作区 SHA-256）全部 MATCH：`runtime/src/index.mjs`、`task-requirements.mjs`、`verdict-policy.mjs`、`kernel/approval-session.mjs`、`task-recovery-controller.mjs`
+  - `%LOCALAPPDATA%\dda\desktop-builds\latest.json` 已指向该目录
+- 说明：`--no-bundle` 只产出裸 exe，不携带 runtime / harness-model 资源；未启动 exe 做 GUI 冒烟。

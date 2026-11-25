@@ -144,6 +144,30 @@ test('Windows file URLs match exact observed paths, including escaped spaces', a
   }
 });
 
+test('derived comparison links a verified producer from a partial read and drops it when its version changes', async t => {
+  const { root, workspace, frame, readLines } = await setup(t);
+  const production = ['// outside the read', 'return { count: normalize(records) };', '// outside the read'];
+  const path = 'producer.mjs';
+  await writeFile(join(root, path), production.join('\n'));
+  const state = new RepairRetest({ root });
+  const offsetChars = production[0].length + 1;
+  state.observeRead(await workspace.read(path, production[1].length, offsetChars), { offsetChars });
+  state.observeRead(await workspace.read(file), {});
+  state.observeEdit('file.patch', { path: 'view.mjs', diff: priorPatch });
+  state.observeTest(receipt, failed(frame));
+  assert.deepEqual((await state.assertionSource(readLines)).possibleProducers, [
+    { path, field: 'count', excerpt: '2: ' + production[1] }
+  ]);
+  await writeFile(join(root, path), production.join('\n').replace('records', 'updated'));
+  assert.equal((await state.assertionSource(readLines)).possibleProducers, undefined);
+  // Preparing a diagnostic must leave a way to run it before retesting.
+  state.observeEdit('file.write', { path: 'inspect.mjs', contentDigest: 'new' });
+  const prompt = state.instruction(false, await state.assertionSource(readLines));
+  assert.match(prompt, /execute it and use its output/u);
+  assert.match(prompt, /rerun the recorded target/u);
+  assert.equal(JSON.parse(prompt.split('\n').at(-1)).editAtTest.diff, priorPatch);
+});
+
 test('long edits have a marked bounded diff and retain the resulting file digest', () => {
   const state = new RepairRetest();
   const diff = 'start\n' + 'x'.repeat(12000) + '\nend';

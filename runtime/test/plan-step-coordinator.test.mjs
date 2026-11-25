@@ -513,3 +513,26 @@ test('cancelling two active reads records both interruptions and skips dependent
   assert.deepEqual(coordinator.planState.pendingActions, []);
   assert.equal(coordinator.planState.steps[3].status, 'BLOCKED');
 });
+
+test('a jev rejection with a stated reason stays FAIL even when other checks are green', async () => {
+  const { coordinator } = makeCoordinator();
+  const scheduler = createPlanStepCoordinator({
+    coordinator,
+    plan: normalizePlannerPlan({ steps: [{ stepId: 'guarded', summary: 'guarded' }] })
+  });
+  const result = await scheduler.run({
+    maxAttempts: 1,
+    executeStep: async () => ({ outputDigest: 'sha256:guarded' }),
+    verifyStep: async () => ({
+      status: 'FAIL',
+      failureCodes: ['JEV_BEHAVIOR_REJECTED'],
+      stopRecovery: true,
+      checks: [
+        { id: 'build-command-result', status: 'PASS' },
+        { id: 'jev-behavior-judge', status: 'FAIL', message: 'JEV_WORKSPACE_READ_REJECTED' }
+      ]
+    })
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.plan.steps[0].status, 'FAILED');
+});

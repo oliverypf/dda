@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T04:37:35.442Z",
+  "generatedAt": "2026-11-24T01:10:15.131Z",
   "source": "docs/artifacts/dda-project-intro-video.html",
   "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "canvas": {
@@ -16,25 +16,25 @@
     "video/mp4;codecs=avc1.42E01E"
   ],
   "skippedMimes": [],
-  "frames": 711,
-  "uniqueFrames": 369,
-  "lastChangedFrame": 681,
-  "captureMs": 87048,
-  "framesPerSecond": 8.17,
+  "frames": 960,
+  "uniqueFrames": 400,
+  "lastChangedFrame": 919,
+  "captureMs": 87000,
+  "framesPerSecond": 11.03,
   "endedBy": "playback-complete",
   "outputs": [
     {
       "file": "docs/artifacts/dda-project-intro-video.webm",
-      "bytes": 2980269,
-      "duration": 87.03,
+      "bytes": 3772450,
+      "duration": 87.14,
       "width": 1280,
       "height": 720,
       "readyState": 1
     },
     {
       "file": "docs/artifacts/dda-project-intro-video.mp4",
-      "bytes": 1117607,
-      "duration": 87.06,
+      "bytes": 1322575,
+      "duration": 87.17,
       "width": 1280,
       "height": 720,
       "readyState": 4

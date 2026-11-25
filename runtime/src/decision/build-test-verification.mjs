@@ -12,8 +12,15 @@ const testScripts = /^test(?:$|[:-])/iu;
 const testRunners = /^(?:vitest|jest|mocha|pytest|ctest)$/iu;
 
 const outputTextDigest = text => 'sha256:' + createHash('sha256').update(text.replace(/(?:\r?\n)+$/u, '')).digest('hex');
+const emptyOutputDigest = outputTextDigest('');
 const clean = (value, limit) => sanitizeOutput(value)
   .replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, limit);
+
+// A successful compiler may write warnings to stderr.  Keep the explicit
+// `stderr 为空` claim strict, while letting `无错误` describe the absence of
+// error-level output instead of requiring an empty stream.
+const stderrContainsError = text => text.split(/\r?\n/u).some(line =>
+  /^\s*(?:error|fatal|panic)(?:\b|\s*[:：])|^\s*(?:错误|失败)(?:\b|\s*[:：])/iu.test(line));
 
 const executableName = command => basename(command.replaceAll('\\', '/')).toLowerCase().replace(/\.(?:exe|cmd|bat)$/iu, '');
 
@@ -137,7 +144,11 @@ export function buildTestProcessReceipt({ tool, request, output, startedAtMs, en
     startedAtMs, endedAtMs,
     ...(Number.isSafeInteger(output.durationMs) ? { durationMs: output.durationMs } : {}),
     ...(typeof output.stdout === 'string' && !output.truncated ? { stdoutTextDigest: outputTextDigest(output.stdout) } : {}),
-    ...(typeof output.stderr === 'string' && !output.truncated ? { stderrEmpty: output.stderr.length === 0, stderrTextDigest: outputTextDigest(output.stderr) } : {}),
+    ...(typeof output.stderr === 'string' && !output.truncated ? {
+      stderrEmpty: output.stderr.length === 0,
+      stderrContainsError: stderrContainsError(output.stderr),
+      stderrTextDigest: outputTextDigest(output.stderr)
+    } : {}),
     ...(/^lease-[a-f0-9-]{8,64}$/iu.test(output.lease ?? '') ? { lease: output.lease } : {}),
     ...(testCounts ? { testCounts } : {}),
     ...(testReport ? { testReportKind: 'STRUCTURED' } : {}),
@@ -172,6 +183,12 @@ const artifactResult = /生成|产出|已存在|已输出|已打包|\b(?:generat
 const artifactField = /^(?:\*\*)?(?:本次构建产物|本次产物|构建产物|产物(?:路径)?|安装包|(?:build\s+)?artifacts?|installer)(?:\*\*)?\s*[:：]/iu;
 const prospective = /预计|预期|计划|将会|目标路径|预设|如果|尚待核实|\b(?:expected|planned|will|would|should|if)\b/iu;
 const processOnly = /退出码|exit(?:ed| code)|超时|timed out|中止|aborted/iu;
+const testConclusion = /(?:退出码|exit(?:ed| code)|超时|timed out|中止|aborted|(?:\d+\s*(?:个|项|条)?\s*(?:测试|用例|检查)\s*(?:全部\s*)?(?:通过|失败|跳过|全过|全通过|passed|failed|skipped))|\b(?:tests?|pass(?:ed)?|fail(?:ed)?|skipped?|todo)\s*(?:[:=]\s*|\s+)\d+\b|(?:所有|全部|all|every).{0,16}(?:相关)?(?:测试|用例|检查|tests?).{0,16}(?:通过|失败|跳过|全过|全通过|passed|failed|skipped)|(?:测试|用例|检查).{0,16}(?:全部|均).{0,16}(?:通过|失败|跳过|全过|全通过|passed|failed|skipped))/iu;
+const testInvocation = /`[^`]*(?:node|npm|pnpm|yarn|pytest|python|go|cargo|mvn|gradle|test|测试)[^`]*`|\b(?:node|npm|pnpm|yarn|pytest|python|go|cargo|mvn|gradle)\b[^\r\n]{0,160}(?:--test|\btests?\b|测试)/iu;
+const testCountConclusion = /(?:\b(?:tests?|pass(?:ed)?|fail(?:ed)?|skipped?|todo)\s*(?:[:=]\s*|\s+)\d+\b|(?:所有|全部|all|every)\s*\d+\s*(?:个|项|条)?\s*(?:测试|用例|检查|tests?)\s*(?:全部\s*)?(?:通过|失败|跳过|全过|全通过|passed|failed|skipped)|\d+\s*(?:个|项|条)?\s*(?:测试|用例|检查)\s*(?:全部\s*)?(?:通过|失败|跳过|全过|全通过|passed|failed|skipped)|(?:所有|全部|all|every).{0,16}(?:相关)?(?:测试|用例|检查|tests?).{0,16}(?:通过|失败|跳过|全过|全通过|passed|failed|skipped)|(?<![一二三四五六七八九十\d])(?:测试|用例|检查)\s*(?:全部|均)\s*(?:通过|失败|跳过|全过|全通过|passed|failed|skipped))$/iu;
+const reportNote = /(?:尚未验证|未验证(?:的)?(?:部分|项)|未核实|未覆盖|没有专门(?:的)?(?:失败|测试)|证据链(?:中|的)|过程记录|中间过程记录|中途一次失败|(?:首次|第一次|第二次|第三次|第\s*\d+\s*次)(?:\s*`[^`]+`\s*)?(?:运行|执行|跑|测试|尝试|改动)?[^，。；]{0,160}(?:改|失败|退出码|覆盖|修订|据此)|(?:据此|因此)[^，。；]{0,80}(?:改动|修改)|(?:只|仅)改[^，。；]{0,80}(?:仍失败|失败))/iu;
+// Explicitly deferred validation is process narration, not a current-step claim.
+const deferredVerificationNote = /(?:核验|验证).{0,24}(?:留给|安排在|放到|由).{0,12}(?:后续|下一步)|(?:后续|下一步).{0,20}(?:核验|验证).{0,24}(?:留给|尚未|未(?:执行|进行|发生))/iu;
 const installerClaim = /安装包|\b(?:installers?|msi)\b/iu;
 
 // Use command intent and concrete task requirements. Executor prose is used
@@ -310,7 +327,8 @@ function extractClaims(text) {
   const claims = new Map();
   for (const fragment of String(text ?? '').split(/[\r\n。！？；]+|(?<=[.!?;])\s+/u)) {
     const statement = clean(fragment.replace(/^\s*[-*#>]+\s*/u, ''), 400);
-    if (!statement || skipped.test(statement) || prospective.test(statement) || /[?？]\s*$/u.test(fragment)) continue;
+    if (!statement || skipped.test(statement) || prospective.test(statement) || deferredVerificationNote.test(statement)
+      || reportNote.test(statement) && testTopic.test(statement) || /[?？]\s*$/u.test(fragment)) continue;
     const add = (kind, paths = []) => claims.set(`${kind}:${statement}`, { kind, statement, paths,
       ...(statement.length === 400 ? { possiblyTruncated: true } : {}) });
     const paths = [...new Set([...statement.matchAll(artifactNames)].map(([path]) => path))];
@@ -323,7 +341,10 @@ function extractClaims(text) {
     }
     const topicText = statement.replace(/^`?[\w.-]+`?\s*(?=步骤)/u, '');
     if (buildTopic.test(topicText) && outcome.test(statement)) add('BUILD', paths);
-    if (testTopic.test(statement) && outcome.test(statement)) add(processOnly.test(statement) ? 'TEST_PROCESS' : 'TEST_RESULT');
+    if (testTopic.test(statement) && outcome.test(statement) && testConclusion.test(statement)
+      && (testInvocation.test(statement) || testCountConclusion.test(statement) || processOnly.test(statement))) {
+      add(processOnly.test(statement) ? 'TEST_PROCESS' : 'TEST_RESULT');
+    }
   }
   return [...claims.values()];
 }
@@ -351,10 +372,132 @@ const processLabels = new Map([
 ]);
 const processField = new RegExp(`^(${[...processLabels.keys()].join('|')})(?:\\s*[:：=为是]\\s*|\\s+)(.+)$`, 'iu');
 
+const normalizeReportedCwd = value => /^(?:work|workspace|workspace\s+root|工作区根(?:目录)?)$/iu.test(String(value).trim()) ? '.' : String(value).trim();
+
+const incidentalTestNarrative = text => {
+  const compact = text.replace(/[：:,，。；()（）`]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  if (!compact || /失败|错误|未|没有|缺少|不|发布|公网|覆盖|无法|异常/iu.test(compact)) return false;
+  if (/^(?:(?:结果|验证|证据|执行|运行|在|于|下|中|和|且|以|本次|本轮|通过|包含|包括)\s*)+$/u.test(compact)) return true;
+  if (/^(?:已)?(?:修复|完成|重写|修改|更新)$/u.test(compact)) return true;
+  if (/^(?:已修复|修复完成)(?:\s+[^ ]+)?$/iu.test(compact)
+    || /^(?:本步|本次|验证|结果)\s*(?:完成|如下)?\s+.*(?:已修改|已修复|修改完成|重写完成|已更新)$/iu.test(compact)
+    || /^(?:结果|修改|已修改|已修复)\s+.*(?:修改|修复|完成|重写|更新)$/iu.test(compact)
+    || /(?:sha-?256|字节|摘要)/iu.test(compact) && /(?:修复|当前|新摘要|文件|产物)/iu.test(compact)) return true;
+  return /(?:执行|修复|任务|文件|脚本|代码|步骤).*(?:完成|成功|重写|修改|更新|修复)/iu.test(compact);
+};
+
+const testReportNarrative = text => {
+  const compact = text.replace(/[：:,，。；()（）`]/gu, ' ').replace(/\s+/gu, ' ').trim()
+    .replace(/(?:超时|timeout)\s*(?:为|=|:)?\s*\d+\s*(?:ms|毫秒|s|秒)/giu, ' ');
+  if (!compact) return true;
+  if (/(?:不通过|未通过|失败|错误|超时|中止|缺少|无法|异常|发布到公网|用户验收)/iu.test(compact)) return false;
+  if (/(?:退出码|exit(?:ed| code)|工作目录|测试命令|\bcwd\b|\b(?:tests?|pass(?:ed)?|fail(?:ed)?|skipped?|todo)\s*(?:[:=]|\s+)|\d+\s*(?:个|项|条)?\s*(?:测试|用例|检查))/iu.test(compact)) return false;
+  return true;
+};
+
+const observedTestCount = (receipt, field) => {
+  const counts = receipt.testCounts;
+  if (!counts) return undefined;
+  if (field === 'todo' && counts.todo === undefined
+    && Number.isInteger(counts.tests) && Number.isInteger(counts.pass) && Number.isInteger(counts.fail)
+    && Number.isInteger(counts.skipped) && counts.tests === counts.pass + counts.fail + counts.skipped) return 0;
+  return counts[field];
+};
+
+function consumeEmbeddedTestFields(part, receipt, check) {
+  let remaining = part;
+  let consumed = false;
+  const consume = (pattern, handler) => {
+    remaining = remaining.replace(pattern, (full, ...args) => {
+      const value = handler(full, ...args);
+      if (value === undefined) return full;
+      consumed = true;
+      return value;
+    });
+  };
+  consume(/`([^`]+)`/gu, (full, command) => {
+    if (!matchesInvocation(receipt, command)) return undefined;
+    check('命令匹配', true, true);
+    return ' ';
+  });
+  consume(/`(?:工作目录|cwd)\s*(?:=|:|：)\s*([^`]+)`/giu, (full, value) => {
+    check('工作目录', normalizeReportedCwd(value), receipt.cwd === '' ? '.' : receipt.cwd);
+    return ' ';
+  });
+  consume(/(?:工作目录|cwd)\s*(?:=|:|：)\s*`([^`]+)`/giu, (full, value) => {
+    check('工作目录', normalizeReportedCwd(value), receipt.cwd === '' ? '.' : receipt.cwd);
+    return ' ';
+  });
+  consume(/(?:工作目录|cwd)\s*(?:=|:|：)\s*([^\s，,。)）]+)/giu, (full, value) => {
+    check('工作目录', normalizeReportedCwd(value), receipt.cwd === '' ? '.' : receipt.cwd);
+    return ' ';
+  });
+  consume(/(?:工作目录|cwd)\s*(?:为|是)\s*(?:工作区根目录|工作区根|根目录)/giu, () => {
+    check('工作目录', '.', receipt.cwd === '' ? '.' : receipt.cwd);
+    return ' ';
+  });
+  consume(/(?:退出码|exit(?:ed)?(?:\s+with\s+code)?|exit)\s*(?:为|是|=|:|：)?\s*(-?\d+)/giu, (full, value) => {
+    check('退出码', Number(value), receipt.exitCode ?? undefined);
+    return ' ';
+  });
+  consume(/\b(tests?|pass(?:ed)?|fail(?:ed)?|skipped?|todo)\s*(?:[:=]\s*|\s+)(\d+)\b/giu, (full, label, value) => {
+    const key = label.toLowerCase();
+    const labels = { tests: 'tests', test: 'tests', pass: 'pass', passed: 'pass', fail: 'fail', failed: 'fail', skipped: 'skipped', skip: 'skipped', todo: 'todo' };
+    const field = labels[key];
+    const names = { tests: '测试总数', pass: '通过', fail: '失败', skipped: '跳过', todo: '待办' };
+    check(names[field], Number(value), observedTestCount(receipt, field));
+    return ' ';
+  });
+  consume(/\b(\d+)\s+(tests?|passed|failed|skipped|todo)\b/giu, (full, value, label) => {
+    const key = label.toLowerCase();
+    const labels = { tests: 'tests', test: 'tests', passed: 'pass', failed: 'fail', skipped: 'skipped', todo: 'todo' };
+    const field = labels[key];
+    const names = { tests: '测试总数', pass: '通过', fail: '失败', skipped: '跳过', todo: '待办' };
+    check(names[field], Number(value), observedTestCount(receipt, field));
+    return ' ';
+  });
+  consume(/(?:全部|所有|all|every)\s*(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例|tests?)\s*(?:全部\s*)?(通过|失败|跳过|全过|全通过|passed|failed|skipped)/giu,
+    (full, value, label) => {
+      const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', 全过: 'pass', 全通过: 'pass', passed: 'pass', failed: 'fail', skipped: 'skipped' }[label.toLowerCase()];
+      const names = { pass: '通过', fail: '失败', skipped: '跳过' };
+      check(names[key], Number(value), observedTestCount(receipt, key));
+      check('测试总数', Number(value), observedTestCount(receipt, 'tests'));
+      return ' ';
+    });
+  consume(/(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例)\s*(?:全部\s*)?(通过|失败|跳过|全过|全通过)/gu, (full, value, label) => {
+    const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', 全过: 'pass', 全通过: 'pass' }[label];
+    const names = { pass: '通过', fail: '失败', skipped: '跳过' };
+    check(names[key], Number(value), observedTestCount(receipt, key));
+    return ' ';
+  });
+  consume(/(\d+)\s*(?:项|个|条)?\s*(?:(?:测试|检查|用例)\s*)?(通过|失败|跳过|全过|全通过)/gu, (full, value, label) => {
+    const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', 全过: 'pass', 全通过: 'pass' }[label];
+    const names = { pass: '通过', fail: '失败', skipped: '跳过' };
+    check(names[key], Number(value), observedTestCount(receipt, key));
+    return ' ';
+  });
+  consume(/(通过|失败|跳过)\s*(?:为|是|[:：=])?\s*(\d+)/gu, (full, label, value) => {
+    const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped' }[label];
+    const names = { pass: '通过', fail: '失败', skipped: '跳过' };
+    check(names[key], Number(value), observedTestCount(receipt, key));
+    return ' ';
+  });
+  return consumed ? { remaining } : undefined;
+}
+
 function checkProcessField(part, receipt, check) {
   if (/^(?:无报错|无错误)$/u.test(part)) {
     check('退出码', 0, receipt.exitCode ?? undefined);
-    check('标准错误为空', true, receipt.stderrEmpty);
+    const hasError = receipt.stderrEmpty === undefined
+      ? undefined
+      : receipt.stderrEmpty === false && receipt.stderrTextDigest === emptyOutputDigest
+        ? true
+        : typeof receipt.stderrContainsError === 'boolean'
+          ? receipt.stderrContainsError
+          : receipt.stderrEmpty === true
+            ? false
+            : undefined;
+    check('标准错误无错误', false, hasError);
     check('进程中止', false, receipt.aborted);
     check('进程超时', false, receipt.timedOut);
     if (receipt.signal) check('终止信号', '无', receipt.signal);
@@ -363,6 +506,15 @@ function checkProcessField(part, receipt, check) {
   if (/^(?:无|未)(?:超时|中止)$/u.test(part)) {
     const timeout = part.endsWith('超时');
     check(timeout ? '进程超时' : '进程中止', false, timeout ? receipt.timedOut : receipt.aborted);
+    return true;
+  }
+  // Reports often place the working-directory phrase immediately before the
+  // exit-code clause, for example "在 cwd `.` 下退出码 0".  The command
+  // receipt already provides the cwd, so consume this literal phrase before
+  // handing the remainder to semantic verification.
+  const inlineCwd = /^(?:在\s*)?cwd\s*`([^`]*)`\s*(?:下|中)?\s*[：:]?\s*$/iu.exec(part);
+  if (inlineCwd) {
+    check('工作目录', normalizeReportedCwd(inlineCwd[1]), receipt.cwd === '' ? '.' : receipt.cwd);
     return true;
   }
   const match = processField.exec(part);
@@ -377,7 +529,7 @@ function checkProcessField(part, receipt, check) {
   else if (field === 'command' && wrapped) {
     const comparable = (receipt.invocationKey && typeof receipt.cwd === 'string') || (receipt.command && Array.isArray(receipt.args) && !receipt.args.includes('[已隐藏]'));
     check('命令匹配', true, comparable ? matchesInvocation(receipt, value) : undefined);
-  } else if (field === 'cwd' && wrapped) check('工作目录', value, receipt.cwd === '' ? '.' : receipt.cwd);
+  } else if (field === 'cwd' && wrapped) check('工作目录', normalizeReportedCwd(value), receipt.cwd === '' ? '.' : receipt.cwd);
   else if (field === 'stderr' && ((!wrapped && value === '空') || (wrapped && value === ''))) check('标准错误为空', true, receipt.stderrEmpty);
   else if ((field === 'stdout' || field === 'stderr') && wrapped) {
     check(field === 'stdout' ? '标准输出摘要' : '标准错误摘要', outputTextDigest(value), field === 'stdout' ? receipt.stdoutTextDigest : receipt.stderrTextDigest);
@@ -420,22 +572,34 @@ function literalReceiptCheck(claim, evidence, completedSteps, history) {
     check(label, claimed, observed);
   };
   for (const original of parts) {
-    const part = original.replace(/^(?:PPTX|ZIP)\s*结构检查(?:显示|结果为)\s*(?=\d)/iu, '');
+    let part = original.replace(/^(?:PPTX|ZIP)\s*结构检查(?:显示|结果为)\s*(?=\d)/iu, '');
+    if (claim.kind.startsWith('TEST')) {
+      if (incidentalTestNarrative(part)) continue;
+      const embedded = consumeEmbeddedTestFields(part, receipt, check);
+      if (embedded) {
+        part = embedded.remaining.trim();
+        if (!part || incidentalTestNarrative(part)) continue;
+      }
+    }
     let match;
     if (checkProcessField(part, receipt, check)) continue;
     if ((match = /^(?:大小\s*)?(\d+)\s*(?:字节|bytes?)$/iu.exec(part))) {
+      if (claim.kind.startsWith('TEST')) continue;
       checkFile('字节数', Number(match[1]), file?.sizeBytes);
     } else if ((match = /^(\d+)\s*(?:页(?:幻灯片)?|张幻灯片|slides?)$/iu.exec(part))) {
       checkFile('幻灯片页数', Number(match[1]), file?.pptx?.slideCount);
     } else if ((match = /^(\d+)\s*(?:个\s*)?(?:zip\s*)?(?:条目|entries)$/iu.exec(part))) {
       checkFile('归档条目数', Number(match[1]), file?.pptx?.entryCount);
     } else if ((match = /^(?:(?:文件|内容)?摘要\s*)?sha-?256\s*[:=：]?\s*`?(?:sha256:)?([a-f\d]{64})`?$/iu.exec(part))) {
+      if (claim.kind.startsWith('TEST')) continue;
       checkFile('SHA-256', `sha256:${match[1].toLowerCase()}`, file?.sha256);
-    } else if ((match = /^(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例|tests?)?\s*(全部|均)?\s*(通过|失败|跳过|passed|failed|skipped)$/iu.exec(part))) {
+    } else if ((match = /^(?:(?:全部|所有|all|every)\s*)?(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例|tests?)?\s*(全部|均)?\s*(通过|失败|跳过|全过|全通过|passed|failed|skipped)$/iu.exec(part))) {
       const label = match[3].toLowerCase();
-      const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', passed: 'pass', failed: 'fail', skipped: 'skipped' }[label];
+      const key = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', 全过: 'pass', 全通过: 'pass', passed: 'pass', failed: 'fail', skipped: 'skipped' }[label];
       check(label, Number(match[1]), counts?.[key]);
       if (match[2]) check('测试总数', Number(match[1]), counts?.tests);
+    } else if ((match = /^(\d+)\s*(?:项|个|条)?\s*(?:测试|检查|用例|tests?)$/iu.exec(part))) {
+      check('测试总数', Number(match[1]), counts?.tests);
     } else if ((match = /^(?:(在工作区根目录)\s*)?(?:运行|执行)?\s*`([^`]+)`$/u.exec(part))
       && matchesInvocation(receipt, match[2])) {
       if (match[1]) check('工作目录', '.', receipt.cwd === '' ? '.' : receipt.cwd);
@@ -463,18 +627,21 @@ function literalReceiptCheck(claim, evidence, completedSteps, history) {
         if (file.disposition === 'OBSERVED' && !/重新生成/u.test(part)) return undefined;
         checkFile('生成方式', 'GENERATED', file.disposition === 'OBSERVED' ? undefined : file.disposition);
       }
-    } else remaining.push(original);
+    } else remaining.push(part || original);
   }
   if (!fields.length) return undefined;
   const mismatch = fields.find(field => field.observed !== undefined && field.claimed !== field.observed);
   const missing = [...new Set(fields.filter(field => field.observed === undefined).map(field => field.label))];
+  const reportRemaining = claim.kind.startsWith('TEST')
+    && !mismatch && !missing.length && fields.length
+    ? remaining.filter(part => !testReportNarrative(part)) : remaining;
   const refs = [...citation(receipt), ...citedFiles];
   if (mismatch) return { id: claim.id, status: 'FAIL', code: 'BUILD_TEST_CONCLUSION_CONFLICT',
     message: `${mismatch.label}实际记录为 ${mismatch.observed}（${claim.statement}）`, evidence: refs };
   if (missing.length) return { id: claim.id, status: 'UNKNOWN', code: 'BUILD_TEST_CLAIM_EVIDENCE_MISSING',
     message: `缺少${missing.join('、')}的执行证据（${claim.statement}）`, evidence: refs };
-  return { id: claim.id, status: 'PASS', message: remaining.length ? `已核对${fields.map(f => f.label).join('、')}` : `已通过执行记录核对（${claim.statement}）`, evidence: refs,
-    ...(remaining.length ? { remaining } : {}) };
+  return { id: claim.id, status: 'PASS', message: reportRemaining.length ? `已核对${fields.map(f => f.label).join('、')}` : `已通过执行记录核对（${claim.statement}）`, evidence: refs,
+    ...(reportRemaining.length ? { remaining: reportRemaining } : {}) };
 }
 
 function exactClaimConflict(claim, evidence) {
@@ -485,8 +652,11 @@ function exactClaimConflict(claim, evidence) {
     return { detail: `记录中的退出码为 ${receipt.exitCode}`, receipt };
   }
   if (claim.kind === 'TEST_RESULT' && receipt.testCounts) {
-    const labels = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', passed: 'pass', failed: 'fail', skipped: 'skipped' };
-    for (const [, value, label] of claim.statement.matchAll(/(\d+)\s*(?:项|个|条)?\s*(?:测试|用例|tests?\b)?\s*(?:全部\s*)?(通过|失败|跳过|passed\b|failed\b|skipped\b)/giu)) {
+    const labels = { 通过: 'pass', 失败: 'fail', 跳过: 'skipped', 全过: 'pass', 全通过: 'pass', passed: 'pass', failed: 'fail', skipped: 'skipped' };
+    for (const match of claim.statement.matchAll(/(\d+)\s*(?:项|个|条)?\s*(?:测试|用例|tests?\b)?\s*(?:全部\s*)?(通过|失败|跳过|全过|全通过|passed\b|failed\b|skipped\b)/giu)) {
+      const prefix = claim.statement.slice(Math.max(0, match.index - 12), match.index);
+      if (/(?:exit|退出码)[^，,；;（）()]{0,8}$/iu.test(prefix)) continue;
+      const [, value, label] = match;
       const actual = receipt.testCounts[labels[label.toLowerCase()]];
       if (Number.isInteger(actual) && Number(value) !== actual) return { detail: `对应测试计数为 ${actual}`, receipt };
     }
@@ -553,7 +723,7 @@ export function prepareBuildTestVerification(text, receipts, { completedSteps = 
     // A current build result refers to the final attempt of each distinct
     // invocation. Claims about previous attempts still need their history.
     const historical = /最初|第一次|首次|先前|之前|此前|历次|历史|每次|从未|从没|所有尝试|第\s*[\d一二三四五六七八九十]+\s*次|\b(?:first|initial(?:ly)?|earlier|previous(?:ly)?|history|every|always|never|all attempts)\b/iu;
-    const candidates = claim.kind === 'BUILD' && !historical.test(claim.statement)
+    const candidates = !historical.test(claim.statement)
       ? latestCommandReceipts(allCandidates) : allCandidates;
     const observed = candidates.filter(receipt => executionStatus(receipt) !== 'UNKNOWN');
     if (!observed.length) {

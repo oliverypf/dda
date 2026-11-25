@@ -593,7 +593,7 @@ test('a guessed side-effect tool still requires a host lease in the default mode
   }
 });
 
-test('stops repeated workspace requests after four rounds without new evidence', async () => {
+test('repeated workspace requests without new evidence conclude the turn instead of failing', async () => {
   const registry = new ToolRegistry();
   registry.register({
     name: 'workspace.list', description: 'List fixture.', readOnly: true,
@@ -617,10 +617,11 @@ test('stops repeated workspace requests after four rounds without new evidence',
   await root.plugin(providerPlugin);
   await root.plugin(taskRunnerPlugin);
   try {
-    await assert.rejects(root.taskRunner.run({ prompt: 'inspect', workspace, onEvent: (event) => events.push(event) }), /TOOL_NO_NEW_EVIDENCE/);
-    // #66 added a one-shot focus vacuum escape: 4 no-evidence rounds, 1 escape,
-    // then 4 more before TOOL_NO_NEW_EVIDENCE. 9 tool results in total.
-    assert.equal(events.filter((event) => event.kind === 'tool.result').length, 9);
+    await root.taskRunner.run({ prompt: 'inspect', workspace, onEvent: (event) => events.push(event) });
+    // Every 4 no-evidence rounds send one host note; after three notes the
+    // turn concludes without tools instead of failing the task.
+    assert.equal(events.filter((event) => event.kind === 'harness.focus_vacuum_escape').length, 3);
+    assert.equal(events.filter((event) => event.kind === 'tool.result').length, 17);
   } finally {
     await root.fiber.dispose();
   }
@@ -1082,6 +1083,31 @@ test('a repair loads source through tools while retaining the file index and pri
     assert.doesNotMatch(requests[0], /unsolicited source marker|requested source marker/u);
     assert.match(requests[1], /requested source marker/u);
   }
+});
+
+test('a normal task does not receive unsolicited workspace file contents', async t => {
+  const root = new Context();
+  t.after(() => root.fiber.dispose());
+  await root.plugin(toolRegistryPlugin(new ToolRegistry()));
+  let request;
+  await root.plugin(cordisPlugin(ctx => ctx.provide('modelProvider', {
+    provider: 'fixture', model: 'fixture', async *stream({ messages }) {
+      request = JSON.stringify(messages);
+      yield { type: 'text-delta', text: 'Acknowledged.' };
+      yield { type: 'finish', reason: { kind: 'stop' } };
+    }
+  }), 'no-unsolicited-workspace-context-fixture'));
+  await root.plugin(taskRunnerPlugin);
+  await root.taskRunner.run({
+    prompt: '关闭 QQ 的开机启动',
+    workspace: {
+      ...workspace,
+      entries: [{ path: 'docs/WINDOWS_TESTING_WORKFLOW.md', kind: 'FILE' }],
+      sections: [{ path: 'docs/WINDOWS_TESTING_WORKFLOW.md', digest: 'sha256:fixture', content: 'project build instructions' }]
+    }
+  });
+  assert.match(request, /Workspace file contents are withheld from the initial prompt/u);
+  assert.doesNotMatch(request, /project build instructions/u);
 });
 
 test('long bound workflows preserve authenticated prerequisite findings in the executor request', async t => {

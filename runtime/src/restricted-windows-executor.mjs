@@ -19,6 +19,7 @@ import { DEFAULT_PROCESS_TIMEOUT_MS, MAX_PROCESS_TIMEOUT_MS } from './process-li
 const MAX_TIMEOUT_MS = MAX_PROCESS_TIMEOUT_MS;
 const MAX_INPUT_BYTES = 64 * 1024;
 const SECRET_ENV = /(?:key|token|secret|password|credential|private|authorization)/i;
+export const SELF_TERMINATION_ERROR = 'SELF_TERMINATION_TARGET_INVALID';
 
 const fail = (code, message = '') => { throw new SafetyError(code, message); };
 
@@ -49,6 +50,27 @@ const boundedLimit = (value, maximum, fallback, fieldName = 'limit') => {
       `${fieldName} must be an integer between 1 and ${maximum}; received ${JSON.stringify(value)}`);
   }
   return value;
+};
+
+const normalizedExecutableName = (value) => String(value ?? '').toLowerCase().replace(/\.(?:exe|cmd)$/u, '');
+
+/**
+ * Recognize only the narrow taskkill form that names this runtime's PID or,
+ * on the Windows desktop host, its parent DDA process PID.
+ * The executor never forwards taskkill to the child-process boundary. That
+ * prevents a model-supplied PID from killing another process even when a lease
+ * happens to include taskkill.
+ */
+export const parseSelfTerminationRequest = ({ commandName, args, pid = process.pid, ownedPids } = {}) => {
+  const validOwnedPids = (Array.isArray(ownedPids) ? ownedPids : [pid])
+    .filter(value => Number.isInteger(value) && value > 0);
+  if (normalizedExecutableName(commandName) !== 'taskkill' || !validOwnedPids.length) return undefined;
+  if (!Array.isArray(args) || (args.length !== 2 && args.length !== 3)) return undefined;
+  if (String(args[0]).toLowerCase() !== '/pid' || !/^\d+$/u.test(String(args[1]))) return undefined;
+  const targetPid = Number(args[1]);
+  if (!validOwnedPids.includes(targetPid)) return undefined;
+  if (args.length === 3 && String(args[2]).toLowerCase() !== '/f') return undefined;
+  return { pid: targetPid, force: args.length === 3 };
 };
 
 const runCleanupProcess = (command, args) => new Promise((resolve) => {
@@ -199,12 +221,16 @@ const collectProcessOutput = ({ command, args, cwd, env, timeoutMs, input, signa
  */
 export class RestrictedWindowsExecutor extends ExecutorPort {
   #monitor;
+  #onSelfTerminationRequested;
 
-  constructor({ monitor, workspaceRoot, ...options } = {}) {
+  constructor({ monitor, workspaceRoot, onSelfTerminationRequested, ...options } = {}) {
     super();
     this.#monitor = monitor instanceof RuntimeSafetyMonitor
       ? monitor
       : new RuntimeSafetyMonitor({ workspaceRoot, ...options });
+    this.#onSelfTerminationRequested = typeof onSelfTerminationRequested === 'function'
+      ? onSelfTerminationRequested
+      : undefined;
   }
 
   get monitor() { return this.#monitor; }
@@ -274,6 +300,44 @@ export class RestrictedWindowsExecutor extends ExecutorPort {
       command: authorization.command.command,
       args: authorization.command.args
     });
+    const selfTermination = parseSelfTerminationRequest({
+      commandName: authorization.command.commandName,
+      args: authorization.command.args,
+      pid: process.pid,
+      ownedPids: process.env.DDA_PLATFORM === 'windows-desktop'
+        ? [process.pid, process.ppid]
+        : [process.pid]
+    });
+    if (normalizedExecutableName(authorization.command.commandName) === 'taskkill') {
+      if (!selfTermination) throw new SafetyError(SELF_TERMINATION_ERROR);
+      if (!this.#onSelfTerminationRequested) throw new SafetyError('SELF_TERMINATION_HANDLER_MISSING');
+      await this.#onSelfTerminationRequested({
+        pid: selfTermination.pid,
+        force: selfTermination.force,
+        owner: selfTermination.pid === process.pid ? 'runtime' : 'desktop',
+        action: authorization.action,
+        command: authorization.command.command,
+        args: [...authorization.command.args]
+      });
+      return {
+        ok: true,
+        exitCode: 0,
+        signal: null,
+        aborted: false,
+        timedOut: false,
+        truncated: false,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        action: authorization.action,
+        commandDigest: digest(JSON.stringify({ command: authorization.command.commandName, args: authorization.command.args })),
+        cwd: authorization.cwd.path || '.',
+        timeoutMs,
+        lease: authorization.lease?.id ?? null,
+        selfTermination: { state: 'REQUESTED', pid: selfTermination.pid, force: selfTermination.force,
+          owner: selfTermination.pid === process.pid ? 'runtime' : 'desktop' }
+      };
+    }
     const result = await collectProcessOutput({
       command: nodeSpawnCommand(resolved.command),
       args: resolved.args,

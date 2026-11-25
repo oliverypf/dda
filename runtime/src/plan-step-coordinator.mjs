@@ -2,11 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { restorePlannerPlan } from './agent-turns.mjs';
 import {
   countDeterministicGreenJevUncertainReports,
-  isDeterministicGreenJevBehaviorReject,
   isDeterministicGreenJevEvidenceUncertain,
   isSoleHardDenyFailure,
   PLAN_CONTINUE_REPLAN_LIMIT,
-  promoteDeterministicGreenJevBehaviorReject,
   promoteDeterministicGreenJevUncertain
 } from './task-recovery-controller.mjs';
 
@@ -341,39 +339,6 @@ export class PlanStepCoordinator {
             completed = true;
             break;
           }
-        }
-        // freeze-harness-deterministic-green-jev-behavior-reject-r1:
-        // terminal FAIL + REJECTED/(±ACTION_FAILED) + deterministic tests green → PASS.
-        // Does not fold REJECTED into sticky/probe-only suppress; DGU UNCERTAIN path unchanged.
-        if (
-          report.status === 'FAIL'
-          && isDeterministicGreenJevBehaviorReject(report)
-        ) {
-          const priorStatus = report.status;
-          const promoted = promoteDeterministicGreenJevBehaviorReject(report);
-          record.report = clone(promoted);
-          report = promoted;
-          // See the DGU path above: aggregation and downstream consumers must
-          // observe the promoted PASS in the nested executeStep payload too.
-          if (record.result && typeof record.result === 'object') {
-            record.result.verification = clone(promoted);
-            if ('ok' in record.result) record.result.ok = true;
-          }
-          await this.#update(step.stepId, {
-            status: 'SUCCEEDED',
-            attempt,
-            ...(typeof actionDigest === 'string' ? { actionDigest } : {}),
-            ...(typeof resultDigest === 'string' ? { outputDigest: resultDigest } : {})
-          });
-          await onVerificationPromoted?.({
-            stepId: step.stepId,
-            attempt,
-            report: clone(promoted),
-            priorStatus,
-            reason: 'dgr'
-          });
-          completed = true;
-          break;
         }
         await this.#update(step.stepId, {
           status: report.status === 'ABSTAIN' || report.status === 'UNKNOWN' ? 'BLOCKED' : 'FAILED',

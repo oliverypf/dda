@@ -39,6 +39,9 @@ test('step-specific source profiles survive checkpoint restoration and never gra
   assert.equal(executionToolAllowed(profile, 'shell.execute'), false);
   assert.equal(executionToolAllowed(profile, 'mcp.docs.find', { readOnly: true }), true);
   assert.equal(executionToolAllowed(profile, 'mcp.docs.update', { readOnly: false }), false);
-  assert.equal(stepExecutionProfile({ initial, step: { summary: 'Read README.md' }, goal: '', readOnly: true }), 'workspace-readonly');
-  assert.equal(stepExecutionProfile({ initial: 'workspace-readonly', step: { summary: 'Read the official documentation' }, goal: '', readOnly: true }), 'external-lookup');
+  assert.equal(stepExecutionProfile({ initial, step: { summary: 'Read README.md', evidenceSources: ['workspace'] }, readOnly: true }), 'workspace-readonly');
+  assert.equal(stepExecutionProfile({ initial: 'workspace-readonly', step: { summary: 'Read the official documentation', evidenceSources: ['web'] }, readOnly: true }), 'external-lookup');
+  // Wording alone never switches the profile or removes tools.
+  assert.equal(stepExecutionProfile({ initial: 'workspace-readonly', step: { summary: '对照官网说明检查本地配置' }, readOnly: true }), 'workspace-readonly');
+  assert.equal(stepExecutionProfile({ initial: 'full-executor', step: { summary: 'Read the official documentation online' }, readOnly: true }), 'full-executor');
 });

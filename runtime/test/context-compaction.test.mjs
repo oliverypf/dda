@@ -116,6 +116,41 @@ test('per-call maxChars replaces the default character ceiling', () => {
   assert.equal(overSmallCeiling.filter(isCompactionSummaryMessage).length, 1);
 });
 
+test('a failed retest summarizes a large old prefix while retaining complete recent evidence', () => {
+  const user = text => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] });
+  const goal = user('Fix the failed comparison');
+  const source = makeRound(6, 9_000);
+  const observed = (id, name, output) => [
+    createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' },
+      content: [{ type: 'tool-call', id, name, arguments: '{"command":"node"}' }] }),
+    createToolResultMessage({ callId: id, isError: false,
+      content: [{ type: 'text', text: JSON.stringify(output) }] })
+  ];
+  const probe = observed('probe', 'shell.execute', { stdout: `${'x'.repeat(8_000)}\nactual-input=42` });
+  const red = observed('red', 'test.execute', { exitCode: 1, stdout: 'AssertionError: expected 7' });
+  const repair = user('HOST_REPAIR_RETEST: {"assertionSource":"assert.equal(value, 7)","editAtTest":{"diff":"@@ old patch"}}');
+  const tail = [...source, ...probe, ...red, repair];
+  const messages = [goal, ...makeRound(1, 32_000), ...makeRound(2, 16_000), ...tail];
+  const compactor = createContextCompactor({ maxChars: 1_000_000 });
+  assert.equal(compactor.compact(messages).compacted, false);
+  const result = compactor.compact(messages, { failedRetest: true });
+  assert.equal(result.reason, 'FAILED_RETEST_HISTORY');
+  assert.equal(result.evictedRounds, 2);
+  assert.ok(result.savedChars > 46_000);
+  assert.equal(messages[0], goal);
+  const summary = messages[1];
+  assert.ok(isCompactionSummaryMessage(summary));
+  assert.match(summary.content[0].text, /src\/mod-1\.js/);
+  assert.match(summary.content[0].text, /src\/mod-2\.js/);
+  assert.equal(messages.length, tail.length + 2);
+  tail.forEach((message, i) => assert.equal(messages[i + 2], message));
+  assert.equal(compactor.compact(messages, { failedRetest: true }).compacted, false);
+  assert.equal(messages[1], summary);
+  messages.push(...makeRound(7, 900));
+  assert.equal(compactor.compact(messages, { failedRetest: true }).compacted, false);
+  assert.equal(messages[1], summary);
+});
+
 test('taskRunner recovers automatically from HTTP 400 context_length_exceeded by emergency compacting and retrying', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'hmcodex-compact-overflow-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

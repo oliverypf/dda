@@ -503,6 +503,91 @@ try {
 }
 await page4.close();
 
+// ── Scenario 5: Codex-style consecutive tool steps stream one-by-one and collapse together ──
+const page5 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+page5.on('pageerror', (e) => consoleErrors.push('scenario5:' + String(e)));
+page5.on('console', (m) => { if (m.type() === 'error') consoleErrors.push('scenario5:' + m.text()); });
+await page5.route(`**/src/main.ts`, (route) => route.fulfill({ contentType: 'application/javascript', body: shim }));
+await page5.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+try {
+  await page5.waitForSelector('textarea[name="prompt"]', { timeout: 20000 });
+  await submit(page5, '写一个介绍这个项目的视频');
+  await page5.waitForFunction(() => window.__accept.calls.some((c) => c.cmd === 'run_model_task'), undefined, { timeout: 10000 });
+  const [toolCallSession] = await sessionCalls(page5);
+  const sid = toolCallSession.clientSessionId;
+
+  await page5.evaluate((e) => window.__emit(e), ev('run-tools', 1, 'run.started', {}, sid));
+  await page5.evaluate((e) => window.__emit(e), ev('run-tools', 2, 'tool.call_requested', {
+    id: 'step-1', name: 'workspace.list'
+  }, sid));
+  await page5.waitForSelector('.timeline-tool-step[data-tool-name="workspace.list"]', { timeout: 5000 });
+  check('single tool step renders compact row without redundant group wrapper', await page5.evaluate(() =>
+    document.querySelectorAll('.timeline-tool-step').length === 1
+    && document.querySelectorAll('.timeline-tool-group').length === 0));
+
+  await page5.evaluate((e) => window.__emit(e), ev('run-tools', 3, 'tool.result', {
+    id: 'step-1', name: 'workspace.list', ok: true, outputChars: 2047
+  }, sid));
+
+  const restSteps = [
+    { id: 'step-2', name: 'workspace.list', path: 'docs', chars: 612 },
+    { id: 'step-3', name: 'workspace.read', path: 'README.md', chars: 3312 },
+    { id: 'step-4', name: 'workspace.read', path: 'oh-package.json5', chars: 204 },
+    { id: 'step-5', name: 'workspace.list', path: 'desktop', chars: 480 },
+    { id: 'step-6', name: 'workspace.list', path: 'packages', chars: 196 },
+    { id: 'step-7', name: 'workspace.read', path: 'desktop/README.md', chars: 4890 }
+  ];
+  let seq = 4;
+  for (let i = 0; i < restSteps.length; i += 1) {
+    const step = restSteps[i];
+    await page5.evaluate((e) => window.__emit(e), ev('run-tools', seq++, 'tool.call_requested', {
+      id: step.id, name: step.name, path: step.path
+    }, sid));
+    if (i < restSteps.length - 1) {
+      await page5.evaluate((e) => window.__emit(e), ev('run-tools', seq++, 'tool.result', {
+        id: step.id, name: step.name, path: step.path, ok: true, outputChars: step.chars
+      }, sid));
+    }
+  }
+  await page5.waitForFunction(() => document.querySelector('.timeline-tool-group')?.getAttribute('data-tool-group-count') === '7', undefined, { timeout: 5000 });
+  check('consecutive tool steps stream open one-by-one while running', await page5.evaluate(() => {
+    const details = document.querySelector('.timeline-tool-group-details');
+    const rows = document.querySelectorAll('.timeline-tool-group .timeline-tool-row');
+    const summary = document.querySelector('.timeline-tool-group-label')?.textContent ?? '';
+    return Boolean(details?.open) && rows.length === 7 && summary.includes('正在读取工作区文件 desktop/README.md');
+  }));
+  await page5.screenshot({ path: `${EVIDENCE}/codex-tools-streaming.png` });
+
+  // Finish the 7th tool step and start streaming the assistant reply -> auto-collapses!
+  await page5.evaluate((e) => window.__emit(e), ev('run-tools', seq++, 'tool.result', {
+    id: 'step-7', name: 'workspace.read', path: 'desktop/README.md', ok: true, outputChars: 4890
+  }, sid));
+  await page5.evaluate((e) => window.__emit(e), ev('run-tools', seq++, 'model.text_delta', {
+    round: 2, text: '已读取项目结构与核心文档，下面是视频脚本与分镜方案：\n\n1. 开场：跨平台受控本地 Agent 工作台…'
+  }, sid));
+  await page5.waitForFunction(() => {
+    const details = document.querySelector('.timeline-tool-group-details');
+    return details && !details.open;
+  }, undefined, { timeout: 5000 });
+  check('multiple completed tool steps auto-collapse into one Codex summary bar', await page5.evaluate(() => {
+    const details = document.querySelector('.timeline-tool-group-details');
+    const summary = document.querySelector('.timeline-tool-group-label')?.textContent ?? '';
+    return Boolean(details && !details.open)
+      && summary === '已完成 7 项操作 · 查看工作区目录 ×4、读取工作区文件 ×3';
+  }));
+  await page5.screenshot({ path: `${EVIDENCE}/codex-tools-collapsed.png` });
+
+  await page5.click('.timeline-tool-group-summary');
+  check('clicking the collapsed tool summary expands all individual tool rows', await page5.evaluate(() =>
+    Boolean(document.querySelector('.timeline-tool-group-details')?.open)
+    && document.querySelectorAll('.timeline-tool-group .timeline-tool-row').length === 7));
+  await page5.screenshot({ path: `${EVIDENCE}/codex-tools-expanded.png` });
+} catch (error) {
+  check('scenario5 harness error', false, String(error));
+  await page5.screenshot({ path: `${EVIDENCE}/sessions-scenario5-failure.png` }).catch(() => {});
+}
+await page5.close();
+
 const summary = {
   ok: results.every((r) => r.ok) && consoleErrors.length === 0,
   results, consoleErrors,
